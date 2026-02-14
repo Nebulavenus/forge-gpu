@@ -20,7 +20,16 @@ FetchContent_MakeAvailable(SDL3)
 # Header-only helpers shared across lessons live in common/
 set(FORGE_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
-# ── Lessons ─────────────────────────────────────────────────────────────────
-add_subdirectory(lessons/01-hello-window)
-add_subdirectory(lessons/02-first-triangle)
-add_subdirectory(lessons/03-uniforms-and-motion)
+# ── Testing ─────────────────────────────────────────────────────────────────
+enable_testing()
+
+# ── Math Lessons ────────────────────────────────────────────────────────────
+add_subdirectory(lessons/math/01-vectors)
+
+# ── GPU Lessons ─────────────────────────────────────────────────────────────
+add_subdirectory(lessons/gpu/01-hello-window)
+add_subdirectory(lessons/gpu/02-first-triangle)
+add_subdirectory(lessons/gpu/03-uniforms-and-motion)
+
+# ── Tests ───────────────────────────────────────────────────────────────────
+add_subdirectory(tests/math)

@@ -1,53 +1,146 @@
 # forge-gpu
 
-An educational project teaching real-time graphics with SDL's GPU API, written in C.
+A learning platform and building tool for real-time graphics with SDL's GPU API.
+
+**Dual purpose:**
+1. **Learn** — Guided lessons teaching GPU programming, math, and game techniques
+2. **Forge** — Skills and libraries enabling humans + AI to build real projects
 
 Repository: https://github.com/RosyGameStudio/forge-gpu
 License: zlib (matching SDL)
 
 ## Tone
-Many users of this project are learning graphics programming for the first
-time.  When answering questions or writing code:
-- Be encouraging and patient — there are no dumb questions about GPU APIs
+
+Many users are learning graphics or game programming for the first time. Others
+are building projects and hit a problem that requires deeper understanding.
+Either way, when answering questions or writing code:
+
+- Be encouraging and patient — there are no dumb questions about GPU APIs or math
 - Explain *why*, not just *what* — connect each concept to the bigger picture
 - Use plain language before jargon; when jargon is unavoidable, define it
 - If a user's approach won't work, explain the reason gently and suggest an
   alternative rather than just correcting them
-- Reference specific lessons when relevant ("this is the pattern from Lesson 02")
+- Reference specific lessons when relevant ("this is the pattern from Lesson 02",
+  "see lessons/math/01-vectors for the dot product explanation")
 - Remember that getting a triangle on screen for the first time is a big deal
+- When using the math library, link to both the library docs AND the math lesson
+  explaining the concept
 
 ## Philosophy
-- Every line of code should be understandable by someone learning graphics programming
+
+**Learning enables building.** Understanding fundamentals makes working with AI
+more productive. This project teaches graphics, math, and game techniques — then
+provides reusable skills and libraries so humans and AI can build together.
+
+### Learning (lessons/)
+- Every line of code understandable by someone new to graphics/game dev
 - Extensive comments explaining *why*, not just *what*
-- Each lesson builds on the previous, introducing one concept at a time
-- C99, matching SDL's own style conventions
-- **Dual audience: humans and AI** — every lesson teaches a person, and every
-  lesson produces a reusable *skill* that teaches an AI agent the same pattern.
-  The goal is to enable people to use Claude (or any AI) to build games and
-  renderers with SDL GPU confidently.
+- Progressive curriculum: each lesson builds on the previous
+- Topics: SDL GPU API, math fundamentals, rendering techniques, physics, etc.
+- Math lessons are standalone (small programs demonstrating concepts)
+- GPU lessons integrate math library (no bespoke math in GPU code)
 
-## Code Style
-- SDL naming conventions (SDL_PrefixedNames for public, lowercase_snake for local)
-- No magic numbers — #define or enum everything
-- Every shader uniform, every pipeline state: comment explaining its purpose
-- Error handling on every SDL GPU call with descriptive messages
+### Forging (skills + libraries)
+- **Skills** (.claude/skills/) — Reusable Claude Code skills distilled from lessons
+- **Math library** (common/math/) — Documented, readable, learning-focused
+- Every lesson produces a skill; AI agents learn the same patterns as humans
+- Goal: Enable anyone to use Claude to build games and renderers confidently
 
-## Structure
-- Each lesson in lessons/NN-name/ is a standalone buildable project
-- Lessons share common utility code via a small header-only lib in common/
-- Skills in .claude/skills/ are Claude Code skills that teach AI agents the
-  patterns from each lesson — invocable with /skill-name or automatically
-  when Claude determines they're relevant
+### Code conventions
+- **Language:** C99, matching SDL's own style conventions
+- **Naming:** SDL_PrefixedNames for public API, lowercase_snake for local/internal
+- **Constants:** No magic numbers — #define or enum everything
+- **Comments:** Explain *why* and *purpose* (every uniform, pipeline state, etc.)
+- **Errors:** Handle every SDL GPU call with descriptive messages
+- **Readability:** This code is meant to be learned from — clarity over cleverness
 
-## When writing lessons
+## Project Structure
+
+```text
+forge-gpu/
+├── lessons/
+│   ├── math/              # Math fundamentals (vectors, matrices, etc.)
+│   │   ├── README.md      # Overview of math lessons
+│   │   └── NN-concept/    # Each concept: program + README + adds to math lib
+│   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
+│       └── NN-name/       # Each lesson: standalone buildable project
+├── common/
+│   ├── math/              # Math library (header-only, documented)
+│   └── ...                # Other shared utilities
+├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
+│   ├── math-lesson/       # Skill: add math concept + lesson + update lib
+│   ├── new-lesson/        # Skill: create new GPU lesson
+│   └── ...
+└── third_party/           # Dependencies (SDL3, etc.)
+```
+
+### How it fits together
+1. **Math lessons** teach concepts, add to `common/math/`
+2. **GPU lessons** use math library, refer to math lessons for theory
+3. **Skills** automate lesson creation and teach AI agents the patterns
+4. **Math library** is reusable in any project (lessons or real builds)
+
+## When writing GPU lessons (lessons/gpu/)
 - Start each README.md with what the reader will learn
 - Show the result (screenshot) before diving into code
 - Introduce API calls one at a time with context
+- **Use the math library** for all math operations — no bespoke math in GPU code
+- Link to relevant math lessons when explaining concepts
 - End with exercises that extend the lesson
 - **Also write a matching skill** in .claude/skills/<name>/SKILL.md that
   distills the lesson into a reusable Claude Code skill: YAML frontmatter
   with name and description, then the key API calls, correct order, common
   mistakes, and a ready-to-use code template
+
+## When writing math lessons (lessons/math/)
+- Use the **/math-lesson** skill to scaffold lesson + update library
+- Small, focused program demonstrating one concept clearly
+- README explains the math, the intuition, and where it's used in graphics/games
+- Add the implementation to `common/math/` with extensive inline docs
+- Cross-reference GPU lessons that use this math
+- Keep it readable — this code is meant to be learned from
+
+## Using the math library (common/math/)
+
+**In your code:**
+```c
+#include "math/forge_math.h"  // Or whatever we name it
+
+vec3 position = vec3_create(0.0f, 1.0f, 0.0f);
+mat4 rotation = mat4_rotate_z(angle);
+```
+
+**When to use existing math:**
+- GPU lessons should always use the math library
+- Real projects building with forge-gpu should use it too
+- Reference the math library README and relevant lessons for documentation
+
+**When to add new math:**
+- You need a function that doesn't exist yet
+- Use **/math-lesson** skill (invokable by humans or Claude automatically)
+- This creates: math lesson + updates library + documents the concept
+- Even simple operations deserve a lesson (dot product, normalize, etc.)
+
+## Using skills (.claude/skills/)
+
+Skills are Claude Code commands that teach AI agents patterns from lessons.
+
+**Available skills:**
+- **/math-lesson** — Add a math concept (lesson + library update)
+- **/new-lesson** — Create a new GPU lesson
+- **/publish-lesson** — Commit and PR a completed lesson
+- **/sdl-gpu-setup** — Scaffold SDL3 GPU application
+- And more — see `.claude/skills/` directory
+
+**How they work:**
+- Users invoke with `/skill-name` in the chat
+- Claude can also invoke them automatically when relevant
+- Each skill knows the project conventions and generates correct code
+- Skills are themselves documented and maintainable
+
+**For Claude:** When you need to add math functionality, use the /math-lesson
+skill. When creating GPU lessons, ensure they use the math library and reference
+math lessons for theory.
 
 ## Dependencies
 - SDL3 (with GPU API)

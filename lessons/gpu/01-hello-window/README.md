@@ -60,7 +60,7 @@ build\lessons\01-hello-window\Debug\01-hello-window.exe   # Windows
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`sdl-gpu-setup`](../../.claude/skills/sdl-gpu-setup/SKILL.md) — invoke it
+[`sdl-gpu-setup`](../../../.claude/skills/sdl-gpu-setup/SKILL.md) — invoke it
 with `/sdl-gpu-setup` or copy it into your own project's `.claude/skills/`
 directory.  It distils the setup pattern from this lesson into a reusable
 reference that AI assistants can follow.

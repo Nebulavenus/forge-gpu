@@ -22,6 +22,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stddef.h>    /* offsetof */
+#include "math/forge_math.h"
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
 /* These headers contain SPIRV (Vulkan) and DXIL (D3D12) bytecodes compiled
@@ -69,14 +70,20 @@
 /* ── Vertex format ────────────────────────────────────────────────────────── */
 /* Same as Lesson 02: each vertex has a 2D position and an RGB color.
  *
+ * We use the forge-gpu math library types:
+ *   - vec2 (HLSL: float2) for 2D positions
+ *   - vec3 (HLSL: float3) for RGB colors
+ *
  * Memory layout (20 bytes per vertex):
- *   offset 0:  float x, y       (8 bytes)  → TEXCOORD0 in HLSL
- *   offset 8:  float r, g, b   (12 bytes)  → TEXCOORD1 in HLSL
+ *   offset 0:  vec2 position    (8 bytes)  → TEXCOORD0 in HLSL
+ *   offset 8:  vec3 color      (12 bytes)  → TEXCOORD1 in HLSL
+ *
+ * See: lessons/math/01-vectors for an explanation of vector types.
  */
 
 typedef struct Vertex {
-    float x, y;      /* position in normalized device coordinates */
-    float r, g, b;   /* color (0.0–1.0 per channel)              */
+    vec2 position;   /* position in normalized device coordinates */
+    vec3 color;      /* color (0.0–1.0 per channel)              */
 } Vertex;
 
 /* ── Uniform data ─────────────────────────────────────────────────────────── */
@@ -102,10 +109,10 @@ typedef struct Uniforms {
  * centroid exactly at (0, 0):  (0.5 + -0.25 + -0.25) / 3 = 0.  */
 
 static const Vertex triangle_vertices[VERTEX_COUNT] = {
-    /*    x      y        r     g     b   */
-    {  0.0f,  0.5f,    1.0f, 0.0f, 0.0f },  /* top:          red   */
-    { -0.5f, -0.25f,   0.0f, 1.0f, 0.0f },  /* bottom-left:  green */
-    {  0.5f, -0.25f,   0.0f, 0.0f, 1.0f },  /* bottom-right: blue  */
+    /* Using math library: vec2 for position, vec3 for color */
+    { .position = {  0.0f,  0.5f  }, .color = { 1.0f, 0.0f, 0.0f } },  /* top:          red   */
+    { .position = { -0.5f, -0.25f }, .color = { 0.0f, 1.0f, 0.0f } },  /* bottom-left:  green */
+    { .position = {  0.5f, -0.25f }, .color = { 0.0f, 0.0f, 1.0f } },  /* bottom-right: blue  */
 };
 
 /* ── Application state ────────────────────────────────────────────────────── */
@@ -266,12 +273,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     vertex_attributes[0].location    = 0;
     vertex_attributes[0].buffer_slot = 0;
     vertex_attributes[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-    vertex_attributes[0].offset      = offsetof(Vertex, x);
+    vertex_attributes[0].offset      = offsetof(Vertex, position);
 
     vertex_attributes[1].location    = 1;
     vertex_attributes[1].buffer_slot = 0;
     vertex_attributes[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-    vertex_attributes[1].offset      = offsetof(Vertex, r);
+    vertex_attributes[1].offset      = offsetof(Vertex, color);
 
     SDL_GPUGraphicsPipelineCreateInfo pipeline_info;
     SDL_zero(pipeline_info);

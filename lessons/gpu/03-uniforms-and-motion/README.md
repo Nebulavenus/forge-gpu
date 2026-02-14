@@ -144,7 +144,7 @@ build\lessons\03-uniforms-and-motion\Debug\03-uniforms-and-motion.exe
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`uniforms-and-motion`](../../.claude/skills/uniforms-and-motion/SKILL.md) —
+[`uniforms-and-motion`](../../../.claude/skills/uniforms-and-motion/SKILL.md) —
 invoke it with `/uniforms-and-motion` or copy it into your own project's
 `.claude/skills/` directory. It distils the uniform buffer pattern from this
 lesson into a reusable reference that AI assistants can follow.
