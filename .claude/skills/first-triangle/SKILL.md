@@ -21,13 +21,19 @@ Define a vertex struct matching your shader inputs:
 
 ```c
 typedef struct Vertex {
-    float x, y;      /* position (float2) → TEXCOORD0 in HLSL */
-    float r, g, b;   /* color (float3)    → TEXCOORD1 in HLSL */
+    float x, y;      /* position in NDC (float2) → TEXCOORD0 in HLSL */
+    float r, g, b;   /* color (float3)           → TEXCOORD1 in HLSL */
 } Vertex;
 ```
 
 **Rule:** The C struct layout must exactly match the vertex attributes you
 declare in the pipeline's vertex input state.
+
+**Coordinate spaces:** For the first triangle lesson, positions are provided
+directly in **NDC** (Normalized Device Coordinates), which is clip space with
+w = 1. The range is [-1, 1] for x and y. Later lessons introduce model-view-projection
+matrices to transform from model space. See `lessons/math/02-coordinate-spaces`
+for the complete transformation pipeline.
 
 ## Shader conventions
 

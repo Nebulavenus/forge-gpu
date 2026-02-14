@@ -93,12 +93,14 @@ build\lessons\gpu\02-first-triangle\Debug\02-first-triangle.exe
 GPU lessons use the **forge-gpu math library** (`common/math/`) for all math operations.
 
 **You'll see:**
+
 - `vec2` for 2D positions and UV coordinates (HLSL: `float2`)
 - `vec3` for 3D positions, colors, normals (HLSL: `float3`)
 - `vec4` for homogeneous coordinates (HLSL: `float4`)
 - `mat4` for transformations (HLSL: `float4x4`)
 
 **When to read math lessons:**
+
 - **Before GPU Lesson 02**: Read [Vectors](../math/01-vectors/) to understand positions and colors
 - **Before GPU Lesson 05** *(coming)*: Read matrices lesson to understand transforms
 - **When confused**: Math lessons explain the theory behind GPU operations
@@ -110,17 +112,20 @@ See [lessons/math/README.md](../math/README.md) for the complete math curriculum
 ### What makes SDL GPU different?
 
 **Explicit, low-level control** — Like Vulkan or Direct3D 12, but simpler:
+
 - You manage buffers, pipelines, and render passes explicitly
 - No hidden state or "magic" — everything is visible
 - Efficient: close to the metal, minimal overhead
 
 **Portable** — One API, multiple backends:
+
 - Vulkan on Windows, Linux, Android
 - Direct3D 12 on Windows, Xbox
 - Metal on macOS, iOS
 - Future: more backends as they're added
 
 **Modern** — Designed for today's GPUs:
+
 - Command buffers for parallel work submission
 - Explicit synchronization (no implicit barriers)
 - Transfer queues for async uploads
@@ -143,11 +148,13 @@ Every GPU lesson has a matching **Claude Code skill** that teaches AI agents
 the same pattern. Use these to build projects quickly:
 
 **Available skills:**
+
 - **`/sdl-gpu-setup`** — Scaffold a new SDL3 GPU application
 - **`/first-triangle`** — Add vertex rendering with shaders
 - **`/uniforms-and-motion`** — Pass per-frame data to shaders
 
 **How to use:**
+
 1. Copy `.claude/skills/` into your project
 2. Type `/skill-name` in Claude Code, or just describe what you want
 3. Claude invokes the skill automatically when relevant
@@ -179,6 +186,7 @@ modern GPU concepts without the boilerplate.
 ### What if I know OpenGL?
 
 SDL GPU is **explicit** (like Vulkan), not **implicit** (like OpenGL):
+
 - You create command buffers and submit them (no global state)
 - Shaders are pre-compiled (no runtime compilation)
 - Render passes are explicit (no default framebuffer)
@@ -195,6 +203,7 @@ The concepts transfer, but the API style is different.
 ### Can I use this for 2D games?
 
 **Absolutely!** Early lessons are 2D-focused. SDL GPU handles:
+
 - Sprite rendering (textured quads)
 - Particle systems
 - 2D lighting

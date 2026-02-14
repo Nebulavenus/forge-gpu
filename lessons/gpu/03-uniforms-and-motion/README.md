@@ -97,6 +97,10 @@ alongside the time, and the shader handles the rest. In a later lesson
 we'll replace this with a proper projection matrix, but for 2D work this
 one-line fix keeps shapes looking correct on any window size.
 
+**Note:** We're still working in clip space (outputting directly to NDC coordinates).
+To understand the full transformation pipeline from model space to screen space,
+see [lessons/math/02-coordinate-spaces](../../math/02-coordinate-spaces/).
+
 ## Shader compilation
 
 The HLSL source files in `shaders/` are pre-compiled to SPIRV (Vulkan) and

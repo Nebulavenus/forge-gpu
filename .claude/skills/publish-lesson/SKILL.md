@@ -9,6 +9,7 @@ Validate that a lesson is complete, create a feature branch, commit with a
 descriptive message, push, and create a pull request.
 
 The user provides:
+
 - **Lesson number**: two-digit number (e.g. 03)
 - **Lesson name**: kebab-case name (e.g. uniforms-and-motion)
 
@@ -20,6 +21,7 @@ Before committing, verify the lesson has all required pieces from the
 `new-lesson` skill:
 
 ### Required files
+
 - [ ] `lessons/NN-name/main.c` exists
 - [ ] `lessons/NN-name/CMakeLists.txt` exists
 - [ ] `lessons/NN-name/README.md` exists
@@ -27,6 +29,7 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] `.claude/skills/<topic>/SKILL.md` exists (the matching skill)
 
 ### main.c structure
+
 - [ ] Uses `#define SDL_MAIN_USE_CALLBACKS 1`
 - [ ] Implements all 4 callbacks: `SDL_AppInit`, `SDL_AppEvent`, `SDL_AppIterate`, `SDL_AppQuit`
 - [ ] Uses `SDL_calloc` for app_state allocation
@@ -34,11 +37,13 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] Has comprehensive comments explaining *why*, not just *what*
 
 ### Integration with project
+
 - [ ] Root `CMakeLists.txt` includes `add_subdirectory(lessons/NN-name)`
 - [ ] Root `README.md` has a table row for this lesson with link and description
 - [ ] Root `PLAN.md` has the lesson checked off in completed section
 
 ### README.md structure
+
 - [ ] Has `# Lesson NN — Title` header
 - [ ] Has "What you'll learn" section
 - [ ] Has "Result" section (with screenshot or placeholder)
@@ -48,10 +53,17 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] Has "Exercises" section (3-4 exercises)
 
 ### Skill file structure
+
 - [ ] YAML frontmatter with `name`, `description`, and appropriate flags
 - [ ] Explains the key API pattern introduced in the lesson
 - [ ] Includes code template or step-by-step instructions
 - [ ] Documents common mistakes or gotchas
+
+### Markdown linting
+
+- [ ] All markdown files pass linting (`npx markdownlint-cli2 "**/*.md"`)
+- [ ] Code blocks have language tags (MD040)
+- [ ] Tables have consistent column counts (MD060)
 
 If any checks fail, report them to the user and ask if they want to fix them
 before proceeding.
@@ -61,6 +73,7 @@ before proceeding.
 Once validation passes:
 
 ### 1. Create a feature branch
+
 Branch name format: `lesson-NN-name` (e.g., `lesson-03-uniforms-and-motion`)
 
 ```bash
@@ -68,23 +81,57 @@ git checkout -b lesson-NN-name
 ```
 
 ### 2. Stage all changes
+
 Review what will be committed:
+
 ```bash
 git status
 git diff --cached
 ```
 
 Stage all lesson-related files:
+
 ```bash
 git add lessons/NN-name/
 git add .claude/skills/<topic>/
 git add CMakeLists.txt PLAN.md README.md
 ```
 
-### 3. Write a descriptive commit message
+### 3. Run markdown linting
+
+Before committing, verify all markdown files pass linting:
+
+```bash
+npx markdownlint-cli2 "**/*.md"
+```
+
+If errors are found:
+
+1. Try auto-fix: `npx markdownlint-cli2 --fix "**/*.md"`
+2. Manually fix remaining errors (especially MD040 - missing language tags on code blocks)
+3. Re-run to verify: `npx markdownlint-cli2 "**/*.md"`
+4. Stage any fixed files: `git add <fixed-files>`
+
+Common fixes:
+
+- Add language tags: `` ```text ``, `` ```c ``, `` ```bash ``, `` ```markdown ``
+- For nested code blocks, use 4 backticks for outer fence
+- Ensure tables have consistent column counts
+
+**CRITICAL — Never bypass quality checks:**
+
+- **NEVER** disable lint rules to make errors pass
+- **NEVER** modify `.markdownlint-cli2.jsonc` to relax requirements
+- **NEVER** remove or disable CI workflows to unblock the PR
+- **ALWAYS** fix the underlying markdown formatting issue
+
+If linting fails, the markdown MUST be fixed. Quality checks are non-negotiable.
+
+### 4. Write a descriptive commit message
 
 Format:
-```
+
+```text
 Add Lesson NN — Title
 
 Introduces [key concept] with a [description of what the lesson builds].
@@ -107,16 +154,17 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 
 Present the commit message to the user for approval before committing.
 
-### 4. Commit and push
+### 5. Commit and push
+
 ```bash
 git commit -m "$(cat <<'EOF'
-[commit message from step 3]
+[commit message from step 4]
 EOF
 )"
 git push -u origin lesson-NN-name
 ```
 
-### 5. Create a pull request
+### 6. Create a pull request
 
 Use `gh pr create` with a structured description:
 
@@ -154,6 +202,7 @@ EOF
 Present the PR URL to the user when done.
 
 ## Notes
+
 - This skill does NOT auto-merge — the user or maintainer must review the PR
 - If the lesson builds on experimental features, mention that in the PR description
 - Always test that the lesson builds and runs before creating the PR

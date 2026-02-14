@@ -26,10 +26,16 @@ packed into a 20-byte struct:
 
 ```c
 typedef struct Vertex {
-    float x, y;      /* position in NDC */
+    float x, y;      /* position in NDC (clip space with w = 1) */
     float r, g, b;   /* color           */
 } Vertex;
 ```
+
+**Note on coordinate spaces:** These positions are already in **NDC** (i.e., clip
+space with **w = 1**, so the range is [-1, 1]). We're skipping the earlier
+transformation stages (model → world → view) for now and providing coordinates
+that are ready for the GPU. See [lessons/math/02-coordinate-spaces](../../math/02-coordinate-spaces/)
+for a complete explanation of the transformation pipeline.
 
 The GPU can't read CPU memory directly, so we use a **transfer buffer** as a
 staging area: map it, copy data in, then record a GPU copy command to move the
@@ -45,8 +51,9 @@ Shaders are small programs compiled ahead of time and executed on the GPU:
 | Fragment | pixel     | Compute the final color for each covered pixel |
 
 Our vertex shader passes the position through (no transform — we're already in
-NDC) and forwards the color. The fragment shader outputs the interpolated color
-directly.
+NDC/clip with w = 1) and forwards the color. The fragment shader outputs the interpolated color
+directly. In later lessons, we'll transform from model space using matrices
+(see [Lesson 03 — Uniforms & Motion](../03-uniforms-and-motion/)).
 
 Shader source is in `shaders/*.hlsl`. Pre-compiled SPIRV and DXIL bytecodes
 are in `shaders/*_spirv.h` and `shaders/*_dxil.h`.

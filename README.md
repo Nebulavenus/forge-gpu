@@ -40,6 +40,7 @@ Learn the SDL GPU API and modern rendering techniques:
 ### Math Lessons (lessons/math/)
 
 *Coming soon* — Standalone programs teaching the math behind graphics:
+
 - Vectors, dot/cross products, normalization
 - Matrices, transformations, coordinate spaces
 - Quaternions, interpolation, and more
@@ -60,6 +61,7 @@ bespoke math in each lesson. The library is:
 - **Learning-focused** — every function has a corresponding math lesson explaining the concept
 
 When you need new math functionality, use the `/math-lesson` skill. It creates:
+
 1. A small program demonstrating the concept
 2. A README explaining the theory and where it's used
 3. An update to the math library with documented implementation
@@ -105,12 +107,14 @@ build\lessons\01-hello-window\Debug\01-hello-window.exe
 The math library has comprehensive automated tests (26 tests covering all operations).
 
 **Run all tests:**
+
 ```bash
 cd build
 ctest -C Debug --output-on-failure
 ```
 
 **Run tests directly:**
+
 ```bash
 cmake --build build --config Debug --target test_math
 build/tests/math/Debug/test_math.exe
@@ -168,7 +172,7 @@ The flags: `-T vs_6_0` = vertex shader model 6.0, `-T ps_6_0` = pixel
 
 ## Project Structure
 
-```
+```text
 forge-gpu/
 ├── lessons/
 │   ├── math/              Math lessons — standalone programs + theory
@@ -199,6 +203,7 @@ forge-gpu/
 ```
 
 **How it fits together:**
+
 - **Math lessons** teach concepts and add to `common/math/`
 - **GPU lessons** use the math library and link to math lessons for theory
 - **Skills** automate lesson creation and teach AI agents the patterns
@@ -227,6 +232,7 @@ project to enable Claude to build games and tools with you.
 | [publish-lesson](.claude/skills/publish-lesson/SKILL.md) | `/publish-lesson` | Validate, commit, and PR a completed lesson |
 
 **How to use:**
+
 1. Copy `.claude/skills/` into your project root
 2. Tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU application"*
 3. Or just type `/sdl-gpu-setup` in the chat
@@ -242,11 +248,13 @@ This project is designed for exploration with an AI assistant. Using
 [Claude Code](https://claude.ai/code) or [Claude](https://claude.ai), you can:
 
 **While learning:**
+
 - *"What does SDL_ClaimWindowForGPUDevice actually do?"*
 - *"Why do we need a transfer buffer to upload vertex data?"*
 - *"Explain the dot product and show me the math lesson"*
 
 **While building:**
+
 - *"Use the sdl-gpu-setup skill to create an SDL GPU application"*
 - *"Add a rotating quad using the math library"*
 - *"Help me add textures to my renderer"*

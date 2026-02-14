@@ -7,11 +7,13 @@ argument-hint: [number] [concept-name] [description]
 Create a new math lesson and update the math library (`common/math/forge_math.h`).
 
 **When to use this skill:**
+
 - You need math functionality that doesn't exist in `forge_math.h` yet
 - A GPU lesson requires new math operations
 - You want to teach a foundational math concept
 
 **Smart behavior:**
+
 - Before creating a lesson, check if the math already exists in `forge_math.h`
 - If it exists, just document it better or create a lesson for existing code
 - If creating from a GPU lesson's needs, extract only the math (not GPU-specific code)
@@ -19,6 +21,7 @@ Create a new math lesson and update the math library (`common/math/forge_math.h`
 ## Arguments
 
 The user (or you) can provide:
+
 - **Number**: two-digit lesson number (e.g. 01, 02)
 - **Concept name**: kebab-case (e.g. vectors, matrices, quaternions)
 - **Description**: what this teaches (e.g. "Vectors, dot product, normalization")
@@ -42,17 +45,20 @@ If any are missing, infer from context or ask.
 A small, focused C program that demonstrates the math concept visually or numerically.
 
 **Requirements:**
+
 - **Standalone** — Can run without GPU (uses SDL for window/input if visual, or just printf if not)
 - **Clear output** — Shows the math in action (visualization or printed results)
 - **Well-commented** — Explains what's happening and why
 - **Uses the math library** — `#include "math/forge_math.h"`
 
 **Examples:**
+
 - Vectors: print dot products, show perpendicular/parallel cases
 - Matrices: print a rotation matrix, show before/after transformation
 - Visual: use SDL to draw vectors, show transformations in a window
 
 **Template structure:**
+
 ```c
 /*
  * Math Lesson NN — Concept Name
@@ -82,6 +88,13 @@ int main(int argc, char *argv[])
 }
 ```
 
+**Console output formatting:**
+
+- **Use ASCII-only characters** for console output (cross-platform compatibility)
+- Avoid Unicode box-drawing, symbols, or special characters that may not render on Windows Terminal
+- Good: `-`, `=`, `*`, `|`, `->`, `[OK]`, `[!]`, "degrees", "in", "+/-"
+- Bad: `─`, `═`, `•`, `↓`, `→`, `✓`, `⚠`, `°`, `∈`, `±` (may render as garbled text on Windows)
+
 ### 4. Create `CMakeLists.txt`
 
 ```cmake
@@ -99,12 +112,33 @@ add_custom_command(TARGET NN-concept-name POST_BUILD
 ### 5. Create `README.md`
 
 Structure:
-```markdown
+
+````markdown
 # Math Lesson NN — Concept Name
+
+[Brief subtitle explaining what this teaches]
 
 ## What you'll learn
 
 [Bullet list of math concepts covered]
+
+## Result
+
+[Brief description of expected demo output or what the program demonstrates]
+
+**Example output:**
+```text
+[Copy actual program output here]
+```
+
+**Important:** Copy output directly from running the program—don't manually type it.
+
+## Key concepts
+
+[Bullet list of core takeaways:]
+- **Concept 1** — Brief explanation
+- **Concept 2** — Brief explanation
+- **Formula/operation** — What it does and when to use it
 
 ## The Math
 
@@ -128,13 +162,20 @@ Graphics and game programming uses this for:
 - [Link to GPU lesson] uses `function_name()` for [purpose]
 - [Link to GPU lesson] uses `function_name()` for [purpose]
 
-## Running the demo
+## Building
 
 ```bash
 cmake -B build
 cmake --build build --config Debug
+
+# Windows
+build\lessons\math\NN-concept-name\Debug\NN-concept-name.exe
+
+# Linux / macOS
 ./build/lessons/math/NN-concept-name/NN-concept-name
 ```
+
+[Brief note on what the demo shows]
 
 ## Exercises
 
@@ -146,7 +187,7 @@ cmake --build build --config Debug
 
 - [Relevant math lesson that builds on this]
 - [External resource if helpful]
-```
+````
 
 ### 6. Update `common/math/forge_math.h`
 
@@ -159,6 +200,7 @@ cmake --build build --config Debug
 - **Comments**: Explain the math, not just the code
 
 **Example:**
+
 ```c
 /* Compute the dot product of two 3D vectors.
  *
@@ -207,24 +249,48 @@ cmake --build build --config Debug
 
 Verify the demo runs and produces expected output.
 
+### 10. Run markdown linting
+
+Use the `/markdown-lint` skill to check all markdown files:
+
+```bash
+npx markdownlint-cli2 "**/*.md"
+```
+
+If errors are found:
+
+1. Try auto-fix: `npx markdownlint-cli2 --fix "**/*.md"`
+2. Manually fix remaining errors (especially MD040 - missing language tags)
+3. Verify: `npx markdownlint-cli2 "**/*.md"`
+
+Common fixes needed:
+
+- Add language tags to code blocks (`` ```text ``, `` ```c ``, `` ```bash ``)
+- Use 4 backticks for nested code blocks (when showing markdown in markdown)
+
 ## Math Library Conventions
 
 ### Coordinate System
+
 - **Right-handed, Y-up**: +X right, +Y up, +Z forward
 - **CCW winding**: Front faces have counter-clockwise vertices
 
 ### Matrix Layout
+
 - **Column-major storage and math** (matches HLSL)
 - Multiplication: `v' = M * v`
 - Transform order: `C = A * B` means "apply B first, then A"
 
 ### Naming
+
 - `vec2`, `vec3`, `vec4`, `mat4` — types
 - `vec3_add`, `mat4_rotate_z` — functions
 - No abbreviations except standard terms (vec, mat, lerp)
 
 ### Documentation Standard
+
 Every function needs:
+
 1. Summary sentence
 2. Parameter descriptions (if not obvious)
 3. Return value explanation
@@ -262,6 +328,8 @@ Every function needs:
 - **Visual when possible**: Showing rotations/transformations visually is more intuitive than printing numbers
 - **Cross-reference extensively**: Help users connect math theory to GPU practice
 - **Readable code**: This is teaching code, not production — clarity over performance
+- **ASCII-only output**: Use only ASCII characters in printf output for cross-platform compatibility (Windows Terminal may not render Unicode correctly)
+- **Example output accuracy**: If including example output in README, copy it directly from the actual program—don't manually type it. Learners will compare their output to yours.
 
 ## When NOT to Create a Lesson
 

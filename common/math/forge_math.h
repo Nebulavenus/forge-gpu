@@ -608,4 +608,108 @@ static inline mat4 mat4_rotate_y(float angle_radians)
     return m;
 }
 
+/* Create a view matrix using the "look at" method.
+ *
+ * This creates a camera transformation that:
+ *   - Positions the camera at 'eye'
+ *   - Points the camera toward 'target'
+ *   - Orients the camera so 'up' is roughly upward
+ *
+ * In the resulting view space:
+ *   - Camera is at the origin
+ *   - Camera looks down the -Z axis
+ *   - +X is to the right, +Y is up
+ *
+ * This is the standard "view matrix" for 3D rendering.
+ *
+ * Parameters:
+ *   eye    — Camera position in world space
+ *   target — Point the camera is looking at
+ *   up     — "Up" direction in world space (usually (0,1,0))
+ *
+ * Usage:
+ *   vec3 eye = vec3_create(0.0f, 2.0f, 5.0f);
+ *   vec3 target = vec3_create(0.0f, 0.0f, 0.0f);
+ *   vec3 up = vec3_create(0.0f, 1.0f, 0.0f);
+ *   mat4 view = mat4_look_at(eye, target, up);
+ *
+ * Math:
+ *   forward = normalize(target - eye)
+ *   right = normalize(cross(forward, up))
+ *   up' = cross(right, forward)
+ *
+ *   Then build a matrix that rotates and translates world space into view space.
+ *
+ * See: lessons/math/02-coordinate-spaces
+ */
+static inline mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up)
+{
+    /* Compute camera basis vectors */
+    vec3 forward = vec3_normalize(vec3_sub(target, eye));
+    vec3 right = vec3_normalize(vec3_cross(forward, up));
+    vec3 up_prime = vec3_cross(right, forward);
+
+    /* Build rotation part (inverse of camera orientation) */
+    mat4 m = {
+        right.x,     up_prime.x,    -forward.x,    0.0f,
+        right.y,     up_prime.y,    -forward.y,    0.0f,
+        right.z,     up_prime.z,    -forward.z,    0.0f,
+        0.0f,        0.0f,           0.0f,         1.0f
+    };
+
+    /* Apply translation (move world opposite to camera position) */
+    m.m[12] = -vec3_dot(right, eye);
+    m.m[13] = -vec3_dot(up_prime, eye);
+    m.m[14] =  vec3_dot(forward, eye);
+
+    return m;
+}
+
+/* Create a perspective projection matrix.
+ *
+ * This transforms view space into clip space, applying perspective foreshortening
+ * (distant objects appear smaller).
+ *
+ * After applying this matrix, you must do perspective division (x/w, y/w, z/w)
+ * to get normalized device coordinates (NDC).
+ *
+ * Parameters:
+ *   fov_y_radians — Vertical field of view in radians (e.g., 60° = π/3)
+ *   aspect_ratio  — Width / height (e.g., 16/9 = 1.777...)
+ *   near_plane    — Distance to near clipping plane (e.g., 0.1)
+ *   far_plane     — Distance to far clipping plane (e.g., 100.0)
+ *
+ * Coordinate ranges after projection and perspective divide:
+ *   X ∈ [-1, 1] — left to right
+ *   Y ∈ [-1, 1] — bottom to top
+ *   Z ∈ [0, 1]  — near to far (Vulkan/Metal/D3D convention)
+ *
+ * Usage:
+ *   float fov = 60.0f * FORGE_DEG2RAD;
+ *   float aspect = 1920.0f / 1080.0f;
+ *   mat4 proj = mat4_perspective(fov, aspect, 0.1f, 100.0f);
+ *
+ * See: lessons/math/02-coordinate-spaces
+ */
+static inline mat4 mat4_perspective(float fov_y_radians, float aspect_ratio,
+                                     float near_plane, float far_plane)
+{
+    float tan_half_fov = tanf(fov_y_radians * 0.5f);
+
+    mat4 m = { 0 };  /* Zero-initialize */
+
+    /* Perspective scaling */
+    m.m[0] = 1.0f / (aspect_ratio * tan_half_fov);
+    m.m[5] = 1.0f / tan_half_fov;
+
+    /* Depth mapping: map [near, far] to [0, 1] (Vulkan/D3D convention) */
+    m.m[10] = far_plane / (near_plane - far_plane);
+    m.m[11] = -1.0f;  /* w' = -z (for perspective divide) */
+
+    /* Depth translation */
+    m.m[14] = -(far_plane * near_plane) / (far_plane - near_plane);
+
+    return m;
+}
+
 #endif /* FORGE_MATH_H */

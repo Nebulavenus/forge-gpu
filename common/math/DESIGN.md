@@ -37,7 +37,7 @@ with it via skills.
 
 ## Directory Structure
 
-```
+```text
 common/math/
 ├── DESIGN.md         # This file — design decisions and conventions
 ├── README.md         # User-facing: how to use the library
@@ -48,7 +48,7 @@ common/math/
 
 **Right-handed, Y-up** — Standard for most 3D graphics and game engines.
 
-```
+```text
      +Y (up)
       |
       |
@@ -59,15 +59,18 @@ common/math/
 ```
 
 **Why right-handed?**
+
 - Matches OpenGL, Vulkan, and most game engines
 - Cross product follows right-hand rule: `X × Y = Z`
 - Intuitive for world space: X is right, Y is up, Z is forward
 
 **Why Y-up?**
+
 - Industry standard (Maya, Blender, Unity, Unreal)
 - Z-up (e.g., CAD software) is less common in real-time graphics
 
 **Important:** SDL GPU uses bottom-left origin for NDC (Normalized Device Coordinates):
+
 - X: -1 (left) to +1 (right)
 - Y: -1 (bottom) to +1 (top)
 - Z: 0 (near) to 1 (far) — matches Vulkan/D3D12, NOT OpenGL
@@ -82,7 +85,7 @@ Our world space is Y-up, but NDC has its own conventions (this is normal in grap
 
 A `mat4` stores 16 floats in **column-major** order in memory:
 
-```
+```c
 float m[16] = {
     m0,  m1,  m2,  m3,   // column 0 (index 0–3)
     m4,  m5,  m6,  m7,   // column 1 (index 4–7)
@@ -93,7 +96,7 @@ float m[16] = {
 
 As a matrix (mathematical notation):
 
-```
+```text
 | m0  m4  m8   m12 |   // row 0
 | m1  m5  m9   m13 |   // row 1
 | m2  m6  m10  m14 |   // row 2
@@ -101,6 +104,7 @@ As a matrix (mathematical notation):
 ```
 
 **For a transform matrix:**
+
 - Column 0 (m[0-3]): X-axis direction + scale
 - Column 1 (m[4-7]): Y-axis direction + scale
 - Column 2 (m[8-11]): Z-axis direction + scale
@@ -134,6 +138,7 @@ mat4 mat4_multiply(mat4 a, mat4 b) {
 ### Why Column-Major?
 
 **Advantages:**
+
 1. **Matches HLSL** — Our shader language uses column-major by default
 2. **Matches math notation** — `v' = M * v` reads naturally
 3. **Efficient for GPU** — Matrices are often uploaded as-is to shaders
@@ -149,7 +154,7 @@ are row-major). We accept this trade-off for shader compatibility.
 **Counter-clockwise (CCW) front faces** — When viewed from the camera, triangles
 with vertices in counter-clockwise order are facing toward you.
 
-```
+```text
 Looking at a triangle from the front:
     v0
     /\
@@ -162,6 +167,7 @@ Vertices v0→v2→v1 go clockwise → back-facing
 ```
 
 **Why CCW?**
+
 - SDL GPU default: `SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE`
 - OpenGL convention
 - Right-hand rule: curl fingers in vertex order, thumb points toward camera = front
@@ -191,6 +197,7 @@ typedef struct mat4 {
 
 **Type naming:** We use `vec2/vec3/vec4` instead of HLSL's `float2/float3/float4`
 because:
+
 1. Standard in C math libraries (GLM, cglm, etc.)
 2. Portable across shader languages (HLSL, GLSL, Metal Shading Language)
 3. Clear type names in C (no confusion with C's `float` primitive)
@@ -261,6 +268,7 @@ mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up);
 | `mat4_verb_noun` | `mat4_rotate_z` | Matrix operation with qualifier |
 
 **No abbreviations** except standard math terms:
+
 - `vec` (vector), `mat` (matrix) — universally understood
 - `lerp` (linear interpolation) — industry standard
 - Otherwise spell it out: `normalize` not `norm`, `multiply` not `mul`
@@ -335,6 +343,7 @@ Prefix with `FORGE_` to avoid collisions with system headers.
 ## What NOT to Include (Initially)
 
 Keep the library focused. Don't add:
+
 - Quaternions (until we have a lesson teaching them)
 - Complex transforms (compose them from primitives)
 - SIMD/optimization (readability first, optimize in real projects if needed)
@@ -345,6 +354,7 @@ Add features when lessons need them, not speculatively.
 ## Testing Strategy
 
 Each math lesson includes a program that:
+
 - Demonstrates the concept visually or numerically
 - Provides examples for users to understand usage
 
@@ -379,6 +389,7 @@ Same as the rest of forge-gpu: **zlib** (matches SDL).
 ---
 
 **Next steps:**
+
 1. Create `README.md` explaining how to use the library
 2. Implement `forge_math.h` with initial types and operations
 3. Create math lessons for vec2/vec3 and matrices

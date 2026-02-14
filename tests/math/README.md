@@ -32,11 +32,13 @@ CTest runs all registered tests and provides a summary.
 ## Test output
 
 Each test prints:
+
 - ✅ `PASS` if the test succeeds
 - ❌ `FAIL` with expected vs actual values if it fails
 
 Example output:
-```
+
+```text
 === forge-gpu Math Library Tests ===
 vec2 tests:
   Testing: vec2_create
@@ -65,6 +67,7 @@ Use the exit code in CI/CD pipelines to catch regressions.
 When you add new math functions to `common/math/forge_math.h`:
 
 1. Add a test function to `test_math.c`:
+
    ```c
    static void test_vec3_my_new_function(void)
    {
@@ -77,6 +80,7 @@ When you add new math functions to `common/math/forge_math.h`:
    ```
 
 2. Call it from `main()`:
+
    ```c
    SDL_Log("\nvec3 tests:");
    test_vec3_create();
@@ -85,6 +89,7 @@ When you add new math functions to `common/math/forge_math.h`:
    ```
 
 3. Rebuild and run:
+
    ```bash
    cmake --build build --config Debug --target test_math
    build/tests/math/Debug/test_math.exe

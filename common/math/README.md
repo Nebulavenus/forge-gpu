@@ -39,6 +39,7 @@ in the shader.
 ### Vector Operations
 
 Each vector type supports:
+
 - **Construction:** `vec3_create(x, y, z)`
 - **Arithmetic:** `add`, `sub`, `scale`
 - **Dot product:** `vec3_dot(a, b)`
@@ -67,7 +68,7 @@ Each vector type supports:
 
 **Right-handed, Y-up:**
 
-```
+```text
      +Y (up)
       |
       |
@@ -86,6 +87,7 @@ See [DESIGN.md](DESIGN.md) for detailed explanations.
 ## Learning Resources
 
 Every function in `forge_math.h` includes:
+
 - Clear documentation
 - Usage examples
 - Geometric intuition
@@ -124,6 +126,7 @@ Need a function that doesn't exist yet?
 3. **Or add manually** — Follow the documentation style in `forge_math.h`
 
 Every new math operation should have:
+
 - A clear use case (which lesson/project needs it?)
 - A corresponding lesson teaching the concept
 - Comprehensive documentation with examples
@@ -142,6 +145,7 @@ Our C types map directly to HLSL types when uploading data to shaders:
 **Example: Vertex struct in C and HLSL**
 
 C code (CPU side):
+
 ```c
 typedef struct Vertex {
     vec2 position;  // 8 bytes
@@ -155,6 +159,7 @@ Vertex v = {
 ```
 
 HLSL shader (GPU side):
+
 ```hlsl
 struct VSInput {
     float2 position : TEXCOORD0;

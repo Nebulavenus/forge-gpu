@@ -126,6 +126,7 @@ SDL_SubmitGPUCommandBuffer(cmd);
 ```
 
 **Key details:**
+
 - Push happens on the **command buffer**, not the render pass
 - Push **before** `SDL_BeginGPURenderPass` — SDL latches the data at pass start
 - Data is copied internally — your struct can live on the stack

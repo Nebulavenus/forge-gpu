@@ -1,0 +1,58 @@
+// Markdownlint configuration for forge-gpu
+// See: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+{
+  "config": {
+    // Default: enable all rules
+    "default": true,
+
+    // MD013/line-length - Disable line length limits (lessons need flexibility)
+    "MD013": false,
+
+    // MD024/no-duplicate-heading - Allow duplicate headings (lessons reuse "Example", "Usage")
+    "MD024": {
+      "siblings_only": true  // Only flag duplicates at the same level
+    },
+
+    // MD026/no-trailing-punctuation - Allow punctuation in headings ("How it works:")
+    "MD026": false,
+
+    // MD036/no-emphasis-as-heading - Allow bold text that looks like headings
+    "MD036": false,
+
+    // MD033/no-inline-html - Allow inline HTML (sometimes needed for formatting)
+    "MD033": false,
+
+    // MD034/no-bare-urls - Allow bare URLs in examples
+    "MD034": false,
+
+    // MD040/fenced-code-language - REQUIRE language tags on code blocks (IMPORTANT!)
+    "MD040": true,
+
+    // MD041/first-line-heading - First line should be top-level heading
+    // Disabled because SKILL.md files have YAML frontmatter
+    "MD041": false,
+
+    // MD046/code-block-style - Consistent code fence style
+    "MD046": {
+      "style": "fenced"  // Use ``` instead of indented code blocks
+    },
+
+    // MD060/table-column-style - Enforce consistent table alignment
+    "MD060": {
+      "style": "consistent"  // Tables should align consistently within themselves
+    }
+  },
+
+  // Globs for files to lint
+  "globs": [
+    "**/*.md"
+  ],
+
+  // Files/directories to ignore
+  "ignores": [
+    "node_modules",
+    "build",
+    "**/build/**",
+    "third_party"
+  ]
+}

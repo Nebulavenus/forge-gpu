@@ -25,6 +25,7 @@ enable_testing()
 
 # ── Math Lessons ────────────────────────────────────────────────────────────
 add_subdirectory(lessons/math/01-vectors)
+add_subdirectory(lessons/math/02-coordinate-spaces)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)

@@ -3,6 +3,7 @@
 A learning platform and building tool for real-time graphics with SDL's GPU API.
 
 **Dual purpose:**
+
 1. **Learn** — Guided lessons teaching GPU programming, math, and game techniques
 2. **Forge** — Skills and libraries enabling humans + AI to build real projects
 
@@ -33,6 +34,7 @@ more productive. This project teaches graphics, math, and game techniques — th
 provides reusable skills and libraries so humans and AI can build together.
 
 ### Learning (lessons/)
+
 - Every line of code understandable by someone new to graphics/game dev
 - Extensive comments explaining *why*, not just *what*
 - Progressive curriculum: each lesson builds on the previous
@@ -41,12 +43,14 @@ provides reusable skills and libraries so humans and AI can build together.
 - GPU lessons integrate math library (no bespoke math in GPU code)
 
 ### Forging (skills + libraries)
+
 - **Skills** (.claude/skills/) — Reusable Claude Code skills distilled from lessons
 - **Math library** (common/math/) — Documented, readable, learning-focused
 - Every lesson produces a skill; AI agents learn the same patterns as humans
 - Goal: Enable anyone to use Claude to build games and renderers confidently
 
 ### Code conventions
+
 - **Language:** C99, matching SDL's own style conventions
 - **Naming:** SDL_PrefixedNames for public API, lowercase_snake for local/internal
 - **Constants:** No magic numbers — #define or enum everything
@@ -75,12 +79,14 @@ forge-gpu/
 ```
 
 ### How it fits together
+
 1. **Math lessons** teach concepts, add to `common/math/`
 2. **GPU lessons** use math library, refer to math lessons for theory
 3. **Skills** automate lesson creation and teach AI agents the patterns
 4. **Math library** is reusable in any project (lessons or real builds)
 
 ## When writing GPU lessons (lessons/gpu/)
+
 - Start each README.md with what the reader will learn
 - Show the result (screenshot) before diving into code
 - Introduce API calls one at a time with context
@@ -93,6 +99,7 @@ forge-gpu/
   mistakes, and a ready-to-use code template
 
 ## When writing math lessons (lessons/math/)
+
 - Use the **/math-lesson** skill to scaffold lesson + update library
 - Small, focused program demonstrating one concept clearly
 - README explains the math, the intuition, and where it's used in graphics/games
@@ -103,6 +110,7 @@ forge-gpu/
 ## Using the math library (common/math/)
 
 **In your code:**
+
 ```c
 #include "math/forge_math.h"  // Or whatever we name it
 
@@ -111,11 +119,13 @@ mat4 rotation = mat4_rotate_z(angle);
 ```
 
 **When to use existing math:**
+
 - GPU lessons should always use the math library
 - Real projects building with forge-gpu should use it too
 - Reference the math library README and relevant lessons for documentation
 
 **When to add new math:**
+
 - You need a function that doesn't exist yet
 - Use **/math-lesson** skill (invokable by humans or Claude automatically)
 - This creates: math lesson + updates library + documents the concept
@@ -126,6 +136,7 @@ mat4 rotation = mat4_rotate_z(angle);
 Skills are Claude Code commands that teach AI agents patterns from lessons.
 
 **Available skills:**
+
 - **/math-lesson** — Add a math concept (lesson + library update)
 - **/new-lesson** — Create a new GPU lesson
 - **/publish-lesson** — Commit and PR a completed lesson
@@ -133,6 +144,7 @@ Skills are Claude Code commands that teach AI agents patterns from lessons.
 - And more — see `.claude/skills/` directory
 
 **How they work:**
+
 - Users invoke with `/skill-name` in the chat
 - Claude can also invoke them automatically when relevant
 - Each skill knows the project conventions and generates correct code
@@ -142,7 +154,60 @@ Skills are Claude Code commands that teach AI agents patterns from lessons.
 skill. When creating GPU lessons, ensure they use the math library and reference
 math lessons for theory.
 
+## Quality Assurance
+
+This project maintains quality through automated linting and CI workflows. These
+checks ensure consistency, readability, and maintainability for learners and
+contributors.
+
+### Markdown linting
+
+All markdown files are linted with markdownlint-cli2 in CI. Configuration is in
+`.markdownlint-cli2.jsonc`.
+
+**Key rules:**
+
+- **MD040** — All code blocks MUST have language tags (` ```c`, ` ```bash`, ` ```text`)
+- **MD060** — Tables must have consistent column alignment
+- Line length limits are disabled (lessons need flexibility)
+- Blank lines around lists/code blocks are lenient
+
+**Testing locally:**
+
+```bash
+npx markdownlint-cli2 "**/*.md"
+```
+
+**Common fixes:**
+
+- Missing language tag: ` ``` ` → ` ```c` or ` ```text` or ` ```bash`
+- Use `text` for plain output, diagrams, or examples without syntax
+
+The linter runs automatically on PRs and will fail if issues are found.
+
+### CRITICAL: Never circumvent quality checks
+
+**NEVER do any of the following to "unblock" changes:**
+
+- ❌ Disable or remove lint rules to make errors pass
+- ❌ Relax lint requirements or thresholds to allow failing code
+- ❌ Remove or disable CI workflows (`.github/workflows/*.yml`)
+- ❌ Add lint ignore comments to skip validation
+- ❌ Modify `.markdownlint-cli2.jsonc` to weaken existing rules
+
+**Always fix the underlying issue instead:**
+
+- ✅ Fix markdown formatting to meet the existing standards
+- ✅ Add proper language tags to code blocks
+- ✅ Correct table formatting
+- ✅ Ask the user if the rule seems problematic (don't bypass it yourself)
+
+Quality checks exist to maintain learning quality and consistency. Bypassing them
+degrades the project for all users. When CI fails, fix the code — never weaken
+the checks.
+
 ## Dependencies
+
 - SDL3 (with GPU API)
 - CMake 3.24+
 - A Vulkan/Metal/D3D12-capable GPU

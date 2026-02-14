@@ -6,6 +6,7 @@ disable-model-invocation: true
 ---
 
 Create a new lesson for the forge-gpu project. The user will provide:
+
 - **Number**: two-digit lesson number (e.g. 02)
 - **Name**: short kebab-case name (e.g. first-triangle)
 - **Description**: what the lesson teaches
@@ -25,12 +26,14 @@ If any of these are missing, ask the user before proceeding.
 3. **Create main.c** using the SDL callback architecture:
    - `#define SDL_MAIN_USE_CALLBACKS 1` before includes
    - Include required headers:
+
      ```c
      #include <SDL3/SDL.h>
      #include <SDL3/SDL_main.h>
      #include <stddef.h>    /* offsetof */
      #include "math/forge_math.h"  /* ALWAYS include the math library */
      ```
+
    - `SDL_AppInit` — create GPU device, window, claim swapchain, allocate app_state
    - `SDL_AppEvent` — handle SDL_EVENT_QUIT (return SDL_APP_SUCCESS)
    - `SDL_AppIterate` — per-frame GPU work
@@ -43,6 +46,7 @@ If any of these are missing, ask the user before proceeding.
    - **Use math library types for all math operations** (see "Using the Math Library" below)
 
 4. **Create CMakeLists.txt**:
+
    ```cmake
    add_executable(NN-name WIN32 main.c)
    target_include_directories(NN-name PRIVATE ${FORGE_COMMON_DIR})
@@ -78,6 +82,14 @@ If any of these are missing, ask the user before proceeding.
 10. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
     distills the lesson into a reusable pattern with YAML frontmatter
 
+11. **Run markdown linting**: Use the `/markdown-lint` skill to verify all markdown files pass linting:
+
+    ```bash
+    npx markdownlint-cli2 "**/*.md"
+    ```
+
+    If errors found, auto-fix first then manually fix remaining issues (especially MD040 language tags)
+
 ## Using the Math Library
 
 **CRITICAL:** GPU lessons must use the math library (`common/math/forge_math.h`) for all math operations. Never write bespoke math in GPU lessons.
@@ -94,6 +106,7 @@ typedef struct Vertex {
 ```
 
 **HLSL mapping:**
+
 - `vec2` in C → `float2` in HLSL shader
 - `vec3` in C → `float3` in HLSL shader
 - `vec4` in C → `float4` in HLSL shader
@@ -128,6 +141,7 @@ v.color = vec3_create(1.0f, 0.0f, 0.0f);
 ### Common math operations
 
 **Transformations:**
+
 ```c
 mat4 rotation = mat4_rotate_z(angle);
 mat4 translation = mat4_translate(vec3_create(x, y, z));
@@ -135,6 +149,7 @@ mat4 scale = mat4_scale(vec3_create(sx, sy, sz));
 ```
 
 **Vector operations:**
+
 ```c
 vec3 sum = vec3_add(a, b);
 vec3 normalized = vec3_normalize(v);
@@ -148,9 +163,11 @@ If the math library doesn't have an operation you need:
 1. Check `common/math/forge_math.h` — might already exist
 2. Check `lessons/math/` — might have a lesson teaching it
 3. Use `/math-lesson` to add it:
-   ```
+
+   ```bash
    /math-lesson 02 quaternions "Quaternion rotations"
    ```
+
 4. This creates: math lesson + library update + documentation
 
 ### Cross-referencing math lessons
