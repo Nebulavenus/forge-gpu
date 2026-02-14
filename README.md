@@ -76,6 +76,7 @@ project's `.claude/skills/` to teach your AI assistant the same patterns.
 | Skill | Invoke with | Pattern |
 |-------|-------------|---------|
 | [sdl-gpu-setup](.claude/skills/sdl-gpu-setup/SKILL.md) | `/sdl-gpu-setup` | SDL3 GPU app with callbacks, window, swapchain, render loop |
+| [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson 02 first-triangle "Draw a colored triangle"` | Scaffold a new lesson with all required files |
 
 **Usage:** Clone this repo (or copy the `.claude/skills/` directory into your
 project), then tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU
