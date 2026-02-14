@@ -5,10 +5,10 @@
 - [x] **Project scaffolding** — CMakeLists.txt, FetchContent for SDL3, common/ header, directory structure
 - [x] **zlib LICENSE**
 - [x] **Lesson 01 — Hello Window** — SDL callbacks, GPU device creation, swapchain, clear screen via render pass
+- [x] **Lesson 02 — First Triangle** — Vertex buffers, shaders (SPIRV/DXIL), graphics pipeline, sRGB swapchain
 
 ## Up Next
 
-- [x] **Lesson 02 — First Triangle** — Vertex buffers, shaders (SPIRV/DXIL), graphics pipeline, the classic colored triangle
 - [ ] **Lesson 03 — Uniforms & Motion** — Uniform buffers, passing time to shaders, spinning triangle
 
 ## Future Ideas
