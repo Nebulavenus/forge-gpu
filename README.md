@@ -17,7 +17,7 @@ assistant) to build games and renderers with SDL GPU confidently.
 | # | Name | What you'll learn |
 |---|------|-------------------|
 | 01 | [Hello Window](lessons/01-hello-window/) | GPU device, swapchain, command buffers, render passes |
-| 02 | First Triangle | *coming soon* — vertex buffers, shaders, graphics pipeline |
+| 02 | [First Triangle](lessons/02-first-triangle/) | Vertex buffers, shaders, graphics pipeline |
 | 03 | Uniforms & Motion | *coming soon* — uniform buffers, animating with time |
 
 See [PLAN.md](PLAN.md) for the full roadmap.
@@ -37,6 +37,14 @@ cmake -B build
 cmake --build build --config Debug
 ```
 
+Optionally, initialise the SDL source submodule if you want to browse the
+SDL headers and GPU backend code locally (this is for reference only — the
+build uses FetchContent):
+
+```bash
+git submodule update --init
+```
+
 Run a lesson:
 
 ```bash
@@ -54,8 +62,13 @@ forge-gpu/
 ├── common/          Header-only utilities shared across lessons
 │   └── forge.h
 ├── lessons/         One directory per lesson, each a standalone program
-│   └── 01-hello-window/
+│   ├── 01-hello-window/
+│   │   ├── main.c
+│   │   ├── CMakeLists.txt
+│   │   └── README.md
+│   └── 02-first-triangle/
 │       ├── main.c
+│       ├── shaders/        HLSL source + compiled SPIRV/DXIL headers
 │       ├── CMakeLists.txt
 │       └── README.md
 ├── .claude/
@@ -76,7 +89,8 @@ project's `.claude/skills/` to teach your AI assistant the same patterns.
 | Skill | Invoke with | Pattern |
 |-------|-------------|---------|
 | [sdl-gpu-setup](.claude/skills/sdl-gpu-setup/SKILL.md) | `/sdl-gpu-setup` | SDL3 GPU app with callbacks, window, swapchain, render loop |
-| [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson 02 first-triangle "Draw a colored triangle"` | Scaffold a new lesson with all required files |
+| [first-triangle](.claude/skills/first-triangle/SKILL.md) | `/first-triangle` | Vertex buffers, shaders, graphics pipeline — draw colored geometry |
+| [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson 03 uniforms "Add uniform buffers"` | Scaffold a new lesson with all required files |
 
 **Usage:** Clone this repo (or copy the `.claude/skills/` directory into your
 project), then tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU

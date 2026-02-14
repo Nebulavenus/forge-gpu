@@ -8,7 +8,7 @@
 
 ## Up Next
 
-- [ ] **Lesson 02 — First Triangle** — Vertex buffers, shaders (SPIRV/DXIL/MSL), graphics pipeline, the classic colored triangle
+- [x] **Lesson 02 — First Triangle** — Vertex buffers, shaders (SPIRV/DXIL), graphics pipeline, the classic colored triangle
 - [ ] **Lesson 03 — Uniforms & Motion** — Uniform buffers, passing time to shaders, spinning triangle
 
 ## Future Ideas
@@ -17,10 +17,11 @@
 - [ ] Depth buffer & 3D transforms (MVP matrices)
 - [ ] Loading a mesh (OBJ or glTF)
 - [ ] Basic lighting (diffuse + specular)
+- [ ] Gamma correction & sRGB — what linear colour space means, why sRGB exists, how `SDR_LINEAR` works under the hood.  Note: explain the naming — `SDR_LINEAR` refers to the shader's working space (linear), not the framebuffer format (which is sRGB).  `SDR` vs `SDR_LINEAR` names the input contract, not the output encoding.
 - [ ] Render-to-texture / offscreen passes
 - [ ] Compute shaders
 - [ ] Instanced rendering
 
 ## Open Questions
 
-- Shader workflow: ship pre-compiled SPIRV, or integrate SDL_shadercross at build time?
+- ~~Shader workflow~~ **Resolved:** ship HLSL source + pre-compiled SPIRV & DXIL headers; compile with `dxc` from Vulkan SDK

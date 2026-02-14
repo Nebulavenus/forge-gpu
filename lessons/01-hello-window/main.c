@@ -11,6 +11,7 @@
  *   - Command buffers      — batches of GPU work submitted per frame
  *   - Swapchain textures   — the images the window displays
  *   - Render passes        — a scope in which draw (or clear) operations happen
+ *   - sRGB swapchain       — correct gamma for colors that look right on screen
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -25,10 +26,13 @@
 #define WINDOW_WIDTH  800
 #define WINDOW_HEIGHT 600
 
-/* The color we clear the screen to each frame (dark blue-grey). */
-#define CLEAR_R 0.15f
-#define CLEAR_G 0.15f
-#define CLEAR_B 0.20f
+/* The color we clear the screen to each frame (dark blue-grey).
+ * These are LINEAR values — the sRGB swapchain converts them to the
+ * perceptual range automatically.  Low linear values are needed for
+ * a dark background because linear light is not perceptually uniform. */
+#define CLEAR_R 0.02f
+#define CLEAR_G 0.02f
+#define CLEAR_B 0.03f
 #define CLEAR_A 1.0f
 
 /* ── Application state ────────────────────────────────────────────────────── */
@@ -108,7 +112,29 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    /* ── 5. Store state for other callbacks ──────────────────────────── */
+    /* ── 5. Request an sRGB swapchain ─────────────────────────────────
+     * The default swapchain uses SDL_GPU_SWAPCHAINCOMPOSITION_SDR with
+     * a plain UNORM format — no gamma correction.  Colors go straight
+     * to the monitor, which expects sRGB-encoded values.
+     *
+     * SDR_LINEAR gives us an _SRGB texture format.  The GPU then
+     * automatically converts our linear colour values to sRGB when
+     * writing to the framebuffer.  This matters as soon as we start
+     * blending or interpolating colours (Lesson 02+), but we set it
+     * up now so our clear colour looks correct from the start.
+     *
+     * We'll explain *what* sRGB and gamma correction actually are in
+     * a dedicated lesson later — for now, just know this is the right
+     * default for colours that look correct on screen. */
+    if (SDL_WindowSupportsGPUSwapchainComposition(
+            device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR)) {
+        SDL_SetGPUSwapchainParameters(
+            device, window,
+            SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR,
+            SDL_GPU_PRESENTMODE_VSYNC);
+    }
+
+    /* ── 6. Store state for other callbacks ──────────────────────────── */
     app_state *state = SDL_calloc(1, sizeof(app_state));
     if (!state) {
         SDL_Log("Failed to allocate app state");

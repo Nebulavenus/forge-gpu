@@ -22,3 +22,4 @@ set(FORGE_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
 # ── Lessons ─────────────────────────────────────────────────────────────────
 add_subdirectory(lessons/01-hello-window)
+add_subdirectory(lessons/02-first-triangle)

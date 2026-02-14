@@ -70,6 +70,31 @@ SDL_ClaimWindowForGPUDevice(device, window);
 `SDL_ClaimWindowForGPUDevice` creates the swapchain — a ring of textures the
 OS composites to the screen.
 
+## sRGB swapchain (correct gamma)
+
+After claiming the window, request an sRGB swapchain so the GPU hardware
+applies linear-to-sRGB conversion automatically.  Without this, interpolated
+and blended colours look too dark.
+
+```c
+if (SDL_WindowSupportsGPUSwapchainComposition(
+        device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR)) {
+    SDL_SetGPUSwapchainParameters(
+        device, window,
+        SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR,
+        SDL_GPU_PRESENTMODE_VSYNC);
+}
+```
+
+- `SDR` (the default) → `B8G8R8A8_UNORM` — no gamma conversion
+- `SDR_LINEAR` → `B8G8R8A8_UNORM_SRGB` — hardware converts linear→sRGB on write
+
+Always query the swapchain format **after** this call, since it may have changed:
+
+```c
+SDL_GPUTextureFormat swapchain_format = SDL_GetGPUSwapchainTextureFormat(device, window);
+```
+
 ## Per-frame rendering pattern
 
 Every frame in `SDL_AppIterate` follows this rhythm:
@@ -88,7 +113,7 @@ if (swapchain) {
     color_target.texture     = swapchain;
     color_target.load_op     = SDL_GPU_LOADOP_CLEAR;
     color_target.store_op    = SDL_GPU_STOREOP_STORE;
-    color_target.clear_color = (SDL_FColor){ 0.15f, 0.15f, 0.20f, 1.0f };
+    color_target.clear_color = (SDL_FColor){ 0.02f, 0.02f, 0.03f, 1.0f };
 
     /* 4. Begin render pass, draw, end render pass */
     SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &color_target, 1, NULL);
@@ -133,3 +158,4 @@ add_custom_command(TARGET my-app POST_BUILD
 - Not checking for `NULL` swapchain — happens when the window is minimised.
 - Omitting `SDL_GPU_STOREOP_STORE` — your render results get discarded.
 - Building without `WIN32` on Windows — creates an unwanted console window.
+- Skipping `SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR` — colours look washed out and interpolation is wrong.
