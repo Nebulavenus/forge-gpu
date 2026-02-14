@@ -1,0 +1,60 @@
+# CodeRabbit configuration for forge-gpu
+# Docs: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: en-US
+early_access: false
+reviews:
+  # Request changes for issues that require fixes
+  request_changes_workflow: true
+
+  # Be more strict - review everything
+  high_level_summary: true
+  poem: false  # Skip the poem for cleaner output
+  review_status: true
+
+  # Collapse finished touches to reduce noise
+  collapse_walkthrough: false
+
+  # Review configuration
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    ignore_title_keywords: []
+
+  # Path-specific configuration
+  path_instructions:
+    - path: "lessons/**/*.c"
+      instructions: |
+        - Verify SDL3 API usage follows best practices
+        - Check for proper error handling on all SDL calls
+        - Ensure memory management is correct (SDL_calloc/SDL_free)
+        - Flag any magic numbers that should be #define constants
+
+    - path: "lessons/**/*.hlsl"
+      instructions: |
+        - Verify shader inputs/outputs match SDL GPU conventions
+        - Check uniform buffer layouts follow std140 rules
+        - Ensure register bindings match SDL GPU model
+
+    - path: "lessons/**/README.md"
+      instructions: |
+        - Check for all required sections (What you'll learn, Result, Key concepts, Building, Exercises)
+        - Verify code blocks have language tags
+        - Ensure technical accuracy of explanations
+
+    - path: ".github/workflows/*.yml"
+      instructions: |
+        - Check for security issues (token exposure, untrusted input)
+        - Verify permissions are minimal and scoped correctly
+        - Flag any workflows that could be abused
+
+chat:
+  auto_reply: true
+
+# Tone and style
+tone_instructions: |
+  - Be constructive and educational
+  - Prioritize security and correctness over style
+  - Explain *why* a change is suggested, not just *what*
+  - Use severity markers: Major for bugs/security, Minor for style/docs
+  - Group related feedback when possible

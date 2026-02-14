@@ -6,15 +6,12 @@
 - [x] **zlib LICENSE**
 - [x] **Lesson 01 — Hello Window** — SDL callbacks, GPU device creation, swapchain, clear screen via render pass
 - [x] **Lesson 02 — First Triangle** — Vertex buffers, shaders (SPIRV/DXIL), graphics pipeline, sRGB swapchain
+- [x] **Lesson 03 — Uniforms & Motion** — Uniform buffers, passing time to shaders, spinning triangle
 
 ## Up Next
 
-- [ ] **Lesson 03 — Uniforms & Motion** — Uniform buffers, passing time to shaders, spinning triangle
-
-## Future Ideas
-
 - [ ] Textures & samplers
-- [ ] Depth buffer & 3D transforms (MVP matrices)
+- [ ] Depth buffer & 3D transforms (MVP matrices).  Also cover window resize handling — recreating size-dependent resources (depth buffer, projection aspect ratio)
 - [ ] Loading a mesh (OBJ or glTF)
 - [ ] Basic lighting (diffuse + specular)
 - [ ] Gamma correction & sRGB — what linear colour space means, why sRGB exists, how `SDR_LINEAR` works under the hood.  Note: explain the naming — `SDR_LINEAR` refers to the shader's working space (linear), not the framebuffer format (which is sRGB).  `SDR` vs `SDR_LINEAR` names the input contract, not the output encoding.

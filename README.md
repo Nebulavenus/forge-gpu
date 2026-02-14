@@ -18,7 +18,7 @@ assistant) to build games and renderers with SDL GPU confidently.
 |---|------|-------------------|
 | 01 | [Hello Window](lessons/01-hello-window/) | GPU device, swapchain, command buffers, render passes |
 | 02 | [First Triangle](lessons/02-first-triangle/) | Vertex buffers, shaders, graphics pipeline |
-| 03 | Uniforms & Motion | *coming soon* — uniform buffers, animating with time |
+| 03 | [Uniforms & Motion](lessons/03-uniforms-and-motion/) | Uniform buffers, push uniforms, animating with time |
 
 See [PLAN.md](PLAN.md) for the full roadmap.
 
@@ -55,6 +55,52 @@ build\lessons\01-hello-window\Debug\01-hello-window.exe
 ./build/lessons/01-hello-window/01-hello-window
 ```
 
+## Shader compilation
+
+Pre-compiled shader bytecodes are checked in, so you **don't need any extra
+tools just to build and run the lessons**. If you want to modify the HLSL
+shader source, you'll need:
+
+- **[Vulkan SDK](https://vulkan.lunarg.com/)** — provides `dxc` with SPIR-V
+  support (the Windows SDK `dxc` can only compile DXIL, not SPIR-V)
+
+After installing, make sure the Vulkan SDK `dxc` is on your PATH, or use
+the full path. On Windows the default location is:
+
+```text
+C:\VulkanSDK\<version>\Bin\dxc.exe
+```
+
+> **Heads up:** If you just type `dxc` and get *"SPIR-V CodeGen not
+> available"*, you're hitting the Windows SDK `dxc` instead of the Vulkan
+> SDK one. Use the full path to the Vulkan SDK `dxc` or put its `Bin/`
+> directory earlier on your PATH.
+
+From a lesson's directory (e.g. `lessons/03-uniforms-and-motion/`):
+
+```bash
+# Compile HLSL → SPIR-V (Vulkan)
+dxc -spirv -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.spv
+dxc -spirv -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.spv
+
+# Compile HLSL → DXIL (Direct3D 12)
+dxc -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.dxil
+dxc -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.dxil
+```
+
+Then embed the compiled bytecodes as C headers using the helper script:
+
+```bash
+python ../../scripts/bin_to_header.py shaders/triangle.vert.spv triangle_vert_spirv shaders/triangle_vert_spirv.h
+python ../../scripts/bin_to_header.py shaders/triangle.frag.spv triangle_frag_spirv shaders/triangle_frag_spirv.h
+python ../../scripts/bin_to_header.py shaders/triangle.vert.dxil triangle_vert_dxil shaders/triangle_vert_dxil.h
+python ../../scripts/bin_to_header.py shaders/triangle.frag.dxil triangle_frag_dxil shaders/triangle_frag_dxil.h
+```
+
+The flags: `-T vs_6_0` = vertex shader model 6.0, `-T ps_6_0` = pixel
+(fragment) shader model 6.0, `-E main` = entry point function name,
+`-spirv` = emit SPIR-V instead of DXIL.
+
 ## Project Structure
 
 ```
@@ -66,7 +112,12 @@ forge-gpu/
 │   │   ├── main.c
 │   │   ├── CMakeLists.txt
 │   │   └── README.md
-│   └── 02-first-triangle/
+│   ├── 02-first-triangle/
+│   │   ├── main.c
+│   │   ├── shaders/        HLSL source + compiled SPIRV/DXIL headers
+│   │   ├── CMakeLists.txt
+│   │   └── README.md
+│   └── 03-uniforms-and-motion/
 │       ├── main.c
 │       ├── shaders/        HLSL source + compiled SPIRV/DXIL headers
 │       ├── CMakeLists.txt
@@ -90,7 +141,8 @@ project's `.claude/skills/` to teach your AI assistant the same patterns.
 |-------|-------------|---------|
 | [sdl-gpu-setup](.claude/skills/sdl-gpu-setup/SKILL.md) | `/sdl-gpu-setup` | SDL3 GPU app with callbacks, window, swapchain, render loop |
 | [first-triangle](.claude/skills/first-triangle/SKILL.md) | `/first-triangle` | Vertex buffers, shaders, graphics pipeline — draw colored geometry |
-| [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson 03 uniforms "Add uniform buffers"` | Scaffold a new lesson with all required files |
+| [uniforms-and-motion](.claude/skills/uniforms-and-motion/SKILL.md) | `/uniforms-and-motion` | Push uniforms, passing time to shaders, animating geometry |
+| [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson 04 textures "Add textures"` | Scaffold a new lesson with all required files |
 
 **Usage:** Clone this repo (or copy the `.claude/skills/` directory into your
 project), then tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU
