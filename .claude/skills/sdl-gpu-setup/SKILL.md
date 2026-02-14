@@ -1,10 +1,9 @@
-# Skill: SDL3 GPU Application Setup
+---
+name: sdl-gpu-setup
+description: Set up an SDL3 GPU application with the callback architecture. Use when creating a new SDL3 program that renders with the GPU API, or when someone asks how to get started with SDL GPU.
+---
 
-## When to use this
-
-Use this pattern whenever you need to create a new SDL3 application that
-renders with the GPU API.  This is the foundation — every SDL GPU program
-starts here.
+Set up an SDL3 GPU application using the patterns from forge-gpu.
 
 ## The callback model
 
@@ -27,7 +26,7 @@ The four callbacks:
 | `SDL_AppQuit` | Once at shutdown | Release GPU resources, free memory |
 
 Return `SDL_APP_CONTINUE` to keep running, `SDL_APP_SUCCESS` to exit cleanly,
-or `SDL_APP_FAILURE` to exit with an error.  SDL calls `SDL_Quit()` for you
+or `SDL_APP_FAILURE` to exit with an error. SDL calls `SDL_Quit()` for you
 after `SDL_AppQuit` returns.
 
 ## Application state

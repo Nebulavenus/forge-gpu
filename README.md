@@ -58,10 +58,9 @@ forge-gpu/
 │       ├── main.c
 │       ├── CMakeLists.txt
 │       └── README.md
-├── skills/          AI skill files — one per lesson, reusable patterns
-│   └── 01-sdl-gpu-setup.md
 ├── .claude/
-│   └── commands/    Claude Code slash commands for common tasks
+│   └── skills/      Claude Code skills — one per lesson, invokable with /name
+│       └── sdl-gpu-setup/SKILL.md
 ├── PLAN.md          Lesson roadmap and progress
 ├── CLAUDE.md        AI coding guidelines for this project
 └── CMakeLists.txt   Root build — fetches SDL3, wires all lessons
@@ -69,16 +68,18 @@ forge-gpu/
 
 ## AI Skills
 
-Every lesson comes with a matching **skill file** in [`skills/`](skills/) that
-distills the lesson into a reusable pattern: the key API calls, the correct
-order, common mistakes, and a ready-to-use code template.
+Every lesson comes with a matching **[Claude Code skill](https://code.claude.com/docs/en/skills)**
+in `.claude/skills/`. These are invokable with `/skill-name` or loaded
+automatically when Claude determines they're relevant. Copy them into your own
+project's `.claude/skills/` to teach your AI assistant the same patterns.
 
-| Skill | Pattern |
-|-------|---------|
-| [01-sdl-gpu-setup](skills/01-sdl-gpu-setup.md) | SDL3 GPU app with callbacks, window, swapchain, render loop |
+| Skill | Invoke with | Pattern |
+|-------|-------------|---------|
+| [sdl-gpu-setup](.claude/skills/sdl-gpu-setup/SKILL.md) | `/sdl-gpu-setup` | SDL3 GPU app with callbacks, window, swapchain, render loop |
 
-These skills can be used by AI coding assistants — drop them into your project
-context and the AI will know how to apply the pattern correctly.
+**Usage:** Clone this repo (or copy the `.claude/skills/` directory into your
+project), then tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU
+application"* — or just type `/sdl-gpu-setup`.
 
 ## Philosophy
 
