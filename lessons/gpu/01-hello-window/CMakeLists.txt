@@ -9,6 +9,10 @@ add_executable(01-hello-window WIN32 main.c)
 target_include_directories(01-hello-window PRIVATE ${FORGE_COMMON_DIR})
 target_link_libraries(01-hello-window PRIVATE SDL3::SDL3)
 
+if(FORGE_CAPTURE)
+    target_compile_definitions(01-hello-window PRIVATE FORGE_CAPTURE)
+endif()
+
 # Copy SDL3.dll next to the executable so Windows can find it at runtime.
 add_custom_command(TARGET 01-hello-window POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

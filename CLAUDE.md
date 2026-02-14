@@ -52,7 +52,10 @@ provides reusable skills and libraries so humans and AI can build together.
 ### Code conventions
 
 - **Language:** C99, matching SDL's own style conventions
-- **Naming:** SDL_PrefixedNames for public API, lowercase_snake for local/internal
+- **Naming:** `Prefix_PascalCase` for public API (e.g. `forge_capture_init`,
+  `ForgeCapture`), `lowercase_snake` for local/internal. The prefix is the
+  module name (`forge_capture_`, `forge_math_`, etc.) — NOT `SDL_`, which is
+  reserved for SDL's own symbols
 - **Constants:** No magic numbers — #define or enum everything
 - **Comments:** Explain *why* and *purpose* (every uniform, pipeline state, etc.)
 - **Errors:** Handle every SDL GPU call with descriptive messages

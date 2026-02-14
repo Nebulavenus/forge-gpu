@@ -15,7 +15,7 @@ The same colored triangle from Lesson 02, but now it spins continuously
 around its center. The rotation happens entirely in the vertex shader —
 the vertex buffer data never changes.
 
-<!-- TODO: screenshot / GIF -->
+![Lesson 03 result](assets/preview.gif)
 
 ## Key concepts
 

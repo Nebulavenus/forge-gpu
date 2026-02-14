@@ -12,7 +12,7 @@
 A dark blue-grey window — not exciting to look at, but the entire GPU frame
 pipeline is running under the hood.
 
-<!-- TODO: add screenshot -->
+![Lesson 01 result](assets/screenshot.png)
 
 ## Key concepts
 
@@ -40,6 +40,16 @@ A render pass defines *what* you're rendering into (colour target, optional
 depth buffer) and *how* it starts (clear, load previous contents, or don't
 care).  Even a simple screen clear needs a render pass — there's no standalone
 "clear screen" call in modern GPU APIs.
+
+## Math connections
+
+This lesson is purely setup — no math required yet. Starting with Lesson 02,
+you'll need vectors and coordinate transforms to place geometry on screen:
+
+- [Math 01 — Vectors](../../math/01-vectors/README.md) — positions, directions,
+  and the building blocks for everything in GPU programming
+- [Math 02 — Coordinate Spaces](../../math/02-coordinate-spaces/README.md) —
+  how vertices move from model space to your screen
 
 ## Building
 

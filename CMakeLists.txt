@@ -20,6 +20,11 @@ FetchContent_MakeAvailable(SDL3)
 # Header-only helpers shared across lessons live in common/
 set(FORGE_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
+# ── Frame capture (optional) ───────────────────────────────────────────────
+# When enabled, lessons accept --screenshot / --capture-dir flags to save
+# rendered frames as BMP files.  Used by scripts/capture_lesson.py.
+option(FORGE_CAPTURE "Enable frame capture for screenshots and GIFs" OFF)
+
 # ── Testing ─────────────────────────────────────────────────────────────────
 enable_testing()
 

@@ -14,7 +14,7 @@ A colored triangle on a dark background. Each vertex has a different color
 (red, green, blue) and the GPU smoothly interpolates between them — this is
 called *smooth shading* or *Gouraud shading*.
 
-<!-- TODO: screenshot -->
+![Lesson 02 result](assets/screenshot.png)
 
 ## Key concepts
 

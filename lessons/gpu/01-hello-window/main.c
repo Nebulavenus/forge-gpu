@@ -20,6 +20,16 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+/* ── Frame capture (compile-time option) ─────────────────────────────────── */
+/* This is NOT part of the lesson — it's build infrastructure that lets us
+ * programmatically capture screenshots for the README.  Compiled only when
+ * cmake is run with -DFORGE_CAPTURE=ON.  You can ignore these #ifdef blocks
+ * entirely; the lesson works the same with or without them.
+ * See: scripts/capture_lesson.py, common/capture/forge_capture.h */
+#ifdef FORGE_CAPTURE
+#include "capture/forge_capture.h"
+#endif
+
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 01 Hello Window"
@@ -42,6 +52,9 @@
 typedef struct app_state {
     SDL_Window    *window;
     SDL_GPUDevice *device;
+#ifdef FORGE_CAPTURE
+    ForgeCapture   capture;   /* screenshot infrastructure — see note above */
+#endif
 } app_state;
 
 /* ── SDL_AppInit ──────────────────────────────────────────────────────────── */
@@ -145,6 +158,21 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
     state->window = window;
     state->device = device;
+
+#ifdef FORGE_CAPTURE
+    forge_capture_parse_args(&state->capture, argc, argv);
+    if (state->capture.mode != FORGE_CAPTURE_NONE) {
+        if (!forge_capture_init(&state->capture, device, window)) {
+            SDL_Log("Failed to initialise capture");
+            SDL_ReleaseWindowFromGPUDevice(device, window);
+            SDL_DestroyWindow(window);
+            SDL_DestroyGPUDevice(device);
+            SDL_free(state);
+            return SDL_APP_FAILURE;
+        }
+    }
+#endif
+
     *appstate = state;
 
     return SDL_APP_CONTINUE;
@@ -216,7 +244,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Submit the command buffer.
      * The GPU executes all recorded work and presents the
      * swapchain texture to the window. */
-    SDL_SubmitGPUCommandBuffer(cmd);
+#ifdef FORGE_CAPTURE
+    if (state->capture.mode != FORGE_CAPTURE_NONE) {
+        if (!forge_capture_finish_frame(&state->capture, cmd, swapchain)) {
+            SDL_SubmitGPUCommandBuffer(cmd);
+        }
+        if (forge_capture_should_quit(&state->capture)) {
+            return SDL_APP_SUCCESS;
+        }
+    } else
+#endif
+    {
+        SDL_SubmitGPUCommandBuffer(cmd);
+    }
 
     return SDL_APP_CONTINUE;
 }
@@ -231,6 +271,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 
     app_state *state = (app_state *)appstate;
     if (state) {
+#ifdef FORGE_CAPTURE
+        forge_capture_destroy(&state->capture, state->device);
+#endif
         SDL_ReleaseWindowFromGPUDevice(state->device, state->window);
         SDL_DestroyWindow(state->window);
         SDL_DestroyGPUDevice(state->device);
