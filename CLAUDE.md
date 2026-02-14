@@ -10,6 +10,10 @@ License: zlib (matching SDL)
 - Extensive comments explaining *why*, not just *what*
 - Each lesson builds on the previous, introducing one concept at a time
 - C99, matching SDL's own style conventions
+- **Dual audience: humans and AI** — every lesson teaches a person, and every
+  lesson produces a reusable *skill* that teaches an AI agent the same pattern.
+  The goal is to enable people to use Claude (or any AI) to build games and
+  renderers with SDL GPU confidently.
 
 ## Code Style
 - SDL naming conventions (SDL_PrefixedNames for public, lowercase_snake for local)
@@ -20,14 +24,18 @@ License: zlib (matching SDL)
 ## Structure
 - Each lesson in lessons/NN-name/ is a standalone buildable project
 - Lessons share common utility code via a small header-only lib in common/
-- Skills in skills/ are Claude Code skill files (.md) that teach AI agents
-  to work with SDL GPU effectively
+- Skills in skills/ are reusable reference docs that teach AI agents the
+  patterns from each lesson — one skill per lesson, named NN-topic.md
+- Commands in .claude/commands/ are Claude Code slash commands for common tasks
 
 ## When writing lessons
 - Start each README.md with what the reader will learn
 - Show the result (screenshot) before diving into code
 - Introduce API calls one at a time with context
 - End with exercises that extend the lesson
+- **Also write a matching skill** in skills/NN-topic.md that distills the
+  lesson into a reusable pattern an AI agent can follow: the key API calls,
+  the correct order, the common mistakes, and a ready-to-use code template
 
 ## Dependencies
 - SDL3 (with GPU API)

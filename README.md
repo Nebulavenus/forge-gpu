@@ -7,6 +7,11 @@ Each lesson is a standalone program that introduces one new concept, building
 toward a complete understanding of modern GPU rendering. Every line is
 commented to explain *why*, not just *what*.
 
+**This project teaches two audiences at once.** Each lesson teaches a human
+reader, and each lesson also produces a reusable *skill file* that teaches an
+AI agent the same pattern. The goal: enable people to use Claude (or any AI
+assistant) to build games and renderers with SDL GPU confidently.
+
 ## Lessons
 
 | # | Name | What you'll learn |
@@ -53,11 +58,27 @@ forge-gpu/
 │       ├── main.c
 │       ├── CMakeLists.txt
 │       └── README.md
-├── skills/          Claude Code skill files for working with SDL GPU
+├── skills/          AI skill files — one per lesson, reusable patterns
+│   └── 01-sdl-gpu-setup.md
+├── .claude/
+│   └── commands/    Claude Code slash commands for common tasks
 ├── PLAN.md          Lesson roadmap and progress
 ├── CLAUDE.md        AI coding guidelines for this project
 └── CMakeLists.txt   Root build — fetches SDL3, wires all lessons
 ```
+
+## AI Skills
+
+Every lesson comes with a matching **skill file** in [`skills/`](skills/) that
+distills the lesson into a reusable pattern: the key API calls, the correct
+order, common mistakes, and a ready-to-use code template.
+
+| Skill | Pattern |
+|-------|---------|
+| [01-sdl-gpu-setup](skills/01-sdl-gpu-setup.md) | SDL3 GPU app with callbacks, window, swapchain, render loop |
+
+These skills can be used by AI coding assistants — drop them into your project
+context and the AI will know how to apply the pattern correctly.
 
 ## Philosophy
 
@@ -65,6 +86,7 @@ forge-gpu/
 - **No magic** — every constant is named, every GPU call is explained
 - **C99** — matching SDL's own style, accessible to the widest audience
 - **SDL callbacks** — lessons use `SDL_AppInit` / `SDL_AppIterate` / `SDL_AppEvent` / `SDL_AppQuit`, the modern SDL3 application model
+- **Dual audience** — every lesson teaches a human *and* produces a skill that teaches an AI the same pattern
 
 ## License
 
