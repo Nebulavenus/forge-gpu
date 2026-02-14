@@ -96,6 +96,21 @@ project's `.claude/skills/` to teach your AI assistant the same patterns.
 project), then tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU
 application"* — or just type `/sdl-gpu-setup`.
 
+## Learning with Claude
+
+This project is designed to be explored with an AI assistant. If you're using
+[Claude Code](https://claude.ai/code) or [Claude](https://claude.ai), you can
+ask questions as you work through the lessons:
+
+- *"What does SDL_ClaimWindowForGPUDevice actually do?"*
+- *"Why do we need a transfer buffer to upload vertex data?"*
+- *"Help me add a second triangle to Lesson 02"*
+
+Claude has access to the lesson source, the skill files, and the SDL reference
+code in `third_party/SDL`. Treat it like a knowledgeable study partner — ask
+it to explain concepts, help debug your exercises, or build something new
+using the patterns from the lessons.
+
 ## Philosophy
 
 - **One concept at a time** — each lesson builds on the last

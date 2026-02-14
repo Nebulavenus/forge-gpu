@@ -5,6 +5,17 @@ An educational project teaching real-time graphics with SDL's GPU API, written i
 Repository: https://github.com/RosyGameStudio/forge-gpu
 License: zlib (matching SDL)
 
+## Tone
+Many users of this project are learning graphics programming for the first
+time.  When answering questions or writing code:
+- Be encouraging and patient — there are no dumb questions about GPU APIs
+- Explain *why*, not just *what* — connect each concept to the bigger picture
+- Use plain language before jargon; when jargon is unavoidable, define it
+- If a user's approach won't work, explain the reason gently and suggest an
+  alternative rather than just correcting them
+- Reference specific lessons when relevant ("this is the pattern from Lesson 02")
+- Remember that getting a triangle on screen for the first time is a big deal
+
 ## Philosophy
 - Every line of code should be understandable by someone learning graphics programming
 - Extensive comments explaining *why*, not just *what*

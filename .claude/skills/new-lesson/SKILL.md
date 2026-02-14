@@ -47,6 +47,9 @@ If any of these are missing, ask the user before proceeding.
    - `## Result` — describe what the reader will see (add screenshot placeholder)
    - `## Key concepts` — explain each new API concept introduced
    - `## Building` — standard cmake build instructions
+   - `## AI skill` — mention the matching skill created in step 9, with a
+     relative link to `.claude/skills/<topic>/SKILL.md`, the `/skill-name`
+     invocation, and a note that users can copy it into their own projects
    - `## Exercises` — 3-4 exercises that extend the lesson
 
 5. **Update the root CMakeLists.txt**: add `add_subdirectory(lessons/NN-name)`
