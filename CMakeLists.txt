@@ -26,6 +26,7 @@ enable_testing()
 # ── Math Lessons ────────────────────────────────────────────────────────────
 add_subdirectory(lessons/math/01-vectors)
 add_subdirectory(lessons/math/02-coordinate-spaces)
+add_subdirectory(lessons/math/03-orthographic-projection)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)

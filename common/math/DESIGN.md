@@ -238,7 +238,7 @@ vec3 vec3_lerp(vec3 a, vec3 b, float t);  /* Linear interpolation */
 
 Similar functions for `vec2` and `vec4`.
 
-### Matrix operations (Lesson: lessons/math/02-matrices)
+### Matrix operations (Lesson: lessons/math/02-coordinate-spaces)
 
 ```c
 /* Basic operations */
@@ -254,8 +254,10 @@ mat4 mat4_rotate_z(float radians);
 
 /* Common matrices for graphics */
 mat4 mat4_perspective(float fov_y, float aspect, float near, float far);
-mat4 mat4_orthographic(float left, float right, float bottom, float top, float near, float far);
 mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up);
+
+/* Projection (Lesson: lessons/math/03-orthographic-projection) */
+mat4 mat4_orthographic(float left, float right, float bottom, float top, float near, float far);
 ```
 
 ## Naming Conventions
@@ -358,7 +360,7 @@ Each math lesson includes a program that:
 - Demonstrates the concept visually or numerically
 - Provides examples for users to understand usage
 
-Additionally, there is now an automated test suite located in `tests/math/` with 26 tests covering all vector and matrix operations. These tests verify correctness and are integrated with CTest for CI/CD. Run tests with:
+Additionally, there is an automated test suite in `tests/math/` covering all vector and matrix operations. These tests verify correctness and are integrated with CTest for CI/CD. Run tests with:
 
 ```bash
 ctest -C Debug --output-on-failure

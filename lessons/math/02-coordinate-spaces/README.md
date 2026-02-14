@@ -514,7 +514,7 @@ vec3 eye = vec3_create(0.0f, 5.0f, 0.0f);
 vec3 target = vec3_create(0.0f, 0.0f, 0.0f);
 vec3 up = vec3_create(0.0f, -1.0f, 0.0f);  /* Points straight down! */
 mat4 view = mat4_look_at(eye, target, up);
-/* The cross product will be zero — undefined behavior! */
+/* The cross product will be zero — produces a degenerate view matrix! */
 
 /* CORRECT: Up vector not parallel to forward */
 vec3 up = vec3_create(0.0f, 1.0f, 0.0f);   /* Or (0, 0, 1), etc. */

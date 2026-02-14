@@ -56,6 +56,11 @@ Each vector type supports:
   - `mat4_translate(offset)`
   - `mat4_scale(scale)`, `mat4_scale_uniform(s)`
   - `mat4_rotate_x/y/z(angle_radians)`
+- **Projection:**
+  - `mat4_perspective(fov, aspect, near, far)` — Perspective projection (3D scenes)
+  - `mat4_orthographic(l, r, b, t, near, far)` — Orthographic projection (2D, shadow maps)
+- **Camera:**
+  - `mat4_look_at(eye, target, up)` — View matrix from camera parameters
 
 ### Constants
 
@@ -98,7 +103,8 @@ Every function in `forge_math.h` includes:
 Standalone programs teaching each concept in depth:
 
 - `lessons/math/01-vectors/` — Vectors, dot product, cross product, normalization
-- `lessons/math/02-matrices/` — Matrices, transformations, rotations
+- `lessons/math/02-coordinate-spaces/` — Coordinate spaces, view and projection matrices
+- `lessons/math/03-orthographic-projection/` — Orthographic vs perspective projection
 
 Each lesson includes a demo program and README explaining the math.
 

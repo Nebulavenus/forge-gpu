@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     print_vec3("a (X-axis)", a);
     print_vec3("b (Y-axis)", b);
     print_vec3("c", c);
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Vector Addition ──────────────────────────────────────────────── */
     /* Adding vectors geometrically means placing b's tail at a's head.
@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
     vec3 sum = vec3_add(a, b);
     print_vec3("a + b", sum);
     SDL_Log("Geometric meaning: diagonal direction (northeast)");
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Vector Subtraction ───────────────────────────────────────────── */
     /* Subtracting b from a gives the vector pointing from b to a. */
@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
     vec3 diff = vec3_sub(a, b);
     print_vec3("a - b", diff);
     SDL_Log("Geometric meaning: vector from b to a");
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Scalar Multiplication (Scaling) ──────────────────────────────── */
     /* Scaling changes the length but not the direction. */
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
     vec3 scaled = vec3_scale(c, 2.0f);
     print_vec3("c * 2", scaled);
     SDL_Log("Geometric meaning: same direction, twice as long");
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Dot Product ──────────────────────────────────────────────────── */
     /* The dot product measures alignment between vectors.
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
     vec3 opposite = vec3_create(-1.0f, 0.0f, 0.0f);
     float dot_opposite = vec3_dot(a, opposite);
     SDL_Log("a · (-1,0,0) = %.3f (opposite → negative)", dot_opposite);
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Length and Normalization ─────────────────────────────────────── */
     /* Length (magnitude) is the distance from the origin.
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
     print_vec3("Normalized c", normalized_c);
     SDL_Log("Length of normalized c = %.3f (should be 1.0)",
             vec3_length(normalized_c));
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Cross Product (3D only) ──────────────────────────────────────── */
     /* The cross product of two 3D vectors produces a third vector
@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
     float check_b = vec3_dot(cross_ab, b);
     SDL_Log("(a × b) · a = %.3f (should be 0)", check_a);
     SDL_Log("(a × b) · b = %.3f (should be 0)", check_b);
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Linear Interpolation (Lerp) ──────────────────────────────────── */
     /* Lerp smoothly blends between two vectors.
@@ -148,14 +148,14 @@ int main(int argc, char *argv[])
     print_vec3("lerp(start, end, 0.5)", lerp_half);
     print_vec3("lerp(start, end, 1.0)", lerp_1);
     SDL_Log("Geometric meaning: smooth path from start to end");
-    SDL_Log("");
+    SDL_Log(" ");
 
     /* ── Summary ──────────────────────────────────────────────────────── */
     SDL_Log("=== Summary ===");
     SDL_Log("Vectors represent position, direction, and displacement.");
     SDL_Log("Vector operations let us combine, compare, and transform them.");
     SDL_Log("These are the building blocks of 3D graphics and physics!");
-    SDL_Log("");
+    SDL_Log(" ");
 
     SDL_Quit();
     return 0;

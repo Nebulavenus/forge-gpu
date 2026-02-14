@@ -1,0 +1,54 @@
+name: Build and Test
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.hlsl'
+      - '**/CMakeLists.txt'
+      - '.github/workflows/build-and-test.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.hlsl'
+      - '**/CMakeLists.txt'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install SDL3 build dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list
+          sudo apt-get update
+          sudo apt-get install -y ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+            libasound2-dev libpulse-dev
+
+      - name: Cache CMake FetchContent
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: fetchcontent-sdl3-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-sdl3-
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

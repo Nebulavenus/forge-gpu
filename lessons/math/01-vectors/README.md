@@ -279,6 +279,6 @@ The demo shows examples of each vector operation with geometric explanations.
 
 ## Further reading
 
-- **Next lesson**: [02-matrices](../02-matrices/) — Transform vectors with matrices
+- **Next lesson**: [02-coordinate-spaces](../02-coordinate-spaces/) — Coordinate spaces and the transformation pipeline
 - **Math library**: [common/math/README.md](../../../common/math/README.md) — Complete API reference
 - **External**: [3Blue1Brown — Essence of Linear Algebra](https://www.youtube.com/playlist?list=PLZHQObOWTQDPD3MizzM2xVFitgF8hE_ab) — Beautiful visual explanations

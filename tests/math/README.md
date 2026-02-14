@@ -4,12 +4,10 @@ Automated tests for the forge-gpu math library (`common/math/forge_math.h`).
 
 ## What's tested
 
-- **vec2**: create, add, sub, scale, dot, length, normalize, lerp (8 tests)
-- **vec3**: create, add, sub, scale, dot, cross, length, normalize, lerp (9 tests)
-- **vec4**: create, add, dot (3 tests)
-- **mat4**: identity, translate, scale, rotate_z, multiply (6 tests)
-
-**Total: 26 tests**
+- **vec2**: create, add, sub, scale, dot, length, normalize, lerp
+- **vec3**: create, add, sub, scale, dot, cross, length, normalize, lerp
+- **vec4**: create, add, sub, scale, dot
+- **mat4**: identity, translate, scale, rotate_x/y/z, look_at, perspective, orthographic, multiply
 
 ## Running the tests
 
@@ -48,8 +46,8 @@ vec2 tests:
   ...
 
 === Test Summary ===
-Total:  26
-Passed: 26
+Total:  N
+Passed: N
 Failed: 0
 
 All tests PASSED!
@@ -113,7 +111,6 @@ what results to expect. When in doubt about a math function's behavior, read the
 
 - Matrix inverse, transpose
 - Quaternion operations
-- Projection matrices (perspective, orthographic)
 - More edge cases (zero vectors, degenerate matrices, etc.)
 
 Add tests as you add functionality — keep the math library reliable!

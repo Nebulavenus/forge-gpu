@@ -104,7 +104,7 @@ build\lessons\01-hello-window\Debug\01-hello-window.exe
 
 ## Testing
 
-The math library has comprehensive automated tests (26 tests covering all operations).
+The math library has comprehensive automated tests covering all operations.
 
 **Run all tests:**
 
@@ -189,7 +189,7 @@ forge-gpu/
 │   │   └── DESIGN.md      Design decisions and conventions
 │   └── forge.h            Shared utilities for lessons
 ├── tests/                 Test suite
-│   └── math/              Math library tests (26 tests, CTest integration)
+│   └── math/              Math library tests (CTest integration)
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── math-lesson/       Add math concept + lesson + update library
 │   ├── new-lesson/        Create new GPU lesson

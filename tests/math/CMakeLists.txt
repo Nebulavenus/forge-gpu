@@ -1,6 +1,6 @@
 add_executable(test_math test_math.c)
 target_include_directories(test_math PRIVATE ${FORGE_COMMON_DIR})
-target_link_libraries(test_math PRIVATE SDL3::SDL3)
+target_link_libraries(test_math PRIVATE SDL3::SDL3 $<$<NOT:$<C_COMPILER_ID:MSVC>>:m>)
 
 if(TARGET SDL3::SDL3-shared)
     add_custom_command(TARGET test_math POST_BUILD
