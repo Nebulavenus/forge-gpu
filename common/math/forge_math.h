@@ -1778,4 +1778,650 @@ static inline mat4 mat4_from_mat3(mat3 m3)
     return m;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * quat — Quaternions
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Quaternion: a 4-component number system for representing 3D rotations.
+ *
+ * A quaternion q = w + xi + yj + zk, where i, j, k are imaginary units with:
+ *   i² = j² = k² = ijk = -1
+ *   ij = k,  jk = i,  ki = j  (cyclic)
+ *   ji = -k, kj = -i, ik = -j (anti-commutative)
+ *
+ * For rotations, we use UNIT quaternions (length = 1). A unit quaternion
+ * encodes a rotation of angle θ around axis (ax, ay, az) as:
+ *   q = (cos(θ/2),  sin(θ/2)*ax,  sin(θ/2)*ay,  sin(θ/2)*az)
+ *
+ * Storage order: (w, x, y, z) — scalar part first, matching the mathematical
+ * notation q = w + xi + yj + zk.
+ *
+ * Why quaternions instead of matrices for rotations?
+ *   - Compact: 4 floats instead of 9 (mat3) or 16 (mat4)
+ *   - No gimbal lock (unlike Euler angles)
+ *   - Smooth interpolation via slerp
+ *   - Easy composition via multiplication
+ *   - Always represent valid rotations (when normalized)
+ *
+ * HLSL: No built-in quaternion type; pass as float4 and multiply in shader,
+ * or convert to mat4 on the CPU.
+ *
+ * See: lessons/math/08-orientation
+ */
+typedef struct quat {
+    float w, x, y, z;
+} quat;
+
+/* ── Quaternion Creation ──────────────────────────────────────────────── */
+
+/* Create a quaternion from components.
+ *
+ * Usage:
+ *   quat q = quat_create(1.0f, 0.0f, 0.0f, 0.0f);  // identity
+ */
+static inline quat quat_create(float w, float x, float y, float z)
+{
+    quat q = { w, x, y, z };
+    return q;
+}
+
+/* Create the identity quaternion (no rotation).
+ *
+ * The identity quaternion is (1, 0, 0, 0) — it corresponds to a rotation
+ * of 0 degrees around any axis: cos(0/2) = 1, sin(0/2) = 0.
+ *
+ * Usage:
+ *   quat q = quat_identity();
+ *   // Rotating by identity leaves vectors unchanged
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_identity(void)
+{
+    quat q = { 1.0f, 0.0f, 0.0f, 0.0f };
+    return q;
+}
+
+/* ── Quaternion Properties ────────────────────────────────────────────── */
+
+/* Compute the dot product of two quaternions.
+ *
+ * Like vec4 dot product: a.w*b.w + a.x*b.x + a.y*b.y + a.z*b.z.
+ *
+ * For unit quaternions, the dot product tells you how "similar" two
+ * rotations are:
+ *   dot ≈ 1 or -1: nearly the same rotation
+ *   dot ≈ 0: rotations are about 90° apart
+ *
+ * The sign matters: q and -q represent the SAME rotation, but the dot
+ * product distinguishes them. Slerp uses this to pick the shorter path.
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline float quat_dot(quat a, quat b)
+{
+    return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+/* Compute the squared length (norm²) of a quaternion.
+ *
+ * For unit quaternions, this should be 1.0. Useful for checking if
+ * a quaternion needs renormalization (cheaper than computing the length).
+ */
+static inline float quat_length_sq(quat q)
+{
+    return quat_dot(q, q);
+}
+
+/* Compute the length (norm) of a quaternion.
+ *
+ * For unit quaternions (rotations), this should be 1.0.
+ * If it drifts from 1.0 due to accumulated floating-point error,
+ * call quat_normalize() to fix it.
+ */
+static inline float quat_length(quat q)
+{
+    return sqrtf(quat_length_sq(q));
+}
+
+/* ── Quaternion Operations ────────────────────────────────────────────── */
+
+/* Normalize a quaternion to unit length.
+ *
+ * Unit quaternions represent rotations. After many multiplications,
+ * floating-point drift can make the length deviate from 1.0. Normalizing
+ * snaps it back.
+ *
+ * Returns (1,0,0,0) if the input has zero length.
+ *
+ * Usage:
+ *   quat q = quat_multiply(a, b);
+ *   q = quat_normalize(q);  // ensure it's still unit length
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_normalize(quat q)
+{
+    float len = quat_length(q);
+    if (len > 0.0f) {
+        float inv = 1.0f / len;
+        return quat_create(q.w * inv, q.x * inv, q.y * inv, q.z * inv);
+    }
+    return quat_identity();
+}
+
+/* Negate a quaternion (flip all components).
+ *
+ * Important: q and -q represent the SAME rotation. The quaternion
+ * double-cover property means every rotation has two quaternion
+ * representations. Negation is used internally by slerp to ensure
+ * the shortest interpolation path.
+ */
+static inline quat quat_negate(quat q)
+{
+    return quat_create(-q.w, -q.x, -q.y, -q.z);
+}
+
+/* Compute the conjugate of a quaternion: q* = (w, -x, -y, -z).
+ *
+ * For unit quaternions, the conjugate equals the inverse (the rotation
+ * that undoes q). It's much cheaper than computing the full inverse.
+ *
+ * Geometric meaning: the conjugate rotates by the same angle but in
+ * the opposite direction.
+ *
+ * Usage:
+ *   quat q = quat_from_axis_angle(axis, angle);
+ *   quat q_undo = quat_conjugate(q);  // rotates by -angle
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_conjugate(quat q)
+{
+    return quat_create(q.w, -q.x, -q.y, -q.z);
+}
+
+/* Compute the inverse of a quaternion: q⁻¹ = q* / |q|².
+ *
+ * The inverse satisfies: q * q⁻¹ = identity.
+ *
+ * For unit quaternions (|q| = 1), the inverse equals the conjugate.
+ * Use quat_conjugate() instead when you know the quaternion is unit length
+ * (it's cheaper — no division needed).
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_inverse(quat q)
+{
+    float len_sq = quat_length_sq(q);
+    if (len_sq > 0.0f) {
+        float inv = 1.0f / len_sq;
+        return quat_create(q.w * inv, -q.x * inv, -q.y * inv, -q.z * inv);
+    }
+    return quat_identity();
+}
+
+/* Multiply two quaternions: result = a * b.
+ *
+ * Quaternion multiplication composes rotations, just like matrix
+ * multiplication. The order matters (quaternion multiplication is
+ * NOT commutative):
+ *   q = a * b means "apply b first, then a"
+ *
+ * This matches our matrix convention: C = A * B means "apply B first."
+ *
+ * The multiplication formula comes from expanding:
+ *   (a.w + a.x·i + a.y·j + a.z·k) * (b.w + b.x·i + b.y·j + b.z·k)
+ * using the rules i²=j²=k²=ijk=-1.
+ *
+ * Usage:
+ *   quat yaw   = quat_from_axis_angle(vec3_create(0, 1, 0), angle_y);
+ *   quat pitch = quat_from_axis_angle(vec3_create(1, 0, 0), angle_x);
+ *   quat combined = quat_multiply(yaw, pitch);  // pitch first, then yaw
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_multiply(quat a, quat b)
+{
+    return quat_create(
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+    );
+}
+
+/* Rotate a 3D vector by a quaternion: v' = q * v * q*.
+ *
+ * This is the primary way to apply a quaternion rotation to a point
+ * or direction vector. The vector v is treated as a pure quaternion
+ * (0, v.x, v.y, v.z), then sandwiched between q and its conjugate.
+ *
+ * The expanded formula avoids constructing intermediate quaternions:
+ *   v' = v + 2w(u × v) + 2(u × (u × v))
+ * where u = (q.x, q.y, q.z) is the vector part of q.
+ *
+ * Usage:
+ *   quat rot = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2);
+ *   vec3 v = vec3_create(1, 0, 0);
+ *   vec3 rotated = quat_rotate_vec3(rot, v);  // (0, 0, -1) — 90° around Y
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline vec3 quat_rotate_vec3(quat q, vec3 v)
+{
+    /* u = vector part of quaternion */
+    vec3 u = vec3_create(q.x, q.y, q.z);
+
+    /* t = 2 * (u × v) */
+    vec3 t = vec3_scale(vec3_cross(u, v), 2.0f);
+
+    /* v' = v + w*t + u × t */
+    return vec3_add(vec3_add(v, vec3_scale(t, q.w)), vec3_cross(u, t));
+}
+
+/* ── Quaternion ↔ Axis-Angle ─────────────────────────────────────────── */
+
+/* Create a quaternion from an axis-angle rotation.
+ *
+ * Axis-angle is the most intuitive rotation representation:
+ *   "Rotate by θ degrees around this axis."
+ *
+ * The axis must be a unit vector. The angle is in radians.
+ *
+ * Formula:
+ *   q = (cos(θ/2), sin(θ/2) * axis.x, sin(θ/2) * axis.y, sin(θ/2) * axis.z)
+ *
+ * Why half-angle? Because quaternions double-cover rotations. A rotation
+ * of θ maps to θ/2 in quaternion space, and a full 360° rotation maps to
+ * q = (-1, 0, 0, 0), while 720° brings you back to (1, 0, 0, 0).
+ *
+ * Usage:
+ *   vec3 up = vec3_create(0, 1, 0);
+ *   quat q = quat_from_axis_angle(up, 45.0f * FORGE_DEG2RAD);  // 45° yaw
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_from_axis_angle(vec3 axis, float angle_radians)
+{
+    float half = angle_radians * 0.5f;
+    float s = sinf(half);
+    return quat_create(cosf(half), s * axis.x, s * axis.y, s * axis.z);
+}
+
+/* Extract the axis and angle from a quaternion.
+ *
+ * Inverse of quat_from_axis_angle. Returns the rotation axis (unit vector)
+ * and angle (radians, in [0, 2π]).
+ *
+ * Edge case: if the quaternion is the identity (no rotation), the axis is
+ * undefined. We return (0, 1, 0) as a convention.
+ *
+ * Parameters:
+ *   q         — unit quaternion
+ *   out_axis  — receives the rotation axis (unit vector)
+ *   out_angle — receives the rotation angle in radians
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline void quat_to_axis_angle(quat q, vec3 *out_axis, float *out_angle)
+{
+    /* Ensure w is in [-1, 1] for acos (clamp for numerical safety) */
+    float w = forge_clampf(q.w, -1.0f, 1.0f);
+    *out_angle = 2.0f * acosf(w);
+
+    /* The vector part length = sin(angle/2) */
+    float s = sqrtf(1.0f - w * w);
+    if (s > 1e-6f) {
+        float inv_s = 1.0f / s;
+        *out_axis = vec3_create(q.x * inv_s, q.y * inv_s, q.z * inv_s);
+    } else {
+        /* Nearly zero rotation — axis is undefined, pick Y-up */
+        *out_axis = vec3_create(0.0f, 1.0f, 0.0f);
+    }
+}
+
+/* ── Quaternion ↔ Euler Angles ───────────────────────────────────────── */
+
+/* Create a quaternion from Euler angles (intrinsic Y-X-Z order).
+ *
+ * This is the standard game/camera convention:
+ *   1. Yaw:   rotate around Y axis (look left/right)
+ *   2. Pitch: rotate around X axis (look up/down)
+ *   3. Roll:  rotate around Z axis (tilt head)
+ *
+ * Equivalent to: q = q_yaw * q_pitch * q_roll
+ * (yaw applied to world, pitch in yawed frame, roll in pitched frame)
+ *
+ * All angles are in radians.
+ *
+ * WARNING: Euler angles suffer from gimbal lock when pitch = ±90°.
+ * Prefer quaternions for runtime orientation and convert to/from Euler
+ * only for user-facing display or input.
+ *
+ * Usage:
+ *   float yaw = 45.0f * FORGE_DEG2RAD;
+ *   float pitch = -15.0f * FORGE_DEG2RAD;
+ *   quat orientation = quat_from_euler(yaw, pitch, 0.0f);
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_from_euler(float yaw, float pitch, float roll)
+{
+    /* Half angles */
+    float cy = cosf(yaw * 0.5f);
+    float sy = sinf(yaw * 0.5f);
+    float cp = cosf(pitch * 0.5f);
+    float sp = sinf(pitch * 0.5f);
+    float cr = cosf(roll * 0.5f);
+    float sr = sinf(roll * 0.5f);
+
+    /* Expanded quaternion product: q_y * q_x * q_z */
+    return quat_create(
+        cy * cp * cr + sy * sp * sr,   /* w */
+        cy * sp * cr + sy * cp * sr,   /* x */
+        sy * cp * cr - cy * sp * sr,   /* y */
+        cy * cp * sr - sy * sp * cr    /* z */
+    );
+}
+
+/* Extract Euler angles (intrinsic Y-X-Z) from a quaternion.
+ *
+ * Returns (yaw, pitch, roll) packed in a vec3:
+ *   .x = yaw   (Y rotation, in radians)
+ *   .y = pitch  (X rotation, in radians, range [-π/2, π/2])
+ *   .z = roll   (Z rotation, in radians)
+ *
+ * At gimbal lock (pitch = ±90°), yaw and roll become coupled — we set
+ * roll = 0 and absorb both into yaw (standard convention).
+ *
+ * WARNING: Converting to Euler and back may not give the original angles
+ * because multiple Euler triplets can represent the same rotation.
+ *
+ * Usage:
+ *   vec3 euler = quat_to_euler(orientation);
+ *   float yaw_deg   = euler.x * FORGE_RAD2DEG;
+ *   float pitch_deg = euler.y * FORGE_RAD2DEG;
+ *   float roll_deg  = euler.z * FORGE_RAD2DEG;
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline vec3 quat_to_euler(quat q)
+{
+    float yaw, pitch, roll;
+
+    /* sin(pitch) from rotation matrix element R[1][2] */
+    float sinp = 2.0f * (q.w * q.x - q.y * q.z);
+
+    if (sinp >= 1.0f) {
+        /* Gimbal lock: pitch = +90° */
+        pitch = FORGE_PI * 0.5f;
+        yaw = atan2f(2.0f * (q.w * q.y - q.x * q.z),
+                     1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+        roll = 0.0f;
+    } else if (sinp <= -1.0f) {
+        /* Gimbal lock: pitch = -90° */
+        pitch = -FORGE_PI * 0.5f;
+        yaw = atan2f(2.0f * (q.w * q.y - q.x * q.z),
+                     1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+        roll = 0.0f;
+    } else {
+        pitch = asinf(sinp);
+        yaw = atan2f(2.0f * (q.x * q.z + q.w * q.y),
+                     1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+        roll = atan2f(2.0f * (q.x * q.y + q.w * q.z),
+                      1.0f - 2.0f * (q.x * q.x + q.z * q.z));
+    }
+
+    return vec3_create(yaw, pitch, roll);
+}
+
+/* ── Quaternion ↔ Matrix ─────────────────────────────────────────────── */
+
+/* Convert a unit quaternion to a 4×4 rotation matrix.
+ *
+ * The resulting matrix performs the same rotation as the quaternion.
+ * Use this when you need to combine a quaternion rotation with other
+ * transforms (translation, scale) in the MVP pipeline.
+ *
+ * The matrix is orthonormal (columns are perpendicular unit vectors),
+ * has determinant 1, and its inverse equals its transpose.
+ *
+ * Formula (from expanding q * v * q*):
+ *   | 1-2(y²+z²)  2(xy-wz)    2(xz+wy)   0 |
+ *   | 2(xy+wz)    1-2(x²+z²)  2(yz-wx)   0 |
+ *   | 2(xz-wy)    2(yz+wx)    1-2(x²+y²) 0 |
+ *   | 0           0           0           1 |
+ *
+ * Usage:
+ *   quat q = quat_from_axis_angle(axis, angle);
+ *   mat4 rotation = quat_to_mat4(q);
+ *   mat4 model = mat4_multiply(translation, rotation);  // for MVP
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline mat4 quat_to_mat4(quat q)
+{
+    /* Pre-compute products (each used twice) */
+    float xx = q.x * q.x;
+    float yy = q.y * q.y;
+    float zz = q.z * q.z;
+    float xy = q.x * q.y;
+    float xz = q.x * q.z;
+    float yz = q.y * q.z;
+    float wx = q.w * q.x;
+    float wy = q.w * q.y;
+    float wz = q.w * q.z;
+
+    mat4 m = mat4_identity();
+
+    /* Column 0 (X axis) */
+    m.m[0] = 1.0f - 2.0f * (yy + zz);
+    m.m[1] = 2.0f * (xy + wz);
+    m.m[2] = 2.0f * (xz - wy);
+
+    /* Column 1 (Y axis) */
+    m.m[4] = 2.0f * (xy - wz);
+    m.m[5] = 1.0f - 2.0f * (xx + zz);
+    m.m[6] = 2.0f * (yz + wx);
+
+    /* Column 2 (Z axis) */
+    m.m[8]  = 2.0f * (xz + wy);
+    m.m[9]  = 2.0f * (yz - wx);
+    m.m[10] = 1.0f - 2.0f * (xx + yy);
+
+    return m;
+}
+
+/* Convert a rotation matrix to a unit quaternion.
+ *
+ * Extracts the quaternion from the upper-left 3×3 of a 4×4 matrix.
+ * The matrix should be a pure rotation (orthonormal, determinant 1).
+ * If the matrix includes scale or skew, normalize the columns first.
+ *
+ * Uses Shepperd's method: picks the largest diagonal element to avoid
+ * division by near-zero values, ensuring numerical stability.
+ *
+ * Usage:
+ *   mat4 rotation = mat4_rotate_y(angle);
+ *   quat q = quat_from_mat4(rotation);
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_from_mat4(mat4 m)
+{
+    /* R[row][col] in column-major: m.m[col*4 + row] */
+    float r00 = m.m[0], r11 = m.m[5], r22 = m.m[10];
+    float trace = r00 + r11 + r22;
+    float w, x, y, z;
+
+    if (trace > 0.0f) {
+        float s = sqrtf(trace + 1.0f) * 2.0f;  /* s = 4w */
+        w = s * 0.25f;
+        x = (m.m[6] - m.m[9]) / s;   /* (R[2][1] - R[1][2]) / s */
+        y = (m.m[8] - m.m[2]) / s;   /* (R[0][2] - R[2][0]) / s */
+        z = (m.m[1] - m.m[4]) / s;   /* (R[1][0] - R[0][1]) / s */
+    } else if (r00 > r11 && r00 > r22) {
+        float s = sqrtf(1.0f + r00 - r11 - r22) * 2.0f;  /* s = 4x */
+        w = (m.m[6] - m.m[9]) / s;
+        x = s * 0.25f;
+        y = (m.m[4] + m.m[1]) / s;   /* (R[0][1] + R[1][0]) / s */
+        z = (m.m[8] + m.m[2]) / s;   /* (R[0][2] + R[2][0]) / s */
+    } else if (r11 > r22) {
+        float s = sqrtf(1.0f + r11 - r00 - r22) * 2.0f;  /* s = 4y */
+        w = (m.m[8] - m.m[2]) / s;
+        x = (m.m[4] + m.m[1]) / s;
+        y = s * 0.25f;
+        z = (m.m[9] + m.m[6]) / s;   /* (R[1][2] + R[2][1]) / s */
+    } else {
+        float s = sqrtf(1.0f + r22 - r00 - r11) * 2.0f;  /* s = 4z */
+        w = (m.m[1] - m.m[4]) / s;
+        x = (m.m[8] + m.m[2]) / s;
+        y = (m.m[9] + m.m[6]) / s;
+        z = s * 0.25f;
+    }
+
+    return quat_create(w, x, y, z);
+}
+
+/* ── Quaternion Interpolation ────────────────────────────────────────── */
+
+/* Spherical linear interpolation between two quaternions.
+ *
+ * SLERP interpolates along the shortest arc on the 4D unit sphere,
+ * producing constant angular velocity — the rotation speed is uniform.
+ *
+ * When t=0, returns a. When t=1, returns b. Values between give a
+ * smooth rotation that moves at constant speed.
+ *
+ * SLERP automatically takes the shortest path: if the dot product of
+ * a and b is negative (meaning they represent the same rotation but
+ * are on opposite hemispheres), one is negated first.
+ *
+ * Formula:
+ *   slerp(a, b, t) = a * sin((1-t)θ)/sin(θ) + b * sin(tθ)/sin(θ)
+ *   where θ = acos(dot(a, b))
+ *
+ * Falls back to nlerp when the angle is very small (avoids division
+ * by near-zero sin(θ)).
+ *
+ * Usage:
+ *   quat start = quat_from_euler(0, 0, 0);
+ *   quat end   = quat_from_euler(FORGE_PI, 0, 0);
+ *   quat mid   = quat_slerp(start, end, 0.5f);  // halfway rotation
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_slerp(quat a, quat b, float t)
+{
+    float d = quat_dot(a, b);
+
+    /* Take the shortest path — if dot < 0, negate one quaternion */
+    if (d < 0.0f) {
+        b = quat_negate(b);
+        d = -d;
+    }
+
+    /* If quaternions are very close, fall back to linear interpolation
+     * to avoid division by sin(θ) ≈ 0 */
+    if (d > 0.9995f) {
+        quat result = quat_create(
+            a.w + t * (b.w - a.w),
+            a.x + t * (b.x - a.x),
+            a.y + t * (b.y - a.y),
+            a.z + t * (b.z - a.z)
+        );
+        return quat_normalize(result);
+    }
+
+    float theta = acosf(d);          /* angle between quaternions */
+    float sin_theta = sinf(theta);
+    float wa = sinf((1.0f - t) * theta) / sin_theta;
+    float wb = sinf(t * theta) / sin_theta;
+
+    return quat_create(
+        wa * a.w + wb * b.w,
+        wa * a.x + wb * b.x,
+        wa * a.y + wb * b.y,
+        wa * a.z + wb * b.z
+    );
+}
+
+/* Normalized linear interpolation between two quaternions.
+ *
+ * NLERP is the cheaper alternative to slerp: it linearly interpolates
+ * the quaternion components and then normalizes. The result follows the
+ * same path as slerp but at non-constant speed (faster near the middle,
+ * slower near the endpoints).
+ *
+ * For small rotations or when constant speed isn't needed, nlerp is
+ * often preferred because it's faster and commutative.
+ *
+ * Usage:
+ *   quat mid = quat_nlerp(start, end, 0.5f);
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline quat quat_nlerp(quat a, quat b, float t)
+{
+    /* Take shortest path */
+    if (quat_dot(a, b) < 0.0f) {
+        b = quat_negate(b);
+    }
+
+    quat result = quat_create(
+        a.w + t * (b.w - a.w),
+        a.x + t * (b.x - a.x),
+        a.y + t * (b.y - a.y),
+        a.z + t * (b.z - a.z)
+    );
+    return quat_normalize(result);
+}
+
+/* ── Rodrigues' Rotation (Axis-Angle on Vectors) ─────────────────────── */
+
+/* Rotate a vector around an arbitrary axis by a given angle.
+ *
+ * This uses Rodrigues' rotation formula — a direct way to rotate a vector
+ * without constructing a quaternion or matrix first. Useful for one-off
+ * rotations or for understanding the geometry of rotation.
+ *
+ * Formula:
+ *   v' = v·cos(θ) + (k × v)·sin(θ) + k·(k·v)·(1 - cos(θ))
+ *
+ * where k is the unit rotation axis and θ is the angle.
+ *
+ * Geometric intuition: decompose v into components parallel and
+ * perpendicular to k. The parallel part stays fixed. The perpendicular
+ * part rotates in the plane perpendicular to k.
+ *
+ * Parameters:
+ *   v              — the vector to rotate
+ *   axis           — rotation axis (must be unit length)
+ *   angle_radians  — rotation angle in radians (positive = CCW when
+ *                    looking down the axis toward the origin)
+ *
+ * Usage:
+ *   vec3 v = vec3_create(1, 0, 0);
+ *   vec3 axis = vec3_create(0, 1, 0);  // Y axis
+ *   vec3 rotated = vec3_rotate_axis_angle(v, axis, FORGE_PI / 2);
+ *   // rotated ≈ (0, 0, -1) — 90° around Y
+ *
+ * See: lessons/math/08-orientation
+ */
+static inline vec3 vec3_rotate_axis_angle(vec3 v, vec3 axis,
+                                           float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    float k_dot_v = vec3_dot(axis, v);
+    vec3 k_cross_v = vec3_cross(axis, v);
+
+    /* v' = v*cos(θ) + (k×v)*sin(θ) + k*(k·v)*(1-cos(θ)) */
+    return vec3_add(
+        vec3_add(vec3_scale(v, c), vec3_scale(k_cross_v, s)),
+        vec3_scale(axis, k_dot_v * (1.0f - c))
+    );
+}
+
 #endif /* FORGE_MATH_H */

@@ -28,8 +28,9 @@ implementations for your projects.
 | 05 | [Matrices](05-matrices/) | Matrix math, multiplication, basis vectors, transpose, determinant, inverse |
 | 06 | [Projections](06-projections/) | Perspective, orthographic, frustums, clip space, NDC |
 | 07 | [Floating Point](07-floating-point/) | IEEE 754, precision, epsilon comparison, z-fighting, float vs double |
+| 08 | [Orientation](08-orientation/) | Quaternions, Euler angles, axis-angle, rotation matrices, gimbal lock, slerp |
 
-*More lessons coming soon:* Quaternions, orientation, view matrix, and more.
+*More lessons coming soon:* View matrix, anisotropy, and more.
 
 ## How Math Lessons Work
 

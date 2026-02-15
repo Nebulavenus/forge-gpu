@@ -31,6 +31,7 @@ vec4 rotated = mat4_multiply_vec4(rotation, v);
 - **`vec4`** — 4D vectors (x, y, z, w) — maps to HLSL `float4`
 - **`mat3`** — 3×3 matrices (column-major) — maps to HLSL `float3x3`
 - **`mat4`** — 4×4 matrices (column-major) — maps to HLSL `float4x4`
+- **`quat`** — Quaternions (w, x, y, z) for 3D rotations — pass as HLSL `float4`
 
 **Note on naming:** We use `vec2/vec3/vec4` instead of HLSL's `float2/float3/float4`
 to keep the math library portable and follow C math library conventions. The mapping
@@ -83,6 +84,20 @@ Each vector type supports:
 - **Camera:**
   - `mat4_look_at(eye, target, up)` — View matrix from camera parameters
 
+### Quaternion Operations
+
+- **Construction:** `quat_create(w, x, y, z)`, `quat_identity()`
+- **Properties:** `quat_dot(a, b)`, `quat_length(q)`, `quat_length_sq(q)`
+- **Operations:** `quat_normalize(q)`, `quat_conjugate(q)`, `quat_inverse(q)`, `quat_negate(q)`
+- **Composition:** `quat_multiply(a, b)` — compose rotations (apply b first)
+- **Rotation:** `quat_rotate_vec3(q, v)` — rotate vector by quaternion
+- **Conversions:**
+  - `quat_from_axis_angle(axis, angle)` / `quat_to_axis_angle(q, &axis, &angle)`
+  - `quat_from_euler(yaw, pitch, roll)` / `quat_to_euler(q)` — intrinsic Y-X-Z order
+  - `quat_to_mat4(q)` / `quat_from_mat4(m)` — quaternion to/from rotation matrix
+- **Interpolation:** `quat_slerp(a, b, t)`, `quat_nlerp(a, b, t)`
+- **Rodrigues:** `vec3_rotate_axis_angle(v, axis, angle)` — rotate vector around arbitrary axis
+
 ### Constants
 
 - `FORGE_PI` — π (3.14159...)
@@ -129,6 +144,8 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/04-mipmaps-and-lod/` — Mip chains, trilinear interpolation, LOD selection
 - `lessons/math/05-matrices/` — Matrix math, multiplication, basis vectors, transpose, determinant, inverse
 - `lessons/math/06-projections/` — Perspective, orthographic, frustums, clip space, NDC
+- `lessons/math/07-floating-point/` — IEEE 754, precision, epsilon, z-fighting
+- `lessons/math/08-orientation/` — Quaternions, Euler angles, axis-angle, rotation matrices, slerp
 
 Each lesson includes a demo program and README explaining the math.
 
@@ -173,6 +190,7 @@ Our C types map directly to HLSL types when uploading data to shaders:
 | `vec4` | `float4` | 16 bytes (4 floats) |
 | `mat3` | `float3x3` | 36 bytes (9 floats, column-major) |
 | `mat4` | `float4x4` | 64 bytes (16 floats, column-major) |
+| `quat` | `float4` | 16 bytes (4 floats: w, x, y, z) |
 
 **Example: Vertex struct in C and HLSL**
 

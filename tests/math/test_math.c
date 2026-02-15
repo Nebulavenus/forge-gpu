@@ -1117,6 +1117,350 @@ static void test_mat4_from_mat3(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Quaternion Tests (Lesson 08)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Check if two quats are approximately equal */
+static bool quat_eq(quat a, quat b)
+{
+    return float_eq(a.w, b.w) && float_eq(a.x, b.x) &&
+           float_eq(a.y, b.y) && float_eq(a.z, b.z);
+}
+
+#define ASSERT_QUAT_EQ(a, b) \
+    if (!quat_eq(a, b)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+                     "    FAIL: quat (%.4f,%.4f,%.4f,%.4f) != (%.4f,%.4f,%.4f,%.4f)", \
+                     a.w, a.x, a.y, a.z, b.w, b.x, b.y, b.z); \
+        fail_count++; \
+        return; \
+    }
+
+static void test_quat_identity(void)
+{
+    TEST("quat_identity");
+    quat id = quat_identity();
+    ASSERT_FLOAT_EQ(id.w, TEST_ONE);
+    ASSERT_FLOAT_EQ(id.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(id.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(id.z, TEST_ZERO);
+    ASSERT_FLOAT_EQ(quat_length(id), TEST_ONE);
+    END_TEST();
+}
+
+static void test_quat_conjugate(void)
+{
+    TEST("quat_conjugate");
+    quat q = quat_create(1.0f, 2.0f, 3.0f, 4.0f);
+    quat c = quat_conjugate(q);
+    ASSERT_FLOAT_EQ(c.w, 1.0f);
+    ASSERT_FLOAT_EQ(c.x, -2.0f);
+    ASSERT_FLOAT_EQ(c.y, -3.0f);
+    ASSERT_FLOAT_EQ(c.z, -4.0f);
+    END_TEST();
+}
+
+static void test_quat_normalize(void)
+{
+    TEST("quat_normalize");
+    quat q = quat_create(1.0f, 1.0f, 1.0f, 1.0f);  /* length = 2 */
+    quat n = quat_normalize(q);
+    ASSERT_FLOAT_EQ(quat_length(n), TEST_ONE);
+    ASSERT_FLOAT_EQ(n.w, TEST_HALF);
+    ASSERT_FLOAT_EQ(n.x, TEST_HALF);
+    ASSERT_FLOAT_EQ(n.y, TEST_HALF);
+    ASSERT_FLOAT_EQ(n.z, TEST_HALF);
+    END_TEST();
+}
+
+static void test_quat_multiply_identity(void)
+{
+    TEST("quat_multiply with identity");
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 4.0f);
+    quat id = quat_identity();
+
+    /* q * identity = q */
+    quat r1 = quat_multiply(q, id);
+    ASSERT_QUAT_EQ(r1, q);
+
+    /* identity * q = q */
+    quat r2 = quat_multiply(id, q);
+    ASSERT_QUAT_EQ(r2, q);
+    END_TEST();
+}
+
+static void test_quat_multiply_inverse(void)
+{
+    TEST("quat_multiply with inverse");
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 3.0f);
+    quat q_inv = quat_conjugate(q);
+    quat product = quat_multiply(q, q_inv);
+
+    /* q * q* should be identity */
+    ASSERT_FLOAT_EQ(product.w, TEST_ONE);
+    ASSERT_FLOAT_EQ(product.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(product.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(product.z, TEST_ZERO);
+    END_TEST();
+}
+
+static void test_quat_from_axis_angle(void)
+{
+    TEST("quat_from_axis_angle");
+    /* 90° around Y axis: q = (cos(45°), 0, sin(45°), 0) */
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2.0f);
+    float expected_w = cosf(FORGE_PI / 4.0f);
+    float expected_y = sinf(FORGE_PI / 4.0f);
+    ASSERT_FLOAT_EQ(q.w, expected_w);
+    ASSERT_FLOAT_EQ(q.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(q.y, expected_y);
+    ASSERT_FLOAT_EQ(q.z, TEST_ZERO);
+    ASSERT_FLOAT_EQ(quat_length(q), TEST_ONE);
+    END_TEST();
+}
+
+static void test_quat_to_axis_angle_roundtrip(void)
+{
+    TEST("quat_to_axis_angle round-trip");
+    vec3 axis = vec3_create(0.0f, 1.0f, 0.0f);
+    float angle = 1.5f;
+
+    quat q = quat_from_axis_angle(axis, angle);
+    vec3 out_axis;
+    float out_angle;
+    quat_to_axis_angle(q, &out_axis, &out_angle);
+
+    ASSERT_FLOAT_EQ(out_axis.x, axis.x);
+    ASSERT_FLOAT_EQ(out_axis.y, axis.y);
+    ASSERT_FLOAT_EQ(out_axis.z, axis.z);
+    ASSERT_FLOAT_EQ(out_angle, angle);
+    END_TEST();
+}
+
+static void test_quat_rotate_vec3_y(void)
+{
+    TEST("quat_rotate_vec3 around Y");
+    /* 90° around Y should turn (1,0,0) into (0,0,-1) */
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2.0f);
+    vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
+    vec3 result = quat_rotate_vec3(q, v);
+    ASSERT_FLOAT_EQ(result.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.z, -TEST_ONE);
+    END_TEST();
+}
+
+static void test_quat_rotate_vec3_x(void)
+{
+    TEST("quat_rotate_vec3 around X");
+    /* 90° around X should turn (0,1,0) into (0,0,1) */
+    quat q = quat_from_axis_angle(vec3_create(1, 0, 0), FORGE_PI / 2.0f);
+    vec3 v = vec3_create(0.0f, 1.0f, 0.0f);
+    vec3 result = quat_rotate_vec3(q, v);
+    ASSERT_FLOAT_EQ(result.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.z, TEST_ONE);
+    END_TEST();
+}
+
+static void test_quat_rotate_vec3_z(void)
+{
+    TEST("quat_rotate_vec3 around Z");
+    /* 90° around Z should turn (1,0,0) into (0,1,0) */
+    quat q = quat_from_axis_angle(vec3_create(0, 0, 1), FORGE_PI / 2.0f);
+    vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
+    vec3 result = quat_rotate_vec3(q, v);
+    ASSERT_FLOAT_EQ(result.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.y, TEST_ONE);
+    ASSERT_FLOAT_EQ(result.z, TEST_ZERO);
+    END_TEST();
+}
+
+static void test_quat_double_cover(void)
+{
+    TEST("quat double cover (q and -q same rotation)");
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 3.0f);
+    quat neg_q = quat_negate(q);
+    vec3 v = vec3_create(1.0f, 2.0f, 3.0f);
+
+    vec3 r1 = quat_rotate_vec3(q, v);
+    vec3 r2 = quat_rotate_vec3(neg_q, v);
+    ASSERT_VEC3_EQ(r1, r2);
+    END_TEST();
+}
+
+static void test_quat_to_mat4(void)
+{
+    TEST("quat_to_mat4 vs mat4_rotate_y");
+    float angle = FORGE_PI / 3.0f;
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), angle);
+    mat4 from_quat = quat_to_mat4(q);
+    mat4 from_mat = mat4_rotate_y(angle);
+    ASSERT_MAT4_EQ(from_quat, from_mat);
+    END_TEST();
+}
+
+static void test_quat_to_mat4_x(void)
+{
+    TEST("quat_to_mat4 vs mat4_rotate_x");
+    float angle = FORGE_PI / 4.0f;
+    quat q = quat_from_axis_angle(vec3_create(1, 0, 0), angle);
+    mat4 from_quat = quat_to_mat4(q);
+    mat4 from_mat = mat4_rotate_x(angle);
+    ASSERT_MAT4_EQ(from_quat, from_mat);
+    END_TEST();
+}
+
+static void test_quat_from_mat4_roundtrip(void)
+{
+    TEST("quat_from_mat4 round-trip");
+    quat q = quat_from_euler(0.5f, 0.3f, 0.1f);
+    mat4 m = quat_to_mat4(q);
+    quat q2 = quat_from_mat4(m);
+
+    /* q2 might be -q (double cover), so check both */
+    vec3 v = vec3_create(1.0f, 2.0f, 3.0f);
+    vec3 r1 = quat_rotate_vec3(q, v);
+    vec3 r2 = quat_rotate_vec3(q2, v);
+    ASSERT_VEC3_EQ(r1, r2);
+    END_TEST();
+}
+
+static void test_quat_from_euler_identity(void)
+{
+    TEST("quat_from_euler all zeros = identity");
+    quat q = quat_from_euler(0.0f, 0.0f, 0.0f);
+    ASSERT_FLOAT_EQ(q.w, TEST_ONE);
+    ASSERT_FLOAT_EQ(q.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(q.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(q.z, TEST_ZERO);
+    END_TEST();
+}
+
+static void test_quat_from_euler_yaw_only(void)
+{
+    TEST("quat_from_euler yaw only matches axis-angle Y");
+    float yaw = FORGE_PI / 4.0f;
+    quat from_euler = quat_from_euler(yaw, 0.0f, 0.0f);
+    quat from_axis = quat_from_axis_angle(vec3_create(0, 1, 0), yaw);
+    ASSERT_QUAT_EQ(from_euler, from_axis);
+    END_TEST();
+}
+
+static void test_quat_from_euler_pitch_only(void)
+{
+    TEST("quat_from_euler pitch only matches axis-angle X");
+    float pitch = FORGE_PI / 6.0f;
+    quat from_euler = quat_from_euler(0.0f, pitch, 0.0f);
+    quat from_axis = quat_from_axis_angle(vec3_create(1, 0, 0), pitch);
+    ASSERT_QUAT_EQ(from_euler, from_axis);
+    END_TEST();
+}
+
+static void test_quat_euler_roundtrip(void)
+{
+    TEST("quat_to_euler round-trip");
+    float yaw = 0.5f;
+    float pitch = 0.3f;
+    float roll = 0.1f;
+    quat q = quat_from_euler(yaw, pitch, roll);
+    vec3 euler = quat_to_euler(q);
+    ASSERT_FLOAT_EQ(euler.x, yaw);
+    ASSERT_FLOAT_EQ(euler.y, pitch);
+    ASSERT_FLOAT_EQ(euler.z, roll);
+    END_TEST();
+}
+
+static void test_quat_euler_vs_matrix(void)
+{
+    TEST("quat_from_euler matches matrix Ry*Rx*Rz");
+    float yaw = 0.7f;
+    float pitch = 0.4f;
+    float roll = 0.2f;
+    quat q = quat_from_euler(yaw, pitch, roll);
+    mat4 from_quat = quat_to_mat4(q);
+    mat4 from_mat = mat4_multiply(mat4_rotate_y(yaw),
+                    mat4_multiply(mat4_rotate_x(pitch),
+                                  mat4_rotate_z(roll)));
+    ASSERT_MAT4_EQ(from_quat, from_mat);
+    END_TEST();
+}
+
+static void test_quat_slerp_endpoints(void)
+{
+    TEST("quat_slerp endpoints");
+    quat a = quat_from_axis_angle(vec3_create(0, 1, 0), 0.0f);
+    quat b = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2.0f);
+
+    /* t=0 should return a */
+    quat r0 = quat_slerp(a, b, 0.0f);
+    ASSERT_QUAT_EQ(r0, a);
+
+    /* t=1 should return b */
+    quat r1 = quat_slerp(a, b, 1.0f);
+    ASSERT_QUAT_EQ(r1, b);
+    END_TEST();
+}
+
+static void test_quat_slerp_midpoint(void)
+{
+    TEST("quat_slerp midpoint");
+    quat a = quat_from_axis_angle(vec3_create(0, 1, 0), 0.0f);
+    quat b = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2.0f);
+
+    /* t=0.5 should be halfway — 45° around Y */
+    quat mid = quat_slerp(a, b, 0.5f);
+    quat expected = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 4.0f);
+    ASSERT_QUAT_EQ(mid, expected);
+    END_TEST();
+}
+
+static void test_quat_nlerp_endpoints(void)
+{
+    TEST("quat_nlerp endpoints");
+    quat a = quat_from_axis_angle(vec3_create(0, 1, 0), 0.0f);
+    quat b = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2.0f);
+
+    quat r0 = quat_nlerp(a, b, 0.0f);
+    ASSERT_QUAT_EQ(r0, a);
+
+    quat r1 = quat_nlerp(a, b, 1.0f);
+    ASSERT_QUAT_EQ(r1, b);
+    END_TEST();
+}
+
+static void test_vec3_rotate_axis_angle(void)
+{
+    TEST("vec3_rotate_axis_angle");
+    /* 90° around Y: (1,0,0) -> (0,0,-1) */
+    vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
+    vec3 axis = vec3_create(0.0f, 1.0f, 0.0f);
+    vec3 result = vec3_rotate_axis_angle(v, axis, FORGE_PI / 2.0f);
+    ASSERT_FLOAT_EQ(result.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.z, -TEST_ONE);
+    END_TEST();
+}
+
+static void test_vec3_rotate_axis_angle_120(void)
+{
+    TEST("vec3_rotate_axis_angle 3x120 around diagonal");
+    /* Three 120° rotations around (1,1,1) cycle X->Y->Z->X */
+    vec3 axis = vec3_normalize(vec3_create(1, 1, 1));
+    float angle = 120.0f * FORGE_DEG2RAD;
+    vec3 v = vec3_create(1, 0, 0);
+    vec3 v1 = vec3_rotate_axis_angle(v, axis, angle);
+    vec3 v2 = vec3_rotate_axis_angle(v1, axis, angle);
+    vec3 v3 = vec3_rotate_axis_angle(v2, axis, angle);
+
+    /* Should be back to (1, 0, 0) */
+    ASSERT_FLOAT_EQ(v3.x, TEST_ONE);
+    ASSERT_FLOAT_EQ(v3.y, TEST_ZERO);
+    ASSERT_FLOAT_EQ(v3.z, TEST_ZERO);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -1207,6 +1551,33 @@ int main(int argc, char *argv[])
     test_mat4_determinant();
     test_mat4_inverse();
     test_mat4_from_mat3();
+
+    /* Quaternion tests */
+    SDL_Log("\nquat tests:");
+    test_quat_identity();
+    test_quat_conjugate();
+    test_quat_normalize();
+    test_quat_multiply_identity();
+    test_quat_multiply_inverse();
+    test_quat_from_axis_angle();
+    test_quat_to_axis_angle_roundtrip();
+    test_quat_rotate_vec3_y();
+    test_quat_rotate_vec3_x();
+    test_quat_rotate_vec3_z();
+    test_quat_double_cover();
+    test_quat_to_mat4();
+    test_quat_to_mat4_x();
+    test_quat_from_mat4_roundtrip();
+    test_quat_from_euler_identity();
+    test_quat_from_euler_yaw_only();
+    test_quat_from_euler_pitch_only();
+    test_quat_euler_roundtrip();
+    test_quat_euler_vs_matrix();
+    test_quat_slerp_endpoints();
+    test_quat_slerp_midpoint();
+    test_quat_nlerp_endpoints();
+    test_vec3_rotate_axis_angle();
+    test_vec3_rotate_axis_angle_120();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");
