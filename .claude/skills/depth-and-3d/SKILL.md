@@ -249,7 +249,7 @@ SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
 ## Reference
 
 - [GPU Lesson 06 — Depth Buffer & 3D Transforms](../../../lessons/gpu/06-depth-and-3d/) — full implementation
-- [Math Lesson 06 — Matrices](../../../lessons/math/06-matrices/) — transform theory
+- [Math Lesson 05 — Matrices](../../../lessons/math/05-matrices/) — transform theory
 - [uniforms-and-motion skill](../uniforms-and-motion/SKILL.md) — push uniforms
 - [first-triangle skill](../first-triangle/SKILL.md) — vertex buffers, pipelines
 - `mat4_perspective()`, `mat4_look_at()` in `common/math/forge_math.h`

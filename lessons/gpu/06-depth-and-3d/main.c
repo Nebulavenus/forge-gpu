@@ -16,7 +16,7 @@
  *
  * All math operations use the forge_math library (common/math/forge_math.h,
  * see common/math/README.md).  The theory behind each transform is explained
- * in Math Lesson 06 — Matrices (lessons/math/06-matrices/).
+ * in Math Lesson 05 — Matrices (lessons/math/05-matrices/).
  *
  * What we keep from earlier lessons:
  *   - SDL callbacks, GPU device, window, sRGB swapchain  (Lesson 01)

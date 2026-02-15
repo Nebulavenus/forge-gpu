@@ -1,4 +1,4 @@
-# Math Lesson 06 — Matrices
+# Math Lesson 05 — Matrices
 
 ## What you'll learn
 
@@ -381,7 +381,7 @@ To see matrices used in practice on the GPU, see
 ## Building
 
 ```bash
-python scripts/run.py math/06
+python scripts/run.py math/05
 ```
 
 Requires SDL3 and a C99 compiler (see project root README for full setup).

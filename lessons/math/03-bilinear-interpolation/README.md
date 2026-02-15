@@ -1,4 +1,4 @@
-# Math Lesson 04 — Bilinear Interpolation
+# Math Lesson 03 — Bilinear Interpolation
 
 The math behind LINEAR texture filtering: two nested lerps blending
 the 4 nearest texels into a smooth result.
@@ -156,16 +156,16 @@ cmake -B build
 cmake --build build --config Debug
 
 # Windows
-build\lessons\math\04-bilinear-interpolation\Debug\04-bilinear-interpolation.exe
+build\lessons\math\03-bilinear-interpolation\Debug\03-bilinear-interpolation.exe
 
 # Linux / macOS
-./build/lessons/math/04-bilinear-interpolation/04-bilinear-interpolation
+./build/lessons/math/03-bilinear-interpolation/03-bilinear-interpolation
 ```
 
 Or use the run script:
 
 ```bash
-python scripts/run.py math/04
+python scripts/run.py math/03
 ```
 
 The demo walks through lerp, bilinear interpolation step-by-step, texture
@@ -185,7 +185,7 @@ sampling, color blending, and a nearest vs linear comparison.
 3. **Trilinear interpolation** — Extend bilinear to 3D: given 8 corner values
    of a cube and (tx, ty, tz), compute the blended result. This is two
    bilinear interpolations followed by one lerp — the same structure the GPU
-   uses for trilinear mipmap filtering (coming in Math Lesson 05).
+   uses for trilinear mipmap filtering (coming in Math Lesson 04).
 
 ## Further reading
 

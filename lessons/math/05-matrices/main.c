@@ -1,5 +1,5 @@
 /*
- * Math Lesson 06 — Matrices
+ * Math Lesson 05 — Matrices
  *
  * A proper linear algebra lesson covering what matrices are and how they work,
  * before you ever use them for transforms.
@@ -489,7 +489,7 @@ int main(int argc, char *argv[])
     printf("  4x4 additions: mat4_transpose, mat4_determinant,\n");
     printf("    mat4_inverse, mat4_from_mat3\n");
     printf("\n");
-    printf("  See: lessons/math/06-matrices/README.md\n");
+    printf("  See: lessons/math/05-matrices/README.md\n");
     printf("  See: lessons/math/02-coordinate-spaces/ (transforms + MVP)\n");
     printf("  See: lessons/gpu/06-depth-and-3d/ (using transforms in practice)\n");
     printf("  See: common/math/README.md (full API reference)\n");

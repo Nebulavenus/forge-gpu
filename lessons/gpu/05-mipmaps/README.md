@@ -166,7 +166,7 @@ patterns from this lesson into a reusable reference.
 
 ## See also
 
-- [Math Lesson 05 — Mipmaps & LOD](../../math/05-mipmaps-and-lod/) — the math behind mip selection
+- [Math Lesson 04 — Mipmaps & LOD](../../math/04-mipmaps-and-lod/) — the math behind mip selection
 - [Lesson 04 — Textures & Samplers](../04-textures-and-samplers/) — texture basics
-- [Math Lesson 04 — Bilinear Interpolation](../../math/04-bilinear-interpolation/) — the filtering building block
+- [Math Lesson 03 — Bilinear Interpolation](../../math/03-bilinear-interpolation/) — the filtering building block
 - [Math library](../../../common/math/README.md) — `forge_log2f`, `forge_trilerpf`, etc.

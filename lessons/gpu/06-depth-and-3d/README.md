@@ -61,7 +61,7 @@ In the vertex shader:
 output.position = mul(mvp, float4(input.position, 1.0));
 ```
 
-See [Math Lesson 06 — Matrices](../../math/06-matrices/) for a detailed walkthrough
+See [Math Lesson 05 — Matrices](../../math/05-matrices/) for a detailed walkthrough
 of each transform with numerical examples.
 
 ### Depth buffer
@@ -192,9 +192,9 @@ lesson into a reusable reference.
 
 ## See also
 
-- [Math Lesson 06 — Matrices](../../math/06-matrices/) — numerical walkthrough of each transform
+- [Math Lesson 05 — Matrices](../../math/05-matrices/) — numerical walkthrough of each transform
 - [Math Lesson 02 — Coordinate Spaces](../../math/02-coordinate-spaces/) — transform theory
-- [Math Lesson 03 — Orthographic Projection](../../math/03-orthographic-projection/) — alternative projection
+- [Math Lesson 06 — Projections](../../math/06-projections/) — perspective and orthographic projection
 - [Lesson 04 — Textures & Samplers](../04-textures-and-samplers/) — index buffers (used here too)
 - [Math library](../../../common/math/README.md) — `mat4_perspective`, `mat4_look_at`, etc.
 

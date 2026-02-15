@@ -1,5 +1,5 @@
 /*
- * Math Lesson 04 — Bilinear Interpolation
+ * Math Lesson 03 — Bilinear Interpolation
  *
  * Demonstrates bilinear interpolation: the math behind LINEAR texture filtering.
  * Shows how two nested lerps blend the 4 nearest texels into a smooth result,
@@ -306,7 +306,7 @@ int main(int argc, char *argv[])
     printf("    * vec3_bilerp(...)            -- vec3 bilinear (RGB colors)\n");
     printf("    * vec4_bilerp(...)            -- vec4 bilinear (RGBA colors)\n");
     printf("\n");
-    printf("  See: lessons/math/04-bilinear-interpolation/README.md\n");
+    printf("  See: lessons/math/03-bilinear-interpolation/README.md\n");
     printf("  See: lessons/gpu/04-textures-and-samplers/ (LINEAR vs NEAREST)\n");
     printf("\n");
 

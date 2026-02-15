@@ -25,9 +25,9 @@ portable C interface.
 | 01 | [Hello Window](01-hello-window/) | GPU device, swapchain, render passes | — |
 | 02 | [First Triangle](02-first-triangle/) | Vertex buffers, shaders, pipelines | [Vectors](../math/01-vectors/) |
 | 03 | [Uniforms & Motion](03-uniforms-and-motion/) | Push uniforms, animation | [Vectors](../math/01-vectors/) |
-| 04 | [Textures & Samplers](04-textures-and-samplers/) | Textures, samplers, UV coordinates, index buffers | [Bilinear Interpolation](../math/04-bilinear-interpolation/) |
-| 05 | [Mipmaps](05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes | [Mipmaps & LOD](../math/05-mipmaps-and-lod/) |
-| 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/06-matrices/) |
+| 04 | [Textures & Samplers](04-textures-and-samplers/) | Textures, samplers, UV coordinates, index buffers | [Bilinear Interpolation](../math/03-bilinear-interpolation/) |
+| 05 | [Mipmaps](05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes | [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
+| 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/05-matrices/) |
 
 *More lessons coming soon:* Mesh loading, lighting, and more.
 
@@ -110,9 +110,9 @@ GPU lessons use the **forge-gpu math library** (`common/math/`) for all math ope
 **When to read math lessons:**
 
 - **Before GPU Lesson 02**: Read [Vectors](../math/01-vectors/) to understand positions and colors
-- **Before GPU Lesson 04**: Read [Bilinear Interpolation](../math/04-bilinear-interpolation/) for texture filtering math
-- **Before GPU Lesson 05**: Read [Mipmaps & LOD](../math/05-mipmaps-and-lod/) for mip chain and trilinear math
-- **Before GPU Lesson 06**: Read [Matrices](../math/06-matrices/) for MVP transform walkthrough
+- **Before GPU Lesson 04**: Read [Bilinear Interpolation](../math/03-bilinear-interpolation/) for texture filtering math
+- **Before GPU Lesson 05**: Read [Mipmaps & LOD](../math/04-mipmaps-and-lod/) for mip chain and trilinear math
+- **Before GPU Lesson 06**: Read [Matrices](../math/05-matrices/) for MVP transform walkthrough
 - **When confused**: Math lessons explain the theory behind GPU operations
 
 See [lessons/math/README.md](../math/README.md) for the complete math curriculum.

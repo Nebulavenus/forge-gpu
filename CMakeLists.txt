@@ -31,10 +31,10 @@ enable_testing()
 # ── Math Lessons ────────────────────────────────────────────────────────────
 add_subdirectory(lessons/math/01-vectors)
 add_subdirectory(lessons/math/02-coordinate-spaces)
-add_subdirectory(lessons/math/03-orthographic-projection)
-add_subdirectory(lessons/math/04-bilinear-interpolation)
-add_subdirectory(lessons/math/05-mipmaps-and-lod)
-add_subdirectory(lessons/math/06-matrices)
+add_subdirectory(lessons/math/03-bilinear-interpolation)
+add_subdirectory(lessons/math/04-mipmaps-and-lod)
+add_subdirectory(lessons/math/05-matrices)
+add_subdirectory(lessons/math/06-projections)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)

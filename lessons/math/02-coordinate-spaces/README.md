@@ -449,9 +449,8 @@ The demo program takes a single point and prints its coordinates at each stage o
    - See how the view-space coordinates change
 
 5. **Perspective vs. orthographic:**
-   - Research orthographic projection (no perspective)
-   - Implement `mat4_orthographic(left, right, bottom, top, near, far)`
-   - Compare the results to `mat4_perspective`
+   - See [Math Lesson 06 — Projections](../06-projections/) for both projection types
+   - Compare the results of `mat4_perspective` and `mat4_orthographic`
 
 ---
 

@@ -256,7 +256,7 @@ mat4 mat4_rotate_z(float radians);
 mat4 mat4_perspective(float fov_y, float aspect, float near, float far);
 mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up);
 
-/* Projection (Lesson: lessons/math/03-orthographic-projection) */
+/* Projection (Lesson: lessons/math/06-projections) */
 mat4 mat4_orthographic(float left, float right, float bottom, float top, float near, float far);
 ```
 

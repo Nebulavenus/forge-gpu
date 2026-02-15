@@ -1,5 +1,5 @@
 /*
- * Math Lesson 05 — Mipmaps & LOD
+ * Math Lesson 04 — Mipmaps & LOD
  *
  * Demonstrates the math behind mipmapping: how textures are pre-filtered at
  * multiple resolutions to prevent aliasing, how the GPU picks the right mip
@@ -334,9 +334,9 @@ int main(int argc, char *argv[])
     printf("    * vec3_trilerp(...)        -- vec3 trilinear (RGB colors)\n");
     printf("    * vec4_trilerp(...)        -- vec4 trilinear (RGBA colors)\n");
     printf("\n");
-    printf("  See: lessons/math/05-mipmaps-and-lod/README.md\n");
+    printf("  See: lessons/math/04-mipmaps-and-lod/README.md\n");
     printf("  See: lessons/gpu/05-mipmaps/ (SDL_GenerateMipmapsForGPUTexture)\n");
-    printf("  See: lessons/math/04-bilinear-interpolation/ (the 2D building block)\n");
+    printf("  See: lessons/math/03-bilinear-interpolation/ (the 2D building block)\n");
     printf("\n");
 
     SDL_Quit();

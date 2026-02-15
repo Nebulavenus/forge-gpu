@@ -1,4 +1,4 @@
-# Math Lesson 05 — Mipmaps & LOD
+# Math Lesson 04 — Mipmaps & LOD
 
 ## What you'll learn
 
@@ -25,7 +25,7 @@ output walks through each concept with concrete numbers.
 ## Building
 
 ```bash
-python scripts/run.py math/05
+python scripts/run.py math/04
 ```
 
 Requires SDL3 and a C99 compiler (see project root README for full setup).
@@ -177,7 +177,7 @@ Combined with min/mag filter modes:
 ## Running the demo
 
 ```bash
-python scripts/run.py math/05
+python scripts/run.py math/04
 ```
 
 ## Exercises
@@ -198,6 +198,6 @@ python scripts/run.py math/05
 
 ## See also
 
-- [Math Lesson 04 — Bilinear Interpolation](../04-bilinear-interpolation/) — the 2D building block
+- [Math Lesson 03 — Bilinear Interpolation](../03-bilinear-interpolation/) — the 2D building block
 - [GPU Lesson 05 — Mipmaps](../../gpu/05-mipmaps/) — using `SDL_GenerateMipmapsForGPUTexture`
 - [Math library API](../../../common/math/README.md) — full function reference

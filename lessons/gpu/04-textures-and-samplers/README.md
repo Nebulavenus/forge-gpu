@@ -64,7 +64,7 @@ This lesson uses concepts from earlier math lessons:
   are a similar mapping — from geometry space to texture space
 - **2D rotation** — The vertex shader uses the same `sin`/`cos` rotation from
   Lesson 03, applied to the quad's positions before output
-- **Bilinear interpolation** — [Math Lesson 04](../../math/04-bilinear-interpolation/)
+- **Bilinear interpolation** — [Math Lesson 03](../../math/03-bilinear-interpolation/)
   explains the math behind LINEAR texture filtering: three nested lerps that
   blend the 4 nearest texels into a smooth result
 

@@ -21,7 +21,6 @@ Infrastructure that supports all lessons:
 
 - [x] **Math Lesson 01 — Vectors** — vec2/vec3/vec4, dot product, cross product, normalization, lerp
 - [x] **Math Lesson 02 — Coordinate Spaces** — Model, world, view, projection transforms
-- [x] **Math Lesson 03 — Orthographic Projection** — mat4_orthographic, 2D rendering, perspective comparison
 
 ## GPU Lessons — Up Next
 
@@ -37,12 +36,12 @@ Infrastructure that supports all lessons:
 
 ## Math Lessons — Up Next
 
-- [x] **Math Lesson 04 — Bilinear Interpolation** — How LINEAR texture filtering works: two nested lerps blending the 4 nearest texels; comparison with NEAREST; builds on lerp from Math Lesson 01
-- [x] **Math Lesson 05 — Mipmaps & LOD** — Mip chain as power-of-two downsampling, log2 for level selection, how screen-space derivatives map to mip levels; connects bilinear interpolation (Math Lesson 04) to trilinear filtering
-- [x] **Math Lesson 06 — Matrices** — mat4x4, transformations, rotations, composition
+- [x] **Math Lesson 03 — Bilinear Interpolation** — How LINEAR texture filtering works: two nested lerps blending the 4 nearest texels; comparison with NEAREST; builds on lerp from Math Lesson 01
+- [x] **Math Lesson 04 — Mipmaps & LOD** — Mip chain as power-of-two downsampling, log2 for level selection, how screen-space derivatives map to mip levels; connects bilinear interpolation (Math Lesson 03) to trilinear filtering
+- [x] **Math Lesson 05 — Matrices** — mat4x4, transformations, rotations, composition
+- [x] **Math Lesson 06 — Projections** — Perspective, orthographic, frustums, clip space, NDC, perspective-correct interpolation
 - [ ] **Math Lesson 07 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock
-- [ ] **Math Lesson 08 — Projections** — Perspective, orthographic, NDC mapping
-- [ ] **Math Lesson 09 — Anisotropy vs Isotropy** — Direction-dependent vs direction-independent behavior; isotropic sampling (equal in all directions) vs anisotropic filtering (stretches samples along the axis of greatest compression); anisotropic noise (Perlin/simplex stretched along a direction, e.g. wood grain, brushed metal); anisotropic friction in rigid body physics (ice rink, grooved surfaces, tire grip); eigenvalues of the screen-space Jacobian and how they drive the GPU's anisotropic sampler; practical demo comparing isotropic vs anisotropic texture filtering on a tilted plane
+- [ ] **Math Lesson 08 — Anisotropy vs Isotropy** — Direction-dependent vs direction-independent behavior; isotropic sampling (equal in all directions) vs anisotropic filtering (stretches samples along the axis of greatest compression); anisotropic noise (Perlin/simplex stretched along a direction, e.g. wood grain, brushed metal); anisotropic friction in rigid body physics (ice rink, grooved surfaces, tire grip); eigenvalues of the screen-space Jacobian and how they drive the GPU's anisotropic sampler; practical demo comparing isotropic vs anisotropic texture filtering on a tilted plane
 
 ## Developer Experience / Tooling
 

@@ -324,6 +324,6 @@ SDL_ReleaseGPUTexture(device, texture);
 ## Reference
 
 - [GPU Lesson 05 — Mipmaps](../../../lessons/gpu/05-mipmaps/) — full implementation
-- [Math Lesson 05 — Mipmaps & LOD](../../../lessons/math/05-mipmaps-and-lod/) — theory
+- [Math Lesson 04 — Mipmaps & LOD](../../../lessons/math/04-mipmaps-and-lod/) — theory
 - [textures-and-samplers skill](../textures-and-samplers/SKILL.md) — prerequisite
 - `forge_log2f()` in `common/math/forge_math.h` — mip level count

@@ -76,8 +76,10 @@ Each vector type supports:
   - `mat4_scale(scale)`, `mat4_scale_uniform(s)`
   - `mat4_rotate_x/y/z(angle_radians)`
 - **Projection:**
-  - `mat4_perspective(fov, aspect, near, far)` — Perspective projection (3D scenes)
+  - `mat4_perspective(fov, aspect, near, far)` — Symmetric perspective projection (3D scenes)
+  - `mat4_perspective_from_planes(l, r, b, t, near, far)` — Asymmetric perspective (VR, multi-monitor)
   - `mat4_orthographic(l, r, b, t, near, far)` — Orthographic projection (2D, shadow maps)
+  - `vec3_perspective_divide(clip)` — Clip-space vec4 → NDC vec3 (divide by w)
 - **Camera:**
   - `mat4_look_at(eye, target, up)` — View matrix from camera parameters
 
@@ -123,10 +125,10 @@ Standalone programs teaching each concept in depth:
 
 - `lessons/math/01-vectors/` — Vectors, dot product, cross product, normalization
 - `lessons/math/02-coordinate-spaces/` — Coordinate spaces, view and projection matrices
-- `lessons/math/03-orthographic-projection/` — Orthographic vs perspective projection
-- `lessons/math/04-bilinear-interpolation/` — Bilinear interpolation, LINEAR texture filtering
-- `lessons/math/05-mipmaps-and-lod/` — Mip chains, trilinear interpolation, LOD selection
-- `lessons/math/06-matrices/` — Matrix math, multiplication, basis vectors, transpose, determinant, inverse
+- `lessons/math/03-bilinear-interpolation/` — Bilinear interpolation, LINEAR texture filtering
+- `lessons/math/04-mipmaps-and-lod/` — Mip chains, trilinear interpolation, LOD selection
+- `lessons/math/05-matrices/` — Matrix math, multiplication, basis vectors, transpose, determinant, inverse
+- `lessons/math/06-projections/` — Perspective, orthographic, frustums, clip space, NDC
 
 Each lesson includes a demo program and README explaining the math.
 

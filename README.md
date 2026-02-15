@@ -48,10 +48,10 @@ Standalone programs teaching the math behind graphics:
 |---|-------|-------------------|
 | 01 | [Vectors](lessons/math/01-vectors/) | Addition, dot/cross products, normalization, lerp |
 | 02 | [Coordinate Spaces](lessons/math/02-coordinate-spaces/) | Model, world, view, clip, NDC, screen spaces |
-| 03 | [Orthographic Projection](lessons/math/03-orthographic-projection/) | Orthographic vs perspective, 2D rendering, shadow maps |
-| 04 | [Bilinear Interpolation](lessons/math/04-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear |
-| 05 | [Mipmaps & LOD](lessons/math/05-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection |
-| 06 | [Matrices](lessons/math/06-matrices/) | Identity, translation, scaling, rotation, composition, MVP pipeline |
+| 03 | [Bilinear Interpolation](lessons/math/03-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear |
+| 04 | [Mipmaps & LOD](lessons/math/04-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection |
+| 05 | [Matrices](lessons/math/05-matrices/) | Identity, translation, scaling, rotation, composition, MVP pipeline |
+| 06 | [Projections](lessons/math/06-projections/) | Perspective, orthographic, frustums, clip space, NDC |
 
 Each math lesson includes a demo program and updates the shared math
 library (`common/math/`) with documented, reusable implementations.

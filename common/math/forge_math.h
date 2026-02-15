@@ -41,7 +41,7 @@
  *   float mid = forge_lerpf(10.0f, 20.0f, 0.5f);  // 15.0
  *
  * See: lessons/math/01-vectors (lerp concept)
- * See: lessons/math/04-bilinear-interpolation
+ * See: lessons/math/03-bilinear-interpolation
  */
 static inline float forge_lerpf(float a, float b, float t)
 {
@@ -84,7 +84,7 @@ static inline float forge_lerpf(float a, float b, float t)
  *                           heights[0][1], heights[1][1],
  *                           0.5f, 0.5f);  // 2.5 (average of all four)
  *
- * See: lessons/math/04-bilinear-interpolation
+ * See: lessons/math/03-bilinear-interpolation
  */
 static inline float forge_bilerpf(float c00, float c10,
                                    float c01, float c11,
@@ -113,7 +113,7 @@ static inline float forge_bilerpf(float c00, float c10,
  *   int num_levels = (int)forge_log2f(256.0f) + 1;  // 9 levels
  *   // Level 0: 256×256, Level 1: 128×128, ... Level 8: 1×1
  *
- * See: lessons/math/05-mipmaps-and-lod
+ * See: lessons/math/04-mipmaps-and-lod
  */
 static inline float forge_log2f(float x)
 {
@@ -129,7 +129,7 @@ static inline float forge_log2f(float x)
  *   float lod = forge_clampf(computed_lod, 0.0f, 8.0f);
  *   float alpha = forge_clampf(t, 0.0f, 1.0f);
  *
- * See: lessons/math/05-mipmaps-and-lod (LOD clamping)
+ * See: lessons/math/04-mipmaps-and-lod (LOD clamping)
  */
 static inline float forge_clampf(float x, float lo, float hi)
 {
@@ -180,8 +180,8 @@ static inline float forge_clampf(float x, float lo, float hi)
  *       mip1_c00, mip1_c10, mip1_c01, mip1_c11,  // level N+1
  *       frac_u, frac_v, frac_lod);
  *
- * See: lessons/math/05-mipmaps-and-lod
- * See: lessons/math/04-bilinear-interpolation (the 2D building block)
+ * See: lessons/math/04-mipmaps-and-lod
+ * See: lessons/math/03-bilinear-interpolation (the 2D building block)
  */
 static inline float forge_trilerpf(float c000, float c100,
                                     float c010, float c110,
@@ -517,7 +517,7 @@ static inline vec3 vec3_lerp(vec3 a, vec3 b, float t)
  *   vec3 white = vec3_create(1, 1, 1);
  *   vec3 blend = vec3_bilerp(red, green, blue, white, 0.5f, 0.5f);
  *
- * See: lessons/math/04-bilinear-interpolation
+ * See: lessons/math/03-bilinear-interpolation
  */
 static inline vec3 vec3_bilerp(vec3 c00, vec3 c10, vec3 c01, vec3 c11,
                                 float tx, float ty)
@@ -545,8 +545,8 @@ static inline vec3 vec3_bilerp(vec3 c00, vec3 c10, vec3 c01, vec3 c11,
  * This is what the GPU does for trilinear filtering on RGB textures:
  * bilinear sample from two mip levels, then lerp between them.
  *
- * See: lessons/math/05-mipmaps-and-lod
- * See: lessons/math/04-bilinear-interpolation
+ * See: lessons/math/04-mipmaps-and-lod
+ * See: lessons/math/03-bilinear-interpolation
  */
 static inline vec3 vec3_trilerp(vec3 c000, vec3 c100, vec3 c010, vec3 c110,
                                  vec3 c001, vec3 c101, vec3 c011, vec3 c111,
@@ -675,7 +675,7 @@ static inline vec4 vec4_lerp(vec4 a, vec4 b, float t)
  *   vec4 c11 = vec4_create(1, 1, 1, 1);  // white
  *   vec4 blend = vec4_bilerp(c00, c10, c01, c11, 0.5f, 0.5f);
  *
- * See: lessons/math/04-bilinear-interpolation
+ * See: lessons/math/03-bilinear-interpolation
  */
 static inline vec4 vec4_bilerp(vec4 c00, vec4 c10, vec4 c01, vec4 c11,
                                 float tx, float ty)
@@ -695,8 +695,8 @@ static inline vec4 vec4_bilerp(vec4 c00, vec4 c10, vec4 c01, vec4 c11,
  * This is what the GPU does for trilinear filtering on RGBA textures:
  * bilinear sample from two mip levels, then lerp between them.
  *
- * See: lessons/math/05-mipmaps-and-lod
- * See: lessons/math/04-bilinear-interpolation
+ * See: lessons/math/04-mipmaps-and-lod
+ * See: lessons/math/03-bilinear-interpolation
  */
 static inline vec4 vec4_trilerp(vec4 c000, vec4 c100, vec4 c010, vec4 c110,
                                  vec4 c001, vec4 c101, vec4 c011, vec4 c111,
@@ -732,7 +732,7 @@ static inline vec4 vec4_trilerp(vec4 c000, vec4 c100, vec4 c010, vec4 c110,
  *
  * HLSL equivalent: float3x3
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 typedef struct mat3 {
     float m[9];
@@ -753,7 +753,7 @@ typedef struct mat3 {
  *   // m.m[3]=2, m.m[4]=5, m.m[5]=8  (column 1)
  *   // m.m[6]=3, m.m[7]=6, m.m[8]=9  (column 2)
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_create(float m00, float m01, float m02,
                                  float m10, float m11, float m12,
@@ -780,7 +780,7 @@ static inline mat3 mat3_create(float m00, float m01, float m02,
  * Usage:
  *   mat3 m = mat3_identity();
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_identity(void)
 {
@@ -807,7 +807,7 @@ static inline mat3 mat3_identity(void)
  *   mat3 scl = mat3_scale(vec2_create(2, 2));
  *   mat3 combined = mat3_multiply(rot, scl);  // scale first, then rotate
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_multiply(mat3 a, mat3 b)
 {
@@ -840,7 +840,7 @@ static inline mat3 mat3_multiply(mat3 a, mat3 b)
  *   vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
  *   vec3 rotated = mat3_multiply_vec3(rot, v);
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline vec3 mat3_multiply_vec3(mat3 m, vec3 v)
 {
@@ -871,7 +871,7 @@ static inline vec3 mat3_multiply_vec3(mat3 m, vec3 v)
  *   //     | 2 5 8 |
  *   //     | 3 6 9 |
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_transpose(mat3 m)
 {
@@ -908,7 +908,7 @@ static inline mat3 mat3_transpose(mat3 m)
  *   mat3 rot = mat3_rotate(FORGE_PI / 4.0f);
  *   float d = mat3_determinant(rot);  // 1.0 (rotations preserve volume)
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline float mat3_determinant(mat3 m)
 {
@@ -943,7 +943,7 @@ static inline float mat3_determinant(mat3 m)
  *   mat3 inv = mat3_inverse(m);
  *   mat3 check = mat3_multiply(m, inv);  // should be ~identity
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_inverse(mat3 m)
 {
@@ -1001,7 +1001,7 @@ static inline mat3 mat3_inverse(mat3 m)
  *   vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
  *   vec3 rotated = mat3_multiply_vec3(rot, v);  // (0.707, 0.707, 0)
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_rotate(float angle_radians)
 {
@@ -1027,7 +1027,7 @@ static inline mat3 mat3_rotate(float angle_radians)
  *   vec3 v = vec3_create(1.0f, 1.0f, 1.0f);
  *   vec3 scaled = mat3_multiply_vec3(scl, v);  // (2, 3, 1)
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat3 mat3_scale(vec2 scale)
 {
@@ -1297,7 +1297,45 @@ static inline mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up)
     return m;
 }
 
-/* Create a perspective projection matrix.
+/* Perform the perspective divide: convert clip-space vec4 to NDC vec3.
+ *
+ * After a projection matrix transforms a point to clip space, the GPU divides
+ * x, y, z by w to get Normalized Device Coordinates (NDC):
+ *   NDC = (clip.x / clip.w, clip.y / clip.w, clip.z / clip.w)
+ *
+ * For perspective projection, w = -z_view, so dividing by w is what makes
+ * distant objects smaller on screen.
+ *
+ * For orthographic projection, w = 1, so this is a no-op (NDC = clip.xyz).
+ *
+ * The GPU does this automatically between the vertex and fragment stages.
+ * Having it as an explicit function is useful for:
+ *   - CPU-side picking / unprojection
+ *   - Understanding what the GPU does behind the scenes
+ *   - Verifying projection math in math lessons
+ *
+ * Parameters:
+ *   clip — a vec4 in clip space (output of projection matrix * view-space point)
+ *
+ * Usage:
+ *   vec4 clip = mat4_multiply_vec4(proj, view_point);
+ *   vec3 ndc = vec3_perspective_divide(clip);
+ *   // ndc.x ∈ [-1, 1], ndc.y ∈ [-1, 1], ndc.z ∈ [0, 1]
+ *
+ * See: lessons/math/06-projections
+ */
+static inline vec3 vec3_perspective_divide(vec4 clip)
+{
+    float inv_w = 1.0f / clip.w;
+    return vec3_create(clip.x * inv_w, clip.y * inv_w, clip.z * inv_w);
+}
+
+/* Create a symmetric perspective projection matrix.
+ *
+ * This is a convenience wrapper for the common case where the frustum is
+ * symmetric about the view axis (left = -right, bottom = -top). For
+ * asymmetric frustums (VR, multi-monitor, oblique clipping), use
+ * mat4_perspective_from_planes() instead.
  *
  * This transforms view space into clip space, applying perspective foreshortening
  * (distant objects appear smaller).
@@ -1322,6 +1360,7 @@ static inline mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up)
  *   mat4 proj = mat4_perspective(fov, aspect, 0.1f, 100.0f);
  *
  * See: lessons/math/02-coordinate-spaces
+ * See: lessons/math/06-projections
  */
 static inline mat4 mat4_perspective(float fov_y_radians, float aspect_ratio,
                                      float near_plane, float far_plane)
@@ -1340,6 +1379,66 @@ static inline mat4 mat4_perspective(float fov_y_radians, float aspect_ratio,
 
     /* Depth translation */
     m.m[14] = -(far_plane * near_plane) / (far_plane - near_plane);
+
+    return m;
+}
+
+/* Create an asymmetric perspective projection matrix from frustum planes.
+ *
+ * The general form of perspective projection. mat4_perspective() is a symmetric
+ * special case of this (where left = -right, bottom = -top, derived from FOV
+ * and aspect ratio).
+ *
+ * Use this when you need:
+ *   - VR rendering (each eye has an asymmetric frustum)
+ *   - Multi-monitor setups (off-center projection)
+ *   - Oblique near-plane clipping (portal rendering)
+ *
+ * Parameters define the frustum's near plane rectangle in view space:
+ *   left       — X coordinate of the left edge on the near plane
+ *   right      — X coordinate of the right edge on the near plane
+ *   bottom     — Y coordinate of the bottom edge on the near plane
+ *   top        — Y coordinate of the top edge on the near plane
+ *   near_plane — Distance to the near clipping plane (positive)
+ *   far_plane  — Distance to the far clipping plane (positive, > near)
+ *
+ * Coordinate ranges after projection and perspective divide:
+ *   X ∈ [-1, 1] — left to right
+ *   Y ∈ [-1, 1] — bottom to top
+ *   Z ∈ [0, 1]  — near to far (Vulkan/Metal/D3D convention)
+ *
+ * Usage:
+ *   // Symmetric case (equivalent to mat4_perspective with 90° FOV, 1:1 aspect):
+ *   float n = 0.1f;
+ *   mat4 proj = mat4_perspective_from_planes(-n, n, -n, n, n, 100.0f);
+ *
+ *   // Asymmetric (left eye in VR):
+ *   mat4 proj = mat4_perspective_from_planes(-0.06f, 0.04f, -0.05f, 0.05f,
+ *                                             0.1f, 100.0f);
+ *
+ * See: lessons/math/06-projections
+ */
+static inline mat4 mat4_perspective_from_planes(float left, float right,
+                                                  float bottom, float top,
+                                                  float near_plane,
+                                                  float far_plane)
+{
+    mat4 m = { 0 };  /* Zero-initialize */
+
+    /* X: map [left, right] on near plane to [-1, 1] in NDC */
+    m.m[0]  = (2.0f * near_plane) / (right - left);
+    m.m[8]  = (right + left) / (right - left);
+
+    /* Y: map [bottom, top] on near plane to [-1, 1] in NDC */
+    m.m[5]  = (2.0f * near_plane) / (top - bottom);
+    m.m[9]  = (top + bottom) / (top - bottom);
+
+    /* Z: map [near, far] to [0, 1] (Vulkan/D3D convention) */
+    m.m[10] = far_plane / (near_plane - far_plane);
+    m.m[14] = -(far_plane * near_plane) / (far_plane - near_plane);
+
+    /* w' = -z (perspective divide) */
+    m.m[11] = -1.0f;
 
     return m;
 }
@@ -1376,7 +1475,7 @@ static inline mat4 mat4_perspective(float fov_y_radians, float aspect_ratio,
  *   - Shadow maps: orthographic from the light's point of view
  *   - CAD / architectural visualization: no perspective distortion
  *
- * See: lessons/math/03-orthographic-projection
+ * See: lessons/math/06-projections
  */
 static inline mat4 mat4_orthographic(float left, float right,
                                       float bottom, float top,
@@ -1416,7 +1515,7 @@ static inline mat4 mat4_orthographic(float left, float right,
  *   mat4 rot = mat4_rotate_z(angle);
  *   mat4 inv = mat4_transpose(rot);  // inverse of a rotation
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat4 mat4_transpose(mat4 m)
 {
@@ -1445,7 +1544,7 @@ static inline mat4 mat4_transpose(mat4 m)
  *   mat4 rot = mat4_rotate_y(angle);
  *   float d = mat4_determinant(rot);  // 1.0
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline float mat4_determinant(mat4 m)
 {
@@ -1500,7 +1599,7 @@ static inline float mat4_determinant(mat4 m)
  *   mat4 inv = mat4_inverse(model);
  *   // model * inv ≈ identity
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat4 mat4_inverse(mat4 m)
 {
@@ -1586,7 +1685,7 @@ static inline mat4 mat4_inverse(mat4 m)
  *   mat3 rot3 = mat3_rotate(angle);
  *   mat4 rot4 = mat4_from_mat3(rot3);  // 4×4 version of the same rotation
  *
- * See: lessons/math/06-matrices
+ * See: lessons/math/05-matrices
  */
 static inline mat4 mat4_from_mat3(mat3 m3)
 {
