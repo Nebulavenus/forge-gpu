@@ -82,7 +82,7 @@ If any of these are missing, ask the user before proceeding.
 6. **Create README.md** following this structure:
    - `# Lesson NN — Title`
    - `## What you'll learn` — bullet list of concepts
-   - `## Result` — describe what the reader will see (add screenshot placeholder)
+   - `## Result` — screenshot/GIF first (captured in step 11), then describe what the reader will see
    - `## Key concepts` — explain each new API concept introduced
    - `## Math` — if the lesson uses math operations, link to relevant math lessons
    - `## Building` — standard cmake build instructions
@@ -99,10 +99,27 @@ If any of these are missing, ask the user before proceeding.
 
 10. **Build and test**: run `cmake --build build --config Debug` and verify it runs
 
-11. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
+11. **Capture a screenshot**: Use the `/add-screenshot` skill to capture a screenshot
+    and embed it in the lesson README. Every lesson must have a visual in the
+    "Result" section so readers can see what they're building before diving into code.
+
+    ```bash
+    python scripts/capture_lesson.py lessons/gpu/NN-name
+    ```
+
+    If the lesson has animation, capture a GIF instead:
+
+    ```bash
+    python scripts/capture_lesson.py lessons/gpu/NN-name --gif --frames 60
+    ```
+
+    Verify the image is in `lessons/gpu/NN-name/assets/` and the README
+    references it with `![Lesson NN screenshot](assets/screenshot.png)`.
+
+12. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
     distills the lesson into a reusable pattern with YAML frontmatter
 
-12. **Run markdown linting**: Use the `/markdown-lint` skill to verify all markdown files pass linting:
+13. **Run markdown linting**: Use the `/markdown-lint` skill to verify all markdown files pass linting:
 
     ```bash
     npx markdownlint-cli2 "**/*.md"

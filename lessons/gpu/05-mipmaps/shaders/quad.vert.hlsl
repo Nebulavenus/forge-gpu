@@ -53,9 +53,9 @@ VSOutput main(VSInput input)
     output.position = float4(corrected, 0.0, 1.0);
 
     /* ── UV scaling ──────────────────────────────────────────────────
-     * Multiply UVs by uv_scale to tile the texture.  A scale of 8
-     * means the checker pattern repeats 8 times across the quad,
-     * creating many small squares that make aliasing highly visible. */
+     * Multiply UVs by uv_scale to tile the texture.  A scale of 2
+     * means the checker pattern repeats twice across the quad,
+     * clearly showing a checkerboard while still revealing aliasing. */
     output.uv = input.uv * uv_scale;
 
     return output;

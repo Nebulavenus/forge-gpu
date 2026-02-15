@@ -26,6 +26,7 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] `lessons/NN-name/CMakeLists.txt` exists
 - [ ] `lessons/NN-name/README.md` exists
 - [ ] `lessons/NN-name/shaders/` directory exists with shader source files
+- [ ] `lessons/NN-name/assets/screenshot.png` or `lessons/NN-name/assets/preview.gif` exists
 - [ ] `.claude/skills/<topic>/SKILL.md` exists (the matching skill)
 
 ### main.c structure
@@ -54,7 +55,8 @@ Before committing, verify the lesson has all required pieces from the
 
 - [ ] Has `# Lesson NN — Title` header
 - [ ] Has "What you'll learn" section
-- [ ] Has "Result" section (with screenshot or placeholder)
+- [ ] Has "Result" section with a screenshot (`![...](assets/screenshot.png)`) or
+  GIF (`![...](assets/preview.gif)`) — **not** just a placeholder
 - [ ] Has "Key concepts" section explaining new APIs
 - [ ] Has "Building" section
 - [ ] Has "AI skill" section linking to `.claude/skills/<topic>/SKILL.md`
@@ -200,6 +202,7 @@ This lesson shows how to [what the user builds], introducing:
 - ✅ HLSL shaders with SPIRV/DXIL bytecodes
 - ✅ Comprehensive README with exercises
 - ✅ Reusable skill (`.claude/skills/<topic>/`)
+- ✅ Screenshot/GIF in README
 - ✅ Updated project docs (README, PLAN, CMakeLists)
 
 ## Test plan
@@ -208,9 +211,6 @@ This lesson shows how to [what the user builds], introducing:
 - [ ] Tested on Linux (Vulkan) — *needs verification*
 - [x] Shaders compile to both SPIRV and DXIL
 - [x] Runs without errors, displays expected result
-
-## Screenshots
-[If you have a screenshot, include it here or add one later]
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF

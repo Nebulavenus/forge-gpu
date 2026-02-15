@@ -79,13 +79,14 @@
 
 /* How many times the checkerboard repeats in each direction.
  * The total pattern is CHECKER_TILES x CHECKER_TILES squares.
- * 16 tiles = 16x16 alternating black/white squares. */
-#define CHECKER_TILES 16
+ * 8 tiles = 8x8 alternating black/white squares (like a chess board). */
+#define CHECKER_TILES 8
 
 /* UV scale — how many times the texture tiles across the quad.
- * 8x tiling means 8 * CHECKER_TILES = 128 visible squares,
- * making aliasing extremely obvious without mipmaps. */
-#define UV_SCALE 8.0f
+ * 2x tiling means 2 * CHECKER_TILES = 16 visible squares per axis,
+ * clearly a checkerboard up close but enough to show aliasing
+ * when the quad shrinks. */
+#define UV_SCALE 2.0f
 
 /* Quad extent */
 #define QUAD_HALF_EXTENT 0.9f

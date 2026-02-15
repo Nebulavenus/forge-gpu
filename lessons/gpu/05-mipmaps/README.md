@@ -11,6 +11,8 @@
 
 ## Result
 
+![Lesson 05 screenshot](assets/screenshot.png)
+
 A pulsing checkerboard quad that cycles between three sampler modes when you
 press **SPACE**:
 
@@ -27,8 +29,9 @@ level transitions in real time.
 
 When a texture is viewed at a distance, many texels map to a single screen
 pixel. Without mipmaps, the GPU samples only a few texels and misses the rest,
-causing shimmering and moire patterns. This lesson uses a 16×16 checkerboard
-tiled 8× (128 visible squares) to make aliasing extremely obvious.
+causing shimmering and moire patterns. This lesson uses an 8×8 checkerboard
+tiled 2× (16 visible squares per axis) to make aliasing obvious while
+still looking like a recognisable checkerboard up close.
 
 ### Creating a mipmapped texture
 
@@ -99,7 +102,7 @@ The vertex shader multiplies UVs by a scale factor:
 output.uv = input.uv * uv_scale;
 ```
 
-With `uv_scale = 8`, the texture repeats 8 times across the quad. Combined with
+With `uv_scale = 2`, the texture repeats 2 times across the quad. Combined with
 the sampler's `REPEAT` address mode, this creates a dense pattern that
 emphasizes aliasing artifacts.
 
