@@ -221,6 +221,12 @@ invoke it with `/textures-and-samplers` or copy it into your own project's
 `.claude/skills/` directory. It distils the texture loading, sampler creation,
 and UV mapping patterns from this lesson into a reusable reference.
 
+## Texture credit
+
+The brick wall texture is from [Poly Haven](https://polyhaven.com/a/brick_wall_10)
+by **Dimitrios Savva**, released under [CC0](https://creativecommons.org/publicdomain/zero/1.0/)
+(public domain).
+
 ## Exercises
 
 1. **Nearest filtering** — Change the sampler's `min_filter` and `mag_filter`

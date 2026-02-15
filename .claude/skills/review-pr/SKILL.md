@@ -1,7 +1,7 @@
 ---
 name: review-pr
 description: Handle automated PR review feedback and merge when ready
-argument-hint: [pr-number]
+argument-hint: "[pr-number]"
 disable-model-invocation: false
 ---
 

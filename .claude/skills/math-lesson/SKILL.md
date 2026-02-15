@@ -1,7 +1,7 @@
 ---
 name: math-lesson
 description: Add a math concept - create lesson, update library, document usage
-argument-hint: [number] [concept-name] [description]
+argument-hint: "[number] [concept-name] [description]"
 ---
 
 Create a new math lesson and update the math library (`common/math/forge_math.h`).

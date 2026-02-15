@@ -95,6 +95,105 @@ static inline float forge_bilerpf(float c00, float c10,
     return forge_lerpf(bot, top, ty);
 }
 
+/* Compute the base-2 logarithm of a scalar.
+ *
+ * Returns log₂(x) — the power you'd raise 2 to in order to get x.
+ * This is the key function for computing mip levels: a texture of width W
+ * has floor(log2(W)) + 1 mip levels, because each level halves the size
+ * until reaching 1×1.
+ *
+ * Examples:
+ *   forge_log2f(1.0f)   = 0.0   (2⁰ = 1)
+ *   forge_log2f(2.0f)   = 1.0   (2¹ = 2)
+ *   forge_log2f(4.0f)   = 2.0   (2² = 4)
+ *   forge_log2f(256.0f) = 8.0   (2⁸ = 256)
+ *   forge_log2f(512.0f) = 9.0   (2⁹ = 512)
+ *
+ * Mip level count for a 256×256 texture:
+ *   int num_levels = (int)forge_log2f(256.0f) + 1;  // 9 levels
+ *   // Level 0: 256×256, Level 1: 128×128, ... Level 8: 1×1
+ *
+ * See: lessons/math/05-mipmaps-and-lod
+ */
+static inline float forge_log2f(float x)
+{
+    return log2f(x);
+}
+
+/* Clamp a scalar to a range [lo, hi].
+ *
+ * Returns lo if x < lo, hi if x > hi, otherwise x.
+ * Useful for clamping LOD levels, colors, blend factors, etc.
+ *
+ * Usage:
+ *   float lod = forge_clampf(computed_lod, 0.0f, 8.0f);
+ *   float alpha = forge_clampf(t, 0.0f, 1.0f);
+ *
+ * See: lessons/math/05-mipmaps-and-lod (LOD clamping)
+ */
+static inline float forge_clampf(float x, float lo, float hi)
+{
+    if (x < lo) return lo;
+    if (x > hi) return hi;
+    return x;
+}
+
+/* Trilinearly interpolate between eight values on a 3D grid.
+ *
+ * Given eight corner values of a cube:
+ *
+ *          c011 -------- c111        "back face" (z=1)
+ *          /|            /|
+ *        /  |          /  |
+ *     c010 -------- c110  |
+ *      |   |         |   |
+ *      |  c001 ------|- c101        "front face" (z=0)
+ *      |  /          |  /
+ *      |/            |/
+ *     c000 -------- c100
+ *
+ * The result blends all eight values based on the fractional position
+ * (tx, ty, tz) within the cube, where each is in [0, 1].
+ *
+ * Algorithm:
+ *   1. Bilinear interpolation on the front face (z=0):
+ *      front = bilerp(c000, c100, c010, c110, tx, ty)
+ *   2. Bilinear interpolation on the back face (z=1):
+ *      back = bilerp(c001, c101, c011, c111, tx, ty)
+ *   3. Lerp between front and back:
+ *      result = lerp(front, back, tz)
+ *
+ * This is exactly what the GPU does for trilinear texture filtering:
+ * bilinear sample from two adjacent mip levels, then lerp between them
+ * based on the fractional LOD. The "z" axis is the mip level axis.
+ *
+ * Parameters:
+ *   c000..c111 — eight corner values (binary xyz naming)
+ *   tx — horizontal blend [0, 1] (x axis)
+ *   ty — vertical blend   [0, 1] (y axis)
+ *   tz — depth blend      [0, 1] (z axis / mip level axis)
+ *
+ * Usage:
+ *   // Trilinear filtering between two mip levels
+ *   float color = forge_trilerpf(
+ *       mip0_c00, mip0_c10, mip0_c01, mip0_c11,  // level N
+ *       mip1_c00, mip1_c10, mip1_c01, mip1_c11,  // level N+1
+ *       frac_u, frac_v, frac_lod);
+ *
+ * See: lessons/math/05-mipmaps-and-lod
+ * See: lessons/math/04-bilinear-interpolation (the 2D building block)
+ */
+static inline float forge_trilerpf(float c000, float c100,
+                                    float c010, float c110,
+                                    float c001, float c101,
+                                    float c011, float c111,
+                                    float tx, float ty, float tz)
+{
+    float front = forge_bilerpf(c000, c100, c010, c110, tx, ty);
+    float back  = forge_bilerpf(c001, c101, c011, c111, tx, ty);
+    return forge_lerpf(front, back, tz);
+}
+
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define FORGE_PI      3.14159265358979323846f
@@ -428,6 +527,36 @@ static inline vec3 vec3_bilerp(vec3 c00, vec3 c10, vec3 c01, vec3 c11,
     return vec3_lerp(bot, top, ty);
 }
 
+/* Trilinearly interpolate between eight 3D vectors on a 3D grid.
+ *
+ * This is the vec3 version of forge_trilerpf — it blends eight corner
+ * values based on a 3D position (tx, ty, tz). Useful for trilinear
+ * texture filtering of RGB colors, or interpolating any 3-component
+ * quantity across a volume.
+ *
+ * Cube layout (same as forge_trilerpf):
+ *          c011 -------- c111
+ *          /|            /|
+ *     c010 -------- c110  |
+ *      |  c001 ------|- c101
+ *      |/            |/
+ *     c000 -------- c100
+ *
+ * This is what the GPU does for trilinear filtering on RGB textures:
+ * bilinear sample from two mip levels, then lerp between them.
+ *
+ * See: lessons/math/05-mipmaps-and-lod
+ * See: lessons/math/04-bilinear-interpolation
+ */
+static inline vec3 vec3_trilerp(vec3 c000, vec3 c100, vec3 c010, vec3 c110,
+                                 vec3 c001, vec3 c101, vec3 c011, vec3 c111,
+                                 float tx, float ty, float tz)
+{
+    vec3 front = vec3_bilerp(c000, c100, c010, c110, tx, ty);
+    vec3 back  = vec3_bilerp(c001, c101, c011, c111, tx, ty);
+    return vec3_lerp(front, back, tz);
+}
+
 /* Compute the cross product of two 3D vectors.
  *
  * The cross product produces a vector perpendicular to both a and b,
@@ -554,6 +683,28 @@ static inline vec4 vec4_bilerp(vec4 c00, vec4 c10, vec4 c01, vec4 c11,
     vec4 bot = vec4_lerp(c00, c10, tx);
     vec4 top = vec4_lerp(c01, c11, tx);
     return vec4_lerp(bot, top, ty);
+}
+
+/* Trilinearly interpolate between eight 4D vectors on a 3D grid.
+ *
+ * This is the vec4 version of forge_trilerpf — it blends eight corner
+ * values based on a 3D position (tx, ty, tz). Useful for trilinear
+ * texture filtering of RGBA colors, or interpolating any 4-component
+ * quantity across a volume.
+ *
+ * This is what the GPU does for trilinear filtering on RGBA textures:
+ * bilinear sample from two mip levels, then lerp between them.
+ *
+ * See: lessons/math/05-mipmaps-and-lod
+ * See: lessons/math/04-bilinear-interpolation
+ */
+static inline vec4 vec4_trilerp(vec4 c000, vec4 c100, vec4 c010, vec4 c110,
+                                 vec4 c001, vec4 c101, vec4 c011, vec4 c111,
+                                 float tx, float ty, float tz)
+{
+    vec4 front = vec4_bilerp(c000, c100, c010, c110, tx, ty);
+    vec4 back  = vec4_bilerp(c001, c101, c011, c111, tx, ty);
+    return vec4_lerp(front, back, tz);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

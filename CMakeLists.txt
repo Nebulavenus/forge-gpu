@@ -33,12 +33,14 @@ add_subdirectory(lessons/math/01-vectors)
 add_subdirectory(lessons/math/02-coordinate-spaces)
 add_subdirectory(lessons/math/03-orthographic-projection)
 add_subdirectory(lessons/math/04-bilinear-interpolation)
+add_subdirectory(lessons/math/05-mipmaps-and-lod)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)
 add_subdirectory(lessons/gpu/02-first-triangle)
 add_subdirectory(lessons/gpu/03-uniforms-and-motion)
 add_subdirectory(lessons/gpu/04-textures-and-samplers)
+add_subdirectory(lessons/gpu/05-mipmaps)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

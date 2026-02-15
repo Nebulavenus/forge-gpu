@@ -26,7 +26,7 @@ Infrastructure that supports all lessons:
 ## GPU Lessons — Up Next
 
 - [x] **Lesson 04 — Textures & Samplers** — Loading images, texture sampling, UV coordinates
-- [ ] **Lesson 05 — Mipmaps** — Mip chain generation, trilinear filtering, why mipmaps fix aliasing; fragment derivatives (ddx/ddy) and how the GPU picks the mip level; helper invocations and 2x2 quad execution
+- [x] **Lesson 05 — Mipmaps** — Mip chain generation, trilinear filtering, why mipmaps fix aliasing; fragment derivatives (ddx/ddy) and how the GPU picks the mip level; helper invocations and 2x2 quad execution
 - [ ] **Lesson 06 — Depth Buffer & 3D Transforms** — MVP matrices, perspective projection, depth testing, window resize handling
 - [ ] **Lesson 07 — Loading a Mesh** — OBJ or glTF parsing, indexed rendering
 - [ ] **Lesson 08 — Basic Lighting** — Diffuse + specular, normal vectors, Phong model
@@ -38,10 +38,11 @@ Infrastructure that supports all lessons:
 ## Math Lessons — Up Next
 
 - [x] **Math Lesson 04 — Bilinear Interpolation** — How LINEAR texture filtering works: two nested lerps blending the 4 nearest texels; comparison with NEAREST; builds on lerp from Math Lesson 01
-- [ ] **Math Lesson 05 — Mipmaps & LOD** — Mip chain as power-of-two downsampling, log2 for level selection, how screen-space derivatives map to mip levels; connects bilinear interpolation (Math Lesson 04) to trilinear filtering
+- [x] **Math Lesson 05 — Mipmaps & LOD** — Mip chain as power-of-two downsampling, log2 for level selection, how screen-space derivatives map to mip levels; connects bilinear interpolation (Math Lesson 04) to trilinear filtering
 - [ ] **Math Lesson 06 — Matrices** — mat4x4, transformations, rotations, composition
 - [ ] **Math Lesson 07 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock
 - [ ] **Math Lesson 08 — Projections** — Perspective, orthographic, NDC mapping
+- [ ] **Math Lesson 09 — Anisotropy vs Isotropy** — Direction-dependent vs direction-independent behavior; isotropic sampling (equal in all directions) vs anisotropic filtering (stretches samples along the axis of greatest compression); anisotropic noise (Perlin/simplex stretched along a direction, e.g. wood grain, brushed metal); anisotropic friction in rigid body physics (ice rink, grooved surfaces, tire grip); eigenvalues of the screen-space Jacobian and how they drive the GPU's anisotropic sampler; practical demo comparing isotropic vs anisotropic texture filtering on a tilted plane
 
 ## Developer Experience / Tooling
 

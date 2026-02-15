@@ -1,7 +1,7 @@
 ---
 name: publish-lesson
 description: Validate, commit, and create a PR for a new forge-gpu lesson
-argument-hint: [lesson-number] [lesson-name]
+argument-hint: "[lesson-number] [lesson-name]"
 disable-model-invocation: false
 ---
 
@@ -34,7 +34,15 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] Implements all 4 callbacks: `SDL_AppInit`, `SDL_AppEvent`, `SDL_AppIterate`, `SDL_AppQuit`
 - [ ] Uses `SDL_calloc` for app_state allocation
 - [ ] Includes error handling with `SDL_Log` on all GPU calls
-- [ ] Has comprehensive comments explaining *why*, not just *what*
+- [ ] **Every SDL function that returns `bool` is checked** — this includes
+  `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
+  `SDL_ClaimWindowForGPUDevice`, `SDL_Init`, etc. Each failure path must log
+  the function name + `SDL_GetError()` and clean up or early-return. This is
+  the most common PR review finding — verify every call site before publishing.
+- [ ] No magic numbers — all literals are `#define` or `enum` constants
+- [ ] Has comprehensive comments explaining *why* and *purpose*, not just *what* —
+  every pipeline setting, resource binding, and API call states the reason for
+  the choice (e.g. why CULLMODE_NONE, why we push uniforms each frame)
 
 ### Integration with project
 

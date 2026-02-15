@@ -25,8 +25,9 @@ implementations for your projects.
 | 02 | [Coordinate Spaces](02-coordinate-spaces/) | Model, world, view, clip, NDC, screen spaces and transformations |
 | 03 | [Orthographic Projection](03-orthographic-projection/) | Orthographic vs perspective, 2D rendering, shadow maps |
 | 04 | [Bilinear Interpolation](04-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear comparison |
+| 05 | [Mipmaps & LOD](05-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection, log2 |
 
-*More lessons coming soon:* Mipmaps & LOD, matrices (deep dive), quaternions, and more.
+*More lessons coming soon:* Matrices (deep dive), quaternions, projections, and more.
 
 ## How Math Lessons Work
 

@@ -1,7 +1,7 @@
 ---
 name: markdown-lint
 description: Check and fix markdown formatting issues with markdownlint-cli2
-argument-hint: [--fix]
+argument-hint: "[--fix]"
 disable-model-invocation: false
 ---
 

@@ -40,6 +40,9 @@ in the shader.
 
 - **Interpolation:** `forge_lerpf(a, b, t)` — scalar lerp
 - **Bilinear interpolation:** `forge_bilerpf(c00, c10, c01, c11, tx, ty)` — blend 4 grid values
+- **Logarithm:** `forge_log2f(x)` — base-2 logarithm (mip level count)
+- **Clamping:** `forge_clampf(x, lo, hi)` — clamp scalar to range
+- **Trilinear interpolation:** `forge_trilerpf(c000..c111, tx, ty, tz)` — blend 8 cube corners
 
 ### Vector Operations
 
@@ -52,6 +55,7 @@ Each vector type supports:
 - **Normalization:** `vec3_normalize(v)`
 - **Interpolation:** `vec3_lerp(a, b, t)`
 - **Bilinear interpolation:** `vec3_bilerp(...)`, `vec4_bilerp(...)` — blend 4 grid values in 2D
+- **Trilinear interpolation:** `vec3_trilerp(...)`, `vec4_trilerp(...)` — blend 8 cube corners in 3D
 - **Cross product:** `vec3_cross(a, b)` (3D only)
 
 ### Matrix Operations
@@ -112,6 +116,7 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/02-coordinate-spaces/` — Coordinate spaces, view and projection matrices
 - `lessons/math/03-orthographic-projection/` — Orthographic vs perspective projection
 - `lessons/math/04-bilinear-interpolation/` — Bilinear interpolation, LINEAR texture filtering
+- `lessons/math/05-mipmaps-and-lod/` — Mip chains, trilinear interpolation, LOD selection
 
 Each lesson includes a demo program and README explaining the math.
 
@@ -121,6 +126,7 @@ See how these functions are used in real code:
 
 - `lessons/gpu/02-first-triangle/` — Uses `vec2` and `vec3` for vertices and colors
 - `lessons/gpu/03-uniforms-and-motion/` — Uses `mat4_rotate_z` for animation
+- `lessons/gpu/05-mipmaps/` — Uses `forge_log2f` for mip level count
 
 ## Design Philosophy
 

@@ -58,7 +58,11 @@ provides reusable skills and libraries so humans and AI can build together.
   reserved for SDL's own symbols
 - **Constants:** No magic numbers — #define or enum everything
 - **Comments:** Explain *why* and *purpose* (every uniform, pipeline state, etc.)
-- **Errors:** Handle every SDL GPU call with descriptive messages
+- **Errors:** Handle every SDL GPU call with descriptive messages. **Every SDL
+  function that returns `bool` must be checked** — log the function name and
+  `SDL_GetError()` on failure, then clean up resources and early-return. This
+  includes `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
+  `SDL_Init`, and others. Never ignore a bool return value.
 - **Readability:** This code is meant to be learned from — clarity over cleverness
 - **IMPORTANT:** Always run build commands via a Task agent with `model: "haiku"`,
   never directly from the main agent. This keeps the main context clean, uses

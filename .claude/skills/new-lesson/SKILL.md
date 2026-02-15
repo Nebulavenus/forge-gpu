@@ -1,7 +1,7 @@
 ---
 name: new-lesson
 description: Scaffold a new forge-gpu lesson with all required files
-argument-hint: [number] [name] [description]
+argument-hint: "[number] [name] [description]"
 disable-model-invocation: true
 ---
 
@@ -52,8 +52,16 @@ If any of these are missing, ask the user before proceeding.
    - `SDL_AppQuit` — cleanup in reverse order, SDL_free the app_state
    - Use `SDL_calloc` / `SDL_free` for app_state (not malloc/free)
    - Every SDL GPU call gets error handling with `SDL_Log` and descriptive messages
+   - **Check every SDL function that returns `bool`** — `SDL_SubmitGPUCommandBuffer`,
+     `SDL_SetGPUSwapchainParameters`, `SDL_AcquireGPUSwapchainTexture`, etc. all
+     return `false` on failure. Log a descriptive error (include the function name)
+     and clean up or early-return. Never ignore a bool return value.
    - No magic numbers — `#define` or `enum` everything
-   - Extensive comments explaining *why*, not just *what*
+   - Extensive comments explaining *why* and *purpose*, not just *what* —
+     every pipeline setting, resource binding, and API call should have a brief
+     comment stating why that choice was made (e.g. why CULLMODE_NONE, why
+     TRIANGLELIST, why we push uniforms each frame). This is a recurring PR
+     review requirement.
    - Use C99, matching SDL's own style
    - **Use math library types for all math operations** (see "Using the Math Library" below)
 
@@ -202,3 +210,9 @@ This lesson uses:
 - Each lesson should introduce ONE new concept at a time
 - **Always use the math library** — no bespoke math in GPU lessons
 - Link to math lessons when explaining concepts
+- **Always check SDL return values** — every SDL GPU function that returns
+  `bool` must be checked. Log the function name and `SDL_GetError()` on
+  failure, then clean up resources and early-return. This includes
+  `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
+  `SDL_ClaimWindowForGPUDevice`, `SDL_Init`, and others. This is a
+  recurring PR review item — get it right the first time.

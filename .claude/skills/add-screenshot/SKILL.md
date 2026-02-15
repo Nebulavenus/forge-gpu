@@ -1,7 +1,7 @@
 ---
 name: add-screenshot
 description: Capture a screenshot or GIF for a forge-gpu lesson and update its README
-argument-hint: [lesson-path] [--gif]
+argument-hint: "[lesson-path] [--gif]"
 disable-model-invocation: false
 ---
 
