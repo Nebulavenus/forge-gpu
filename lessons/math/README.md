@@ -42,6 +42,11 @@ Each lesson includes:
 cmake -B build
 cmake --build build --config Debug
 
+# Easy way — use the run script
+python scripts/run.py math/01              # by number
+python scripts/run.py vectors              # by name
+
+# Or run the executable directly
 # Windows
 build\lessons\math\01-vectors\Debug\01-vectors.exe
 

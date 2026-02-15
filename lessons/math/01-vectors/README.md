@@ -257,10 +257,16 @@ Graphics and game programming uses vectors for:
 ```bash
 cmake -B build
 cmake --build build --config Debug
+```
 
+Run:
+
+```bash
+python scripts/run.py math/01
+
+# Or directly:
 # Windows
 build\lessons\math\01-vectors\Debug\01-vectors.exe
-
 # Linux / macOS
 ./build/lessons/math/01-vectors/01-vectors
 ```

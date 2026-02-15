@@ -35,8 +35,12 @@ def find_executable(target_name):
     """Find the lesson executable in the build directory."""
     # Common build output locations for CMake + MSVC
     candidates = [
-        os.path.join("build", "lessons", "gpu", target_name, "Debug", f"{target_name}.exe"),
-        os.path.join("build", "lessons", "gpu", target_name, "Release", f"{target_name}.exe"),
+        os.path.join(
+            "build", "lessons", "gpu", target_name, "Debug", f"{target_name}.exe"
+        ),
+        os.path.join(
+            "build", "lessons", "gpu", target_name, "Release", f"{target_name}.exe"
+        ),
         os.path.join("build", "lessons", "gpu", target_name, target_name),
     ]
     for path in candidates:
@@ -61,7 +65,8 @@ def build_lesson(target_name):
     print("Configuring with FORGE_CAPTURE=ON...")
     result = subprocess.run(
         [cmake_path, "-B", "build", "-DFORGE_CAPTURE=ON"],
-        capture_output=True, text=True
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"Configure failed:\n{result.stderr}")
@@ -70,7 +75,8 @@ def build_lesson(target_name):
     print(f"Building {target_name}...")
     result = subprocess.run(
         [cmake_path, "--build", "build", "--config", "Debug", "--target", target_name],
-        capture_output=True, text=True
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"Build failed:\n{result.stderr}")
@@ -85,7 +91,9 @@ def capture_screenshot(exe_path, output_bmp, capture_frame):
     print(f"Capturing screenshot (frame {capture_frame})...")
     result = subprocess.run(
         [exe_path, "--screenshot", output_bmp, "--capture-frame", str(capture_frame)],
-        capture_output=True, text=True, timeout=30
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     if result.returncode != 0:
         print(f"Capture failed (exit code {result.returncode})")
@@ -101,10 +109,18 @@ def capture_sequence(exe_path, output_dir, frames, capture_frame):
     print(f"Capturing {frames} frames (starting at frame {capture_frame})...")
     os.makedirs(output_dir, exist_ok=True)
     result = subprocess.run(
-        [exe_path, "--capture-dir", output_dir,
-         "--frames", str(frames),
-         "--capture-frame", str(capture_frame)],
-        capture_output=True, text=True, timeout=60
+        [
+            exe_path,
+            "--capture-dir",
+            output_dir,
+            "--frames",
+            str(frames),
+            "--capture-frame",
+            str(capture_frame),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if result.returncode != 0:
         print(f"Capture failed (exit code {result.returncode})")
@@ -119,6 +135,7 @@ def capture_sequence(exe_path, output_dir, frames, capture_frame):
 def bmp_to_png(bmp_path, png_path):
     """Convert a BMP file to optimized PNG using Pillow."""
     from PIL import Image
+
     img = Image.open(bmp_path)
     # Drop alpha channel if fully opaque (smaller PNG)
     if img.mode == "RGBA":
@@ -133,6 +150,7 @@ def bmp_to_png(bmp_path, png_path):
 def frames_to_gif(frame_dir, gif_path, duration_ms=16):
     """Assemble BMP frames into an animated GIF using Pillow."""
     from PIL import Image
+
     bmp_files = sorted(glob.glob(os.path.join(frame_dir, "frame_*.bmp")))
     if not bmp_files:
         print("No frames found!")
@@ -167,7 +185,7 @@ def update_readme(readme_path, image_rel_path, lesson_name):
         print(f"README not found: {readme_path}")
         return False
 
-    with open(readme_path, "r", encoding="utf-8") as f:
+    with open(readme_path, encoding="utf-8") as f:
         content = f.read()
 
     # Match TODO comments about screenshots/GIFs
@@ -177,7 +195,7 @@ def update_readme(readme_path, image_rel_path, lesson_name):
     new_content, count = re.subn(pattern, replacement, content, flags=re.IGNORECASE)
     if count == 0:
         # Check if already has an image
-        if f"![" in content and "assets/" in content:
+        if "![" in content and "assets/" in content:
             print("README already has a screenshot — skipping update.")
             return True
         print("No TODO screenshot placeholder found in README.")
@@ -190,14 +208,39 @@ def update_readme(readme_path, image_rel_path, lesson_name):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Capture screenshots/GIFs from forge-gpu lessons")
-    parser.add_argument("lesson_dir", help="Path to the lesson directory (e.g. lessons/gpu/01-hello-window)")
-    parser.add_argument("--screenshot", action="store_true", default=True, help="Capture a single frame as PNG (default)")
-    parser.add_argument("--gif", action="store_true", help="Capture multiple frames as animated GIF")
-    parser.add_argument("--frames", type=int, default=60, help="Number of frames for GIF (default: 60)")
-    parser.add_argument("--capture-frame", type=int, default=5, help="Frame to start capturing (default: 5)")
-    parser.add_argument("--no-update-readme", action="store_true", help="Skip updating the lesson README")
-    parser.add_argument("--build", action="store_true", help="Build the lesson before capturing")
+    parser = argparse.ArgumentParser(
+        description="Capture screenshots/GIFs from forge-gpu lessons"
+    )
+    parser.add_argument(
+        "lesson_dir",
+        help="Path to the lesson directory (e.g. lessons/gpu/01-hello-window)",
+    )
+    parser.add_argument(
+        "--screenshot",
+        action="store_true",
+        default=True,
+        help="Capture a single frame as PNG (default)",
+    )
+    parser.add_argument(
+        "--gif", action="store_true", help="Capture multiple frames as animated GIF"
+    )
+    parser.add_argument(
+        "--frames", type=int, default=60, help="Number of frames for GIF (default: 60)"
+    )
+    parser.add_argument(
+        "--capture-frame",
+        type=int,
+        default=5,
+        help="Frame to start capturing (default: 5)",
+    )
+    parser.add_argument(
+        "--no-update-readme",
+        action="store_true",
+        help="Skip updating the lesson README",
+    )
+    parser.add_argument(
+        "--build", action="store_true", help="Build the lesson before capturing"
+    )
     args = parser.parse_args()
 
     if args.gif:

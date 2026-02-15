@@ -1,0 +1,28 @@
+[tool.ruff]
+target-version = "py39"
+
+# Only lint our own scripts, not third_party/ or build/
+include = ["scripts/*.py"]
+
+[tool.ruff.lint]
+# Enable a sensible set of rules
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modern Python idioms)
+    "B",   # flake8-bugbear (common bugs)
+    "SIM", # flake8-simplify
+]
+
+ignore = [
+    "E501", # line too long — let formatter handle it
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scripts"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

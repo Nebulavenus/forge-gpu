@@ -20,6 +20,7 @@ Infrastructure that supports all lessons:
 ## Math Lessons — Completed
 
 - [x] **Math Lesson 01 — Vectors** — vec2/vec3/vec4, dot product, cross product, normalization, lerp
+- [x] **Math Lesson 02 — Coordinate Spaces** — Model, world, view, projection transforms
 - [x] **Math Lesson 03 — Orthographic Projection** — mat4_orthographic, 2D rendering, perspective comparison
 
 ## GPU Lessons — Up Next
@@ -35,34 +36,31 @@ Infrastructure that supports all lessons:
 
 ## Math Lessons — Up Next
 
-- [ ] **Math Lesson 02 — Matrices** — mat4x4, transformations, rotations, composition
-- [ ] **Math Lesson 03 — Coordinate Spaces** — Model, world, view, projection transforms
-- [ ] **Math Lesson 04 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock
-- [ ] **Math Lesson 05 — Projections** — Perspective, orthographic, NDC mapping
+- [ ] **Math Lesson 04 — Matrices** — mat4x4, transformations, rotations, composition
+- [ ] **Math Lesson 05 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock
+- [ ] **Math Lesson 06 — Projections** — Perspective, orthographic, NDC mapping
 
 ## Developer Experience / Tooling
 
 Improvements to make development easier:
 
-- [ ] **Run script/utility** — Easy way to run lessons by name/number instead of typing full build paths
-  - Example: `./run 02` or `./run first-triangle` instead of `build\lessons\gpu\02-first-triangle\Debug\02-first-triangle.exe`
-  - Could be a Python script, shell script, or `/run` skill
+- [x] **Run script/utility** — `python scripts/run.py <name-or-number>` runs lessons easily
+  - Example: `python scripts/run.py 02` or `python scripts/run.py first-triangle`
+  - Supports `math/01` prefix, substring matching, lists all lessons when run with no args
 
-- [ ] **Shader compilation helper** — Simplify shader recompilation workflow
-  - Currently requires full path to Vulkan SDK's dxc
-  - Could auto-detect dxc location or use configured path
-  - Maybe a `/compile-shaders` skill or `scripts/compile_shaders.py`
+- [x] **Shader compilation helper** — `python scripts/compile_shaders.py` compiles all HLSL shaders
+  - Auto-detects dxc from VULKAN_SDK or PATH
+  - Compiles to SPIRV and DXIL, generates C byte-array headers
+  - Can target a specific lesson: `python scripts/compile_shaders.py 02`
 
-- [ ] **Setup script/skill** — Help users configure their environment
-  - Set up Vulkan SDK path
-  - Configure Python location
-  - Verify dependencies
-  - Could be a `/setup` skill or `scripts/setup.py`
+- [x] **Setup script** — `python scripts/setup.py` verifies the full environment
+  - Checks git, CMake, C compiler (MSVC/GCC/Clang), Python, Pillow
+  - Detects Vulkan SDK, dxc shader compiler, GPU via vulkaninfo
+  - `--fix` installs missing Python packages, `--build` configures + builds
 
-- [ ] **Screenshot generation** — Programmatically capture lesson output
-  - See GitHub issue for automated screenshot generation
-  - Helps keep README screenshots up-to-date
-  - Could run after each lesson builds
+- [x] **Screenshot generation** — `scripts/capture_lesson.py` + `common/capture/forge_capture.h`
+  - Programmatic capture via `--screenshot` / `--capture-dir` CLI flags
+  - BMP→PNG/GIF conversion, README auto-update
 
 ## Open Questions
 

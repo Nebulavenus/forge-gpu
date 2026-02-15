@@ -13,8 +13,9 @@ Produces a header like:
     static const unsigned int triangle_vert_spirv_size = sizeof(triangle_vert_spirv);
 """
 
-import sys
 import os
+import sys
+
 
 def main():
     if len(sys.argv) != 4:
@@ -33,14 +34,17 @@ def main():
         f.write(f"static const unsigned char {array_name}[] = {{\n")
 
         for i in range(0, len(data), 12):
-            chunk = data[i:i+12]
+            chunk = data[i : i + 12]
             hex_values = ", ".join(f"0x{b:02x}" for b in chunk)
             f.write(f"    {hex_values},\n")
 
         f.write("};\n")
-        f.write(f"static const unsigned int {array_name}_size = sizeof({array_name});\n")
+        f.write(
+            f"static const unsigned int {array_name}_size = sizeof({array_name});\n"
+        )
 
     print(f"Wrote {len(data)} bytes as {array_name} to {output_path}")
+
 
 if __name__ == "__main__":
     main()

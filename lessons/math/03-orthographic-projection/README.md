@@ -220,10 +220,16 @@ Graphics and game programming uses orthographic projection for:
 ```bash
 cmake -B build
 cmake --build build --config Debug
+```
 
+Run:
+
+```bash
+python scripts/run.py math/03
+
+# Or directly:
 # Windows
 build\lessons\math\03-orthographic-projection\Debug\03-orthographic-projection.exe
-
 # Linux / macOS
 ./build/lessons/math/03-orthographic-projection/03-orthographic-projection
 ```

@@ -69,15 +69,32 @@ When you need new math functionality, use the `/math-lesson` skill. It creates:
 The math library grows alongside the lessons, always staying readable and
 well-documented.
 
-## Building
+## Getting Started
 
-You need:
+### Prerequisites
 
 - **CMake 3.24+**
 - **A C compiler** (MSVC, GCC, or Clang)
 - **A GPU** with Vulkan, Direct3D 12, or Metal support
+- **Python 3** (for helper scripts)
 
 SDL3 is fetched automatically — no manual installation required.
+
+**Verify your environment** with the setup script:
+
+```bash
+python scripts/setup.py
+```
+
+This checks all required tools, detects the Vulkan SDK and shader compiler,
+and reports anything missing. Use `--fix` to install missing Python packages
+or `--build` to configure and build in one step:
+
+```bash
+python scripts/setup.py --build
+```
+
+### Building
 
 ```bash
 cmake -B build
@@ -92,14 +109,25 @@ build uses FetchContent):
 git submodule update --init
 ```
 
-Run a lesson:
+### Running lessons
+
+The easiest way to run a lesson is with the **run script**:
+
+```bash
+python scripts/run.py 01                  # by number
+python scripts/run.py first-triangle      # by name
+python scripts/run.py math/01             # math lesson
+python scripts/run.py                     # list all lessons
+```
+
+You can also run executables directly:
 
 ```bash
 # Windows
-build\lessons\01-hello-window\Debug\01-hello-window.exe
+build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
 
 # Linux / macOS
-./build/lessons/01-hello-window/01-hello-window
+./build/lessons/gpu/01-hello-window/01-hello-window
 ```
 
 ## Testing
@@ -133,8 +161,8 @@ shader source, you'll need:
 - **[Vulkan SDK](https://vulkan.lunarg.com/)** — provides `dxc` with SPIR-V
   support (the Windows SDK `dxc` can only compile DXIL, not SPIR-V)
 
-After installing, make sure the Vulkan SDK `dxc` is on your PATH, or use
-the full path. On Windows the default location is:
+After installing, make sure the `VULKAN_SDK` environment variable is set
+(the installer does this automatically). On Windows the default location is:
 
 ```text
 C:\VulkanSDK\<version>\Bin\dxc.exe
@@ -145,7 +173,22 @@ C:\VulkanSDK\<version>\Bin\dxc.exe
 > SDK one. Use the full path to the Vulkan SDK `dxc` or put its `Bin/`
 > directory earlier on your PATH.
 
-From a lesson's directory (e.g. `lessons/03-uniforms-and-motion/`):
+### Using the shader compilation script
+
+The **shader compilation helper** handles everything automatically — it finds
+`dxc`, compiles each HLSL file to both SPIR-V and DXIL, and generates the C
+byte-array headers:
+
+```bash
+python scripts/compile_shaders.py            # all lessons
+python scripts/compile_shaders.py 02         # just lesson 02
+python scripts/compile_shaders.py -v         # verbose (show dxc commands)
+```
+
+### Manual compilation
+
+If you prefer to compile shaders by hand, here are the raw `dxc` commands
+from a lesson's directory (e.g. `lessons/gpu/03-uniforms-and-motion/`):
 
 ```bash
 # Compile HLSL → SPIR-V (Vulkan)
@@ -157,13 +200,13 @@ dxc -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.dxil
 dxc -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.dxil
 ```
 
-Then embed the compiled bytecodes as C headers using the helper script:
+Then embed the compiled bytecodes as C headers:
 
 ```bash
-python ../../scripts/bin_to_header.py shaders/triangle.vert.spv triangle_vert_spirv shaders/triangle_vert_spirv.h
-python ../../scripts/bin_to_header.py shaders/triangle.frag.spv triangle_frag_spirv shaders/triangle_frag_spirv.h
-python ../../scripts/bin_to_header.py shaders/triangle.vert.dxil triangle_vert_dxil shaders/triangle_vert_dxil.h
-python ../../scripts/bin_to_header.py shaders/triangle.frag.dxil triangle_frag_dxil shaders/triangle_frag_dxil.h
+python scripts/bin_to_header.py shaders/triangle.vert.spv triangle_vert_spirv shaders/triangle_vert_spirv.h
+python scripts/bin_to_header.py shaders/triangle.frag.spv triangle_frag_spirv shaders/triangle_frag_spirv.h
+python scripts/bin_to_header.py shaders/triangle.vert.dxil triangle_vert_dxil shaders/triangle_vert_dxil.h
+python scripts/bin_to_header.py shaders/triangle.frag.dxil triangle_frag_dxil shaders/triangle_frag_dxil.h
 ```
 
 The flags: `-T vs_6_0` = vertex shader model 6.0, `-T ps_6_0` = pixel
@@ -195,7 +238,7 @@ forge-gpu/
 │   ├── new-lesson/        Create new GPU lesson
 │   ├── sdl-gpu-setup/     Scaffold SDL3 GPU application
 │   └── ...
-├── scripts/               Build helpers (shader compilation, etc.)
+├── scripts/               Helper scripts (run, setup, shader compilation)
 ├── third_party/SDL/       SDL3 source (submodule, for reference)
 ├── PLAN.md                Lesson roadmap and progress
 ├── CLAUDE.md              AI coding guidelines for this project

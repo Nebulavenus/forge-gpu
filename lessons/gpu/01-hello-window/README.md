@@ -60,11 +60,16 @@ cmake -B build
 cmake --build build
 ```
 
-Run the result:
+Run:
 
 ```bash
-./build/lessons/01-hello-window/01-hello-window   # Linux / macOS
-build\lessons\01-hello-window\Debug\01-hello-window.exe   # Windows
+python scripts/run.py 01
+
+# Or directly:
+# Windows
+build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
+# Linux / macOS
+./build/lessons/gpu/01-hello-window/01-hello-window
 ```
 
 ## AI skill

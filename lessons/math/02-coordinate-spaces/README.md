@@ -408,10 +408,16 @@ See [common/math/README.md](../../../common/math/README.md) for full API.
 ```bash
 cmake -B build
 cmake --build build --config Debug
+```
 
+Run:
+
+```bash
+python scripts/run.py math/02
+
+# Or directly:
 # Windows
 build\lessons\math\02-coordinate-spaces\Debug\02-coordinate-spaces.exe
-
 # Linux / macOS
 ./build/lessons/math/02-coordinate-spaces/02-coordinate-spaces
 ```

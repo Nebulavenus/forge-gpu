@@ -138,11 +138,13 @@ cmake --build build --config Debug
 Run:
 
 ```bash
-# Windows
-build\lessons\03-uniforms-and-motion\Debug\03-uniforms-and-motion.exe
+python scripts/run.py 03
 
+# Or directly:
+# Windows
+build\lessons\gpu\03-uniforms-and-motion\Debug\03-uniforms-and-motion.exe
 # Linux / macOS
-./build/lessons/03-uniforms-and-motion/03-uniforms-and-motion
+./build/lessons/gpu/03-uniforms-and-motion/03-uniforms-and-motion
 ```
 
 ## AI skill

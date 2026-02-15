@@ -191,6 +191,29 @@ npx markdownlint-cli2 "**/*.md"
 
 The linter runs automatically on PRs and will fail if issues are found.
 
+### Python linting
+
+All Python scripts in `scripts/` are linted and formatted with
+[Ruff](https://docs.astral.sh/ruff/). Configuration is in `pyproject.toml`.
+
+**Rules enabled:** pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify.
+
+**Testing locally:**
+
+```bash
+ruff check scripts/
+ruff format --check scripts/
+```
+
+**Auto-fix:**
+
+```bash
+ruff check --fix scripts/
+ruff format scripts/
+```
+
+The linter runs automatically on PRs and will fail if issues are found.
+
 ### CRITICAL: Never circumvent quality checks
 
 **NEVER do any of the following to "unblock" changes:**
@@ -199,13 +222,14 @@ The linter runs automatically on PRs and will fail if issues are found.
 - ❌ Relax lint requirements or thresholds to allow failing code
 - ❌ Remove or disable CI workflows (`.github/workflows/*.yml`)
 - ❌ Add lint ignore comments to skip validation
-- ❌ Modify `.markdownlint-cli2.jsonc` to weaken existing rules
+- ❌ Modify `.markdownlint-cli2.jsonc` or `pyproject.toml` to weaken existing rules
 
 **Always fix the underlying issue instead:**
 
 - ✅ Fix markdown formatting to meet the existing standards
 - ✅ Add proper language tags to code blocks
 - ✅ Correct table formatting
+- ✅ Fix Python lint/format issues (`ruff check --fix` and `ruff format`)
 - ✅ Ask the user if the rule seems problematic (don't bypass it yourself)
 
 Quality checks exist to maintain learning quality and consistency. Bypassing them

@@ -113,11 +113,13 @@ cmake --build build --config Debug
 Run:
 
 ```bash
-# Windows
-build\lessons\02-first-triangle\Debug\02-first-triangle.exe
+python scripts/run.py 02
 
+# Or directly:
+# Windows
+build\lessons\gpu\02-first-triangle\Debug\02-first-triangle.exe
 # Linux / macOS
-./build/lessons/02-first-triangle/02-first-triangle
+./build/lessons/gpu/02-first-triangle/02-first-triangle
 ```
 
 ## AI skill
