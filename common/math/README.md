@@ -36,6 +36,11 @@ to keep the math library portable and follow C math library conventions. The map
 is straightforward: when passing data to HLSL shaders, `vec3` in C becomes `float3`
 in the shader.
 
+### Scalar Helpers
+
+- **Interpolation:** `forge_lerpf(a, b, t)` — scalar lerp
+- **Bilinear interpolation:** `forge_bilerpf(c00, c10, c01, c11, tx, ty)` — blend 4 grid values
+
 ### Vector Operations
 
 Each vector type supports:
@@ -46,6 +51,7 @@ Each vector type supports:
 - **Length:** `vec3_length(v)`, `vec3_length_squared(v)`
 - **Normalization:** `vec3_normalize(v)`
 - **Interpolation:** `vec3_lerp(a, b, t)`
+- **Bilinear interpolation:** `vec3_bilerp(...)`, `vec4_bilerp(...)` — blend 4 grid values in 2D
 - **Cross product:** `vec3_cross(a, b)` (3D only)
 
 ### Matrix Operations
@@ -105,6 +111,7 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/01-vectors/` — Vectors, dot product, cross product, normalization
 - `lessons/math/02-coordinate-spaces/` — Coordinate spaces, view and projection matrices
 - `lessons/math/03-orthographic-projection/` — Orthographic vs perspective projection
+- `lessons/math/04-bilinear-interpolation/` — Bilinear interpolation, LINEAR texture filtering
 
 Each lesson includes a demo program and README explaining the math.
 

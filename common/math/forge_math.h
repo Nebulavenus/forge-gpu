@@ -22,7 +22,78 @@
 #ifndef FORGE_MATH_H
 #define FORGE_MATH_H
 
-#include <math.h>  /* sqrtf, sinf, cosf, etc. */
+#include <math.h>  /* sqrtf, sinf, cosf, tanf, etc. */
+
+/* ── Scalar Helpers ──────────────────────────────────────────────────────── */
+
+/* Linearly interpolate between two scalar values.
+ *
+ * When t=0, returns a.
+ * When t=1, returns b.
+ * When t=0.5, returns the midpoint.
+ *
+ * Formula: a + t * (b - a)
+ *
+ * This is the scalar version of vec2_lerp / vec3_lerp. It's the building
+ * block for bilinear interpolation and many other blending operations.
+ *
+ * Usage:
+ *   float mid = forge_lerpf(10.0f, 20.0f, 0.5f);  // 15.0
+ *
+ * See: lessons/math/01-vectors (lerp concept)
+ * See: lessons/math/04-bilinear-interpolation
+ */
+static inline float forge_lerpf(float a, float b, float t)
+{
+    return a + t * (b - a);
+}
+
+/* Bilinearly interpolate between four values on a 2D grid.
+ *
+ * Given four corner values arranged as:
+ *
+ *   c01 -------- c11
+ *    |            |
+ *    |   (tx,ty)  |
+ *    |      *     |
+ *   c00 -------- c10
+ *
+ * The result blends all four values based on the fractional position (tx, ty)
+ * within the cell, where tx and ty are each in [0, 1].
+ *
+ * Algorithm (two-step lerp):
+ *   1. Lerp horizontally: top = lerp(c01, c11, tx)
+ *                         bot = lerp(c00, c10, tx)
+ *   2. Lerp vertically:   result = lerp(bot, top, ty)
+ *
+ * This is exactly what the GPU does when a texture sampler uses LINEAR
+ * filtering — it finds the 4 nearest texels and blends them based on
+ * how close the sample point is to each one.
+ *
+ * Parameters:
+ *   c00 — bottom-left value   (x=0, y=0)
+ *   c10 — bottom-right value  (x=1, y=0)
+ *   c01 — top-left value      (x=0, y=1)
+ *   c11 — top-right value     (x=1, y=1)
+ *   tx  — horizontal blend factor [0, 1]
+ *   ty  — vertical blend factor [0, 1]
+ *
+ * Usage:
+ *   float heights[2][2] = { {1, 3}, {2, 4} };
+ *   float h = forge_bilerpf(heights[0][0], heights[1][0],
+ *                           heights[0][1], heights[1][1],
+ *                           0.5f, 0.5f);  // 2.5 (average of all four)
+ *
+ * See: lessons/math/04-bilinear-interpolation
+ */
+static inline float forge_bilerpf(float c00, float c10,
+                                   float c01, float c11,
+                                   float tx, float ty)
+{
+    float bot = forge_lerpf(c00, c10, tx);
+    float top = forge_lerpf(c01, c11, tx);
+    return forge_lerpf(bot, top, ty);
+}
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -327,6 +398,36 @@ static inline vec3 vec3_lerp(vec3 a, vec3 b, float t)
     return vec3_add(a, vec3_scale(vec3_sub(b, a), t));
 }
 
+/* Bilinearly interpolate between four 3D vectors on a 2D grid.
+ *
+ * This is the vec3 version of forge_bilerpf — it blends four corner values
+ * based on a 2D position (tx, ty). Useful for interpolating RGB colors,
+ * positions, normals, or any 3-component quantity across a surface.
+ *
+ * Corner layout:
+ *   c01 -------- c11      tx: horizontal blend [0, 1]
+ *    |   (tx,ty)  |       ty: vertical blend   [0, 1]
+ *   c00 -------- c10
+ *
+ * This is what the GPU does for LINEAR texture filtering on RGB textures.
+ *
+ * Usage:
+ *   vec3 red   = vec3_create(1, 0, 0);
+ *   vec3 green = vec3_create(0, 1, 0);
+ *   vec3 blue  = vec3_create(0, 0, 1);
+ *   vec3 white = vec3_create(1, 1, 1);
+ *   vec3 blend = vec3_bilerp(red, green, blue, white, 0.5f, 0.5f);
+ *
+ * See: lessons/math/04-bilinear-interpolation
+ */
+static inline vec3 vec3_bilerp(vec3 c00, vec3 c10, vec3 c01, vec3 c11,
+                                float tx, float ty)
+{
+    vec3 bot = vec3_lerp(c00, c10, tx);
+    vec3 top = vec3_lerp(c01, c11, tx);
+    return vec3_lerp(bot, top, ty);
+}
+
 /* Compute the cross product of two 3D vectors.
  *
  * The cross product produces a vector perpendicular to both a and b,
@@ -403,6 +504,56 @@ static inline vec4 vec4_scale(vec4 v, float s)
 static inline float vec4_dot(vec4 a, vec4 b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+}
+
+/* Linearly interpolate between two 4D vectors.
+ *
+ * When t=0, returns a.
+ * When t=1, returns b.
+ * When t=0.5, returns the midpoint.
+ *
+ * Formula: a + t * (b - a)
+ *
+ * Usage:
+ *   vec4 start = vec4_create(1.0f, 0.0f, 0.0f, 1.0f);
+ *   vec4 end   = vec4_create(0.0f, 0.0f, 1.0f, 1.0f);
+ *   vec4 mid   = vec4_lerp(start, end, 0.5f);  // (0.5, 0, 0.5, 1)
+ *
+ * See: lessons/math/01-vectors
+ */
+static inline vec4 vec4_lerp(vec4 a, vec4 b, float t)
+{
+    return vec4_add(a, vec4_scale(vec4_sub(b, a), t));
+}
+
+/* Bilinearly interpolate between four 4D vectors on a 2D grid.
+ *
+ * This is the vec4 version of forge_bilerpf — it blends four corner values
+ * based on a 2D position (tx, ty). Useful for interpolating RGBA colors
+ * or any 4-component quantity across a surface.
+ *
+ * Corner layout:
+ *   c01 -------- c11      tx: horizontal blend [0, 1]
+ *    |   (tx,ty)  |       ty: vertical blend   [0, 1]
+ *   c00 -------- c10
+ *
+ * This is what the GPU does for LINEAR texture filtering on RGBA textures.
+ *
+ * Usage:
+ *   vec4 c00 = vec4_create(1, 0, 0, 1);  // red
+ *   vec4 c10 = vec4_create(0, 1, 0, 1);  // green
+ *   vec4 c01 = vec4_create(0, 0, 1, 1);  // blue
+ *   vec4 c11 = vec4_create(1, 1, 1, 1);  // white
+ *   vec4 blend = vec4_bilerp(c00, c10, c01, c11, 0.5f, 0.5f);
+ *
+ * See: lessons/math/04-bilinear-interpolation
+ */
+static inline vec4 vec4_bilerp(vec4 c00, vec4 c10, vec4 c01, vec4 c11,
+                                float tx, float ty)
+{
+    vec4 bot = vec4_lerp(c00, c10, tx);
+    vec4 top = vec4_lerp(c01, c11, tx);
+    return vec4_lerp(bot, top, ty);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

@@ -37,7 +37,7 @@ Infrastructure that supports all lessons:
 
 ## Math Lessons — Up Next
 
-- [ ] **Math Lesson 04 — Bilinear Interpolation** — How LINEAR texture filtering works: two nested lerps blending the 4 nearest texels; comparison with NEAREST; builds on lerp from Math Lesson 01
+- [x] **Math Lesson 04 — Bilinear Interpolation** — How LINEAR texture filtering works: two nested lerps blending the 4 nearest texels; comparison with NEAREST; builds on lerp from Math Lesson 01
 - [ ] **Math Lesson 05 — Mipmaps & LOD** — Mip chain as power-of-two downsampling, log2 for level selection, how screen-space derivatives map to mip levels; connects bilinear interpolation (Math Lesson 04) to trilinear filtering
 - [ ] **Math Lesson 06 — Matrices** — mat4x4, transformations, rotations, composition
 - [ ] **Math Lesson 07 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock

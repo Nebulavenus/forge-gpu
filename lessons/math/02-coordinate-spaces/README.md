@@ -257,8 +257,8 @@ Here's how a vertex flows through the entire pipeline:
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  1. LOCAL SPACE                                             │
-│     - Vertex defined in model's own coordinates            │
-│     - Example: (1.0, 0.5, 0.0, 1.0)                        │
+│     - Vertex defined in model's own coordinates             │
+│     - Example: (1.0, 0.5, 0.0, 1.0)                         │
 └─────────────────────────────────────────────────────────────┘
                          │
                          │ Model Matrix (translate, rotate, scale)
@@ -266,7 +266,7 @@ Here's how a vertex flows through the entire pipeline:
 ┌─────────────────────────────────────────────────────────────┐
 │  2. WORLD SPACE                                             │
 │     - Vertex positioned in the scene                        │
-│     - Example: (5.7, 2.5, 10.0, 1.0)                       │
+│     - Example: (5.7, 2.5, 10.0, 1.0)                        │
 └─────────────────────────────────────────────────────────────┘
                          │
                          │ View Matrix (camera transform)
@@ -274,7 +274,7 @@ Here's how a vertex flows through the entire pipeline:
 ┌─────────────────────────────────────────────────────────────┐
 │  3. VIEW SPACE                                              │
 │     - Vertex relative to camera                             │
-│     - Example: (2.0, 0.5, -8.0, 1.0)                       │
+│     - Example: (2.0, 0.5, -8.0, 1.0)                        │
 │     - Note: -Z is forward!                                  │
 └─────────────────────────────────────────────────────────────┘
                          │
@@ -283,7 +283,7 @@ Here's how a vertex flows through the entire pipeline:
 ┌─────────────────────────────────────────────────────────────┐
 │  4. CLIP SPACE                                              │
 │     - Homogeneous coordinates (x, y, z, w)                  │
-│     - Example: (2.4, 0.8, 4.0, 8.0)                        │
+│     - Example: (2.4, 0.8, 4.0, 8.0)                         │
 │     - w encodes depth for perspective                       │
 └─────────────────────────────────────────────────────────────┘
                          │
@@ -291,8 +291,8 @@ Here's how a vertex flows through the entire pipeline:
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  5. NDC (Normalized Device Coordinates)                     │
-│     - Normalized to [-1, 1] × [-1, 1] × [0, 1]             │
-│     - Example: (0.3, 0.1, 0.5)                             │
+│     - Normalized to [-1, 1] × [-1, 1] × [0, 1]              │
+│     - Example: (0.3, 0.1, 0.5)                              │
 │     - Geometry outside this range is clipped                │
 └─────────────────────────────────────────────────────────────┘
                          │
@@ -301,7 +301,7 @@ Here's how a vertex flows through the entire pipeline:
 ┌─────────────────────────────────────────────────────────────┐
 │  6. SCREEN SPACE                                            │
 │     - Pixel coordinates                                     │
-│     - Example: (1248 px, 594 px)                           │
+│     - Example: (1248 px, 594 px)                            │
 │     - Ready to rasterize and color                          │
 └─────────────────────────────────────────────────────────────┘
 ```

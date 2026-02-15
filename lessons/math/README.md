@@ -24,8 +24,9 @@ implementations for your projects.
 | 01 | [Vectors](01-vectors/) | Addition, dot/cross products, normalization, lerp |
 | 02 | [Coordinate Spaces](02-coordinate-spaces/) | Model, world, view, clip, NDC, screen spaces and transformations |
 | 03 | [Orthographic Projection](03-orthographic-projection/) | Orthographic vs perspective, 2D rendering, shadow maps |
+| 04 | [Bilinear Interpolation](04-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear comparison |
 
-*More lessons coming soon:* Matrices (deep dive), quaternions, and more.
+*More lessons coming soon:* Mipmaps & LOD, matrices (deep dive), quaternions, and more.
 
 ## How Math Lessons Work
 

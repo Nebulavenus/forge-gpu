@@ -32,6 +32,7 @@ enable_testing()
 add_subdirectory(lessons/math/01-vectors)
 add_subdirectory(lessons/math/02-coordinate-spaces)
 add_subdirectory(lessons/math/03-orthographic-projection)
+add_subdirectory(lessons/math/04-bilinear-interpolation)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)
