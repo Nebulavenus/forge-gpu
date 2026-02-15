@@ -25,20 +25,23 @@ Infrastructure that supports all lessons:
 
 ## GPU Lessons — Up Next
 
-- [ ] **Lesson 04 — Textures & Samplers** — Loading images, texture sampling, UV coordinates
-- [ ] **Lesson 05 — Depth Buffer & 3D Transforms** — MVP matrices, perspective projection, depth testing, window resize handling
-- [ ] **Lesson 06 — Loading a Mesh** — OBJ or glTF parsing, indexed rendering
-- [ ] **Lesson 07 — Basic Lighting** — Diffuse + specular, normal vectors, Phong model
-- [ ] **Lesson 08 — Gamma Correction & sRGB** — Linear color space, why sRGB exists, how `SDR_LINEAR` works
-- [ ] **Lesson 09 — Render-to-Texture** — Offscreen passes, framebuffers, post-processing
-- [ ] **Lesson 10 — Compute Shaders** — General-purpose GPU computation
-- [ ] **Lesson 11 — Instanced Rendering** — Drawing many objects efficiently
+- [x] **Lesson 04 — Textures & Samplers** — Loading images, texture sampling, UV coordinates
+- [ ] **Lesson 05 — Mipmaps** — Mip chain generation, trilinear filtering, why mipmaps fix aliasing; fragment derivatives (ddx/ddy) and how the GPU picks the mip level; helper invocations and 2x2 quad execution
+- [ ] **Lesson 06 — Depth Buffer & 3D Transforms** — MVP matrices, perspective projection, depth testing, window resize handling
+- [ ] **Lesson 07 — Loading a Mesh** — OBJ or glTF parsing, indexed rendering
+- [ ] **Lesson 08 — Basic Lighting** — Diffuse + specular, normal vectors, Phong model
+- [ ] **Lesson 09 — Gamma Correction & sRGB** — Linear color space, why sRGB exists, how `SDR_LINEAR` works
+- [ ] **Lesson 10 — Render-to-Texture** — Offscreen passes, framebuffers, post-processing
+- [ ] **Lesson 11 — Compute Shaders** — General-purpose GPU computation
+- [ ] **Lesson 12 — Instanced Rendering** — Drawing many objects efficiently
 
 ## Math Lessons — Up Next
 
-- [ ] **Math Lesson 04 — Matrices** — mat4x4, transformations, rotations, composition
-- [ ] **Math Lesson 05 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock
-- [ ] **Math Lesson 06 — Projections** — Perspective, orthographic, NDC mapping
+- [ ] **Math Lesson 04 — Bilinear Interpolation** — How LINEAR texture filtering works: two nested lerps blending the 4 nearest texels; comparison with NEAREST; builds on lerp from Math Lesson 01
+- [ ] **Math Lesson 05 — Mipmaps & LOD** — Mip chain as power-of-two downsampling, log2 for level selection, how screen-space derivatives map to mip levels; connects bilinear interpolation (Math Lesson 04) to trilinear filtering
+- [ ] **Math Lesson 06 — Matrices** — mat4x4, transformations, rotations, composition
+- [ ] **Math Lesson 07 — Quaternions** — Rotation representation, slerp, avoiding gimbal lock
+- [ ] **Math Lesson 08 — Projections** — Perspective, orthographic, NDC mapping
 
 ## Developer Experience / Tooling
 

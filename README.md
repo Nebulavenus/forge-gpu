@@ -36,6 +36,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 01 | [Hello Window](lessons/gpu/01-hello-window/) | GPU device, swapchain, command buffers, render passes |
 | 02 | [First Triangle](lessons/gpu/02-first-triangle/) | Vertex buffers, shaders, graphics pipeline |
 | 03 | [Uniforms & Motion](lessons/gpu/03-uniforms-and-motion/) | Uniform buffers, push uniforms, animating with time |
+| 04 | [Textures & Samplers](lessons/gpu/04-textures-and-samplers/) | Loading images, GPU textures, samplers, UV coordinates, index buffers |
 
 ### Math Lessons (lessons/math/)
 
@@ -224,7 +225,8 @@ forge-gpu/
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── 02-first-triangle/
-│       └── 03-uniforms-and-motion/
+│       ├── 03-uniforms-and-motion/
+│       └── 04-textures-and-samplers/
 ├── common/
 │   ├── math/              Math library (header-only, documented, reusable)
 │   │   ├── forge_math.h   Vectors, matrices, common operations
@@ -265,6 +267,7 @@ project to enable Claude to build games and tools with you.
 | [sdl-gpu-setup](.claude/skills/sdl-gpu-setup/SKILL.md) | `/sdl-gpu-setup` | Scaffold SDL3 GPU app with window, swapchain, render loop |
 | [first-triangle](.claude/skills/first-triangle/SKILL.md) | `/first-triangle` | Add vertex buffers, shaders, pipeline — draw colored geometry |
 | [uniforms-and-motion](.claude/skills/uniforms-and-motion/SKILL.md) | `/uniforms-and-motion` | Pass data to shaders with push uniforms, animate geometry |
+| [textures-and-samplers](.claude/skills/textures-and-samplers/SKILL.md) | `/textures-and-samplers` | Load images, create GPU textures/samplers, draw textured geometry |
 
 ### Development skills (used within this repo)
 

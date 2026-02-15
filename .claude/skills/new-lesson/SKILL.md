@@ -15,15 +15,27 @@ If any of these are missing, ask the user before proceeding.
 
 ## Steps
 
-1. **Determine what math is needed**:
+1. **Start from a clean main branch**:
+
+   Before creating any files, ensure we're working from the latest main:
+
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+   This avoids conflicts from stale branches and ensures the new lesson
+   builds on top of the latest project state.
+
+2. **Determine what math is needed**:
    - Will this lesson use vectors (positions, colors, directions)?
    - Will it use matrices (transformations, rotations)?
    - Check if the math library (`common/math/forge_math.h`) has what you need
    - If new math operations are needed, use `/math-lesson` to add them first
 
-2. **Create the lesson directory**: `lessons/gpu/$ARGUMENTS[0]-$ARGUMENTS[1]/`
+3. **Create the lesson directory**: `lessons/gpu/$ARGUMENTS[0]-$ARGUMENTS[1]/`
 
-3. **Create main.c** using the SDL callback architecture:
+4. **Create main.c** using the SDL callback architecture:
    - `#define SDL_MAIN_USE_CALLBACKS 1` before includes
    - Include required headers:
 
@@ -45,7 +57,7 @@ If any of these are missing, ask the user before proceeding.
    - Use C99, matching SDL's own style
    - **Use math library types for all math operations** (see "Using the Math Library" below)
 
-4. **Create CMakeLists.txt**:
+5. **Create CMakeLists.txt**:
 
    ```cmake
    add_executable(NN-name WIN32 main.c)
@@ -59,7 +71,7 @@ If any of these are missing, ask the user before proceeding.
    )
    ```
 
-5. **Create README.md** following this structure:
+6. **Create README.md** following this structure:
    - `# Lesson NN — Title`
    - `## What you'll learn` — bullet list of concepts
    - `## Result` — describe what the reader will see (add screenshot placeholder)
@@ -71,18 +83,18 @@ If any of these are missing, ask the user before proceeding.
      invocation, and a note that users can copy it into their own projects
    - `## Exercises` — 3-4 exercises that extend the lesson
 
-6. **Update the root CMakeLists.txt**: add `add_subdirectory(lessons/NN-name)` under "GPU Lessons"
+7. **Update the root CMakeLists.txt**: add `add_subdirectory(lessons/gpu/NN-name)` under "GPU Lessons"
 
-7. **Update README.md**: add a row to the GPU Lessons table
+8. **Update README.md**: add a row to the GPU Lessons table
 
-8. **Update PLAN.md**: check off the lesson if it was listed, or add it
+9. **Update PLAN.md**: check off the lesson if it was listed, or add it
 
-9. **Build and test**: run `cmake --build build --config Debug` and verify it runs
+10. **Build and test**: run `cmake --build build --config Debug` and verify it runs
 
-10. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
+11. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
     distills the lesson into a reusable pattern with YAML frontmatter
 
-11. **Run markdown linting**: Use the `/markdown-lint` skill to verify all markdown files pass linting:
+12. **Run markdown linting**: Use the `/markdown-lint` skill to verify all markdown files pass linting:
 
     ```bash
     npx markdownlint-cli2 "**/*.md"

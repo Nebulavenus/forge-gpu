@@ -72,7 +72,17 @@ before proceeding.
 
 Once validation passes:
 
-### 1. Create a feature branch
+### 1. Start from the latest main
+
+Ensure the feature branch is based on the latest main to avoid merge
+conflicts and stale dependencies:
+
+```bash
+git checkout main
+git pull origin main
+```
+
+### 2. Create a feature branch
 
 Branch name format: `lesson-NN-name` (e.g., `lesson-03-uniforms-and-motion`)
 
@@ -80,7 +90,7 @@ Branch name format: `lesson-NN-name` (e.g., `lesson-03-uniforms-and-motion`)
 git checkout -b lesson-NN-name
 ```
 
-### 2. Stage all changes
+### 3. Stage all changes
 
 Review what will be committed:
 
@@ -97,7 +107,7 @@ git add .claude/skills/<topic>/
 git add CMakeLists.txt PLAN.md README.md
 ```
 
-### 3. Run markdown linting
+### 4. Run markdown linting
 
 Before committing, verify all markdown files pass linting:
 
@@ -127,7 +137,7 @@ Common fixes:
 
 If linting fails, the markdown MUST be fixed. Quality checks are non-negotiable.
 
-### 4. Write a descriptive commit message
+### 5. Write a descriptive commit message
 
 Format:
 
@@ -154,7 +164,7 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 
 Present the commit message to the user for approval before committing.
 
-### 5. Commit and push
+### 6. Commit and push
 
 ```bash
 git commit -m "$(cat <<'EOF'
@@ -164,7 +174,7 @@ EOF
 git push -u origin lesson-NN-name
 ```
 
-### 6. Create a pull request
+### 7. Create a pull request
 
 Use `gh pr create` with a structured description:
 

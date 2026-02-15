@@ -37,6 +37,7 @@ add_subdirectory(lessons/math/03-orthographic-projection)
 add_subdirectory(lessons/gpu/01-hello-window)
 add_subdirectory(lessons/gpu/02-first-triangle)
 add_subdirectory(lessons/gpu/03-uniforms-and-motion)
+add_subdirectory(lessons/gpu/04-textures-and-samplers)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
