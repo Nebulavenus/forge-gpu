@@ -27,8 +27,9 @@ implementations for your projects.
 | 04 | [Mipmaps & LOD](04-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection, log2 |
 | 05 | [Matrices](05-matrices/) | Matrix math, multiplication, basis vectors, transpose, determinant, inverse |
 | 06 | [Projections](06-projections/) | Perspective, orthographic, frustums, clip space, NDC |
+| 07 | [Floating Point](07-floating-point/) | IEEE 754, precision, epsilon comparison, z-fighting, float vs double |
 
-*More lessons coming soon:* Quaternions, anisotropy, and more.
+*More lessons coming soon:* Quaternions, orientation, view matrix, and more.
 
 ## How Math Lessons Work
 

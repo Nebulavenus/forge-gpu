@@ -201,6 +201,88 @@ static inline float forge_trilerpf(float c000, float c100,
 #define FORGE_DEG2RAD 0.01745329251994329576f  /* π/180 */
 #define FORGE_RAD2DEG 57.2957795130823208768f  /* 180/π */
 
+/* Machine epsilon for 32-bit float.
+ *
+ * The smallest float e such that (1.0f + e) != 1.0f.
+ * This is the relative precision of a float at magnitude 1.0.
+ * At other magnitudes, the actual precision scales proportionally:
+ *   precision at value v ≈ v * FORGE_EPSILON
+ *
+ * Use this as a baseline when building comparison tolerances:
+ *   - Absolute tolerance: a few multiples of FORGE_EPSILON
+ *   - Relative tolerance: scale by the values being compared
+ *
+ * Value: 2^-23 ≈ 1.1920929e-7
+ *
+ * See: lessons/math/07-floating-point
+ */
+#define FORGE_EPSILON 1.1920928955078125e-7f
+
+/* ── Floating-Point Comparison ───────────────────────────────────────────── */
+
+/* Test if two floats are approximately equal using absolute tolerance.
+ *
+ * Returns true if |a - b| < tolerance.
+ *
+ * Best for comparing values near zero, where you know the expected
+ * magnitude. For values of unknown magnitude, use forge_rel_equalf()
+ * or combine both approaches.
+ *
+ * WARNING: An absolute tolerance that works for small values (e.g. 1e-6)
+ * may be meaningless for large values (1000000 + 1e-6 is lost to rounding).
+ * See the lesson for details on when to use which approach.
+ *
+ * Parameters:
+ *   a, b      — values to compare
+ *   tolerance — maximum allowed absolute difference (must be > 0)
+ *
+ * Usage:
+ *   float result = sinf(FORGE_PI);  // should be 0, but isn't exactly
+ *   if (forge_approx_equalf(result, 0.0f, 1e-6f)) { ... }
+ *
+ * See: lessons/math/07-floating-point
+ */
+static inline int forge_approx_equalf(float a, float b, float tolerance)
+{
+    float diff = a - b;
+    return (diff < tolerance) && (diff > -tolerance);
+}
+
+/* Test if two floats are approximately equal using relative tolerance.
+ *
+ * Returns true if |a - b| < tolerance * max(|a|, |b|).
+ *
+ * The tolerance scales with the magnitude of the values, making this
+ * appropriate for values of any size. A relative tolerance of 1e-5
+ * means "equal to 5 decimal places."
+ *
+ * WARNING: Breaks down near zero because tolerance * max(|a|,|b|) → 0.
+ * For comparing values near zero, use forge_approx_equalf() instead,
+ * or combine both: forge_approx_equalf(a, b, abs_eps) ||
+ *                   forge_rel_equalf(a, b, rel_eps)
+ *
+ * Parameters:
+ *   a, b      — values to compare
+ *   tolerance — maximum allowed relative difference (e.g. 1e-5 for 5 digits)
+ *
+ * Usage:
+ *   float a = 1000000.0f;
+ *   float b = 1000000.125f;
+ *   if (forge_rel_equalf(a, b, 1e-6f)) { ... }  // true (within 6 digits)
+ *
+ * See: lessons/math/07-floating-point
+ */
+static inline int forge_rel_equalf(float a, float b, float tolerance)
+{
+    float diff = fabsf(a - b);
+    float larger = fmaxf(fabsf(a), fabsf(b));
+
+    /* When both values are zero, diff is also zero — they're equal. */
+    if (larger == 0.0f) return diff == 0.0f;
+
+    return diff < tolerance * larger;
+}
+
 /* ── Type Definitions ─────────────────────────────────────────────────────── */
 
 /* 2D vector with named components.
