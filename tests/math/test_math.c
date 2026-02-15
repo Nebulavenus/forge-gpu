@@ -89,6 +89,24 @@ static bool vec4_eq(vec4 a, vec4 b)
            float_eq(a.z, b.z) && float_eq(a.w, b.w);
 }
 
+/* Check if two mat3s are approximately equal */
+static bool mat3_eq(mat3 a, mat3 b)
+{
+    for (int i = 0; i < 9; i++) {
+        if (!float_eq(a.m[i], b.m[i])) return false;
+    }
+    return true;
+}
+
+/* Check if two mat4s are approximately equal */
+static bool mat4_eq(mat4 a, mat4 b)
+{
+    for (int i = 0; i < 16; i++) {
+        if (!float_eq(a.m[i], b.m[i])) return false;
+    }
+    return true;
+}
+
 /* Test assertion macros */
 #define TEST(name) \
     do { \
@@ -126,6 +144,20 @@ static bool vec4_eq(vec4 a, vec4 b)
         SDL_LogError(SDL_LOG_CATEGORY_TEST, \
                      "    FAIL: Expected (%.3f, %.3f, %.3f, %.3f), got (%.3f, %.3f, %.3f, %.3f)", \
                      b.x, b.y, b.z, b.w, a.x, a.y, a.z, a.w); \
+        fail_count++; \
+        return; \
+    }
+
+#define ASSERT_MAT3_EQ(a, b) \
+    if (!mat3_eq(a, b)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: mat3 mismatch"); \
+        fail_count++; \
+        return; \
+    }
+
+#define ASSERT_MAT4_EQ(a, b) \
+    if (!mat4_eq(a, b)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: mat4 mismatch"); \
         fail_count++; \
         return; \
     }
@@ -737,6 +769,239 @@ static void test_mat4_multiply_identity(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * mat3 Tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_mat3_identity(void)
+{
+    TEST("mat3_identity");
+    mat3 m = mat3_identity();
+    ASSERT_FLOAT_EQ(m.m[0], TEST_ONE);
+    ASSERT_FLOAT_EQ(m.m[4], TEST_ONE);
+    ASSERT_FLOAT_EQ(m.m[8], TEST_ONE);
+    ASSERT_FLOAT_EQ(m.m[1], TEST_ZERO);
+    ASSERT_FLOAT_EQ(m.m[3], TEST_ZERO);
+    END_TEST();
+}
+
+static void test_mat3_create(void)
+{
+    TEST("mat3_create");
+    /* Row-major input, column-major storage */
+    mat3 m = mat3_create(
+        1, 2, 3,
+        4, 5, 6,
+        7, 8, 9
+    );
+    /* Column 0 */
+    ASSERT_FLOAT_EQ(m.m[0], TEST_ONE);
+    ASSERT_FLOAT_EQ(m.m[1], TEST_FOUR);
+    ASSERT_FLOAT_EQ(m.m[2], 7.0f);
+    /* Column 1 */
+    ASSERT_FLOAT_EQ(m.m[3], TEST_TWO);
+    ASSERT_FLOAT_EQ(m.m[4], TEST_FIVE);
+    ASSERT_FLOAT_EQ(m.m[5], TEST_EIGHT);
+    /* Column 2 */
+    ASSERT_FLOAT_EQ(m.m[6], TEST_THREE);
+    ASSERT_FLOAT_EQ(m.m[7], 6.0f);
+    ASSERT_FLOAT_EQ(m.m[8], 9.0f);
+    END_TEST();
+}
+
+static void test_mat3_multiply_vec3(void)
+{
+    TEST("mat3_multiply_vec3");
+    /* Identity * v = v */
+    mat3 id = mat3_identity();
+    vec3 v = TEST_V3_A;
+    vec3 result = mat3_multiply_vec3(id, v);
+    ASSERT_VEC3_EQ(result, v);
+
+    /* Scale by (2, 3, 1) */
+    mat3 scl = mat3_scale(vec2_create(TEST_TWO, TEST_THREE));
+    vec3 scaled = mat3_multiply_vec3(scl, vec3_create(TEST_ONE, TEST_ONE, TEST_ONE));
+    ASSERT_VEC3_EQ(scaled, vec3_create(TEST_TWO, TEST_THREE, TEST_ONE));
+    END_TEST();
+}
+
+static void test_mat3_multiply(void)
+{
+    TEST("mat3_multiply");
+    /* Identity * M = M */
+    mat3 id = mat3_identity();
+    mat3 m = mat3_create(1, 2, 3, 4, 5, 6, 7, 8, 9);
+    mat3 result = mat3_multiply(id, m);
+    ASSERT_MAT3_EQ(result, m);
+
+    /* M * Identity = M */
+    result = mat3_multiply(m, id);
+    ASSERT_MAT3_EQ(result, m);
+    END_TEST();
+}
+
+static void test_mat3_transpose(void)
+{
+    TEST("mat3_transpose");
+    mat3 m = mat3_create(1, 2, 3, 4, 5, 6, 7, 8, 9);
+    mat3 t = mat3_transpose(m);
+    mat3 expected = mat3_create(1, 4, 7, 2, 5, 8, 3, 6, 9);
+    ASSERT_MAT3_EQ(t, expected);
+
+    /* Double transpose = original */
+    mat3 tt = mat3_transpose(t);
+    ASSERT_MAT3_EQ(tt, m);
+    END_TEST();
+}
+
+static void test_mat3_determinant(void)
+{
+    TEST("mat3_determinant");
+    /* Identity determinant = 1 */
+    ASSERT_FLOAT_EQ(mat3_determinant(mat3_identity()), TEST_ONE);
+
+    /* Rotation determinant = 1 */
+    mat3 rot = mat3_rotate(FORGE_PI / TEST_FOUR);
+    ASSERT_FLOAT_EQ(mat3_determinant(rot), TEST_ONE);
+
+    /* Scale by 2 in all axes: det = 2*2*1 = 4 */
+    mat3 scl = mat3_scale(vec2_create(TEST_TWO, TEST_TWO));
+    ASSERT_FLOAT_EQ(mat3_determinant(scl), TEST_FOUR);
+
+    /* Singular matrix (row 3 = row 1): det = 0 */
+    mat3 singular = mat3_create(1, 2, 3, 4, 5, 6, 1, 2, 3);
+    ASSERT_FLOAT_EQ(mat3_determinant(singular), TEST_ZERO);
+    END_TEST();
+}
+
+static void test_mat3_inverse(void)
+{
+    TEST("mat3_inverse");
+    /* Inverse of identity = identity */
+    mat3 id = mat3_identity();
+    mat3 inv_id = mat3_inverse(id);
+    ASSERT_MAT3_EQ(inv_id, id);
+
+    /* M * M^-1 = I for a general invertible matrix */
+    mat3 m = mat3_create(2, 1, 0, 0, 3, 1, 0, 0, 1);
+    mat3 inv = mat3_inverse(m);
+    mat3 product = mat3_multiply(m, inv);
+    ASSERT_MAT3_EQ(product, id);
+
+    /* Rotation inverse = transpose */
+    mat3 rot = mat3_rotate(FORGE_PI / TEST_THREE);
+    mat3 rot_inv = mat3_inverse(rot);
+    mat3 rot_t = mat3_transpose(rot);
+    ASSERT_MAT3_EQ(rot_inv, rot_t);
+    END_TEST();
+}
+
+static void test_mat3_rotate(void)
+{
+    TEST("mat3_rotate");
+    /* 90° rotation: X axis -> Y axis */
+    mat3 rot = mat3_rotate(FORGE_PI / TEST_TWO);
+    vec3 x_axis = TEST_V3_X_AXIS;
+    vec3 result = mat3_multiply_vec3(rot, x_axis);
+    ASSERT_FLOAT_EQ(result.x, TEST_ZERO);
+    ASSERT_FLOAT_EQ(result.y, TEST_ONE);
+    ASSERT_FLOAT_EQ(result.z, TEST_ZERO);
+    END_TEST();
+}
+
+static void test_mat3_scale(void)
+{
+    TEST("mat3_scale");
+    mat3 scl = mat3_scale(vec2_create(TEST_TWO, TEST_THREE));
+    vec3 v = vec3_create(TEST_FOUR, TEST_FIVE, TEST_ONE);
+    vec3 result = mat3_multiply_vec3(scl, v);
+    ASSERT_VEC3_EQ(result, vec3_create(TEST_EIGHT, TEST_FIFTEEN, TEST_ONE));
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * mat4 Additional Tests (transpose, determinant, inverse)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_mat4_transpose(void)
+{
+    TEST("mat4_transpose");
+    mat4 m = mat4_translate(vec3_create(TEST_FIVE, TEST_THREE, TEST_TWO));
+    mat4 t = mat4_transpose(m);
+
+    /* Translation (column 3) should become row 3 */
+    ASSERT_FLOAT_EQ(t.m[12], m.m[3]);
+    ASSERT_FLOAT_EQ(t.m[13], m.m[7]);
+    ASSERT_FLOAT_EQ(t.m[14], m.m[11]);
+
+    /* Double transpose = original */
+    mat4 tt = mat4_transpose(t);
+    ASSERT_MAT4_EQ(tt, m);
+    END_TEST();
+}
+
+static void test_mat4_determinant(void)
+{
+    TEST("mat4_determinant");
+    /* Identity: det = 1 */
+    ASSERT_FLOAT_EQ(mat4_determinant(mat4_identity()), TEST_ONE);
+
+    /* Rotation: det = 1 */
+    mat4 rot = mat4_rotate_y(FORGE_PI / TEST_FOUR);
+    ASSERT_FLOAT_EQ(mat4_determinant(rot), TEST_ONE);
+
+    /* Uniform scale by 2: det = 2^3 * 1 = 8 (4x4 with w=1 row) */
+    mat4 scl = mat4_scale_uniform(TEST_TWO);
+    ASSERT_FLOAT_EQ(mat4_determinant(scl), TEST_EIGHT);
+    END_TEST();
+}
+
+static void test_mat4_inverse(void)
+{
+    TEST("mat4_inverse");
+    mat4 id = mat4_identity();
+
+    /* Inverse of identity = identity */
+    mat4 inv_id = mat4_inverse(id);
+    ASSERT_MAT4_EQ(inv_id, id);
+
+    /* Translation: inverse should negate the offset */
+    mat4 t = mat4_translate(vec3_create(TEST_FIVE, TEST_THREE, TEST_TWO));
+    mat4 t_inv = mat4_inverse(t);
+    mat4 product = mat4_multiply(t, t_inv);
+    ASSERT_MAT4_EQ(product, id);
+
+    /* Rotation: inverse = transpose */
+    mat4 rot = mat4_rotate_z(FORGE_PI / TEST_THREE);
+    mat4 rot_inv = mat4_inverse(rot);
+    mat4 rot_t = mat4_transpose(rot);
+    ASSERT_MAT4_EQ(rot_inv, rot_t);
+    END_TEST();
+}
+
+static void test_mat4_from_mat3(void)
+{
+    TEST("mat4_from_mat3");
+    mat3 rot3 = mat3_rotate(FORGE_PI / TEST_FOUR);
+    mat4 rot4 = mat4_from_mat3(rot3);
+
+    /* Upper-left 3×3 should match */
+    ASSERT_FLOAT_EQ(rot4.m[0], rot3.m[0]);
+    ASSERT_FLOAT_EQ(rot4.m[1], rot3.m[1]);
+    ASSERT_FLOAT_EQ(rot4.m[4], rot3.m[3]);
+    ASSERT_FLOAT_EQ(rot4.m[5], rot3.m[4]);
+
+    /* Last row/column should be identity */
+    ASSERT_FLOAT_EQ(rot4.m[3], TEST_ZERO);
+    ASSERT_FLOAT_EQ(rot4.m[7], TEST_ZERO);
+    ASSERT_FLOAT_EQ(rot4.m[11], TEST_ZERO);
+    ASSERT_FLOAT_EQ(rot4.m[12], TEST_ZERO);
+    ASSERT_FLOAT_EQ(rot4.m[13], TEST_ZERO);
+    ASSERT_FLOAT_EQ(rot4.m[14], TEST_ZERO);
+    ASSERT_FLOAT_EQ(rot4.m[15], TEST_ONE);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -791,6 +1056,18 @@ int main(int argc, char *argv[])
     test_vec4_dot();
     test_vec4_trilerp();
 
+    /* mat3 tests */
+    SDL_Log("\nmat3 tests:");
+    test_mat3_identity();
+    test_mat3_create();
+    test_mat3_multiply_vec3();
+    test_mat3_multiply();
+    test_mat3_transpose();
+    test_mat3_determinant();
+    test_mat3_inverse();
+    test_mat3_rotate();
+    test_mat3_scale();
+
     /* mat4 tests */
     SDL_Log("\nmat4 tests:");
     test_mat4_identity();
@@ -806,6 +1083,10 @@ int main(int argc, char *argv[])
     test_mat4_orthographic_2d();
     test_mat4_multiply();
     test_mat4_multiply_identity();
+    test_mat4_transpose();
+    test_mat4_determinant();
+    test_mat4_inverse();
+    test_mat4_from_mat3();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");

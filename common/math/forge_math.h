@@ -708,6 +708,336 @@ static inline vec4 vec4_trilerp(vec4 c000, vec4 c100, vec4 c010, vec4 c110,
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * mat3 — 3×3 matrices
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* 3×3 matrix in column-major storage.
+ *
+ * Memory layout (9 floats):
+ *   m[0..2] = column 0
+ *   m[3..5] = column 1
+ *   m[6..8] = column 2
+ *
+ * As a mathematical matrix:
+ *   | m[0]  m[3]  m[6] |
+ *   | m[1]  m[4]  m[7] |
+ *   | m[2]  m[5]  m[8] |
+ *
+ * Access element at row r, column c: m[c * 3 + r]
+ *
+ * 3×3 matrices are useful for:
+ *   - 2D transforms (rotation, scale in the XY plane)
+ *   - Normal matrix (inverse transpose of upper-left 3×3 of model matrix)
+ *   - Teaching matrix math before jumping to 4×4
+ *
+ * HLSL equivalent: float3x3
+ *
+ * See: lessons/math/06-matrices
+ */
+typedef struct mat3 {
+    float m[9];
+} mat3;
+
+/* Create a 3×3 matrix from 9 values in row-major order.
+ *
+ * Values are given left-to-right, top-to-bottom (the way you'd write a matrix
+ * on paper), but stored internally in column-major order.
+ *
+ * Usage:
+ *   mat3 m = mat3_create(
+ *       1, 2, 3,   // row 0
+ *       4, 5, 6,   // row 1
+ *       7, 8, 9    // row 2
+ *   );
+ *   // m.m[0]=1, m.m[1]=4, m.m[2]=7  (column 0)
+ *   // m.m[3]=2, m.m[4]=5, m.m[5]=8  (column 1)
+ *   // m.m[6]=3, m.m[7]=6, m.m[8]=9  (column 2)
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_create(float m00, float m01, float m02,
+                                 float m10, float m11, float m12,
+                                 float m20, float m21, float m22)
+{
+    mat3 m;
+    /* Transpose from row-major input to column-major storage */
+    m.m[0] = m00;  m.m[3] = m01;  m.m[6] = m02;
+    m.m[1] = m10;  m.m[4] = m11;  m.m[7] = m12;
+    m.m[2] = m20;  m.m[5] = m21;  m.m[8] = m22;
+    return m;
+}
+
+/* Create a 3×3 identity matrix.
+ *
+ * The identity matrix leaves vectors unchanged: I * v = v
+ *
+ *   | 1  0  0 |
+ *   | 0  1  0 |
+ *   | 0  0  1 |
+ *
+ * Its columns are the standard basis vectors: (1,0,0), (0,1,0), (0,0,1).
+ *
+ * Usage:
+ *   mat3 m = mat3_identity();
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_identity(void)
+{
+    mat3 m = {
+        1.0f, 0.0f, 0.0f,  /* column 0 */
+        0.0f, 1.0f, 0.0f,  /* column 1 */
+        0.0f, 0.0f, 1.0f   /* column 2 */
+    };
+    return m;
+}
+
+/* Multiply two 3×3 matrices: result = a * b
+ *
+ * Each column of the result is: a * (column of b).
+ * Each element is the dot product of a's row with b's column.
+ *
+ * Transform order: C = A * B means "apply B first, then A"
+ *
+ * Important: Matrix multiplication is NOT commutative: A*B != B*A in general.
+ * It IS associative: (A*B)*C = A*(B*C).
+ *
+ * Usage:
+ *   mat3 rot = mat3_rotate(angle);
+ *   mat3 scl = mat3_scale(vec2_create(2, 2));
+ *   mat3 combined = mat3_multiply(rot, scl);  // scale first, then rotate
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_multiply(mat3 a, mat3 b)
+{
+    mat3 result;
+
+    for (int col = 0; col < 3; col++) {
+        for (int row = 0; row < 3; row++) {
+            float sum = 0.0f;
+            for (int k = 0; k < 3; k++) {
+                sum += a.m[k * 3 + row] * b.m[col * 3 + k];
+            }
+            result.m[col * 3 + row] = sum;
+        }
+    }
+
+    return result;
+}
+
+/* Multiply a 3×3 matrix by a vec3: result = m * v
+ *
+ * This transforms the vector by the matrix. Each component of the result
+ * is the dot product of one row of m with the vector v.
+ *
+ * Geometric meaning: the matrix remaps the vector into a new coordinate frame.
+ * If the columns of m are (c0, c1, c2), then:
+ *   m * v = v.x * c0 + v.y * c1 + v.z * c2
+ *
+ * Usage:
+ *   mat3 rot = mat3_rotate(FORGE_PI / 4.0f);  // 45° rotation
+ *   vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
+ *   vec3 rotated = mat3_multiply_vec3(rot, v);
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline vec3 mat3_multiply_vec3(mat3 m, vec3 v)
+{
+    return vec3_create(
+        m.m[0] * v.x + m.m[3] * v.y + m.m[6] * v.z,
+        m.m[1] * v.x + m.m[4] * v.y + m.m[7] * v.z,
+        m.m[2] * v.x + m.m[5] * v.y + m.m[8] * v.z
+    );
+}
+
+/* Transpose a 3×3 matrix: swap rows and columns.
+ *
+ * M^T[i][j] = M[j][i]
+ *
+ * Visually, this mirrors the matrix across the main diagonal.
+ *
+ * Properties:
+ *   (A * B)^T = B^T * A^T   (transpose reverses multiplication order)
+ *   (M^T)^T = M              (double transpose is identity)
+ *
+ * For orthogonal matrices (like rotations), transpose equals inverse:
+ *   R^T = R^-1  (much faster than computing the actual inverse)
+ *
+ * Usage:
+ *   mat3 m = mat3_create(1, 2, 3, 4, 5, 6, 7, 8, 9);
+ *   mat3 t = mat3_transpose(m);
+ *   // t = | 1 4 7 |
+ *   //     | 2 5 8 |
+ *   //     | 3 6 9 |
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_transpose(mat3 m)
+{
+    mat3 t;
+    t.m[0] = m.m[0];  t.m[3] = m.m[1];  t.m[6] = m.m[2];
+    t.m[1] = m.m[3];  t.m[4] = m.m[4];  t.m[7] = m.m[5];
+    t.m[2] = m.m[6];  t.m[5] = m.m[7];  t.m[8] = m.m[8];
+    return t;
+}
+
+/* Compute the determinant of a 3×3 matrix.
+ *
+ * Geometric meaning: the determinant tells you how much the matrix scales
+ * area (2D) or volume (3D).
+ *   det > 0: preserves orientation, scales volume by det
+ *   det < 0: flips orientation (mirror), scales volume by |det|
+ *   det = 0: singular — squishes 3D down to 2D or less (not invertible)
+ *   det = 1: rotation (preserves volume exactly)
+ *
+ * Formula (Sarrus' rule / cofactor expansion along first row):
+ *   det = a(ei - fh) - b(di - fg) + c(dh - eg)
+ *
+ * Where:
+ *   | a b c |     | m0 m3 m6 |
+ *   | d e f |  =  | m1 m4 m7 |
+ *   | g h i |     | m2 m5 m8 |
+ *
+ * Properties:
+ *   det(A * B) = det(A) * det(B)
+ *   det(I) = 1
+ *   det(A^T) = det(A)
+ *
+ * Usage:
+ *   mat3 rot = mat3_rotate(FORGE_PI / 4.0f);
+ *   float d = mat3_determinant(rot);  // 1.0 (rotations preserve volume)
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline float mat3_determinant(mat3 m)
+{
+    float a = m.m[0], b = m.m[3], c = m.m[6];
+    float d = m.m[1], e = m.m[4], f = m.m[7];
+    float g = m.m[2], h = m.m[5], i = m.m[8];
+
+    return a * (e * i - f * h)
+         - b * (d * i - f * g)
+         + c * (d * h - e * g);
+}
+
+/* Compute the inverse of a 3×3 matrix.
+ *
+ * The inverse undoes the transformation: M * M^-1 = I
+ *
+ * Only exists when det(M) != 0. If the determinant is zero (singular matrix),
+ * this function returns the identity matrix as a safe fallback.
+ *
+ * Method: adjugate (transpose of cofactor matrix) divided by determinant.
+ *
+ * For rotation matrices, the inverse equals the transpose (much faster):
+ *   R^-1 = R^T
+ * Use mat3_transpose() instead when you know the matrix is a pure rotation.
+ *
+ * Properties:
+ *   (A * B)^-1 = B^-1 * A^-1  (inverse reverses multiplication order)
+ *   (M^-1)^-1 = M
+ *
+ * Usage:
+ *   mat3 m = mat3_create(2, 1, 0, 0, 3, 1, 0, 0, 1);
+ *   mat3 inv = mat3_inverse(m);
+ *   mat3 check = mat3_multiply(m, inv);  // should be ~identity
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_inverse(mat3 m)
+{
+    float a = m.m[0], b = m.m[3], c = m.m[6];
+    float d = m.m[1], e = m.m[4], f = m.m[7];
+    float g = m.m[2], h = m.m[5], i = m.m[8];
+
+    /* Cofactors */
+    float c00 =  (e * i - f * h);
+    float c01 = -(d * i - f * g);
+    float c02 =  (d * h - e * g);
+    float c10 = -(b * i - c * h);
+    float c11 =  (a * i - c * g);
+    float c12 = -(a * h - b * g);
+    float c20 =  (b * f - c * e);
+    float c21 = -(a * f - c * d);
+    float c22 =  (a * e - b * d);
+
+    float det = a * c00 + b * c01 + c * c02;
+
+    if (det == 0.0f) {
+        return mat3_identity();  /* Singular — not invertible */
+    }
+
+    float inv_det = 1.0f / det;
+
+    /* Adjugate (transpose of cofactor matrix) / determinant */
+    mat3 result;
+    result.m[0] = c00 * inv_det;  result.m[3] = c10 * inv_det;  result.m[6] = c20 * inv_det;
+    result.m[1] = c01 * inv_det;  result.m[4] = c11 * inv_det;  result.m[7] = c21 * inv_det;
+    result.m[2] = c02 * inv_det;  result.m[5] = c12 * inv_det;  result.m[8] = c22 * inv_det;
+    return result;
+}
+
+/* Create a 2D rotation matrix (rotates in the XY plane).
+ *
+ * Positive angle rotates counter-clockwise. The Z component is unchanged
+ * (the 3rd row/column is the identity), making this useful for 2D transforms
+ * embedded in a 3×3 matrix.
+ *
+ *   | cos(θ)  -sin(θ)  0 |
+ *   | sin(θ)   cos(θ)  0 |
+ *   |  0        0      1 |
+ *
+ * The columns of this matrix are:
+ *   Column 0: (cos θ, sin θ, 0) — where the X axis goes
+ *   Column 1: (-sin θ, cos θ, 0) — where the Y axis goes
+ *   Column 2: (0, 0, 1) — Z axis unchanged
+ *
+ * These columns are orthonormal (perpendicular and unit length), which is
+ * a key property of rotation matrices.
+ *
+ * Usage:
+ *   mat3 rot = mat3_rotate(FORGE_PI / 4.0f);  // 45° CCW
+ *   vec3 v = vec3_create(1.0f, 0.0f, 0.0f);
+ *   vec3 rotated = mat3_multiply_vec3(rot, v);  // (0.707, 0.707, 0)
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_rotate(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+
+    mat3 m = mat3_identity();
+    m.m[0] =  c;  m.m[3] = -s;
+    m.m[1] =  s;  m.m[4] =  c;
+    return m;
+}
+
+/* Create a 2D scale matrix (scales in the XY plane).
+ *
+ * The Z component is unchanged (the 3rd diagonal element is 1).
+ *
+ *   | sx  0  0 |
+ *   | 0  sy  0 |
+ *   | 0   0  1 |
+ *
+ * Usage:
+ *   mat3 scl = mat3_scale(vec2_create(2.0f, 3.0f));
+ *   vec3 v = vec3_create(1.0f, 1.0f, 1.0f);
+ *   vec3 scaled = mat3_multiply_vec3(scl, v);  // (2, 3, 1)
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat3 mat3_scale(vec2 scale)
+{
+    mat3 m = mat3_identity();
+    m.m[0] = scale.x;
+    m.m[4] = scale.y;
+    return m;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * mat4 — 4×4 matrices
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -1069,6 +1399,201 @@ static inline mat4 mat4_orthographic(float left, float right,
     /* w stays 1 (no perspective divide) */
     m.m[15] = 1.0f;
 
+    return m;
+}
+
+/* Transpose a 4×4 matrix: swap rows and columns.
+ *
+ * M^T[i][j] = M[j][i]
+ *
+ * Properties:
+ *   (A * B)^T = B^T * A^T
+ *   (M^T)^T = M
+ *
+ * For orthogonal matrices (rotations), transpose = inverse.
+ *
+ * Usage:
+ *   mat4 rot = mat4_rotate_z(angle);
+ *   mat4 inv = mat4_transpose(rot);  // inverse of a rotation
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat4 mat4_transpose(mat4 m)
+{
+    mat4 t;
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            t.m[col * 4 + row] = m.m[row * 4 + col];
+        }
+    }
+    return t;
+}
+
+/* Compute the determinant of a 4×4 matrix.
+ *
+ * Geometric meaning: how much the matrix scales 4D volume (hypervolume).
+ * For 3D transforms, it tells you the volume scaling of the transformation.
+ *
+ * Method: cofactor expansion along the first row.
+ *
+ * Properties:
+ *   det(A * B) = det(A) * det(B)
+ *   det(I) = 1
+ *   det = 0 means the matrix is singular (not invertible)
+ *
+ * Usage:
+ *   mat4 rot = mat4_rotate_y(angle);
+ *   float d = mat4_determinant(rot);  // 1.0
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline float mat4_determinant(mat4 m)
+{
+    /* Use cofactor expansion along the first row.
+     * det = m00*C00 - m01*C01 + m02*C02 - m03*C03
+     * where Cij is the 3×3 minor determinant at (i,j).
+     *
+     * Matrix (row, col) with column-major indexing: M[row][col] = m[col*4+row]
+     */
+    float a00 = m.m[0],  a01 = m.m[4],  a02 = m.m[8],   a03 = m.m[12];
+    float a10 = m.m[1],  a11 = m.m[5],  a12 = m.m[9],   a13 = m.m[13];
+    float a20 = m.m[2],  a21 = m.m[6],  a22 = m.m[10],  a23 = m.m[14];
+    float a30 = m.m[3],  a31 = m.m[7],  a32 = m.m[11],  a33 = m.m[15];
+
+    /* 2×2 sub-determinants (bottom two rows) */
+    float s0 = a20 * a31 - a21 * a30;
+    float s1 = a20 * a32 - a22 * a30;
+    float s2 = a20 * a33 - a23 * a30;
+    float s3 = a21 * a32 - a22 * a31;
+    float s4 = a21 * a33 - a23 * a31;
+    float s5 = a22 * a33 - a23 * a32;
+
+    /* Cofactors of first row */
+    float c0 = a11 * s5 - a12 * s4 + a13 * s3;
+    float c1 = a10 * s5 - a12 * s2 + a13 * s1;
+    float c2 = a10 * s4 - a11 * s2 + a13 * s0;
+    float c3 = a10 * s3 - a11 * s1 + a12 * s0;
+
+    return a00 * c0 - a01 * c1 + a02 * c2 - a03 * c3;
+}
+
+/* Compute the inverse of a 4×4 matrix.
+ *
+ * The inverse undoes the transformation: M * M^-1 = I
+ *
+ * Only exists when det(M) != 0. If the matrix is singular, returns the
+ * identity matrix as a safe fallback.
+ *
+ * Method: adjugate (transpose of cofactor matrix) divided by determinant.
+ * This uses the efficient 2×2 sub-determinant approach.
+ *
+ * For rotation matrices, the inverse equals the transpose (much faster):
+ *   R^-1 = R^T
+ * Use mat4_transpose() when you know the matrix is a pure rotation.
+ *
+ * Properties:
+ *   (A * B)^-1 = B^-1 * A^-1
+ *   (M^-1)^-1 = M
+ *
+ * Usage:
+ *   mat4 model = mat4_multiply(translation, rotation);
+ *   mat4 inv = mat4_inverse(model);
+ *   // model * inv ≈ identity
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat4 mat4_inverse(mat4 m)
+{
+    /* Use column-major element names: m[col*4+row] */
+    float m0  = m.m[0],  m1  = m.m[1],  m2  = m.m[2],  m3  = m.m[3];
+    float m4  = m.m[4],  m5  = m.m[5],  m6  = m.m[6],  m7  = m.m[7];
+    float m8  = m.m[8],  m9  = m.m[9],  m10 = m.m[10], m11 = m.m[11];
+    float m12 = m.m[12], m13 = m.m[13], m14 = m.m[14], m15 = m.m[15];
+
+    /* Pre-compute 2×2 sub-determinants for rows 2&3 */
+    float A = m10 * m15 - m11 * m14;
+    float B = m6  * m15 - m7  * m14;
+    float C = m6  * m11 - m7  * m10;
+    float D = m2  * m15 - m3  * m14;
+    float E = m2  * m11 - m3  * m10;
+    float F = m2  * m7  - m3  * m6;
+
+    /* Cofactors for column 0 of the adjugate (used to compute determinant) */
+    mat4 r;
+    r.m[0]  =  m5 * A - m9 * B + m13 * C;
+    r.m[1]  = -m1 * A + m9 * D - m13 * E;
+    r.m[2]  =  m1 * B - m5 * D + m13 * F;
+    r.m[3]  = -m1 * C + m5 * E - m9  * F;
+
+    float det = m0 * r.m[0] + m4 * r.m[1] + m8 * r.m[2] + m12 * r.m[3];
+
+    if (det == 0.0f) {
+        return mat4_identity();  /* Singular — not invertible */
+    }
+
+    /* Cofactors for remaining columns of the adjugate */
+    r.m[4]  = -m4 * A + m8 * B - m12 * C;
+    r.m[5]  =  m0 * A - m8 * D + m12 * E;
+    r.m[6]  = -m0 * B + m4 * D - m12 * F;
+    r.m[7]  =  m0 * C - m4 * E + m8  * F;
+
+    /* Pre-compute 2×2 sub-determinants for rows 1&3 */
+    float G = m9  * m15 - m11 * m13;
+    float H = m5  * m15 - m7  * m13;
+    float I = m5  * m11 - m7  * m9;
+    float J = m1  * m15 - m3  * m13;
+    float K = m1  * m11 - m3  * m9;
+    float L = m1  * m7  - m3  * m5;
+
+    r.m[8]  =  m4 * G - m8 * H + m12 * I;
+    r.m[9]  = -m0 * G + m8 * J - m12 * K;
+    r.m[10] =  m0 * H - m4 * J + m12 * L;
+    r.m[11] = -m0 * I + m4 * K - m8  * L;
+
+    /* Pre-compute 2×2 sub-determinants for rows 1&2 */
+    float M = m9  * m14 - m10 * m13;
+    float N = m5  * m14 - m6  * m13;
+    float O = m5  * m10 - m6  * m9;
+    float P = m1  * m14 - m2  * m13;
+    float Q = m1  * m10 - m2  * m9;
+    float R = m1  * m6  - m2  * m5;
+
+    r.m[12] = -m4 * M + m8 * N - m12 * O;
+    r.m[13] =  m0 * M - m8 * P + m12 * Q;
+    r.m[14] = -m0 * N + m4 * P - m12 * R;
+    r.m[15] =  m0 * O - m4 * Q + m8  * R;
+
+    /* Divide all elements by the determinant */
+    float inv_det = 1.0f / det;
+    for (int i = 0; i < 16; i++) {
+        r.m[i] *= inv_det;
+    }
+
+    return r;
+}
+
+/* Embed a 3×3 matrix into the upper-left corner of a 4×4 identity matrix.
+ *
+ * Useful for promoting a 3×3 rotation/scale to a full 4×4 transform,
+ * or for demonstrating the relationship between mat3 and mat4.
+ *
+ *   | m3[0] m3[3] m3[6] 0 |
+ *   | m3[1] m3[4] m3[7] 0 |
+ *   | m3[2] m3[5] m3[8] 0 |
+ *   |  0     0     0    1 |
+ *
+ * Usage:
+ *   mat3 rot3 = mat3_rotate(angle);
+ *   mat4 rot4 = mat4_from_mat3(rot3);  // 4×4 version of the same rotation
+ *
+ * See: lessons/math/06-matrices
+ */
+static inline mat4 mat4_from_mat3(mat3 m3)
+{
+    mat4 m = mat4_identity();
+    m.m[0] = m3.m[0];  m.m[4] = m3.m[3];  m.m[8]  = m3.m[6];
+    m.m[1] = m3.m[1];  m.m[5] = m3.m[4];  m.m[9]  = m3.m[7];
+    m.m[2] = m3.m[2];  m.m[6] = m3.m[5];  m.m[10] = m3.m[8];
     return m;
 }
 

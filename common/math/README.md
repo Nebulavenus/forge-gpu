@@ -29,6 +29,7 @@ vec4 rotated = mat4_multiply_vec4(rotation, v);
 - **`vec2`** — 2D vectors (x, y) — maps to HLSL `float2`
 - **`vec3`** — 3D vectors (x, y, z) — maps to HLSL `float3`
 - **`vec4`** — 4D vectors (x, y, z, w) — maps to HLSL `float4`
+- **`mat3`** — 3×3 matrices (column-major) — maps to HLSL `float3x3`
 - **`mat4`** — 4×4 matrices (column-major) — maps to HLSL `float4x4`
 
 **Note on naming:** We use `vec2/vec3/vec4` instead of HLSL's `float2/float3/float4`
@@ -58,10 +59,18 @@ Each vector type supports:
 - **Trilinear interpolation:** `vec3_trilerp(...)`, `vec4_trilerp(...)` — blend 8 cube corners in 3D
 - **Cross product:** `vec3_cross(a, b)` (3D only)
 
-### Matrix Operations
+### mat3 Operations
 
-- **Construction:** `mat4_identity()`
+- **Construction:** `mat3_create(9 floats)` (row-major input), `mat3_identity()`
+- **Multiplication:** `mat3_multiply(a, b)`, `mat3_multiply_vec3(m, v)`
+- **Analysis:** `mat3_transpose(m)`, `mat3_determinant(m)`, `mat3_inverse(m)`
+- **2D Transforms:** `mat3_rotate(angle)`, `mat3_scale(vec2)`
+
+### mat4 Operations
+
+- **Construction:** `mat4_identity()`, `mat4_from_mat3(m)`
 - **Multiplication:** `mat4_multiply(a, b)`, `mat4_multiply_vec4(m, v)`
+- **Analysis:** `mat4_transpose(m)`, `mat4_determinant(m)`, `mat4_inverse(m)`
 - **Transformations:**
   - `mat4_translate(offset)`
   - `mat4_scale(scale)`, `mat4_scale_uniform(s)`
@@ -117,6 +126,7 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/03-orthographic-projection/` — Orthographic vs perspective projection
 - `lessons/math/04-bilinear-interpolation/` — Bilinear interpolation, LINEAR texture filtering
 - `lessons/math/05-mipmaps-and-lod/` — Mip chains, trilinear interpolation, LOD selection
+- `lessons/math/06-matrices/` — Matrix math, multiplication, basis vectors, transpose, determinant, inverse
 
 Each lesson includes a demo program and README explaining the math.
 
@@ -159,6 +169,7 @@ Our C types map directly to HLSL types when uploading data to shaders:
 | `vec2` | `float2` | 8 bytes (2 floats) |
 | `vec3` | `float3` | 12 bytes (3 floats) |
 | `vec4` | `float4` | 16 bytes (4 floats) |
+| `mat3` | `float3x3` | 36 bytes (9 floats, column-major) |
 | `mat4` | `float4x4` | 64 bytes (16 floats, column-major) |
 
 **Example: Vertex struct in C and HLSL**

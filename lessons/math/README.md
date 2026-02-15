@@ -26,7 +26,7 @@ implementations for your projects.
 | 03 | [Orthographic Projection](03-orthographic-projection/) | Orthographic vs perspective, 2D rendering, shadow maps |
 | 04 | [Bilinear Interpolation](04-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear comparison |
 | 05 | [Mipmaps & LOD](05-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection, log2 |
-| 06 | [Matrices](06-matrices/) | Identity, translation, scaling, rotation, composition, MVP pipeline |
+| 06 | [Matrices](06-matrices/) | Matrix math, multiplication, basis vectors, transpose, determinant, inverse |
 
 *More lessons coming soon:* Quaternions, projections, anisotropy, and more.
 
@@ -65,8 +65,9 @@ All math operations are implemented in the **forge-gpu math library** at
 **Quick reference:**
 
 - `vec2`, `vec3`, `vec4` — Vectors (map to HLSL `float2/3/4`)
+- `mat3` — 3×3 matrices (column-major, matches HLSL `float3x3`)
 - `mat4` — 4×4 matrices (column-major, matches HLSL `float4x4`)
-- Operations: `add`, `sub`, `scale`, `dot`, `cross`, `normalize`, `lerp`, etc.
+- Operations: `add`, `sub`, `scale`, `dot`, `cross`, `normalize`, `lerp`, `transpose`, `determinant`, `inverse`, etc.
 
 See [common/math/README.md](../../common/math/README.md) for complete API docs.
 
