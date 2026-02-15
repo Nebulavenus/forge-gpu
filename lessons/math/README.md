@@ -26,8 +26,9 @@ implementations for your projects.
 | 03 | [Orthographic Projection](03-orthographic-projection/) | Orthographic vs perspective, 2D rendering, shadow maps |
 | 04 | [Bilinear Interpolation](04-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear comparison |
 | 05 | [Mipmaps & LOD](05-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection, log2 |
+| 06 | [Matrices](06-matrices/) | Identity, translation, scaling, rotation, composition, MVP pipeline |
 
-*More lessons coming soon:* Matrices (deep dive), quaternions, projections, and more.
+*More lessons coming soon:* Quaternions, projections, anisotropy, and more.
 
 ## How Math Lessons Work
 
@@ -97,7 +98,7 @@ The math library is **standalone** — no SDL or GPU dependencies. Use it anywhe
 **If you're new to graphics math:**
 
 1. Start with [01-vectors](01-vectors/) — Foundation of everything
-2. Move to matrices (coming soon) — Transformations and camera
+2. Move to [06-matrices](06-matrices/) — Transformations and camera
 3. Then dive into GPU lessons to see it in action
 
 **If you're building a project:**

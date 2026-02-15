@@ -38,6 +38,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 03 | [Uniforms & Motion](lessons/gpu/03-uniforms-and-motion/) | Uniform buffers, push uniforms, animating with time |
 | 04 | [Textures & Samplers](lessons/gpu/04-textures-and-samplers/) | Loading images, GPU textures, samplers, UV coordinates, index buffers |
 | 05 | [Mipmaps](lessons/gpu/05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes, procedural textures |
+| 06 | [Depth Buffer & 3D Transforms](lessons/gpu/06-depth-and-3d/) | MVP matrices, depth testing, back-face culling, perspective projection |
 
 ### Math Lessons (lessons/math/)
 
@@ -50,6 +51,7 @@ Standalone programs teaching the math behind graphics:
 | 03 | [Orthographic Projection](lessons/math/03-orthographic-projection/) | Orthographic vs perspective, 2D rendering, shadow maps |
 | 04 | [Bilinear Interpolation](lessons/math/04-bilinear-interpolation/) | LINEAR texture filtering, nested lerps, nearest vs linear |
 | 05 | [Mipmaps & LOD](lessons/math/05-mipmaps-and-lod/) | Mip chains, trilinear interpolation, LOD selection |
+| 06 | [Matrices](lessons/math/06-matrices/) | Identity, translation, scaling, rotation, composition, MVP pipeline |
 
 Each math lesson includes a demo program and updates the shared math
 library (`common/math/`) with documented, reusable implementations.
@@ -202,7 +204,9 @@ forge-gpu/
 │       ├── 01-hello-window/
 │       ├── 02-first-triangle/
 │       ├── 03-uniforms-and-motion/
-│       └── 04-textures-and-samplers/
+│       ├── 04-textures-and-samplers/
+│       ├── 05-mipmaps/
+│       └── 06-depth-and-3d/
 ├── common/
 │   ├── math/              Math library (header-only, documented, reusable)
 │   │   ├── forge_math.h   Vectors, matrices, common operations
@@ -245,6 +249,7 @@ project to enable Claude to build games and tools with you.
 | [uniforms-and-motion](.claude/skills/uniforms-and-motion/SKILL.md) | `/uniforms-and-motion` | Pass data to shaders with push uniforms, animate geometry |
 | [textures-and-samplers](.claude/skills/textures-and-samplers/SKILL.md) | `/textures-and-samplers` | Load images, create GPU textures/samplers, draw textured geometry |
 | [mipmaps](.claude/skills/mipmaps/SKILL.md) | `/mipmaps` | Create mipmapped textures, trilinear filtering, LOD control |
+| [depth-and-3d](.claude/skills/depth-and-3d/SKILL.md) | `/depth-and-3d` | Depth buffer, MVP pipeline, 3D rendering, back-face culling |
 
 ### Development skills (used within this repo)
 

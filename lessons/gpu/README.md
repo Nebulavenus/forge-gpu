@@ -27,8 +27,9 @@ portable C interface.
 | 03 | [Uniforms & Motion](03-uniforms-and-motion/) | Push uniforms, animation | [Vectors](../math/01-vectors/) |
 | 04 | [Textures & Samplers](04-textures-and-samplers/) | Textures, samplers, UV coordinates, index buffers | [Bilinear Interpolation](../math/04-bilinear-interpolation/) |
 | 05 | [Mipmaps](05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes | [Mipmaps & LOD](../math/05-mipmaps-and-lod/) |
+| 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/06-matrices/) |
 
-*More lessons coming soon:* Depth buffers, 3D transforms, lighting, and more.
+*More lessons coming soon:* Mesh loading, lighting, and more.
 
 See [PLAN.md](../../PLAN.md) for the full roadmap.
 
@@ -111,6 +112,7 @@ GPU lessons use the **forge-gpu math library** (`common/math/`) for all math ope
 - **Before GPU Lesson 02**: Read [Vectors](../math/01-vectors/) to understand positions and colors
 - **Before GPU Lesson 04**: Read [Bilinear Interpolation](../math/04-bilinear-interpolation/) for texture filtering math
 - **Before GPU Lesson 05**: Read [Mipmaps & LOD](../math/05-mipmaps-and-lod/) for mip chain and trilinear math
+- **Before GPU Lesson 06**: Read [Matrices](../math/06-matrices/) for MVP transform walkthrough
 - **When confused**: Math lessons explain the theory behind GPU operations
 
 See [lessons/math/README.md](../math/README.md) for the complete math curriculum.
@@ -162,6 +164,7 @@ the same pattern. Use these to build projects quickly:
 - **`/uniforms-and-motion`** — Pass per-frame data to shaders
 - **`/textures-and-samplers`** — Load images, create textures/samplers, draw textured geometry
 - **`/mipmaps`** — Mipmapped textures, trilinear filtering, LOD control
+- **`/depth-and-3d`** — Depth buffer, MVP pipeline, 3D rendering
 
 **How to use:**
 
@@ -181,7 +184,7 @@ These lessons are **not just tutorials** — they're patterns you'll use in prod
 - **Uniforms** (Lesson 03) — Every shader needs per-frame data
 - **Textures** (Lesson 04) — Essential for realistic rendering
 - **Mipmaps** (Lesson 05) — Prevent aliasing at any distance
-- **Depth buffers** *(coming)* — Required for 3D scenes
+- **Depth buffers** (Lesson 06) — Required for 3D scenes
 - **Lighting** *(coming)* — Makes 3D objects look real
 
 The code is **production-ready** — clean, efficient, well-documented. Copy it,
@@ -250,7 +253,6 @@ GPU programming has a learning curve, but these lessons make it manageable.
 
 After completing the current lessons, you'll be ready for:
 
-- **Depth Buffer & 3D Transforms** — MVP matrices, perspective projection, depth testing
 - **Loading a Mesh** — OBJ or glTF parsing, indexed rendering
 - **Lighting** — Diffuse + specular, normal vectors, Phong model
 - **Advanced Techniques** — Shadows, post-processing, compute shaders
