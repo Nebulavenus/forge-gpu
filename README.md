@@ -5,6 +5,39 @@
 A learning platform and building tool for real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
 
+## Gallery
+
+From first triangle to full 3D scenes — here's what you'll build:
+
+<table>
+<tr>
+<td align="center">
+<a href="lessons/gpu/02-first-triangle/"><img src="lessons/gpu/02-first-triangle/assets/screenshot.png" width="400" alt="First Triangle" /></a><br />
+<b>Lesson 02</b> — First Triangle
+</td>
+<td align="center">
+<a href="lessons/gpu/03-uniforms-and-motion/"><img src="lessons/gpu/03-uniforms-and-motion/assets/preview.gif" width="400" alt="Uniforms & Motion" /></a><br />
+<b>Lesson 03</b> — Uniforms & Motion
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/08-mesh-loading/"><img src="lessons/gpu/08-mesh-loading/assets/screenshot.png" width="400" alt="Space Shuttle (OBJ)" /></a><br />
+<b>Lesson 08</b> — Loading a Mesh (OBJ)
+</td>
+<td align="center">
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/truck.png" width="400" alt="CesiumMilkTruck (glTF)" /></a><br />
+<b>Lesson 09</b> — Loading a Scene (glTF)
+</td>
+</tr>
+<tr>
+<td colspan="2" align="center">
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="808" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
+<b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
+</td>
+</tr>
+</table>
+
 ## Why forge-gpu?
 
 **Two ways to use this project:**
@@ -64,24 +97,60 @@ library (`common/math/`) with documented, reusable implementations.
 
 See [PLAN.md](PLAN.md) for the full roadmap.
 
-## Math Library
+## Shared Libraries (`common/`)
 
-GPU lessons use a shared math library (`common/math/`) instead of writing
-bespoke math in each lesson. The library is:
+GPU lessons use shared, header-only libraries in `common/` instead of writing
+bespoke code in each lesson. All libraries are documented, readable, and
+reusable in your own projects.
 
-- **Documented** — inline comments explain every function and parameter
-- **Readable** — written to be learned from, not just used
-- **Reusable** — use it in lessons or copy it into your own projects
-- **Learning-focused** — every function has a corresponding math lesson explaining the concept
+### Math Library (`common/math/`)
 
-When you need new math functionality, use the `/math-lesson` skill. It creates:
+Vectors, matrices, quaternions, and all the math needed for graphics programming.
+See [`common/math/README.md`](common/math/README.md) for the full API reference.
 
-1. A small program demonstrating the concept
-2. A README explaining the theory and where it's used
-3. An update to the math library with documented implementation
+```c
+#include "math/forge_math.h"
 
-The math library grows alongside the lessons, always staying readable and
-well-documented.
+vec3 position = vec3_create(0.0f, 1.0f, 0.0f);
+mat4 rotation = mat4_rotate_z(FORGE_PI / 4.0f);
+```
+
+Every function has a corresponding math lesson explaining the concept. When you
+need new math functionality, use the `/math-lesson` skill.
+
+### OBJ Parser (`common/obj/`)
+
+Load Wavefront OBJ models into a flat vertex array ready for GPU upload.
+See [`common/obj/README.md`](common/obj/README.md) for details.
+
+```c
+#include "obj/forge_obj.h"
+
+ForgeObjMesh mesh;
+if (forge_obj_load("model.obj", &mesh)) {
+    // mesh.vertices ready for GPU upload — draw with SDL_DrawGPUPrimitives
+    forge_obj_free(&mesh);
+}
+```
+
+### glTF Parser (`common/gltf/`)
+
+Load glTF 2.0 scenes with multi-material meshes, scene hierarchy, and indexed
+drawing. See [`common/gltf/README.md`](common/gltf/README.md) for details.
+
+```c
+#include "gltf/forge_gltf.h"
+
+ForgeGltfScene scene;
+if (forge_gltf_load("scene.gltf", &scene)) {
+    // scene.nodes[], scene.meshes[], scene.materials[] all populated
+    // World transforms computed automatically from the node hierarchy
+    forge_gltf_free(&scene);
+}
+```
+
+All three libraries are header-only — just include and use. No build
+configuration needed.
 
 ## Getting Started
 
@@ -146,7 +215,8 @@ build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
 
 ## Testing
 
-The math library has comprehensive automated tests covering all operations.
+The shared libraries have automated tests covering math operations, OBJ parsing,
+and glTF parsing.
 
 **Run all tests:**
 
@@ -155,14 +225,16 @@ cd build
 ctest -C Debug --output-on-failure
 ```
 
-**Run tests directly:**
+**Run a specific test suite:**
 
 ```bash
 cmake --build build --config Debug --target test_math
-build/tests/math/Debug/test_math.exe
+cmake --build build --config Debug --target test_obj
+cmake --build build --config Debug --target test_gltf
 ```
 
-All tests use epsilon comparison for floating-point accuracy and return proper exit codes for CI/CD integration.
+All tests use epsilon comparison for floating-point accuracy and return proper
+exit codes for CI/CD integration.
 
 See [tests/math/README.md](tests/math/README.md) for adding new tests.
 
@@ -208,20 +280,26 @@ forge-gpu/
 │   │   └── NN-concept/    Each concept: program, README, updates math lib
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
-│       ├── 02-first-triangle/
-│       ├── 03-uniforms-and-motion/
-│       ├── 04-textures-and-samplers/
-│       ├── 05-mipmaps/
-│       ├── 06-depth-and-3d/
-│       └── 07-camera-and-input/
+│       ├── ...
+│       └── 09-scene-loading/
 ├── common/
-│   ├── math/              Math library (header-only, documented, reusable)
-│   │   ├── forge_math.h   Vectors, matrices, common operations
+│   ├── math/              Math library (vectors, matrices, quaternions)
+│   │   ├── forge_math.h   All math operations (header-only)
 │   │   ├── README.md      API reference and usage guide
 │   │   └── DESIGN.md      Design decisions and conventions
+│   ├── obj/               OBJ parser (Wavefront .obj files)
+│   │   ├── forge_obj.h    Parser implementation (header-only)
+│   │   └── README.md      Usage guide and supported features
+│   ├── gltf/              glTF parser (glTF 2.0 scenes)
+│   │   ├── forge_gltf.h   Parser implementation (header-only)
+│   │   └── README.md      Usage guide, scene hierarchy, materials
+│   ├── capture/           Screenshot/GIF capture utility
+│   │   └── forge_capture.h
 │   └── forge.h            Shared utilities for lessons
-├── tests/                 Test suite
-│   └── math/              Math library tests (CTest integration)
+├── tests/                 Test suite (CTest integration)
+│   ├── math/              Math library tests
+│   ├── obj/               OBJ parser tests
+│   └── gltf/              glTF parser tests
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── math-lesson/       Add math concept + lesson + update library
 │   ├── new-lesson/        Create new GPU lesson
@@ -237,9 +315,10 @@ forge-gpu/
 **How it fits together:**
 
 - **Math lessons** teach concepts and add to `common/math/`
-- **GPU lessons** use the math library and link to math lessons for theory
+- **GPU lessons** use the shared libraries and link to math lessons for theory
+- **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
 - **Skills** automate lesson creation and teach AI agents the patterns
-- **Math library** is reusable in lessons and your own projects
+- **Shared libraries** are reusable in lessons and your own projects
 
 ## Skills — Build with AI
 
