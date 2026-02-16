@@ -29,8 +29,9 @@ portable C interface.
 | 05 | [Mipmaps](05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes | [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
 | 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/05-matrices/) |
 | 07 | [Camera & Input](07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time | [Orientation](../math/08-orientation/), [View Matrix](../math/09-view-matrix/) |
+| 08 | [Loading a Mesh (OBJ)](08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmaps | [Vectors](../math/01-vectors/), [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
 
-*More lessons coming soon:* Mesh loading, lighting, and more.
+*More lessons coming soon:* Lighting, scene loading, and more.
 
 See [PLAN.md](../../PLAN.md) for the full roadmap.
 
@@ -115,6 +116,7 @@ GPU lessons use the **forge-gpu math library** (`common/math/`) for all math ope
 - **Before GPU Lesson 05**: Read [Mipmaps & LOD](../math/04-mipmaps-and-lod/) for mip chain and trilinear math
 - **Before GPU Lesson 06**: Read [Matrices](../math/05-matrices/) for MVP transform walkthrough
 - **Before GPU Lesson 07**: Read [Orientation](../math/08-orientation/) and [View Matrix](../math/09-view-matrix/) for camera math
+- **Before GPU Lesson 08**: Review [Mipmaps & LOD](../math/04-mipmaps-and-lod/) for texture loading
 - **When confused**: Math lessons explain the theory behind GPU operations
 
 See [lessons/math/README.md](../math/README.md) for the complete math curriculum.
@@ -168,6 +170,7 @@ the same pattern. Use these to build projects quickly:
 - **`/mipmaps`** — Mipmapped textures, trilinear filtering, LOD control
 - **`/depth-and-3d`** — Depth buffer, MVP pipeline, 3D rendering
 - **`/camera-and-input`** — First-person camera, keyboard/mouse input, delta time
+- **`/mesh-loading`** — Load OBJ models, textured mesh rendering
 
 **How to use:**
 
@@ -256,7 +259,7 @@ GPU programming has a learning curve, but these lessons make it manageable.
 
 After completing the current lessons, you'll be ready for:
 
-- **Loading a Mesh** — OBJ or glTF parsing, indexed rendering
+- **Loading a Scene (glTF)** — Multi-mesh scenes, PBR materials
 - **Lighting** — Diffuse + specular, normal vectors, Phong model
 - **Advanced Techniques** — Shadows, post-processing, compute shaders
 

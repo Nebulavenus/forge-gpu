@@ -40,6 +40,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 05 | [Mipmaps](lessons/gpu/05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes, procedural textures |
 | 06 | [Depth Buffer & 3D Transforms](lessons/gpu/06-depth-and-3d/) | MVP matrices, depth testing, back-face culling, perspective projection |
 | 07 | [Camera & Input](lessons/gpu/07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time, multiple objects |
+| 08 | [Loading a Mesh (OBJ)](lessons/gpu/08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmapped mesh rendering |
 
 ### Math Lessons (lessons/math/)
 
@@ -256,6 +257,7 @@ project to enable Claude to build games and tools with you.
 | [mipmaps](.claude/skills/mipmaps/SKILL.md) | `/mipmaps` | Create mipmapped textures, trilinear filtering, LOD control |
 | [depth-and-3d](.claude/skills/depth-and-3d/SKILL.md) | `/depth-and-3d` | Depth buffer, MVP pipeline, 3D rendering, back-face culling |
 | [camera-and-input](.claude/skills/camera-and-input/SKILL.md) | `/camera-and-input` | First-person camera, keyboard/mouse input, delta time |
+| [mesh-loading](.claude/skills/mesh-loading/SKILL.md) | `/mesh-loading` | Load OBJ models, textured mesh rendering, file-based textures |
 
 ### Development skills (used within this repo)
 

@@ -5,7 +5,11 @@
 *.o
 *.ko
 *.obj
+!*.obj.obj
 *.elf
+
+# Allow Wavefront OBJ model files in lesson directories
+!lessons/**/models/**/*.obj
 
 # Linker output
 *.ilk
