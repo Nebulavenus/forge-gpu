@@ -39,10 +39,13 @@ in the shader. This lesson makes the jump to true 3D:
 
 Every vertex goes through three transforms, composed into one matrix:
 
-```text
-MVP = Projection × View × Model
+$\text{MVP} = \text{Projection} \times \text{View} \times \text{Model}$
 
-Object Space ──Model──> World Space ──View──> Camera Space ──Projection──> Clip Space
+```mermaid
+flowchart LR
+    A[Object Space] -->|Model| B[World Space]
+    B -->|View| C[Camera Space]
+    C -->|Projection| D[Clip Space]
 ```
 
 ```c

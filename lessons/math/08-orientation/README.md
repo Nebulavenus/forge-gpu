@@ -72,7 +72,7 @@ Three angles describing orientation — the most intuitive representation:
 2. Pitch second (rotate around the yawed X axis)
 3. Roll third (rotate around the pitched Z axis)
 
-In matrix form: `R = R_y(yaw) * R_x(pitch) * R_z(roll)`
+In matrix form: $R = R_y(\text{yaw}) \cdot R_x(\text{pitch}) \cdot R_z(\text{roll})$
 
 This is the standard convention for game cameras and aircraft
 (heading-elevation-bank).
@@ -117,11 +117,9 @@ Properties of rotation matrices:
 
 Rotates a vector around **any** axis (not just X, Y, or Z):
 
-```text
-v' = v*cos(t) + (k x v)*sin(t) + k*(k.v)*(1 - cos(t))
-```
+$$\vec{v'} = \vec{v}\cos\theta + (\hat{k} \times \vec{v})\sin\theta + \hat{k}(\hat{k} \cdot \vec{v})(1 - \cos\theta)$$
 
-where `k` is the unit rotation axis and `t` is the angle.
+where $\hat{k}$ is the unit rotation axis and $\theta$ is the angle.
 
 The formula decomposes the vector into components parallel and perpendicular
 to the axis. The parallel part stays fixed; the perpendicular part rotates.
@@ -139,8 +137,8 @@ quaternions for computation.
 
 ### Quaternions
 
-A quaternion `q = w + xi + yj + zk` is a 4-component number where
-`i, j, k` are imaginary units satisfying:
+A quaternion $q = w + xi + yj + zk$ is a 4-component number where
+$i, j, k$ are imaginary units satisfying:
 
 ```text
 i*i = j*j = k*k = i*j*k = -1
@@ -148,12 +146,10 @@ i*j = k    j*k = i    k*i = j     (cyclic, like cross product)
 j*i = -k   k*j = -i   i*k = -j   (anti-commutative)
 ```
 
-A unit quaternion (length = 1) represents a rotation of angle `t` around
-axis `(ax, ay, az)`:
+A unit quaternion (length = 1) represents a rotation of angle $\theta$ around
+axis $(a_x, a_y, a_z)$:
 
-```text
-q = (cos(t/2),  sin(t/2)*ax,  sin(t/2)*ay,  sin(t/2)*az)
-```
+$$q = \left(\cos\frac{\theta}{2},\; \sin\frac{\theta}{2}\cdot a_x,\; \sin\frac{\theta}{2}\cdot a_y,\; \sin\frac{\theta}{2}\cdot a_z\right)$$
 
 Key properties:
 
@@ -189,26 +185,21 @@ Like matrices: `C = A * B` means "apply B first, then A."
 
 ### Rotating a vector with a quaternion
 
-The "sandwich product" `v' = q * v * q*` rotates vector `v` by quaternion `q`.
-The vector is treated as a pure quaternion `(0, v.x, v.y, v.z)`.
+The "sandwich product" $\vec{v'} = q \cdot \vec{v} \cdot q^*$ rotates vector $\vec{v}$ by quaternion $q$.
+The vector is treated as a pure quaternion $(0, v_x, v_y, v_z)$.
 
 An optimized formula avoids constructing intermediate quaternions:
 
-```text
-v' = v + 2*w*(u x v) + 2*(u x (u x v))
-```
+$$\vec{v'} = \vec{v} + 2w(\vec{u} \times \vec{v}) + 2(\vec{u} \times (\vec{u} \times \vec{v}))$$
 
-where `u = (q.x, q.y, q.z)` is the vector part of `q`.
+where $\vec{u} = (q_x, q_y, q_z)$ is the vector part of $q$.
 
 ### SLERP — Spherical Linear Interpolation
 
 SLERP interpolates between two orientations along the shortest arc on the
 unit sphere, producing constant angular velocity:
 
-```text
-slerp(a, b, t) = a * sin((1-t)*T) / sin(T)  +  b * sin(t*T) / sin(T)
-where T = acos(dot(a, b))
-```
+$$\text{slerp}(a, b, t) = a\,\frac{\sin((1-t)\Theta)}{\sin\Theta} + b\,\frac{\sin(t\,\Theta)}{\sin\Theta}, \quad \Theta = \arccos(a \cdot b)$$
 
 - `t = 0` returns `a`, `t = 1` returns `b`
 - Constant speed (uniform angular velocity)
@@ -220,11 +211,11 @@ Same path but non-constant speed. Often good enough for games.
 
 ### Conversions between representations
 
-```text
-Euler angles <----> Quaternion <----> Rotation matrix
-                       ^
-                       |
-                   Axis-angle
+```mermaid
+flowchart LR
+    E[Euler angles] <--> Q[Quaternion]
+    Q <--> M[Rotation matrix]
+    AA[Axis-angle] <--> Q
 ```
 
 | Conversion | Function | Notes |
@@ -247,12 +238,13 @@ Euler angles <----> Quaternion <----> Rotation matrix
 
 **Typical pipeline in a game:**
 
-```text
-User input -> Euler angles
-              -> quat_from_euler(yaw, pitch, roll)
-                 -> quaternion (store, compose, interpolate)
-                    -> quat_to_mat4(q)
-                       -> mat4 (upload to GPU as part of MVP)
+```mermaid
+flowchart LR
+    A[User input] --> B[Euler angles]
+    B -->|quat_from_euler| C[Quaternion]
+    C -->|"store, compose, interpolate"| C
+    C -->|quat_to_mat4| D[mat4]
+    D --> E[Upload to GPU as MVP]
 ```
 
 ## Building

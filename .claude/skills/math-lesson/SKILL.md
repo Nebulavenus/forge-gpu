@@ -378,6 +378,46 @@ Every function needs:
 - **ASCII-only output**: Use only ASCII characters in printf output for cross-platform compatibility (Windows Terminal may not render Unicode correctly)
 - **Example output accuracy**: If including example output in README, copy it directly from the actual program—don't manually type it. Learners will compare their output to yours.
 
+## Diagrams and Formulas
+
+### Matplotlib diagrams
+
+For geometric or mathematical visuals (vector diagrams, interpolation grids,
+frustum views), add a diagram function to `scripts/forge_diagrams.py`:
+
+1. Write a function following the existing pattern (shared `_style_axis`,
+   `_draw_vector`, `_save` helpers)
+2. Register it in the `DIAGRAMS` dict with the lesson key
+3. Run `python scripts/forge_diagrams.py --lesson math/NN` to generate the PNG
+4. Reference in the README: `![Description](assets/diagram_name.png)`
+
+Output goes to each lesson's `assets/` directory at 200 DPI (PNG only).
+
+### Mermaid diagrams
+
+For **flow/pipeline diagrams** (transformation pipelines, data flow), use inline
+mermaid blocks. GitHub renders these natively:
+
+````markdown
+```mermaid
+flowchart LR
+    A[Step 1] --> B[Step 2] --> C[Step 3]
+```
+````
+
+Use mermaid for sequential flows; keep simple ASCII layouts (< 5 lines) as-is.
+
+### KaTeX math
+
+For **formulas**, use inline `$...$` and display `$$...$$` math notation.
+GitHub renders these via KaTeX:
+
+- Inline: `$\vec{a} \cdot \vec{b} = a_x b_x + a_y b_y$`
+- Display: `$$\text{lerp}(a, b, t) = a + t \cdot (b - a)$$`
+
+Keep worked-examples-with-numbers in ` ```text ` blocks — only convert
+symbolic/algebraic formulas to KaTeX.
+
 ## When NOT to Create a Lesson
 
 - The math already exists and is well-documented

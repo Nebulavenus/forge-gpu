@@ -254,56 +254,20 @@ You don't usually compute this manually — the GPU handles it. But understandin
 
 Here's how a vertex flows through the entire pipeline:
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  1. LOCAL SPACE                                             │
-│     - Vertex defined in model's own coordinates             │
-│     - Example: (1.0, 0.5, 0.0, 1.0)                         │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         │ Model Matrix (translate, rotate, scale)
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. WORLD SPACE                                             │
-│     - Vertex positioned in the scene                        │
-│     - Example: (5.7, 2.5, 10.0, 1.0)                        │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         │ View Matrix (camera transform)
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. VIEW SPACE                                              │
-│     - Vertex relative to camera                             │
-│     - Example: (2.0, 0.5, -8.0, 1.0)                        │
-│     - Note: -Z is forward!                                  │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         │ Projection Matrix (perspective)
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4. CLIP SPACE                                              │
-│     - Homogeneous coordinates (x, y, z, w)                  │
-│     - Example: (2.4, 0.8, 4.0, 8.0)                         │
-│     - w encodes depth for perspective                       │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         │ Perspective Divide (x/w, y/w, z/w)
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│  5. NDC (Normalized Device Coordinates)                     │
-│     - Normalized to [-1, 1] × [-1, 1] × [0, 1]              │
-│     - Example: (0.3, 0.1, 0.5)                              │
-│     - Geometry outside this range is clipped                │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         │ Viewport Transform
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│  6. SCREEN SPACE                                            │
-│     - Pixel coordinates                                     │
-│     - Example: (1248 px, 594 px)                            │
-│     - Ready to rasterize and color                          │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["1. LOCAL SPACE\nVertex in model's own coordinates\ne.g. (1.0, 0.5, 0.0, 1.0)"]
+    B["2. WORLD SPACE\nVertex positioned in the scene\ne.g. (5.7, 2.5, 10.0, 1.0)"]
+    C["3. VIEW SPACE\nVertex relative to camera\ne.g. (2.0, 0.5, -8.0, 1.0)"]
+    D["4. CLIP SPACE\nHomogeneous coordinates (x, y, z, w)\ne.g. (2.4, 0.8, 4.0, 8.0)"]
+    E["5. NDC\nNormalized to [-1,1] x [-1,1] x [0,1]\ne.g. (0.3, 0.1, 0.5)"]
+    F["6. SCREEN SPACE\nPixel coordinates\ne.g. (1248 px, 594 px)"]
+
+    A -- "Model Matrix (translate, rotate, scale)" --> B
+    B -- "View Matrix (camera transform)" --> C
+    C -- "Projection Matrix (perspective)" --> D
+    D -- "Perspective Divide (x/w, y/w, z/w)" --> E
+    E -- "Viewport Transform" --> F
 ```
 
 **In shader code (vertex shader):**

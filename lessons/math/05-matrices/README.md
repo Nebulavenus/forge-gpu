@@ -71,7 +71,7 @@ the GPU without transposing. It also matches mathematical convention where
 
 ### 2. Matrix-vector multiplication
 
-To compute `result = M * v`, take the **dot product** of each row of M with v:
+To compute $\vec{r} = M \cdot \vec{v}$, take the **dot product** of each row of M with v:
 
 ```text
 | a  b  c |   | x |     | a*x + b*y + c*z |
@@ -103,12 +103,14 @@ next insight.
 
 ### 3. What the columns mean — basis vectors
 
+![Matrix basis vectors](assets/matrix_basis_vectors.png)
+
 **Key insight:** Each column of a matrix tells you where the corresponding
 standard basis vector ends up after the transformation.
 
-- Column 0 = where (1, 0, 0) goes = the new X axis
-- Column 1 = where (0, 1, 0) goes = the new Y axis
-- Column 2 = where (0, 0, 1) goes = the new Z axis
+- Column 0 = where $(1, 0, 0)$ goes = the new X axis
+- Column 1 = where $(0, 1, 0)$ goes = the new Y axis
+- Column 2 = where $(0, 0, 1)$ goes = the new Z axis
 
 When you multiply a basis vector by a matrix, you simply extract that column:
 
@@ -169,9 +171,9 @@ All lengths = 1, all dot products = 0. Orthonormal!
 
 ### 5. Matrix-matrix multiplication
 
-To compute `C = A * B`, each column of C is A times the corresponding column of B.
+To compute $C = A \times B$, each column of C is A times the corresponding column of B.
 
-Or equivalently: `C[row][col] = dot(A's row, B's column)`.
+Or equivalently: $C_{ij} = \text{dot}(\text{row}_i(A),\; \text{col}_j(B))$.
 
 **Worked example:**
 
@@ -217,7 +219,7 @@ The identity matrix has 1s on the diagonal and 0s everywhere else:
 | 0  0  1 |
 ```
 
-It leaves everything unchanged: **I \* M = M \* I = M** (like multiplying by 1).
+It leaves everything unchanged: $I \cdot M = M \cdot I = M$ (like multiplying by 1).
 
 Its columns are the standard basis vectors (1,0,0), (0,1,0), (0,0,1) — meaning
 it maps each axis to itself.
@@ -226,7 +228,7 @@ it maps each axis to itself.
 
 ### 7. Transpose
 
-The transpose M^T swaps rows and columns: **M^T\[i\]\[j\] = M\[j\]\[i\]**
+The transpose $M^T$ swaps rows and columns: $M^T_{ij} = M_{ji}$
 
 Visually: mirror across the main diagonal.
 
@@ -238,9 +240,9 @@ M = | 1  2  3 |      M^T = | 1  4  7 |
 
 **Properties:**
 
-- `(M^T)^T = M` — double transpose is the original
-- `(A*B)^T = B^T * A^T` — transpose reverses multiplication order
-- `det(M^T) = det(M)` — transpose doesn't change the determinant
+- $(M^T)^T = M$ — double transpose is the original
+- $(AB)^T = B^T A^T$ — transpose reverses multiplication order
+- $\det(M^T) = \det(M)$ — transpose doesn't change the determinant
 
 **For rotation matrices:** transpose = inverse. This is a major shortcut —
 instead of computing the full inverse (expensive), just transpose (swap elements).
@@ -274,24 +276,22 @@ The determinant tells you how much a matrix scales area (2D) or volume (3D).
 
 **Properties:**
 
-- `det(A * B) = det(A) * det(B)`
-- `det(I) = 1`
-- `det(A^T) = det(A)`
+- $\det(AB) = \det(A) \cdot \det(B)$
+- $\det(I) = 1$
+- $\det(A^T) = \det(A)$
 
 **Code:** `mat3_determinant(m)` and `mat4_determinant(m)`
 
 ### 9. Inverse
 
-The inverse M^-1 **undoes** the transformation: **M \* M^-1 = I**
+The inverse $M^{-1}$ **undoes** the transformation: $M \cdot M^{-1} = I$
 
-An inverse only exists when det(M) != 0 (the matrix is non-singular).
+An inverse only exists when $\det(M) \neq 0$ (the matrix is non-singular).
 
 **3x3 inverse method:** Compute the adjugate (transpose of cofactor matrix) and
 divide by the determinant:
 
-```text
-M^-1 = adjugate(M) / det(M)
-```
+$$M^{-1} = \frac{\text{adj}(M)}{\det(M)}$$
 
 **Verification:** Multiply M by its inverse and check you get identity:
 
@@ -309,8 +309,8 @@ M * M^-1 ≈ | 1  0  0 |  ✓
 
 **Properties:**
 
-- `(A * B)^-1 = B^-1 * A^-1` — inverse reverses multiplication order
-- `(M^-1)^-1 = M`
+- $(AB)^{-1} = B^{-1} A^{-1}$ — inverse reverses multiplication order
+- $(M^{-1})^{-1} = M$
 
 **Code:** `mat3_inverse(m)` and `mat4_inverse(m)`
 
@@ -325,10 +325,10 @@ axis scaling:
 | 0   0   sz |
 ```
 
-**Symmetric matrix** — M = M^T (equal to its own transpose). Common in physics
+**Symmetric matrix** — $M = M^T$ (equal to its own transpose). Common in physics
 (inertia tensors, stress tensors).
 
-**Orthogonal matrix** — M^T \* M = I (transpose is the inverse). Key properties:
+**Orthogonal matrix** — $M^T M = I$ (transpose is the inverse). Key properties:
 
 - Columns are orthonormal
 - Preserves lengths and angles

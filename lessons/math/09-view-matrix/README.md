@@ -159,20 +159,16 @@ The summary (section 8) prints a reference card of all new functions.
 A camera has a position and an orientation in the world, just like any other
 object. Its **world transform** is:
 
-```text
-Camera world transform = T(position) * R(orientation)
-```
+$$\text{Camera world transform} = T(\text{pos}) \cdot R(\text{orient})$$
 
 The **view matrix** is the inverse of this. Instead of placing the camera in the
 world, it moves the *entire world* so the camera ends up at the origin looking
 down -Z:
 
-```text
-View = (T * R)^-1 = R^-1 * T^-1 = R^T * T(-position)
-```
+$$V = (T \cdot R)^{-1} = R^{-1} \cdot T^{-1} = R^T \cdot T(-\text{pos})$$
 
 Why the transpose? Rotation matrices are **orthonormal** — their columns are
-perpendicular unit vectors — so the inverse equals the transpose (`R^-1 = R^T`).
+perpendicular unit vectors — so the inverse equals the transpose ($R^{-1} = R^T$).
 An orthonormal matrix is one where every column has length 1 and all columns are
 perpendicular to each other. This property is what makes the transpose trick
 work: the dot products that define matrix multiplication naturally "undo" the

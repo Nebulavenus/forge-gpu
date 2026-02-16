@@ -53,11 +53,16 @@ exactly how the math transforms coordinates.
 Projection is the process of mapping 3D coordinates to a 2D screen. It's the
 final step in the transform pipeline:
 
-```text
-Model space → World space → View space → Clip space → NDC → Screen
-                                        ^^^^^^^^^^^^^^^^^^^^
-                                        Projection does this
+```mermaid
+flowchart LR
+    A[Model space] --> B[World space] --> C[View space] --> D["Clip space"] --> E[NDC] --> F[Screen]
+
+    style D fill:#e3f2fd,stroke:#1565c0
+    style E fill:#e3f2fd,stroke:#1565c0
+    style F fill:#e3f2fd,stroke:#1565c0
 ```
+
+The highlighted stages are where projection operates.
 
 Think of it like a pinhole camera: light from the 3D scene passes through a
 single point and hits a flat surface (the screen).
@@ -79,38 +84,23 @@ The core insight requires no matrices at all — just similar triangles:
             |
 ```
 
-A point at `(x, y, z)` projects onto the near plane at:
+A point at $(x, y, z)$ projects onto the near plane at:
 
-```text
-x_screen = x * near / (-z)
-y_screen = y * near / (-z)
-```
+$$x_{\text{screen}} = \frac{x \cdot n}{-z}, \quad y_{\text{screen}} = \frac{y \cdot n}{-z}$$
 
 That's it. Objects farther away (larger `-z`) get divided by a bigger number,
 so they appear smaller on screen. This is **perspective foreshortening**.
 
 ### The viewing frustum
 
-The frustum is the volume of space visible to the camera — a truncated pyramid:
+![Viewing frustum](assets/frustum.png)
 
-```text
-              near plane
-            +-----+-----+
-           /      |      \
-          /       |  FOV  \
-         /        |   ↕    \
-   eye *          |         \
-         \        |        /
-          \       |       /
-           \      |      /
-            +-----+-----+
-              far plane
-```
+The frustum is the volume of space visible to the camera — a truncated pyramid.
 
 FOV (field of view) and aspect ratio determine the pyramid's shape:
 
-- `half_height = near * tan(fov_y / 2)` — near plane half-height
-- `half_width = half_height * aspect` — near plane half-width
+- $h = n \cdot \tan\!\left(\frac{\text{fov}_y}{2}\right)$ — near plane half-height
+- $w = h \cdot \text{aspect}$ — near plane half-width
 
 Everything inside the frustum is visible. Everything outside is clipped.
 
@@ -119,9 +109,9 @@ Everything inside the frustum is visible. Everything outside is clipped.
 `mat4_perspective(fov, aspect, near, far)` packages the similar-triangles
 formula into a 4x4 matrix that also:
 
-1. Scales X and Y by `1/tan(fov/2)` (and aspect) for the FOV
-2. Maps the Z range `[near, far]` to `[0, 1]` for the depth buffer
-3. Sets `w = -z` so the GPU can perform the perspective divide
+1. Scales X and Y by $\frac{1}{\tan(\text{fov}/2)}$ (and aspect) for the FOV
+2. Maps the Z range $[n, f]$ to $[0, 1]$ for the depth buffer
+3. Sets $w = -z$ so the GPU can perform the perspective divide
 
 The matrix doesn't divide by `-z` directly — it stores `-z` in the `w`
 component and lets the GPU do the division later.
@@ -130,18 +120,13 @@ component and lets the GPU do the division later.
 
 These are two separate coordinate spaces, and the distinction matters:
 
-```text
-Vertex shader outputs → Clip space (x, y, z, w)
-                              ↓
-                         Clipping (against frustum planes)
-                              ↓
-                         Perspective divide (÷ w)
-                              ↓
-                         NDC (x, y, z) ∈ [-1,1] × [-1,1] × [0,1]
-                              ↓
-                         Viewport transform
-                              ↓
-                         Screen pixels
+```mermaid
+flowchart TD
+    A["Vertex shader outputs → Clip space (x, y, z, w)"] --> B["Clipping (against frustum planes)"]
+    B --> C["Perspective divide (÷ w)"]
+    C --> D["NDC (x, y, z) in [-1,1] x [-1,1] x [0,1]"]
+    D --> E["Viewport transform"]
+    E --> F["Screen pixels"]
 ```
 
 **Clip space** has 4 components. Clipping happens here (before dividing by `w`)
@@ -156,12 +141,14 @@ The result is in Normalized Device Coordinates:
 
 ### The perspective divide
 
-The GPU performs: `NDC = (clip.x/clip.w, clip.y/clip.w, clip.z/clip.w)`
+The GPU performs:
 
-For perspective projection, `clip.w = -z_view` (the negated view-space depth).
-Dividing by `w` is dividing by depth — this is what makes far objects smaller.
+$$\text{NDC} = \left(\frac{x_c}{w_c},\; \frac{y_c}{w_c},\; \frac{z_c}{w_c}\right)$$
 
-For orthographic projection, `clip.w = 1`, so the divide is a no-op.
+For perspective projection, $w_c = -z_{\text{view}}$ (the negated view-space depth).
+Dividing by $w$ is dividing by depth — this is what makes far objects smaller.
+
+For orthographic projection, $w_c = 1$, so the divide is a no-op.
 
 We provide `vec3_perspective_divide()` for CPU-side computation (useful for
 picking, debug visualization, and understanding the pipeline).

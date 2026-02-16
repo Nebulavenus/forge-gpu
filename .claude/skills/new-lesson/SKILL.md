@@ -219,6 +219,41 @@ This lesson uses:
 - **Matrices** — [Math Lesson 02](../math/02-matrices/) for rotations
 ```
 
+## Diagrams and Formulas
+
+### Matplotlib diagrams
+
+For geometric or visual diagrams (UV mapping, filtering comparison), add a
+diagram function to `scripts/forge_diagrams.py`:
+
+1. Write a function following the existing pattern (shared helpers)
+2. Register it in the `DIAGRAMS` dict with the lesson key (e.g. `"gpu/04"`)
+3. Run `python scripts/forge_diagrams.py --lesson gpu/NN` to generate the PNG
+4. Reference in the README: `![Description](assets/diagram_name.png)`
+
+### Mermaid diagrams
+
+For **flow/pipeline diagrams** (texture upload flow, MVP pipeline), use inline
+mermaid blocks — GitHub renders them natively:
+
+````markdown
+```mermaid
+flowchart LR
+    A[Step 1] -->|transform| B[Step 2] --> C[Step 3]
+```
+````
+
+Use mermaid for sequential flows; keep simple ASCII diagrams as-is.
+
+### KaTeX math
+
+For **formulas**, use inline `$...$` and display `$$...$$` math notation:
+
+- Inline: `$\text{MVP} = P \times V \times M$`
+- Display: `$$x_{\text{screen}} = \frac{x \cdot n}{-z}$$`
+
+Keep worked examples (step-by-step with numbers) in ` ```text ` blocks.
+
 ## Code style reminders
 
 - SDL naming: `SDL_PrefixedNames` for public, `lowercase_snake` for local

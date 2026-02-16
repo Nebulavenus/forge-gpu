@@ -31,6 +31,8 @@ A **texture** is an image stored in GPU memory. A **sampler** tells the GPU
 | **Filter** (min/mag) | What to do when a texel doesn't map 1:1 to a pixel | `LINEAR` (smooth blend) / `NEAREST` (pixelated) |
 | **Address mode** (U/V/W) | What to do when UVs go outside 0–1 | `REPEAT` (tile) / `CLAMP_TO_EDGE` / `MIRRORED_REPEAT` |
 
+![Filtering comparison](assets/filtering_comparison.png)
+
 Textures and samplers are separate objects in SDL GPU — you can mix and match.
 One texture with two samplers (one linear, one nearest) gives you both smooth
 and pixelated looks without duplicating the image data.
@@ -41,14 +43,7 @@ and pixelated looks without duplicating the image data.
 texture to look. The rasterizer interpolates them across the surface, so each
 fragment gets a unique UV:
 
-```text
-Position space:              UV space (texture):
-(-0.6, +0.6)----(+0.6, +0.6)    (0,0)-------(1,0)
-     |  \            |               |             |
-     |   \           |               |             |
-     |    \          |               |             |
-(-0.6, -0.6)----(+0.6, -0.6)    (0,1)-------(1,1)
-```
+![UV mapping](assets/uv_mapping.png)
 
 UV origin is at the **top-left** of the image. U goes right, V goes down.
 This matches how images are stored in memory (top row first).
@@ -99,22 +94,22 @@ invocations (the GPU caches and reuses vertex shader output for shared vertices)
 Uploading a texture to the GPU follows the same transfer buffer pattern as
 vertex buffers from Lesson 02:
 
-```text
-CPU side:                          GPU side:
-────────────                       ─────────
-SDL_LoadSurface("brick.png")       SDL_CreateGPUTexture(...)
-  → SDL_Surface (CPU pixels)         → GPU texture (empty)
-
-SDL_CreateGPUTransferBuffer(...)
-  → staging area in shared memory
-
-Map → memcpy pixels → Unmap
-
-Begin copy pass
-  SDL_UploadToGPUTexture(...)      → pixel data now on GPU
-End copy pass, Submit
-
-Release transfer buffer + surface
+```mermaid
+flowchart TD
+    subgraph CPU
+        A["SDL_LoadSurface('brick.png')\n→ SDL_Surface (CPU pixels)"]
+        B["SDL_CreateGPUTransferBuffer\n→ staging area"]
+        C["Map → memcpy → Unmap"]
+    end
+    subgraph GPU
+        D["SDL_CreateGPUTexture\n→ empty texture"]
+        E["SDL_UploadToGPUTexture\n→ pixel data on GPU"]
+    end
+    A --> C
+    B --> C
+    C --> E
+    D --> E
+    E --> F["Release transfer buffer + surface"]
 ```
 
 The key difference from vertex upload: textures use `SDL_UploadToGPUTexture`

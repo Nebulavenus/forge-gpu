@@ -78,7 +78,9 @@ Vectors are written as (x, y) in 2D or (x, y, z) in 3D.
 
 ### Vector Addition
 
-**Formula:** `(a.x + b.x, a.y + b.y, a.z + b.z)`
+![Vector addition](assets/vector_addition.png)
+
+**Formula:** $(a_x + b_x,\; a_y + b_y,\; a_z + b_z)$
 
 **Geometric meaning:** Place the tail of `b` at the head of `a`. The result points from the origin to the combined displacement.
 
@@ -92,7 +94,7 @@ vec3 sum = vec3_add(a, b);  // (1, 2, 0) — combined movement
 
 ### Vector Subtraction
 
-**Formula:** `(a.x - b.x, a.y - b.y, a.z - b.z)`
+**Formula:** $(a_x - b_x,\; a_y - b_y,\; a_z - b_z)$
 
 **Geometric meaning:** The vector pointing from `b` to `a`.
 
@@ -106,7 +108,7 @@ vec3 direction_to_enemy = vec3_sub(enemy, player);  // (-3, -2, 0)
 
 ### Scalar Multiplication (Scaling)
 
-**Formula:** `(v.x * s, v.y * s, v.z * s)`
+**Formula:** $(v_x \cdot s,\; v_y \cdot s,\; v_z \cdot s)$
 
 **Geometric meaning:** Scale the vector's length by `s`. Direction stays the same.
 
@@ -119,13 +121,15 @@ vec3 fast = vec3_scale(velocity, 5.0f);  // (5, 0, 0) — 5× faster
 
 ### Dot Product
 
-**Formula:** `a.x * b.x + a.y * b.y + a.z * b.z`
+![Dot product](assets/dot_product.png)
+
+**Formula:** $\vec{a} \cdot \vec{b} = a_x b_x + a_y b_y + a_z b_z$
 
 **Result:** A single number (scalar), not a vector.
 
 **Geometric meaning:** Measures how much two vectors point in the same direction.
 
-- Result = `|a| * |b| * cos(θ)` where θ is the angle between them
+- Result = $|\vec{a}||\vec{b}|\cos\theta$ where $\theta$ is the angle between them
 - **Positive**: vectors point in similar directions
 - **Zero**: vectors are perpendicular (90° angle)
 - **Negative**: vectors point in opposite directions
@@ -139,12 +143,12 @@ float d = vec3_dot(forward, right);  // 0.0 — perpendicular
 **Use cases:**
 
 - Checking if two vectors are perpendicular
-- Finding the angle between vectors: `angle = acos(dot(a, b) / (length(a) * length(b)))`
+- Finding the angle between vectors: $\theta = \arccos\!\left(\frac{\vec{a} \cdot \vec{b}}{|\vec{a}||\vec{b}|}\right)$
 - Lighting calculations: `brightness = dot(surface_normal, light_direction)`
 
 ### Length (Magnitude)
 
-**Formula:** `sqrt(x² + y² + z²)`
+**Formula:** $|\vec{v}| = \sqrt{x^2 + y^2 + z^2}$
 
 **Geometric meaning:** The distance from the origin to the point (x, y, z).
 
@@ -165,7 +169,7 @@ if (vec3_length_squared(to_enemy) < 10.0f * 10.0f) {
 
 ### Normalization
 
-**Formula:** `v / length(v)` — divide each component by the vector's length
+**Formula:** $\hat{v} = \frac{\vec{v}}{|\vec{v}|}$ — divide each component by the vector's length
 
 **Geometric meaning:** Create a **unit vector** (length = 1) pointing in the same direction.
 
@@ -196,7 +200,7 @@ vec3 dir = vec3_normalize(v);  // (0.6, 0.8, 0.0) — Length = 1.0
 - Curl them toward `b`
 - Thumb points along the result
 
-**Magnitude:** `|a| * |b| * sin(θ)` — zero if vectors are parallel
+**Magnitude:** $|\vec{a}||\vec{b}|\sin\theta$ — zero if vectors are parallel
 
 ```c
 vec3 x_axis = vec3_create(1.0f, 0.0f, 0.0f);
@@ -212,7 +216,7 @@ vec3 z_axis = vec3_cross(x_axis, y_axis);  // (0, 0, 1)
 
 ### Linear Interpolation (Lerp)
 
-**Formula:** `a + t * (b - a)`
+**Formula:** $\text{lerp}(a, b, t) = a + t \cdot (b - a)$
 
 **Geometric meaning:** Blend smoothly from `a` to `b`:
 

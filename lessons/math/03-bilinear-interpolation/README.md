@@ -63,9 +63,9 @@ cases, texture sampling, color blending, and nearest vs linear comparison.
 
 Lerp blends between two values **a** and **b** using a parameter **t**:
 
-```text
-lerp(a, b, t) = a + t * (b - a)
+$$\text{lerp}(a, b, t) = a + t \cdot (b - a)$$
 
+```text
     a ============*=============== b
     t=0          t=0.5           t=1
 ```
@@ -76,30 +76,16 @@ in between give a proportional blend. This is the same lerp from
 
 ### Bilinear interpolation (2D)
 
+![Bilinear interpolation](assets/bilinear_interpolation.png)
+
 Bilinear interpolation blends four corner values on a 2D grid. Given
 corners c00, c10, c01, c11 and a fractional position (tx, ty):
 
-```text
-    c01 ----------- c11
-     |               |
-     |    * (tx,ty)  |
-     |               |
-    c00 ----------- c10
-```
-
 **Algorithm — three lerps:**
 
-1. **Lerp along the bottom edge:** `bot = lerp(c00, c10, tx)`
-2. **Lerp along the top edge:** `top = lerp(c01, c11, tx)`
-3. **Lerp vertically between results:** `result = lerp(bot, top, ty)`
-
-```text
-    c01 ---[top]---- c11        Step 1: lerp bottom (tx)
-     |       |        |         Step 2: lerp top (tx)
-     |    [result]    |         Step 3: lerp vertically (ty)
-     |       |        |
-    c00 ---[bot]---- c10
-```
+1. **Lerp along the bottom edge:** $\text{bot} = \text{lerp}(c_{00}, c_{10}, t_x)$
+2. **Lerp along the top edge:** $\text{top} = \text{lerp}(c_{01}, c_{11}, t_x)$
+3. **Lerp vertically between results:** $\text{result} = \text{lerp}(\text{bot}, \text{top}, t_y)$
 
 **Special cases:**
 

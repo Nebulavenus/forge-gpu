@@ -245,3 +245,4 @@ the checks.
 - SDL3 (with GPU API)
 - CMake 3.24+
 - A Vulkan/Metal/D3D12-capable GPU
+- Python packages for diagram generation: `pip install numpy matplotlib`
