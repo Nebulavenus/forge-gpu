@@ -24,3 +24,6 @@ jobs:
         uses: DavidAnson/markdownlint-cli2-action@v18
         with:
           globs: '**/*.md'
+
+      - name: Check display math blocks
+        run: python scripts/check_math_blocks.py

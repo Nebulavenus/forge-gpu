@@ -66,7 +66,9 @@ level is half the size of the previous one.
 
 ### How many levels?
 
-$$\text{num\_levels} = \lfloor \log_2(\max(\text{width}, \text{height})) \rfloor + 1$$
+$$
+\text{num}\_\text{levels} = \lfloor \log_2(\max(\text{width}, \text{height})) \rfloor + 1
+$$
 
 ```c
 int num_levels = (int)forge_log2f((float)max_dimension) + 1;
@@ -79,7 +81,9 @@ A 256x256 texture: $\lfloor \log_2(256) \rfloor + 1 = 8 + 1 = 9$ levels.
 Each level has $\frac{1}{4}$ the texels of the previous level. The total is a
 geometric series:
 
-$$\sum_{k=0}^{\infty} \frac{1}{4^k} = 1 + \frac{1}{4} + \frac{1}{16} + \frac{1}{64} + \cdots = \frac{4}{3}$$
+$$
+\sum_{k=0}^{\infty} \frac{1}{4^k} = 1 + \frac{1}{4} + \frac{1}{16} + \frac{1}{64} + \cdots = \frac{4}{3}
+$$
 
 So mipmaps add exactly **33%** extra memory — a small price for eliminating
 aliasing.
@@ -89,11 +93,17 @@ aliasing.
 **LOD** (Level of Detail) determines which mip level to sample from. The GPU
 computes it automatically from screen-space derivatives:
 
-$$g_x = \sqrt{\left(\frac{\partial U}{\partial x}\right)^2 + \left(\frac{\partial V}{\partial x}\right)^2}, \quad g_y = \sqrt{\left(\frac{\partial U}{\partial y}\right)^2 + \left(\frac{\partial V}{\partial y}\right)^2}$$
+$$
+g_x = \sqrt{\left(\frac{\partial U}{\partial x}\right)^2 + \left(\frac{\partial V}{\partial x}\right)^2}, \quad g_y = \sqrt{\left(\frac{\partial U}{\partial y}\right)^2 + \left(\frac{\partial V}{\partial y}\right)^2}
+$$
 
-$$\text{footprint} = \max(g_x,\; g_y) \times \text{texture\_size}$$
+$$
+\text{footprint} = \max(g_x,\; g_y) \times \text{texture}\_\text{size}
+$$
 
-$$\text{LOD} = \log_2(\text{footprint})$$
+$$
+\text{LOD} = \log_2(\text{footprint})
+$$
 
 When one screen pixel covers:
 
@@ -122,7 +132,9 @@ transitioning between mip levels.
 
 The formula combines two bilinear interpolations with a third lerp:
 
-$$\text{result} = \text{lerp}\!\big(\text{bilerp}(\text{mip}_N),\; \text{bilerp}(\text{mip}_{N+1}),\; \text{frac}(\text{LOD})\big)$$
+$$
+\text{result} = \text{lerp}\!\big(\text{bilerp}(\text{mip}_N),\; \text{bilerp}(\text{mip}_{N+1}),\; \text{frac}(\text{LOD})\big)
+$$
 
 This uses 8 texels total — 4 from each mip level — blended by three parameters:
 $t_x$, $t_y$ (fractional UV within each mip level) and $t_z$ (fractional LOD

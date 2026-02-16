@@ -86,7 +86,9 @@ The core insight requires no matrices at all — just similar triangles:
 
 A point at $(x, y, z)$ projects onto the near plane at:
 
-$$x_{\text{screen}} = \frac{x \cdot n}{-z}, \quad y_{\text{screen}} = \frac{y \cdot n}{-z}$$
+$$
+x_{\text{screen}} = \frac{x \cdot n}{-z}, \quad y_{\text{screen}} = \frac{y \cdot n}{-z}
+$$
 
 That's it. Objects farther away (larger `-z`) get divided by a bigger number,
 so they appear smaller on screen. This is **perspective foreshortening**.
@@ -143,7 +145,9 @@ The result is in Normalized Device Coordinates:
 
 The GPU performs:
 
-$$\text{NDC} = \left(\frac{x_c}{w_c},\; \frac{y_c}{w_c},\; \frac{z_c}{w_c}\right)$$
+$$
+\text{NDC} = \left(\frac{x_c}{w_c},\; \frac{y_c}{w_c},\; \frac{z_c}{w_c}\right)
+$$
 
 For perspective projection, $w_c = -z_{\text{view}}$ (the negated view-space depth).
 Dividing by $w$ is dividing by depth — this is what makes far objects smaller.

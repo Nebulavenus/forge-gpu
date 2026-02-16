@@ -117,7 +117,9 @@ Properties of rotation matrices:
 
 Rotates a vector around **any** axis (not just X, Y, or Z):
 
-$$\vec{v'} = \vec{v}\cos\theta + (\hat{k} \times \vec{v})\sin\theta + \hat{k}(\hat{k} \cdot \vec{v})(1 - \cos\theta)$$
+$$
+\vec{v'} = \vec{v}\cos\theta + (\hat{k} \times \vec{v})\sin\theta + \hat{k}(\hat{k} \cdot \vec{v})(1 - \cos\theta)
+$$
 
 where $\hat{k}$ is the unit rotation axis and $\theta$ is the angle.
 
@@ -149,7 +151,9 @@ j*i = -k   k*j = -i   i*k = -j   (anti-commutative)
 A unit quaternion (length = 1) represents a rotation of angle $\theta$ around
 axis $(a_x, a_y, a_z)$:
 
-$$q = \left(\cos\frac{\theta}{2},\; \sin\frac{\theta}{2}\cdot a_x,\; \sin\frac{\theta}{2}\cdot a_y,\; \sin\frac{\theta}{2}\cdot a_z\right)$$
+$$
+q = \left(\cos\frac{\theta}{2},\; \sin\frac{\theta}{2}\cdot a_x,\; \sin\frac{\theta}{2}\cdot a_y,\; \sin\frac{\theta}{2}\cdot a_z\right)
+$$
 
 Key properties:
 
@@ -190,7 +194,9 @@ The vector is treated as a pure quaternion $(0, v_x, v_y, v_z)$.
 
 An optimized formula avoids constructing intermediate quaternions:
 
-$$\vec{v'} = \vec{v} + 2w(\vec{u} \times \vec{v}) + 2(\vec{u} \times (\vec{u} \times \vec{v}))$$
+$$
+\vec{v'} = \vec{v} + 2w(\vec{u} \times \vec{v}) + 2(\vec{u} \times (\vec{u} \times \vec{v}))
+$$
 
 where $\vec{u} = (q_x, q_y, q_z)$ is the vector part of $q$.
 
@@ -199,7 +205,9 @@ where $\vec{u} = (q_x, q_y, q_z)$ is the vector part of $q$.
 SLERP interpolates between two orientations along the shortest arc on the
 unit sphere, producing constant angular velocity:
 
-$$\text{slerp}(a, b, t) = a\,\frac{\sin((1-t)\Theta)}{\sin\Theta} + b\,\frac{\sin(t\,\Theta)}{\sin\Theta}, \quad \Theta = \arccos(a \cdot b)$$
+$$
+\text{slerp}(a, b, t) = a\,\frac{\sin((1-t)\Theta)}{\sin\Theta} + b\,\frac{\sin(t\,\Theta)}{\sin\Theta}, \quad \Theta = \arccos(a \cdot b)
+$$
 
 - `t = 0` returns `a`, `t = 1` returns `b`
 - Constant speed (uniform angular velocity)

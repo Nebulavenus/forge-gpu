@@ -291,7 +291,9 @@ An inverse only exists when $\det(M) \neq 0$ (the matrix is non-singular).
 **3x3 inverse method:** Compute the adjugate (transpose of cofactor matrix) and
 divide by the determinant:
 
-$$M^{-1} = \frac{\text{adj}(M)}{\det(M)}$$
+$$
+M^{-1} = \frac{\text{adj}(M)}{\det(M)}
+$$
 
 **Verification:** Multiply M by its inverse and check you get identity:
 

@@ -63,7 +63,9 @@ cases, texture sampling, color blending, and nearest vs linear comparison.
 
 Lerp blends between two values **a** and **b** using a parameter **t**:
 
-$$\text{lerp}(a, b, t) = a + t \cdot (b - a)$$
+$$
+\text{lerp}(a, b, t) = a + t \cdot (b - a)
+$$
 
 ```text
     a ============*=============== b
