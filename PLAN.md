@@ -21,7 +21,7 @@ Infrastructure that supports all lessons:
 - [x] **Lesson 06 — Depth Buffer & 3D Transforms** — MVP matrices, perspective projection, depth testing, window resize handling
 - [x] **Lesson 07 — Camera & Input** — First-person camera with quaternion orientation (references Math Lesson 08 — Orientation and Math Lesson 09 — View Matrix); SDL event handling for keyboard and mouse input; delta time to decouple movement speed from frame rate; small scene with several objects to make navigation interesting
 - [x] **Lesson 08 — Loading a Mesh (OBJ)** — Wavefront OBJ format; parsing vertices, normals, UVs, and faces; de-indexed rendering; quad triangulation; file-based texture loading with mipmaps; reusable OBJ parser library (`common/obj/forge_obj.h`)
-- [ ] **Lesson 09 — Loading a Scene (glTF)** — glTF 2.0 format; JSON scene description + binary buffers; node hierarchy, meshes, accessors, and buffer views; PBR materials; glTF vs GLB; loading and rendering a multi-mesh scene
+- [x] **Lesson 09 — Loading a Scene (glTF)** — glTF 2.0 format; JSON scene description + binary buffers; node hierarchy, meshes, accessors, and buffer views; PBR materials; multi-material indexed rendering; reusable glTF parser library (`common/gltf/forge_gltf.h`)
 - [ ] **Lesson 10 — Basic Lighting** — Diffuse + specular, normal vectors, Phong model
 - [ ] **Lesson 11 — Gamma Correction & sRGB** — Linear color space, why sRGB exists, how `SDR_LINEAR` works
 - [ ] **Lesson 12 — Render-to-Texture** — Offscreen passes, framebuffers, post-processing

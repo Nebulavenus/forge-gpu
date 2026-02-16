@@ -81,6 +81,10 @@ forge-gpu/
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
 │   └── ...                # Other shared utilities
+├── tests/
+│   ├── math/              # Math library tests
+│   ├── obj/               # OBJ parser tests
+│   └── gltf/              # glTF parser tests
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 │   ├── math-lesson/       # Skill: add math concept + lesson + update lib
 │   ├── new-lesson/        # Skill: create new GPU lesson
@@ -94,6 +98,26 @@ forge-gpu/
 2. **GPU lessons** use math library, refer to math lessons for theory
 3. **Skills** automate lesson creation and teach AI agents the patterns
 4. **Math library** is reusable in any project (lessons or real builds)
+
+## Testing
+
+Tests live in `tests/` with one subdirectory per module (math, obj, gltf).
+Each test is a standalone C program using a simple assert-based framework —
+no external test dependency required.
+
+**Running tests:**
+
+```bash
+cmake --build build --target test_gltf   # build one test
+ctest --test-dir build -R gltf           # run one test
+ctest --test-dir build                   # run all tests
+```
+
+**When modifying parsers or libraries in `common/`, always build and run the
+corresponding tests.** Tests are registered with CTest and also run in CI.
+
+When adding a new parser or library to `common/`, add a matching test under
+`tests/` and register it in the root `CMakeLists.txt`.
 
 ## When writing GPU lessons (lessons/gpu/)
 

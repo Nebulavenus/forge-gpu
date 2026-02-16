@@ -48,7 +48,9 @@ add_subdirectory(lessons/gpu/05-mipmaps)
 add_subdirectory(lessons/gpu/06-depth-and-3d)
 add_subdirectory(lessons/gpu/07-camera-and-input)
 add_subdirectory(lessons/gpu/08-mesh-loading)
+add_subdirectory(lessons/gpu/09-scene-loading)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
 add_subdirectory(tests/obj)
+add_subdirectory(tests/gltf)
