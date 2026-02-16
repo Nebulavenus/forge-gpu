@@ -10,6 +10,7 @@
  */
 
 #include <SDL3/SDL.h>
+#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Test Framework ──────────────────────────────────────────────────────── */
@@ -108,6 +109,15 @@ static bool vec4_eq(vec4 a, vec4 b)
            float_eq(a.z, b.z) && float_eq(a.w, b.w);
 }
 
+/* Check if two mat2s are approximately equal */
+static bool mat2_eq(mat2 a, mat2 b)
+{
+    for (int i = 0; i < 4; i++) {
+        if (!float_eq(a.m[i], b.m[i])) return false;
+    }
+    return true;
+}
+
 /* Check if two mat3s are approximately equal */
 static bool mat3_eq(mat3 a, mat3 b)
 {
@@ -163,6 +173,13 @@ static bool mat4_eq(mat4 a, mat4 b)
         SDL_LogError(SDL_LOG_CATEGORY_TEST, \
                      "    FAIL: Expected (%.3f, %.3f, %.3f, %.3f), got (%.3f, %.3f, %.3f, %.3f)", \
                      b.x, b.y, b.z, b.w, a.x, a.y, a.z, a.w); \
+        fail_count++; \
+        return; \
+    }
+
+#define ASSERT_MAT2_EQ(a, b) \
+    if (!mat2_eq(a, b)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: mat2 mismatch"); \
         fail_count++; \
         return; \
     }
@@ -519,6 +536,189 @@ static void test_vec4_trilerp(void)
                                 zero4, zero4, zero4, c111,
                                 0.0f, 0.0f, 0.0f);
     ASSERT_VEC4_EQ(corner, c000);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * mat2 Tests (Lesson 10)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_mat2_create(void)
+{
+    TEST("mat2_create");
+    /* Row-major input, column-major storage */
+    mat2 m = mat2_create(
+        1, 2,   /* row 0 */
+        3, 4    /* row 1 */
+    );
+    /* Column 0 */
+    ASSERT_FLOAT_EQ(m.m[0], TEST_ONE);
+    ASSERT_FLOAT_EQ(m.m[1], TEST_THREE);
+    /* Column 1 */
+    ASSERT_FLOAT_EQ(m.m[2], TEST_TWO);
+    ASSERT_FLOAT_EQ(m.m[3], TEST_FOUR);
+    END_TEST();
+}
+
+static void test_mat2_identity(void)
+{
+    TEST("mat2_identity");
+    mat2 m = mat2_identity();
+    ASSERT_FLOAT_EQ(m.m[0], TEST_ONE);
+    ASSERT_FLOAT_EQ(m.m[1], TEST_ZERO);
+    ASSERT_FLOAT_EQ(m.m[2], TEST_ZERO);
+    ASSERT_FLOAT_EQ(m.m[3], TEST_ONE);
+    END_TEST();
+}
+
+static void test_mat2_multiply(void)
+{
+    TEST("mat2_multiply");
+    /* Identity * M = M */
+    mat2 id = mat2_identity();
+    mat2 m = mat2_create(1, 2, 3, 4);
+    mat2 result = mat2_multiply(id, m);
+    ASSERT_MAT2_EQ(result, m);
+
+    /* M * Identity = M */
+    result = mat2_multiply(m, id);
+    ASSERT_MAT2_EQ(result, m);
+
+    /* Specific multiply:
+     * | 1 2 |   | 5 6 |   | 1*5+2*7  1*6+2*8 |   | 19 22 |
+     * | 3 4 | * | 7 8 | = | 3*5+4*7  3*6+4*8 | = | 43 50 | */
+    mat2 a = mat2_create(1, 2, 3, 4);
+    mat2 b = mat2_create(5, 6, 7, 8);
+    mat2 ab = mat2_multiply(a, b);
+    mat2 expected = mat2_create(19, 22, 43, 50);
+    ASSERT_MAT2_EQ(ab, expected);
+    END_TEST();
+}
+
+static void test_mat2_multiply_vec2(void)
+{
+    TEST("mat2_multiply_vec2");
+    /* Identity * v = v */
+    mat2 id = mat2_identity();
+    vec2 v = TEST_V2_A;
+    vec2 result = mat2_multiply_vec2(id, v);
+    ASSERT_VEC2_EQ(result, v);
+
+    /* Scale matrix:
+     * | 2 0 |   | 3 |   | 6 |
+     * | 0 3 | * | 4 | = | 12 | */
+    mat2 scl = mat2_create(2, 0, 0, 3);
+    vec2 sv = mat2_multiply_vec2(scl, vec2_create(TEST_THREE, TEST_FOUR));
+    ASSERT_VEC2_EQ(sv, vec2_create(6.0f, 12.0f));
+    END_TEST();
+}
+
+static void test_mat2_transpose(void)
+{
+    TEST("mat2_transpose");
+    mat2 m = mat2_create(1, 2, 3, 4);
+    mat2 t = mat2_transpose(m);
+    mat2 expected = mat2_create(1, 3, 2, 4);
+    ASSERT_MAT2_EQ(t, expected);
+
+    /* Double transpose = original */
+    mat2 tt = mat2_transpose(t);
+    ASSERT_MAT2_EQ(tt, m);
+    END_TEST();
+}
+
+static void test_mat2_determinant(void)
+{
+    TEST("mat2_determinant");
+    /* Identity: det = 1 */
+    ASSERT_FLOAT_EQ(mat2_determinant(mat2_identity()), TEST_ONE);
+
+    /* | 1 2 |
+     * | 3 4 |  det = 1*4 - 2*3 = -2 */
+    mat2 m = mat2_create(1, 2, 3, 4);
+    ASSERT_FLOAT_EQ(mat2_determinant(m), -TEST_TWO);
+
+    /* Rotation: det = 1 */
+    float a = FORGE_PI / TEST_FOUR;
+    mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+    ASSERT_FLOAT_EQ(mat2_determinant(rot), TEST_ONE);
+
+    /* Singular matrix (columns are parallel): det = 0 */
+    mat2 singular = mat2_create(1, 2, 2, 4);
+    ASSERT_FLOAT_EQ(mat2_determinant(singular), TEST_ZERO);
+    END_TEST();
+}
+
+static void test_mat2_singular_values_identity(void)
+{
+    TEST("mat2_singular_values identity");
+    mat2 id = mat2_identity();
+    vec2 sv = mat2_singular_values(id);
+    /* Identity has singular values (1, 1) — isotropic */
+    ASSERT_FLOAT_EQ(sv.x, TEST_ONE);
+    ASSERT_FLOAT_EQ(sv.y, TEST_ONE);
+    END_TEST();
+}
+
+static void test_mat2_singular_values_scale(void)
+{
+    TEST("mat2_singular_values scale");
+    /* Diagonal scale: singular values = absolute scale factors, sorted */
+    mat2 m = mat2_create(3, 0, 0, 0.5f);
+    vec2 sv = mat2_singular_values(m);
+    ASSERT_FLOAT_EQ(sv.x, TEST_THREE);   /* major axis */
+    ASSERT_FLOAT_EQ(sv.y, TEST_HALF);    /* minor axis */
+    END_TEST();
+}
+
+static void test_mat2_singular_values_rotation(void)
+{
+    TEST("mat2_singular_values rotation = isotropic");
+    /* A pure rotation should have singular values (1, 1) */
+    float a = FORGE_PI / TEST_THREE;
+    mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+    vec2 sv = mat2_singular_values(rot);
+    ASSERT_FLOAT_EQ(sv.x, TEST_ONE);
+    ASSERT_FLOAT_EQ(sv.y, TEST_ONE);
+    END_TEST();
+}
+
+static void test_mat2_singular_values_shear(void)
+{
+    TEST("mat2_singular_values with shear");
+    /* Shear matrix: | 1  1 |
+     *               | 0  1 |
+     * M^T M = | 1 1 |  singular values from eigenvalues of M^T M.
+     *         | 1 2 |
+     * trace=3, det=1, eigenvalues = (3 +/- sqrt(5))/2
+     * sv = sqrt of those */
+    mat2 shear = mat2_create(1, 1, 0, 1);
+    vec2 sv = mat2_singular_values(shear);
+    float golden = (3.0f + sqrtf(5.0f)) / 2.0f;
+    float golden_inv = (3.0f - sqrtf(5.0f)) / 2.0f;
+    ASSERT_FLOAT_EQ(sv.x, sqrtf(golden));
+    ASSERT_FLOAT_EQ(sv.y, sqrtf(golden_inv));
+    END_TEST();
+}
+
+static void test_mat2_anisotropy_ratio(void)
+{
+    TEST("mat2_anisotropy_ratio");
+    /* Identity: ratio = 1 (isotropic) */
+    ASSERT_FLOAT_EQ(mat2_anisotropy_ratio(mat2_identity()), TEST_ONE);
+
+    /* Scale (4, 1): ratio = 4 */
+    mat2 stretch = mat2_create(4, 0, 0, 1);
+    ASSERT_FLOAT_EQ(mat2_anisotropy_ratio(stretch), TEST_FOUR);
+
+    /* Scale (1, 0.5): ratio = 2 */
+    mat2 mild = mat2_create(1, 0, 0, 0.5f);
+    ASSERT_FLOAT_EQ(mat2_anisotropy_ratio(mild), TEST_TWO);
+
+    /* Rotation: ratio = 1 */
+    float a = FORGE_PI / TEST_FOUR;
+    mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+    ASSERT_FLOAT_EQ(mat2_anisotropy_ratio(rot), TEST_ONE);
     END_TEST();
 }
 
@@ -1514,6 +1714,20 @@ int main(int argc, char *argv[])
     test_vec4_scale();
     test_vec4_dot();
     test_vec4_trilerp();
+
+    /* mat2 tests */
+    SDL_Log("\nmat2 tests:");
+    test_mat2_create();
+    test_mat2_identity();
+    test_mat2_multiply();
+    test_mat2_multiply_vec2();
+    test_mat2_transpose();
+    test_mat2_determinant();
+    test_mat2_singular_values_identity();
+    test_mat2_singular_values_scale();
+    test_mat2_singular_values_rotation();
+    test_mat2_singular_values_shear();
+    test_mat2_anisotropy_ratio();
 
     /* mat3 tests */
     SDL_Log("\nmat3 tests:");

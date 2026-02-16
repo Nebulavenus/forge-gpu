@@ -30,8 +30,7 @@ implementations for your projects.
 | 07 | [Floating Point](07-floating-point/) | IEEE 754, precision, epsilon comparison, z-fighting, float vs double |
 | 08 | [Orientation](08-orientation/) | Quaternions, Euler angles, axis-angle, rotation matrices, gimbal lock, slerp |
 | 09 | [View Matrix & Virtual Camera](09-view-matrix/) | Camera as inverse transform, basis extraction from quaternion, look-at, MVP pipeline |
-
-*More lessons coming soon:* Anisotropy and more.
+| 10 | [Anisotropy vs Isotropy](10-anisotropy/) | Jacobian, singular values, anisotropic filtering, noise, and friction |
 
 ## How Math Lessons Work
 
@@ -68,6 +67,7 @@ All math operations are implemented in the **forge-gpu math library** at
 **Quick reference:**
 
 - `vec2`, `vec3`, `vec4` — Vectors (map to HLSL `float2/3/4`)
+- `mat2` — 2×2 matrices (Jacobian, anisotropy analysis)
 - `mat3` — 3×3 matrices (column-major, matches HLSL `float3x3`)
 - `mat4` — 4×4 matrices (column-major, matches HLSL `float4x4`)
 - Operations: `add`, `sub`, `scale`, `dot`, `cross`, `normalize`, `lerp`, `transpose`, `determinant`, `inverse`, etc.

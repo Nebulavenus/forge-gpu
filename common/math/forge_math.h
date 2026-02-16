@@ -790,6 +790,235 @@ static inline vec4 vec4_trilerp(vec4 c000, vec4 c100, vec4 c010, vec4 c110,
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * mat2 — 2×2 matrices
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* 2×2 matrix in column-major storage.
+ *
+ * Memory layout (4 floats):
+ *   m[0..1] = column 0
+ *   m[2..3] = column 1
+ *
+ * As a mathematical matrix:
+ *   | m[0]  m[2] |
+ *   | m[1]  m[3] |
+ *
+ * Access element at row r, column c: m[c * 2 + r]
+ *
+ * 2×2 matrices are useful for:
+ *   - Screen-space Jacobian (texture coordinate derivatives)
+ *   - Anisotropy analysis (singular values of the Jacobian)
+ *   - 2D rotation and scale without translation
+ *
+ * HLSL equivalent: float2x2
+ *
+ * See: lessons/math/10-anisotropy
+ */
+typedef struct mat2 {
+    float m[4];
+} mat2;
+
+/* Create a 2×2 matrix from 4 values in row-major order.
+ *
+ * Values are given left-to-right, top-to-bottom (the way you'd write a matrix
+ * on paper), but stored internally in column-major order.
+ *
+ * Usage:
+ *   mat2 m = mat2_create(
+ *       1, 2,   // row 0
+ *       3, 4    // row 1
+ *   );
+ *   // m.m[0]=1, m.m[1]=3  (column 0)
+ *   // m.m[2]=2, m.m[3]=4  (column 1)
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline mat2 mat2_create(float m00, float m01,
+                                 float m10, float m11)
+{
+    mat2 m;
+    /* Transpose from row-major input to column-major storage */
+    m.m[0] = m00;  m.m[2] = m01;
+    m.m[1] = m10;  m.m[3] = m11;
+    return m;
+}
+
+/* Create a 2×2 identity matrix.
+ *
+ *   | 1  0 |
+ *   | 0  1 |
+ *
+ * Usage:
+ *   mat2 m = mat2_identity();
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline mat2 mat2_identity(void)
+{
+    mat2 m = {
+        1.0f, 0.0f,  /* column 0 */
+        0.0f, 1.0f   /* column 1 */
+    };
+    return m;
+}
+
+/* Multiply two 2×2 matrices: result = a * b
+ *
+ * Usage:
+ *   mat2 combined = mat2_multiply(a, b);  // apply b first, then a
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline mat2 mat2_multiply(mat2 a, mat2 b)
+{
+    mat2 result;
+    result.m[0] = a.m[0] * b.m[0] + a.m[2] * b.m[1];
+    result.m[1] = a.m[1] * b.m[0] + a.m[3] * b.m[1];
+    result.m[2] = a.m[0] * b.m[2] + a.m[2] * b.m[3];
+    result.m[3] = a.m[1] * b.m[2] + a.m[3] * b.m[3];
+    return result;
+}
+
+/* Multiply a 2×2 matrix by a 2D vector: result = m * v
+ *
+ * Usage:
+ *   mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+ *   vec2 v = vec2_create(1, 0);
+ *   vec2 rotated = mat2_multiply_vec2(rot, v);
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline vec2 mat2_multiply_vec2(mat2 m, vec2 v)
+{
+    return vec2_create(
+        m.m[0] * v.x + m.m[2] * v.y,
+        m.m[1] * v.x + m.m[3] * v.y
+    );
+}
+
+/* Transpose a 2×2 matrix (swap rows and columns).
+ *
+ *   | a  b |T    | a  c |
+ *   | c  d |  =  | b  d |
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline mat2 mat2_transpose(mat2 m)
+{
+    return mat2_create(
+        m.m[0], m.m[1],
+        m.m[2], m.m[3]
+    );
+}
+
+/* Compute the determinant of a 2×2 matrix.
+ *
+ *   det(| a  b |) = ad - bc
+ *      (| c  d |)
+ *
+ * The determinant tells you how much the matrix scales area:
+ *   det > 0: preserves orientation
+ *   det < 0: flips orientation (reflection)
+ *   det = 0: matrix is singular (collapses to a line or point)
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline float mat2_determinant(mat2 m)
+{
+    return m.m[0] * m.m[3] - m.m[2] * m.m[1];
+}
+
+/* Compute the singular values of a 2×2 matrix.
+ *
+ * The singular values are the lengths of the semi-axes of the ellipse that
+ * the matrix maps the unit circle to. They answer: "how much does this matrix
+ * stretch space in each direction?"
+ *
+ * Returns a vec2 with x >= y (major axis first, minor axis second).
+ *
+ * Algorithm: compute eigenvalues of M^T * M, then take square roots.
+ * For a 2×2 matrix, this has a closed-form solution:
+ *
+ *   S = M^T * M  (symmetric, positive semi-definite)
+ *   eigenvalues of S: (trace +/- sqrt(trace^2 - 4*det)) / 2
+ *   singular values: sqrt(eigenvalues)
+ *
+ * Example — identity matrix:
+ *   mat2 I = mat2_identity();
+ *   vec2 sv = mat2_singular_values(I);  // (1.0, 1.0) — isotropic
+ *
+ * Example — stretched in one direction:
+ *   mat2 J = mat2_create(1, 0, 0, 0.25f);
+ *   vec2 sv = mat2_singular_values(J);  // (1.0, 0.25) — 4:1 anisotropy
+ *
+ * In texture filtering, the Jacobian's singular values are the major and
+ * minor axes of the pixel footprint in texture space. A large ratio means
+ * the footprint is elongated (anisotropic), requiring anisotropic filtering
+ * to avoid blurring.
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline vec2 mat2_singular_values(mat2 m)
+{
+    /* Compute M^T * M */
+    float a = m.m[0], b = m.m[2];  /* row 0: m00, m01 */
+    float c = m.m[1], d = m.m[3];  /* row 1: m10, m11 */
+
+    /* S = M^T * M = [[a*a+c*c, a*b+c*d], [a*b+c*d, b*b+d*d]] */
+    float s00 = a * a + c * c;
+    float s01 = a * b + c * d;
+    float s11 = b * b + d * d;
+
+    /* Eigenvalues of 2×2 symmetric matrix [[s00, s01], [s01, s11]] */
+    float trace = s00 + s11;
+    float det = s00 * s11 - s01 * s01;
+    float disc = trace * trace - 4.0f * det;
+    if (disc < 0.0f) disc = 0.0f;  /* numerical safety */
+    float sqrt_disc = sqrtf(disc);
+
+    float lambda1 = (trace + sqrt_disc) * 0.5f;
+    float lambda2 = (trace - sqrt_disc) * 0.5f;
+    if (lambda1 < 0.0f) lambda1 = 0.0f;  /* numerical safety */
+    if (lambda2 < 0.0f) lambda2 = 0.0f;
+
+    vec2 result;
+    result.x = sqrtf(lambda1);  /* major (larger) */
+    result.y = sqrtf(lambda2);  /* minor (smaller) */
+    return result;
+}
+
+/* Compute the anisotropy ratio of a 2×2 matrix.
+ *
+ * The anisotropy ratio is the ratio of the largest to smallest singular value:
+ *   ratio = sigma_max / sigma_min
+ *
+ * A ratio of 1.0 means the matrix stretches equally in all directions
+ * (isotropic). Higher ratios indicate more directional stretching.
+ *
+ * In texture filtering:
+ *   1:1  — isotropic (trilinear is fine)
+ *   2:1  — mild anisotropy (2x anisotropic filtering helps)
+ *   4:1  — moderate (noticeable quality improvement with AF)
+ *   8:1+ — steep angle (AF essential to avoid blurring)
+ *
+ * GPUs typically cap this at 16:1 (maxAnisotropy setting).
+ *
+ * Returns 1.0 if the minor singular value is zero (degenerate matrix).
+ *
+ * Usage:
+ *   mat2 jacobian = mat2_create(1.0f, 0.0f, 0.0f, 0.25f);
+ *   float ratio = mat2_anisotropy_ratio(jacobian);  // 4.0
+ *
+ * See: lessons/math/10-anisotropy
+ */
+static inline float mat2_anisotropy_ratio(mat2 m)
+{
+    vec2 sv = mat2_singular_values(m);
+    if (sv.y < FORGE_EPSILON) return 1.0f;  /* degenerate — avoid division by zero */
+    return sv.x / sv.y;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * mat3 — 3×3 matrices
  * ══════════════════════════════════════════════════════════════════════════ */
 

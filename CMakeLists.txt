@@ -38,6 +38,7 @@ add_subdirectory(lessons/math/06-projections)
 add_subdirectory(lessons/math/07-floating-point)
 add_subdirectory(lessons/math/08-orientation)
 add_subdirectory(lessons/math/09-view-matrix)
+add_subdirectory(lessons/math/10-anisotropy)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)

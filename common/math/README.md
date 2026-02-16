@@ -29,6 +29,7 @@ vec4 rotated = mat4_multiply_vec4(rotation, v);
 - **`vec2`** — 2D vectors (x, y) — maps to HLSL `float2`
 - **`vec3`** — 3D vectors (x, y, z) — maps to HLSL `float3`
 - **`vec4`** — 4D vectors (x, y, z, w) — maps to HLSL `float4`
+- **`mat2`** — 2×2 matrices (column-major) — Jacobian analysis, anisotropy
 - **`mat3`** — 3×3 matrices (column-major) — maps to HLSL `float3x3`
 - **`mat4`** — 4×4 matrices (column-major) — maps to HLSL `float4x4`
 - **`quat`** — Quaternions (w, x, y, z) for 3D rotations — pass as HLSL `float4`
@@ -59,6 +60,13 @@ Each vector type supports:
 - **Bilinear interpolation:** `vec3_bilerp(...)`, `vec4_bilerp(...)` — blend 4 grid values in 2D
 - **Trilinear interpolation:** `vec3_trilerp(...)`, `vec4_trilerp(...)` — blend 8 cube corners in 3D
 - **Cross product:** `vec3_cross(a, b)` (3D only)
+
+### mat2 Operations
+
+- **Construction:** `mat2_create(4 floats)` (row-major input), `mat2_identity()`
+- **Multiplication:** `mat2_multiply(a, b)`, `mat2_multiply_vec2(m, v)`
+- **Analysis:** `mat2_transpose(m)`, `mat2_determinant(m)`
+- **Anisotropy:** `mat2_singular_values(m)` — pixel footprint axes, `mat2_anisotropy_ratio(m)`
 
 ### mat3 Operations
 
@@ -146,6 +154,8 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/06-projections/` — Perspective, orthographic, frustums, clip space, NDC
 - `lessons/math/07-floating-point/` — IEEE 754, precision, epsilon, z-fighting
 - `lessons/math/08-orientation/` — Quaternions, Euler angles, axis-angle, rotation matrices, slerp
+- `lessons/math/09-view-matrix/` — Camera as inverse transform, look-at, MVP pipeline
+- `lessons/math/10-anisotropy/` — Jacobian, singular values, anisotropic filtering, noise, friction
 
 Each lesson includes a demo program and README explaining the math.
 
@@ -185,6 +195,7 @@ Our C types map directly to HLSL types when uploading data to shaders:
 
 | C Type | HLSL Type | Memory Layout |
 |--------|-----------|---------------|
+| `mat2` | `float2x2` | 16 bytes (4 floats, column-major) |
 | `vec2` | `float2` | 8 bytes (2 floats) |
 | `vec3` | `float3` | 12 bytes (3 floats) |
 | `vec4` | `float4` | 16 bytes (4 floats) |

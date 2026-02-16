@@ -221,8 +221,9 @@ python scripts/run.py math/04
    want this? (Hint: sharpening vs. blurring trade-offs.)
 
 4. **Anisotropic filtering**: Trilinear assumes the pixel footprint is square.
-   What happens when the surface is viewed at a steep angle? Research
-   anisotropic filtering and how it extends trilinear.
+   What happens when the surface is viewed at a steep angle? See
+   [Lesson 10 — Anisotropy vs Isotropy](../10-anisotropy/) for the full
+   explanation of how anisotropic filtering extends trilinear.
 
 ## See also
 
