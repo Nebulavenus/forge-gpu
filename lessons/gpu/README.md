@@ -28,6 +28,7 @@ portable C interface.
 | 04 | [Textures & Samplers](04-textures-and-samplers/) | Textures, samplers, UV coordinates, index buffers | [Bilinear Interpolation](../math/03-bilinear-interpolation/) |
 | 05 | [Mipmaps](05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes | [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
 | 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/05-matrices/) |
+| 07 | [Camera & Input](07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time | [Orientation](../math/08-orientation/), [View Matrix](../math/09-view-matrix/) |
 
 *More lessons coming soon:* Mesh loading, lighting, and more.
 
@@ -113,6 +114,7 @@ GPU lessons use the **forge-gpu math library** (`common/math/`) for all math ope
 - **Before GPU Lesson 04**: Read [Bilinear Interpolation](../math/03-bilinear-interpolation/) for texture filtering math
 - **Before GPU Lesson 05**: Read [Mipmaps & LOD](../math/04-mipmaps-and-lod/) for mip chain and trilinear math
 - **Before GPU Lesson 06**: Read [Matrices](../math/05-matrices/) for MVP transform walkthrough
+- **Before GPU Lesson 07**: Read [Orientation](../math/08-orientation/) and [View Matrix](../math/09-view-matrix/) for camera math
 - **When confused**: Math lessons explain the theory behind GPU operations
 
 See [lessons/math/README.md](../math/README.md) for the complete math curriculum.
@@ -165,6 +167,7 @@ the same pattern. Use these to build projects quickly:
 - **`/textures-and-samplers`** — Load images, create textures/samplers, draw textured geometry
 - **`/mipmaps`** — Mipmapped textures, trilinear filtering, LOD control
 - **`/depth-and-3d`** — Depth buffer, MVP pipeline, 3D rendering
+- **`/camera-and-input`** — First-person camera, keyboard/mouse input, delta time
 
 **How to use:**
 

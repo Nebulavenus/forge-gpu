@@ -46,6 +46,7 @@ add_subdirectory(lessons/gpu/03-uniforms-and-motion)
 add_subdirectory(lessons/gpu/04-textures-and-samplers)
 add_subdirectory(lessons/gpu/05-mipmaps)
 add_subdirectory(lessons/gpu/06-depth-and-3d)
+add_subdirectory(lessons/gpu/07-camera-and-input)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

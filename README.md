@@ -39,6 +39,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 04 | [Textures & Samplers](lessons/gpu/04-textures-and-samplers/) | Loading images, GPU textures, samplers, UV coordinates, index buffers |
 | 05 | [Mipmaps](lessons/gpu/05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes, procedural textures |
 | 06 | [Depth Buffer & 3D Transforms](lessons/gpu/06-depth-and-3d/) | MVP matrices, depth testing, back-face culling, perspective projection |
+| 07 | [Camera & Input](lessons/gpu/07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time, multiple objects |
 
 ### Math Lessons (lessons/math/)
 
@@ -54,6 +55,7 @@ Standalone programs teaching the math behind graphics:
 | 06 | [Projections](lessons/math/06-projections/) | Perspective, orthographic, frustums, clip space, NDC |
 | 07 | [Floating Point](lessons/math/07-floating-point/) | IEEE 754, precision, epsilon comparison, z-fighting, float vs double |
 | 08 | [Orientation](lessons/math/08-orientation/) | Quaternions, Euler angles, axis-angle, rotation matrices, gimbal lock, slerp |
+| 09 | [View Matrix](lessons/math/09-view-matrix/) | View matrix, virtual camera, basis extraction, look-at vs quaternion |
 
 Each math lesson includes a demo program and updates the shared math
 library (`common/math/`) with documented, reusable implementations.
@@ -208,7 +210,8 @@ forge-gpu/
 │       ├── 03-uniforms-and-motion/
 │       ├── 04-textures-and-samplers/
 │       ├── 05-mipmaps/
-│       └── 06-depth-and-3d/
+│       ├── 06-depth-and-3d/
+│       └── 07-camera-and-input/
 ├── common/
 │   ├── math/              Math library (header-only, documented, reusable)
 │   │   ├── forge_math.h   Vectors, matrices, common operations
@@ -252,6 +255,7 @@ project to enable Claude to build games and tools with you.
 | [textures-and-samplers](.claude/skills/textures-and-samplers/SKILL.md) | `/textures-and-samplers` | Load images, create GPU textures/samplers, draw textured geometry |
 | [mipmaps](.claude/skills/mipmaps/SKILL.md) | `/mipmaps` | Create mipmapped textures, trilinear filtering, LOD control |
 | [depth-and-3d](.claude/skills/depth-and-3d/SKILL.md) | `/depth-and-3d` | Depth buffer, MVP pipeline, 3D rendering, back-face culling |
+| [camera-and-input](.claude/skills/camera-and-input/SKILL.md) | `/camera-and-input` | First-person camera, keyboard/mouse input, delta time |
 
 ### Development skills (used within this repo)
 
