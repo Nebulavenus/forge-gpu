@@ -854,6 +854,764 @@ def diagram_filtering_comparison():
 
 
 # ---------------------------------------------------------------------------
+# math/04-mipmaps-and-lod — mip_chain.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_mip_chain():
+    """Mip chain showing progressively halved textures with memory cost."""
+    fig = plt.figure(figsize=(10, 4), facecolor=STYLE["bg"])
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(STYLE["bg"])
+    ax.set_aspect("equal")
+    ax.grid(False)
+
+    # Mip levels: size halves each step
+    base = 128  # visual size in plot units for level 0
+    levels = 9  # for a 256x256 texture
+    gap = 12
+
+    x = 0
+    colors = [STYLE["accent1"], STYLE["accent2"], STYLE["accent3"], STYLE["accent4"]]
+
+    for level in range(levels):
+        size = max(base >> level, 2)  # clamp visual size
+        color = colors[level % len(colors)]
+
+        # Checkerboard fill for each mip level
+        checks = max(1, min(4, size // 8))
+        csize = size / checks
+        for ci in range(checks):
+            for cj in range(checks):
+                shade = color if (ci + cj) % 2 == 0 else STYLE["surface"]
+                r = Rectangle(
+                    (x + ci * csize, -size / 2 + cj * csize),
+                    csize,
+                    csize,
+                    facecolor=shade,
+                    edgecolor=STYLE["grid"],
+                    linewidth=0.3,
+                    alpha=0.6 if shade == color else 0.3,
+                    zorder=1,
+                )
+                ax.add_patch(r)
+
+        # Border
+        border = Rectangle(
+            (x, -size / 2),
+            size,
+            size,
+            fill=False,
+            edgecolor=color,
+            linewidth=1.5,
+            zorder=2,
+        )
+        ax.add_patch(border)
+
+        # Label: level number and dimensions
+        tex_size = 256 >> level
+        if tex_size < 1:
+            tex_size = 1
+        label = f"L{level}\n{tex_size}"
+        ax.text(
+            x + size / 2,
+            -size / 2 - 8,
+            label,
+            color=STYLE["text"],
+            fontsize=7 if level < 6 else 6,
+            ha="center",
+            va="top",
+            fontweight="bold",
+            path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
+        )
+
+        # Arrow to next level
+        if level < levels - 1:
+            ax.annotate(
+                "",
+                xy=(x + size + gap * 0.3, 0),
+                xytext=(x + size + 2, 0),
+                arrowprops={
+                    "arrowstyle": "->",
+                    "color": STYLE["text_dim"],
+                    "lw": 1,
+                },
+            )
+            ax.text(
+                x + size + gap * 0.5,
+                5,
+                "\u00f72",
+                color=STYLE["text_dim"],
+                fontsize=7,
+                ha="center",
+                va="bottom",
+            )
+
+        x += size + gap
+
+    # Memory cost annotation
+    ax.text(
+        x / 2,
+        base / 2 + 15,
+        "Each level = \u00bc the texels of the previous  |  Total = ~1.33\u00d7 base  (+33% memory)",
+        color=STYLE["warn"],
+        fontsize=9,
+        ha="center",
+        fontweight="bold",
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    ax.set_xlim(-10, x + 5)
+    ax.set_ylim(-base / 2 - 30, base / 2 + 30)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.set_title(
+        "Mip Chain: 256\u00d7256 Texture (9 Levels)",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        pad=12,
+    )
+
+    fig.tight_layout()
+    _save(fig, "math/04-mipmaps-and-lod", "mip_chain.png")
+
+
+# ---------------------------------------------------------------------------
+# math/04-mipmaps-and-lod — trilinear_interpolation.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_trilinear_interpolation():
+    """Trilinear interpolation: two bilinear samples blended by LOD fraction."""
+    fig = plt.figure(figsize=(10, 5), facecolor=STYLE["bg"])
+
+    # --- Left panel: mip level N (bilinear) ---
+    ax1 = fig.add_subplot(131)
+    _setup_axes(ax1, xlim=(-0.4, 1.6), ylim=(-0.4, 1.6), grid=False)
+
+    # Grid cell
+    rect1 = Rectangle(
+        (0, 0),
+        1,
+        1,
+        fill=True,
+        facecolor=STYLE["surface"],
+        edgecolor=STYLE["accent1"],
+        linewidth=2,
+        zorder=1,
+    )
+    ax1.add_patch(rect1)
+
+    # Corner values
+    corners1 = {
+        (0, 0): ("c00", STYLE["accent1"]),
+        (1, 0): ("c10", STYLE["accent2"]),
+        (0, 1): ("c01", STYLE["accent4"]),
+        (1, 1): ("c11", STYLE["accent3"]),
+    }
+    for (cx, cy), (label, color) in corners1.items():
+        ax1.plot(cx, cy, "o", color=color, markersize=10, zorder=5)
+        ox = -0.22 if cx == 0 else 0.08
+        oy = -0.15 if cy == 0 else 0.08
+        ax1.text(
+            cx + ox,
+            cy + oy,
+            label,
+            color=color,
+            fontsize=9,
+            fontweight="bold",
+            path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+        )
+
+    # Sample point
+    tx, ty = 0.4, 0.6
+    ax1.plot(tx, ty, "*", color=STYLE["warn"], markersize=16, zorder=6)
+
+    # Result
+    ax1.text(
+        0.5,
+        -0.28,
+        "bilerp\u2081",
+        color=STYLE["accent1"],
+        fontsize=11,
+        ha="center",
+        fontweight="bold",
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    ax1.set_title(
+        "Mip Level N",
+        color=STYLE["accent1"],
+        fontsize=11,
+        fontweight="bold",
+    )
+
+    # --- Center panel: mip level N+1 (bilinear) ---
+    ax2 = fig.add_subplot(132)
+    _setup_axes(ax2, xlim=(-0.4, 1.6), ylim=(-0.4, 1.6), grid=False)
+
+    rect2 = Rectangle(
+        (0, 0),
+        1,
+        1,
+        fill=True,
+        facecolor=STYLE["surface"],
+        edgecolor=STYLE["accent2"],
+        linewidth=2,
+        zorder=1,
+    )
+    ax2.add_patch(rect2)
+
+    corners2 = {
+        (0, 0): ("c00", STYLE["accent1"]),
+        (1, 0): ("c10", STYLE["accent2"]),
+        (0, 1): ("c01", STYLE["accent4"]),
+        (1, 1): ("c11", STYLE["accent3"]),
+    }
+    for (cx, cy), (label, color) in corners2.items():
+        ax2.plot(cx, cy, "o", color=color, markersize=10, zorder=5)
+        ox = -0.22 if cx == 0 else 0.08
+        oy = -0.15 if cy == 0 else 0.08
+        ax2.text(
+            cx + ox,
+            cy + oy,
+            label,
+            color=color,
+            fontsize=9,
+            fontweight="bold",
+            path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+        )
+
+    ax2.plot(tx, ty, "*", color=STYLE["warn"], markersize=16, zorder=6)
+
+    ax2.text(
+        0.5,
+        -0.28,
+        "bilerp\u2082",
+        color=STYLE["accent2"],
+        fontsize=11,
+        ha="center",
+        fontweight="bold",
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    ax2.set_title(
+        "Mip Level N+1",
+        color=STYLE["accent2"],
+        fontsize=11,
+        fontweight="bold",
+    )
+
+    # --- Right panel: lerp result ---
+    ax3 = fig.add_subplot(133)
+    ax3.set_facecolor(STYLE["bg"])
+    ax3.set_xlim(0, 1)
+    ax3.set_ylim(-0.5, 1.5)
+    ax3.set_xticks([])
+    ax3.set_yticks([])
+    for spine in ax3.spines.values():
+        spine.set_visible(False)
+
+    # Vertical blend bar
+    bar_x = 0.3
+    bar_w = 0.4
+    n_steps = 50
+    for i in range(n_steps):
+        t = i / n_steps
+        y0 = t
+        h = 1.0 / n_steps
+        # Blend from accent1 to accent2
+        c1 = np.array([0x4F, 0xC3, 0xF7]) / 255  # accent1 RGB
+        c2 = np.array([0xFF, 0x70, 0x43]) / 255  # accent2 RGB
+        c = c1 * (1 - t) + c2 * t
+        r = Rectangle(
+            (bar_x, y0),
+            bar_w,
+            h,
+            facecolor=c,
+            edgecolor="none",
+            zorder=1,
+        )
+        ax3.add_patch(r)
+
+    # Border
+    bar_border = Rectangle(
+        (bar_x, 0),
+        bar_w,
+        1,
+        fill=False,
+        edgecolor=STYLE["axis"],
+        linewidth=1.5,
+        zorder=2,
+    )
+    ax3.add_patch(bar_border)
+
+    # Labels
+    ax3.text(
+        bar_x + bar_w / 2,
+        -0.08,
+        "bilerp\u2081",
+        color=STYLE["accent1"],
+        fontsize=10,
+        ha="center",
+        fontweight="bold",
+    )
+    ax3.text(
+        bar_x + bar_w / 2,
+        1.08,
+        "bilerp\u2082",
+        color=STYLE["accent2"],
+        fontsize=10,
+        ha="center",
+        fontweight="bold",
+    )
+
+    # LOD fraction marker
+    frac = 0.3
+    ax3.plot(
+        [bar_x - 0.05, bar_x + bar_w + 0.05],
+        [frac, frac],
+        "-",
+        color=STYLE["warn"],
+        lw=2.5,
+        zorder=3,
+    )
+    ax3.plot(bar_x + bar_w / 2, frac, "*", color=STYLE["warn"], markersize=14, zorder=4)
+    ax3.text(
+        bar_x + bar_w + 0.08,
+        frac,
+        f"frac = {frac}",
+        color=STYLE["warn"],
+        fontsize=10,
+        va="center",
+        fontweight="bold",
+    )
+
+    ax3.set_title(
+        "Lerp by LOD\nFraction",
+        color=STYLE["warn"],
+        fontsize=11,
+        fontweight="bold",
+    )
+
+    # Arrows connecting panels
+    fig.text(
+        0.355,
+        0.35,
+        "\u2192",
+        color=STYLE["text_dim"],
+        fontsize=20,
+        ha="center",
+        va="center",
+        fontweight="bold",
+    )
+    fig.text(
+        0.655,
+        0.35,
+        "\u2192",
+        color=STYLE["text_dim"],
+        fontsize=20,
+        ha="center",
+        va="center",
+        fontweight="bold",
+    )
+
+    fig.suptitle(
+        "Trilinear Interpolation: Two Bilinear Samples + Lerp",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        y=1.0,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save(fig, "math/04-mipmaps-and-lod", "trilinear_interpolation.png")
+
+
+# ---------------------------------------------------------------------------
+# math/09-view-matrix — view_transform.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_view_transform():
+    """Two-panel top-down: world space vs view space with scene objects.
+
+    Inspired by 3D Math Primer illustrations — shows a 2D bird's-eye view
+    with a camera, colored axes, a view frustum, and scene objects.  The
+    camera looks along -Z (downward on screen).  The view matrix shifts
+    everything so the camera ends up at the origin.
+    """
+    fig = plt.figure(figsize=(11, 5.5), facecolor=STYLE["bg"])
+
+    # --- Scene definition (all positions in world space, XZ plane) ---
+    cam_pos = np.array([0.0, 4.0])  # camera at Z=4, looking down -Z
+
+    scene_objs = [
+        {
+            "pos": np.array([2.0, 1.5]),
+            "marker": "s",
+            "color": STYLE["accent2"],
+            "label": "cube",
+        },
+        {
+            "pos": np.array([-1.5, 2.5]),
+            "marker": "^",
+            "color": STYLE["accent3"],
+            "label": "tree",
+        },
+        {
+            "pos": np.array([0.5, 0.0]),
+            "marker": "D",
+            "color": STYLE["accent4"],
+            "label": "rock",
+        },
+    ]
+
+    frust_half = np.radians(30)
+    frust_len = 4.2
+
+    panels = [
+        ("World Space", np.array([0.0, 0.0])),
+        ("View Space", -cam_pos),
+    ]
+
+    for idx, (title, shift) in enumerate(panels):
+        ax = fig.add_subplot(1, 2, idx + 1)
+        ax.set_facecolor(STYLE["bg"])
+        ax.set_xlim(-5, 5)
+        ax.set_ylim(-5.5, 5.5)
+        ax.set_aspect("equal")
+
+        # Floor grid
+        for g in range(-5, 6):
+            ax.plot([-5, 5], [g, g], color=STYLE["grid"], lw=0.3, alpha=0.3)
+            ax.plot([g, g], [-5.5, 5.5], color=STYLE["grid"], lw=0.3, alpha=0.3)
+
+        # Coordinate axes at diagram (0, 0)
+        al = 4.5
+        ax.annotate(
+            "",
+            xy=(al, 0),
+            xytext=(-al, 0),
+            arrowprops={
+                "arrowstyle": "->,head_width=0.15",
+                "color": "#bb5555",
+                "lw": 1.3,
+                "alpha": 0.5,
+            },
+        )
+        ax.text(
+            al + 0.15,
+            -0.4,
+            "+X",
+            color="#bb5555",
+            fontsize=8,
+            fontweight="bold",
+            alpha=0.6,
+        )
+        ax.annotate(
+            "",
+            xy=(0, al),
+            xytext=(0, -al),
+            arrowprops={
+                "arrowstyle": "->,head_width=0.15",
+                "color": "#5577cc",
+                "lw": 1.3,
+                "alpha": 0.5,
+            },
+        )
+        ax.text(
+            0.25,
+            al + 0.15,
+            "+Z",
+            color="#5577cc",
+            fontsize=8,
+            fontweight="bold",
+            alpha=0.6,
+        )
+
+        c = cam_pos + shift
+
+        # View frustum cone (faint wedge showing what the camera sees)
+        cos_f = np.cos(frust_half)
+        sin_f = np.sin(frust_half)
+        ld = np.array([-sin_f, -cos_f])  # left edge direction
+        rd = np.array([sin_f, -cos_f])  # right edge direction
+        frust = Polygon(
+            [c, c + ld * frust_len, c + rd * frust_len],
+            closed=True,
+            facecolor=STYLE["warn"],
+            alpha=0.05,
+            edgecolor=STYLE["warn"],
+            lw=0.7,
+            linestyle="--",
+            zorder=2,
+        )
+        ax.add_patch(frust)
+
+        # Camera icon (triangle pointing down = forward along -Z)
+        s = 0.38
+        cam_tri = Polygon(
+            [
+                (c[0] - s * 0.8, c[1] + s * 0.55),
+                (c[0], c[1] - s * 0.9),
+                (c[0] + s * 0.8, c[1] + s * 0.55),
+            ],
+            closed=True,
+            facecolor=STYLE["accent1"],
+            edgecolor="white",
+            linewidth=1.2,
+            zorder=10,
+            alpha=0.9,
+        )
+        ax.add_patch(cam_tri)
+        cam_lbl = "camera" if idx == 0 else "camera (origin)"
+        ax.text(
+            c[0] + 0.5,
+            c[1] + 0.1,
+            cam_lbl,
+            color=STYLE["accent1"],
+            fontsize=10,
+            fontweight="bold",
+            path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+        )
+
+        # Scene objects
+        for obj in scene_objs:
+            p = obj["pos"] + shift
+            ax.plot(
+                p[0],
+                p[1],
+                obj["marker"],
+                color=obj["color"],
+                markersize=11,
+                zorder=8,
+                markeredgecolor="white",
+                markeredgewidth=0.8,
+            )
+            ax.text(
+                p[0] + 0.35,
+                p[1] + 0.3,
+                obj["label"],
+                color=obj["color"],
+                fontsize=9,
+                fontweight="bold",
+                path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+            )
+
+        # Origin crosshair
+        ax.plot(0, 0, "+", color=STYLE["text"], markersize=10, mew=1.5, zorder=6)
+        if idx == 0:
+            ax.text(
+                0.3,
+                -0.5,
+                "origin",
+                color=STYLE["text_dim"],
+                fontsize=8,
+                style="italic",
+            )
+        else:
+            # Ghost marker showing where the world origin ended up
+            wo = np.array([0.0, 0.0]) + shift
+            ax.plot(
+                wo[0],
+                wo[1],
+                "+",
+                color=STYLE["text_dim"],
+                markersize=8,
+                mew=1,
+                zorder=5,
+                alpha=0.5,
+            )
+            ax.text(
+                wo[0] + 0.3,
+                wo[1] - 0.4,
+                "world origin",
+                color=STYLE["text_dim"],
+                fontsize=7,
+                style="italic",
+                alpha=0.7,
+            )
+            # Annotation: objects ahead are at -Z
+            ax.text(
+                3.5,
+                -4.8,
+                "objects ahead\nhave Z < 0",
+                color=STYLE["text_dim"],
+                fontsize=8,
+                ha="center",
+                style="italic",
+                alpha=0.6,
+            )
+
+        ax.set_title(title, color=STYLE["text"], fontsize=13, fontweight="bold", pad=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+    # Arrow between panels
+    fig.text(
+        0.50,
+        0.50,
+        "\u2192",
+        color=STYLE["warn"],
+        fontsize=30,
+        ha="center",
+        va="center",
+        fontweight="bold",
+    )
+    fig.text(
+        0.50,
+        0.40,
+        "View matrix V",
+        color=STYLE["text_dim"],
+        fontsize=10,
+        ha="center",
+        va="center",
+    )
+
+    fig.suptitle(
+        "The Camera as an Inverse Transform",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        y=0.98,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    _save(fig, "math/09-view-matrix", "view_transform.png")
+
+
+# ---------------------------------------------------------------------------
+# math/09-view-matrix — camera_basis_vectors.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_camera_basis_vectors():
+    """Two-panel: identity vs rotated camera basis vectors in pseudo-3D."""
+    fig = plt.figure(figsize=(10, 5), facecolor=STYLE["bg"])
+
+    # Simple isometric-ish projection: X axis goes right, Y goes up, Z goes
+    # into the page at a diagonal.  Project 3D -> 2D:
+    #   px = x - z * 0.35
+    #   py = y - z * 0.35
+    def proj(x, y, z):
+        return (x - z * 0.35, y - z * 0.35)
+
+    # Identity basis and rotated basis (yaw=45, pitch=30)
+    yaw = np.radians(45)
+    pitch = np.radians(30)
+
+    # Quaternion rotation: yaw around Y, then pitch around X
+    # forward = quat_rotate(q, (0,0,-1))
+    # right   = quat_rotate(q, (1,0,0))
+    # up      = quat_rotate(q, (0,1,0))
+    # For yaw*pitch: Ry(yaw) * Rx(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+
+    configs = [
+        {
+            "title": "Identity (no rotation)",
+            "forward": (0, 0, -1),
+            "right": (1, 0, 0),
+            "up": (0, 1, 0),
+            "labels": ("fwd (0,0,\u22121)", "right (1,0,0)", "up (0,1,0)"),
+        },
+        {
+            "title": "After yaw=45\u00b0, pitch=30\u00b0",
+            "forward": (-sy * cp, sp, -cy * cp),
+            "right": (cy, 0, -sy),
+            "up": (sy * sp, cp, cy * sp),
+            "labels": ("quat_forward(q)", "quat_right(q)", "quat_up(q)"),
+        },
+    ]
+
+    for i, cfg in enumerate(configs):
+        ax = fig.add_subplot(1, 2, i + 1)
+        _setup_axes(ax, xlim=(-1.5, 1.8), ylim=(-1.5, 1.8), grid=False)
+
+        origin = (0, 0)
+
+        # Light ghost axes for reference
+        for endpoint, lbl in [
+            ((1.3, 0, 0), "+X"),
+            ((0, 1.3, 0), "+Y"),
+            ((0, 0, -1.3), "-Z"),
+        ]:
+            px, py = proj(*endpoint)
+            ax.plot(
+                [0, px],
+                [0, py],
+                "-",
+                color=STYLE["grid"],
+                lw=0.5,
+                alpha=0.4,
+            )
+            ax.text(
+                px * 1.1,
+                py * 1.1,
+                lbl,
+                color=STYLE["text_dim"],
+                fontsize=7,
+                ha="center",
+                va="center",
+            )
+
+        # Draw the three basis vectors
+        vectors = [
+            (cfg["forward"], STYLE["accent2"], cfg["labels"][0]),
+            (cfg["right"], STYLE["accent1"], cfg["labels"][1]),
+            (cfg["up"], STYLE["accent3"], cfg["labels"][2]),
+        ]
+
+        for (vx, vy, vz), color, label in vectors:
+            px, py = proj(vx, vy, vz)
+            _draw_vector(ax, origin, (px, py), color, label, lw=2.5)
+
+        ax.plot(0, 0, "o", color=STYLE["text"], markersize=5, zorder=5)
+        ax.set_title(cfg["title"], color=STYLE["text"], fontsize=11, fontweight="bold")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+    # Arrow between panels
+    fig.text(
+        0.50,
+        0.5,
+        "\u2192",
+        color=STYLE["warn"],
+        fontsize=28,
+        ha="center",
+        va="center",
+        fontweight="bold",
+    )
+    fig.text(
+        0.50,
+        0.42,
+        "quaternion rotation",
+        color=STYLE["text_dim"],
+        fontsize=10,
+        ha="center",
+        va="center",
+    )
+
+    fig.suptitle(
+        "Camera Basis Vectors from Quaternion",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        y=1.0,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save(fig, "math/09-view-matrix", "camera_basis_vectors.png")
+
+
+# ---------------------------------------------------------------------------
 # Diagram registry
 # ---------------------------------------------------------------------------
 
@@ -865,11 +1623,19 @@ DIAGRAMS = {
     "math/03": [
         ("bilinear_interpolation.png", diagram_bilinear_interpolation),
     ],
+    "math/04": [
+        ("mip_chain.png", diagram_mip_chain),
+        ("trilinear_interpolation.png", diagram_trilinear_interpolation),
+    ],
     "math/05": [
         ("matrix_basis_vectors.png", diagram_matrix_basis_vectors),
     ],
     "math/06": [
         ("frustum.png", diagram_frustum),
+    ],
+    "math/09": [
+        ("view_transform.png", diagram_view_transform),
+        ("camera_basis_vectors.png", diagram_camera_basis_vectors),
     ],
     "gpu/04": [
         ("uv_mapping.png", diagram_uv_mapping),
@@ -881,8 +1647,10 @@ DIAGRAMS = {
 LESSON_NAMES = {
     "math/01": "math/01-vectors",
     "math/03": "math/03-bilinear-interpolation",
+    "math/04": "math/04-mipmaps-and-lod",
     "math/05": "math/05-matrices",
     "math/06": "math/06-projections",
+    "math/09": "math/09-view-matrix",
     "gpu/04": "gpu/04-textures-and-samplers",
 }
 

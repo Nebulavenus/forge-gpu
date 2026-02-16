@@ -156,6 +156,8 @@ The summary (section 8) prints a reference card of all new functions.
 
 ### The view matrix is an inverse transform
 
+![View transform](assets/view_transform.png)
+
 A camera has a position and an orientation in the world, just like any other
 object. Its **world transform** is:
 
@@ -176,6 +178,8 @@ rotation when the matrix is transposed. This is much cheaper than computing a
 general inverse.
 
 ### Extracting basis vectors from a quaternion
+
+![Camera basis vectors](assets/camera_basis_vectors.png)
 
 A quaternion orientation encodes three directions — the camera's local coordinate
 axes:
@@ -298,6 +302,14 @@ last frame, typically measured in seconds.
 
 Each frame follows this pattern:
 
+```mermaid
+flowchart LR
+    A["Update orientation\n(mouse input)"] --> B["Extract basis\nvectors"]
+    B --> C["Move position\n(keyboard)"]
+    C --> D["Build view matrix"]
+    D --> E["Upload MVP\nto GPU"]
+```
+
 1. **Update orientation** from mouse/stick input (adjust yaw and pitch)
 2. **Extract basis vectors** — `quat_forward`, `quat_right`
 3. **Move position** along those directions based on keyboard input
@@ -311,11 +323,14 @@ multiplications) and ensures the camera state always matches the latest input.
 
 The view matrix is the "V" in MVP (Model-View-Projection):
 
-```text
-Model space  --(Model)-->  World space
-World space  --(View)--->  View space    <-- this lesson
-View space   --(Proj)--->  Clip space
-Clip space   --(/w)----->  NDC
+```mermaid
+flowchart LR
+    A["Model Space"] -- "Model" --> B["World Space"]
+    B -- "View" --> C["View Space"]
+    C -- "Projection" --> D["Clip Space"]
+    D -- "/w" --> E["NDC"]
+
+    style C stroke:#4fc3f7,stroke-width:3px
 ```
 
 On the GPU, vertices are transformed by the combined matrix:

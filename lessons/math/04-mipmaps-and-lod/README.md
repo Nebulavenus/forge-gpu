@@ -17,8 +17,8 @@ output walks through each concept with concrete numbers.
 
 ## Key concepts
 
-- **Mip chain** — a series of progressively halved textures, from full size down to 1×1
-- **LOD (Level of Detail)** — `log2(footprint)`, how the GPU picks which mip level to sample
+- **Mip chain** — a series of progressively-halved textures, from full size down to 1x1
+- **LOD (Level of Detail)** — $\log_2(\text{footprint})$, how the GPU picks which mip level to sample
 - **Trilinear interpolation** — bilinear sample from two adjacent mip levels, then lerp between them
 - **Screen-space derivatives** — `ddx`/`ddy` measure how fast UVs change across pixels, driving LOD selection
 
@@ -37,20 +37,20 @@ pixel. The GPU can only sample a few texels per pixel, so it misses most of the
 fine detail. The result is shimmering, moire patterns, and visual noise.
 
 ```text
-Near: 1 texel ≈ 1 pixel (looks great)
+Near: 1 texel ~ 1 pixel (looks great)
 
     pixel grid          texel grid
     +---+---+---+       +---+---+---+
     |   |   |   |       | A | B | C |
     +---+---+---+       +---+---+---+
-    |   |   |   |  ←→   | D | E | F |
+    |   |   |   |  <->  | D | E | F |
     +---+---+---+       +---+---+---+
 
 Far: many texels per pixel (aliasing!)
 
     pixel grid          texel grid
     +---+               +--+--+--+--+--+--+--+--+
-    |   |  covers  →    |  |  |  |  |  |  |  |  |
+    |   |  covers  ->   |  |  |  |  |  |  |  |  |
     +---+               +--+--+--+--+--+--+--+--+
                         |  |  |  |  |  |  |  |  |
                         +--+--+--+--+--+--+--+--+
@@ -62,51 +62,48 @@ Far: many texels per pixel (aliasing!)
 pre-computed chain of progressively smaller versions of a texture, where each
 level is half the size of the previous one.
 
-```text
-Level 0: 256×256  (base texture)
-Level 1: 128×128  (averaged from level 0)
-Level 2:  64×64
-Level 3:  32×32
-Level 4:  16×16
-Level 5:   8×8
-Level 6:   4×4
-Level 7:   2×2
-Level 8:   1×1   (single averaged color)
-```
+![Mip chain](assets/mip_chain.png)
 
 ### How many levels?
+
+$$\text{num\_levels} = \lfloor \log_2(\max(\text{width}, \text{height})) \rfloor + 1$$
 
 ```c
 int num_levels = (int)forge_log2f((float)max_dimension) + 1;
 ```
 
-A 256×256 texture: `log2(256) + 1 = 8 + 1 = 9` levels.
+A 256x256 texture: $\lfloor \log_2(256) \rfloor + 1 = 8 + 1 = 9$ levels.
 
 ### Memory cost
 
-Each level has 1/4 the texels of the previous level. The total is a geometric
-series: `1 + 1/4 + 1/16 + 1/64 + ... = 4/3`. So mipmaps add exactly **33%**
-extra memory — a small price for eliminating aliasing.
+Each level has $\frac{1}{4}$ the texels of the previous level. The total is a
+geometric series:
+
+$$\sum_{k=0}^{\infty} \frac{1}{4^k} = 1 + \frac{1}{4} + \frac{1}{16} + \frac{1}{64} + \cdots = \frac{4}{3}$$
+
+So mipmaps add exactly **33%** extra memory — a small price for eliminating
+aliasing.
 
 ## LOD selection
 
 **LOD** (Level of Detail) determines which mip level to sample from. The GPU
 computes it automatically from screen-space derivatives:
 
-```text
-footprint = max(|dU/dx|, |dV/dy|) × texture_size
-LOD = log2(footprint)
-```
+$$g_x = \sqrt{\left(\frac{\partial U}{\partial x}\right)^2 + \left(\frac{\partial V}{\partial x}\right)^2}, \quad g_y = \sqrt{\left(\frac{\partial U}{\partial y}\right)^2 + \left(\frac{\partial V}{\partial y}\right)^2}$$
+
+$$\text{footprint} = \max(g_x,\; g_y) \times \text{texture\_size}$$
+
+$$\text{LOD} = \log_2(\text{footprint})$$
 
 When one screen pixel covers:
 
-- **1 texel** → LOD = 0 (use the base texture)
-- **2 texels** → LOD = 1 (use the half-size mip)
-- **4 texels** → LOD = 2 (use the quarter-size mip)
-- **n texels** → LOD = log2(n)
+- **1 texel** — $\text{LOD} = \log_2(1) = 0$ (use the base texture)
+- **2 texels** — $\text{LOD} = \log_2(2) = 1$ (use the half-size mip)
+- **4 texels** — $\text{LOD} = \log_2(4) = 2$ (use the quarter-size mip)
+- **n texels** — $\text{LOD} = \log_2(n)$
 
 The GPU computes `ddx(uv)` and `ddy(uv)` — the rate of change of UVs across
-adjacent pixels — using **helper invocations** that run fragment shaders in 2×2
+adjacent pixels — using **helper invocations** that run fragment shaders in 2x2
 quads. This is why `discard` can be problematic in some shaders: it can
 invalidate derivative computations for neighboring pixels.
 
@@ -121,17 +118,15 @@ When the LOD is 2.3, the GPU:
 This is **trilinear filtering** — it eliminates visible "pops" when
 transitioning between mip levels.
 
-```text
-Mip level 2:                     Mip level 3:
-c01 -------- c11                 c01 -------- c11
- |   (tx,ty)  |                   |   (tx,ty)  |
-c00 -------- c10                 c00 -------- c10
-     |                                |
-     bilerp_2                         bilerp_3
-          \                          /
-           lerp(bilerp_2, bilerp_3, frac_lod)
-                    = trilinear result
-```
+![Trilinear interpolation](assets/trilinear_interpolation.png)
+
+The formula combines two bilinear interpolations with a third lerp:
+
+$$\text{result} = \text{lerp}\!\big(\text{bilerp}(\text{mip}_N),\; \text{bilerp}(\text{mip}_{N+1}),\; \text{frac}(\text{LOD})\big)$$
+
+This uses 8 texels total — 4 from each mip level — blended by three parameters:
+$t_x$, $t_y$ (fractional UV within each mip level) and $t_z$ (fractional LOD
+between levels).
 
 ### The forge_math.h implementation
 
@@ -164,6 +159,27 @@ Combined with min/mag filter modes:
 | LINEAR + NEAREST mip | Bilinear | Medium (smooth within level, pops between) |
 | LINEAR + LINEAR mip | Trilinear | High (smooth everywhere) |
 
+## How the GPU samples a mipmapped texture
+
+```mermaid
+flowchart LR
+    A["Compute ddx/ddy"] --> B["footprint"] --> C["LOD = log2"] --> D["Clamp LOD"]
+    D --> E["floor / ceil"]
+    E --> F["Bilinear mip N"]
+    E --> G["Bilinear mip N+1"]
+    F --> H["Lerp by frac(LOD)"]
+    G --> H
+    H --> I["Final color"]
+```
+
+1. Compute UV derivatives (`ddx`/`ddy`) at each pixel
+2. Calculate the footprint in texel space
+3. $\text{LOD} = \log_2(\text{footprint})$
+4. Clamp LOD to `[min_lod, max_lod]` from the sampler
+5. Split LOD into integer + fractional parts
+6. Bilinear sample from $\lfloor \text{LOD} \rfloor$ and $\lceil \text{LOD} \rceil$
+7. Lerp between them using $\text{frac}(\text{LOD})$
+
 ## Functions added to forge_math.h
 
 | Function | Description |
@@ -182,11 +198,11 @@ python scripts/run.py math/04
 
 ## Exercises
 
-1. **Mip chain math**: Calculate the total number of texels in a 1024×1024
+1. **Mip chain math**: Calculate the total number of texels in a 1024x1024
    mip chain. Verify it's ~33% more than the base level.
 
-2. **Non-square textures**: A 512×256 texture has `log2(512) + 1 = 10` levels.
-   At level 1 it's 256×128, at level 9 it's 1×1. Work through the sizes.
+2. **Non-square textures**: A 512x256 texture has $\log_2(512) + 1 = 10$ levels.
+   At level 1 it's 256x128, at level 9 it's 1x1. Work through the sizes.
 
 3. **LOD bias**: If `mip_lod_bias = 1.0`, the GPU adds 1 to the computed LOD.
    This shifts sampling toward smaller (blurrier) mip levels. When would you
