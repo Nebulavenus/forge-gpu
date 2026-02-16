@@ -249,7 +249,54 @@ cmake --build build --config Debug
 
 Verify the demo runs and produces expected output.
 
-### 10. Run markdown linting
+### 10. Verify key topics are fully explained
+
+**Before finalizing, launch a verification agent** (Task agent) that audits every
+key topic in the README for completeness. This catches cases where a key topic
+name-drops a term (like "similar triangles") but the lesson never actually
+explains what that term means — leaving readers confused.
+
+**For each key topic / "What you'll learn" bullet, the agent must check:**
+
+1. **Explained in the README** — Is the concept described clearly enough that a
+   reader encountering it for the first time could understand it? Look in "The
+   Math" section, key concepts, and any subsections.
+2. **Demonstrated in the C program** — Does `main.c` actually exercise this
+   concept with code and output? A key topic that's only mentioned in the README
+   but never shown in the demo is incomplete.
+3. **All referenced terms are defined** — Read the exact wording of each key
+   topic and identify every math term, technical term, or concept it references
+   (e.g., "similar triangles", "homogeneous coordinates", "affine transformation",
+   "orthonormal basis"). For each referenced term, confirm it is explained
+   somewhere in the lesson — either inline where first used, in its own
+   subsection, or with a cross-reference to another lesson that covers it.
+
+**What to flag:**
+
+- A key topic references a term that is never defined or explained anywhere in
+  the README
+- A key topic is listed in "What you'll learn" but has no corresponding section
+  in "The Math" or the demo program
+- A term is used as though the reader already knows it, but no prior math lesson
+  in the curriculum covers it either
+- The C program prints results for a concept but the README doesn't explain how
+  to interpret those results (or vice versa)
+
+**How to fix flagged issues:**
+
+- Add a brief, plain-language explanation where the term is first used (1-3
+  sentences is usually enough — not a full derivation, just enough for the reader
+  to follow along)
+- If the term deserves a deeper treatment, add a focused subsection under "The
+  Math" and link to it from the key topic
+- If a prior lesson already covers the term, add an explicit cross-reference:
+  "See [Lesson NN — Name](../NN-name/) for an explanation of [term]"
+- If a key topic has no demo coverage, either add it to `main.c` or remove/revise
+  the key topic to match what the lesson actually teaches
+
+**The lesson is not complete until every key topic passes all three checks.**
+
+### 11. Run markdown linting
 
 Use the `/markdown-lint` skill to check all markdown files:
 

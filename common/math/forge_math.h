@@ -1355,6 +1355,7 @@ static inline mat4 mat4_rotate_y(float angle_radians)
  *   Then build a matrix that rotates and translates world space into view space.
  *
  * See: lessons/math/02-coordinate-spaces
+ * See: lessons/math/09-view-matrix
  */
 static inline mat4 mat4_look_at(vec3 eye, vec3 target, vec3 up)
 {
@@ -2376,6 +2377,151 @@ static inline quat quat_nlerp(quat a, quat b, float t)
         a.z + t * (b.z - a.z)
     );
     return quat_normalize(result);
+}
+
+/* ── View Matrix / Virtual Camera ─────────────────────────────────────── *
+ *
+ * Naming convention: these functions use the library's standard type_verb
+ * naming (quat_forward, mat4_view_from_quat), consistent with all other
+ * functions in this header (vec3_dot, mat4_look_at, quat_slerp, etc.).
+ * The forge_ prefix is reserved for non-type scalar helpers at the top of
+ * this file (forge_lerpf, forge_clampf, etc.).
+ *
+ * See: lessons/math/09-view-matrix
+ */
+
+/* Extract the forward direction from a quaternion orientation.
+ *
+ * Returns where the camera (or object) is looking — the -Z direction
+ * rotated by the quaternion. In our right-handed Y-up coordinate system
+ * the default forward (identity quaternion) is (0, 0, -1).
+ *
+ * This is equivalent to rotating (0, 0, -1) by the quaternion, but
+ * uses an optimized formula that avoids the full sandwich product:
+ *   forward = q * (0, 0, -1) * q*
+ *
+ * Why -Z? In view space the camera looks down -Z. So an unrotated
+ * camera's forward direction is (0, 0, -1).
+ *
+ * Usage:
+ *   quat orientation = quat_from_euler(yaw, pitch, 0);
+ *   vec3 fwd = quat_forward(orientation);
+ *   // fwd points where the camera is looking
+ *
+ * See: lessons/math/09-view-matrix
+ */
+static inline vec3 quat_forward(quat q)
+{
+    /* Expanded from quat_rotate_vec3(q, {0, 0, -1}) */
+    return vec3_create(
+        -(2.0f * (q.x * q.z + q.w * q.y)),
+        -(2.0f * (q.y * q.z - q.w * q.x)),
+        -(1.0f - 2.0f * (q.x * q.x + q.y * q.y))
+    );
+}
+
+/* Extract the right direction from a quaternion orientation.
+ *
+ * Returns the +X direction rotated by the quaternion — the direction
+ * pointing to the camera's right. For an identity quaternion this
+ * returns (1, 0, 0).
+ *
+ * Usage:
+ *   vec3 right = quat_right(orientation);
+ *   // Use for strafing: position += right * speed * dt
+ *
+ * See: lessons/math/09-view-matrix
+ */
+static inline vec3 quat_right(quat q)
+{
+    /* Expanded from quat_rotate_vec3(q, {1, 0, 0}) */
+    return vec3_create(
+        1.0f - 2.0f * (q.y * q.y + q.z * q.z),
+        2.0f * (q.x * q.y + q.w * q.z),
+        2.0f * (q.x * q.z - q.w * q.y)
+    );
+}
+
+/* Extract the up direction from a quaternion orientation.
+ *
+ * Returns the +Y direction rotated by the quaternion — the direction
+ * pointing above the camera's head. For an identity quaternion this
+ * returns (0, 1, 0).
+ *
+ * Usage:
+ *   vec3 up = quat_up(orientation);
+ *   // Use for flying up: position += up * speed * dt
+ *
+ * See: lessons/math/09-view-matrix
+ */
+static inline vec3 quat_up(quat q)
+{
+    /* Expanded from quat_rotate_vec3(q, {0, 1, 0}) */
+    return vec3_create(
+        2.0f * (q.x * q.y - q.w * q.z),
+        1.0f - 2.0f * (q.x * q.x + q.z * q.z),
+        2.0f * (q.y * q.z + q.w * q.x)
+    );
+}
+
+/* Create a view matrix from a camera position and quaternion orientation.
+ *
+ * The view matrix transforms world-space coordinates into view space
+ * (camera space). It is the INVERSE of the camera's world transform:
+ *
+ *   Camera world transform:  T(pos) * R(orientation)
+ *   View matrix:             R^-1 * T^-1
+ *                          = R^T * T(-pos)
+ *
+ * Because the rotation part of an orthonormal matrix has its inverse
+ * equal to its transpose, and for a unit quaternion the conjugate
+ * gives the inverse rotation:
+ *
+ *   R^-1 columns = rows of camera basis vectors (right, up, -forward)
+ *   Translation  = -R^-1 * pos (dot products of basis with position)
+ *
+ * This function is the quaternion-based alternative to mat4_look_at.
+ * Use it when you store camera orientation as a quaternion (e.g., for a
+ * first-person camera driven by mouse input):
+ *
+ *   mat4_look_at:        needs a target point (good for orbit cameras)
+ *   mat4_view_from_quat: needs an orientation  (good for FPS cameras)
+ *
+ * Parameters:
+ *   position    — camera position in world space
+ *   orientation — camera orientation as a unit quaternion
+ *
+ * Usage:
+ *   vec3 cam_pos = vec3_create(0, 2, 5);
+ *   quat cam_rot = quat_from_euler(yaw, pitch, 0);
+ *   mat4 view = mat4_view_from_quat(cam_pos, cam_rot);
+ *
+ * See: lessons/math/09-view-matrix
+ * See: lessons/math/02-coordinate-spaces (view space in the pipeline)
+ */
+static inline mat4 mat4_view_from_quat(vec3 position, quat orientation)
+{
+    /* Extract camera basis vectors */
+    vec3 right   = quat_right(orientation);
+    vec3 up      = quat_up(orientation);
+    vec3 forward = quat_forward(orientation);
+
+    /* Build rotation part — rows are basis vectors (transpose of camera
+     * orientation matrix). We negate forward because the camera looks
+     * down -Z in view space. */
+    mat4 m = {
+        right.x,      up.x,     -forward.x,    0.0f,
+        right.y,      up.y,     -forward.y,    0.0f,
+        right.z,      up.z,     -forward.z,    0.0f,
+        0.0f,         0.0f,      0.0f,         1.0f
+    };
+
+    /* Translation: dot each basis with -position */
+    m.m[12] = -vec3_dot(right, position);
+    m.m[13] = -vec3_dot(up, position);
+    m.m[14] =  vec3_dot(forward, position);
+
+    return m;
 }
 
 /* ── Rodrigues' Rotation (Axis-Angle on Vectors) ─────────────────────── */

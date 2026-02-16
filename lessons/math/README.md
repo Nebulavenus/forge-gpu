@@ -29,8 +29,9 @@ implementations for your projects.
 | 06 | [Projections](06-projections/) | Perspective, orthographic, frustums, clip space, NDC |
 | 07 | [Floating Point](07-floating-point/) | IEEE 754, precision, epsilon comparison, z-fighting, float vs double |
 | 08 | [Orientation](08-orientation/) | Quaternions, Euler angles, axis-angle, rotation matrices, gimbal lock, slerp |
+| 09 | [View Matrix & Virtual Camera](09-view-matrix/) | Camera as inverse transform, basis extraction from quaternion, look-at, MVP pipeline |
 
-*More lessons coming soon:* View matrix, anisotropy, and more.
+*More lessons coming soon:* Anisotropy and more.
 
 ## How Math Lessons Work
 
