@@ -54,6 +54,7 @@ add_subdirectory(lessons/gpu/09-scene-loading)
 add_subdirectory(lessons/gpu/10-basic-lighting)
 add_subdirectory(lessons/gpu/11-compute-shaders)
 add_subdirectory(lessons/gpu/12-shader-grid)
+add_subdirectory(lessons/gpu/13-instanced-rendering)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
