@@ -1,31 +1,35 @@
 /*
- * Lesson 09 — Loading a glTF Scene
+ * Lesson 12 — Shader Grid
  *
- * Load and render a glTF 2.0 scene with nested transforms, multi-material
- * meshes, and indexed drawing.  A significant step up from Lesson 08 (OBJ),
- * which flattened geometry and used non-indexed draws.
+ * Procedural rendering: generate visual detail entirely in a shader, without
+ * textures.  A large floor grid is rendered using fwidth() + smoothstep() for
+ * moire-free anti-aliased lines.  The CesiumMilkTruck sits on the grid with
+ * Blinn-Phong lighting.
  *
- * Concepts introduced:
- *   - glTF file format    — JSON + binary buffers, the "JPEG of 3D"
- *   - Scene hierarchy     — nodes with parent-child transforms
- *   - Accessor pipeline   — accessor → bufferView → buffer
- *   - Multi-material      — switching base color / texture per primitive
- *   - Indexed drawing     — SDL_DrawGPUIndexedPrimitives with index buffers
- *   - cJSON parsing       — lightweight JSON library for reading .gltf
+ * This lesson introduces TWO graphics pipelines in one render pass:
+ *   1. Grid pipeline  — draws a flat quad with procedural grid lines
+ *   2. Model pipeline — draws the CesiumMilkTruck with Blinn-Phong lighting
  *
- * Libraries used:
- *   common/gltf/forge_gltf.h — Header-only glTF parser (new in this lesson)
- *   common/math/forge_math.h — Vectors, matrices, quaternions
- *   third_party/cJSON        — JSON parser (dependency of forge_gltf.h)
+ * The grid pipeline has a simple vertex format (position only) and uses a
+ * fragment uniform buffer with grid parameters (spacing, line width, colors).
+ * The model pipeline is identical to Lesson 10's lighting pipeline.
+ *
+ * What's new compared to Lesson 10:
+ *   - Procedural grid rendering (fwidth + smoothstep anti-aliasing)
+ *   - Two separate graphics pipelines in a single render pass
+ *   - Pipeline switching with SDL_BindGPUGraphicsPipeline mid-pass
+ *   - Distance fade to prevent far-field moire artifacts
+ *   - Grid-specific uniforms (spacing, line width, fade distance)
  *
  * What we keep from earlier lessons:
  *   - SDL callbacks, GPU device, window, sRGB swapchain     (Lesson 01)
  *   - Vertex buffers, shaders, graphics pipeline             (Lesson 02)
- *   - Push uniforms for MVP matrix + fragment data           (Lesson 03)
+ *   - Push uniforms for matrices + fragment data             (Lesson 03)
  *   - Texture + sampler binding, mipmaps                     (Lesson 04/05)
  *   - Depth buffer, back-face culling, window resize         (Lesson 06)
  *   - First-person camera, keyboard/mouse, delta time        (Lesson 07)
- *   - File-based texture loading                             (Lesson 08)
+ *   - glTF parsing, GPU upload, material handling            (Lesson 09)
+ *   - Blinn-Phong lighting with normal transformation        (Lesson 10)
  *
  * Controls:
  *   WASD / Arrow keys  — move forward/back/left/right
@@ -33,8 +37,7 @@
  *   Mouse              — look around (captured in relative mode)
  *   Escape             — release mouse / quit
  *
- * Default model: CesiumMilkTruck (pass a path on the command line to load
- * a different glTF file, e.g. assets/VirtualCity/VirtualCity.gltf).
+ * Model: CesiumMilkTruck (loaded from shared assets/models/CesiumMilkTruck/).
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -52,78 +55,131 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-#include "shaders/scene_vert_spirv.h"
-#include "shaders/scene_frag_spirv.h"
-#include "shaders/scene_vert_dxil.h"
-#include "shaders/scene_frag_dxil.h"
+/* Grid shaders — procedural anti-aliased grid on a flat quad */
+#include "shaders/grid_vert_spirv.h"
+#include "shaders/grid_frag_spirv.h"
+#include "shaders/grid_vert_dxil.h"
+#include "shaders/grid_frag_dxil.h"
+
+/* Lighting shaders — Blinn-Phong for the truck model (same as Lesson 10) */
+#include "shaders/lighting_vert_spirv.h"
+#include "shaders/lighting_frag_spirv.h"
+#include "shaders/lighting_vert_dxil.h"
+#include "shaders/lighting_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
-#define WINDOW_TITLE  "Forge GPU - 09 Loading a Scene (glTF)"
+#define WINDOW_TITLE  "Forge GPU - 12 Shader Grid"
 #define WINDOW_WIDTH  1280
 #define WINDOW_HEIGHT 720
 
-/* Dark clear color so the models stand out. */
-#define CLEAR_R 0.02f
-#define CLEAR_G 0.02f
-#define CLEAR_B 0.04f
+/* Dark background — the grid lines pop against this dark blue-black surface.
+ * Values are in linear space (SDR_LINEAR swapchain auto-converts to sRGB).
+ * Hex #1a1a2e -> sRGB (0.102, 0.102, 0.180) -> linear via (x/255)^2.2 */
+#define CLEAR_R 0.0099f
+#define CLEAR_G 0.0099f
+#define CLEAR_B 0.0267f
 #define CLEAR_A 1.0f
 
-/* Depth buffer — same setup as Lesson 06/07/08. */
+/* Depth buffer — same setup as Lesson 06-10. */
 #define DEPTH_CLEAR  1.0f
 #define DEPTH_FORMAT SDL_GPU_TEXTUREFORMAT_D16_UNORM
 
-/* Vertex attributes: position (float3) + normal (float3) + uv (float2). */
-#define NUM_VERTEX_ATTRIBUTES 3
+/* ── Grid pipeline constants ──────────────────────────────────────────────── */
 
-/* Shader resource counts.
- * Vertex:   0 samplers, 0 storage tex, 0 storage buf, 1 uniform buf (MVP)
- * Fragment: 1 sampler (diffuse), 0 storage tex, 0 storage buf, 1 uniform buf */
-#define VERT_NUM_SAMPLERS         0
-#define VERT_NUM_STORAGE_TEXTURES 0
-#define VERT_NUM_STORAGE_BUFFERS  0
-#define VERT_NUM_UNIFORM_BUFFERS  1
+/* Grid vertex: position only (float3), no normals or UVs needed.
+ * The fragment shader computes everything procedurally. */
+#define GRID_NUM_VERTEX_ATTRIBUTES 1
+#define GRID_VERTEX_PITCH          12   /* 3 floats * 4 bytes = 12 bytes */
 
-#define FRAG_NUM_SAMPLERS         1
-#define FRAG_NUM_STORAGE_TEXTURES 0
-#define FRAG_NUM_STORAGE_BUFFERS  0
-#define FRAG_NUM_UNIFORM_BUFFERS  1
+/* Grid shader resource counts.
+ * Vertex:   0 samplers, 0 storage, 1 uniform (VP matrix)
+ * Fragment: 0 samplers, 0 storage, 1 uniform (grid parameters) */
+#define GRID_VERT_NUM_SAMPLERS         0
+#define GRID_VERT_NUM_STORAGE_TEXTURES 0
+#define GRID_VERT_NUM_STORAGE_BUFFERS  0
+#define GRID_VERT_NUM_UNIFORM_BUFFERS  1
 
-/* Default glTF file — relative to executable directory. */
+#define GRID_FRAG_NUM_SAMPLERS         0
+#define GRID_FRAG_NUM_STORAGE_TEXTURES 0
+#define GRID_FRAG_NUM_STORAGE_BUFFERS  0
+#define GRID_FRAG_NUM_UNIFORM_BUFFERS  1
+
+/* Grid geometry: a large quad on the XZ plane (Y=0).
+ * ±50 units gives a 100x100 grid which is plenty for a ground plane. */
+#define GRID_HALF_SIZE  50.0f
+#define GRID_NUM_VERTS  4
+#define GRID_NUM_INDICES 6
+
+/* Grid appearance (values in linear space for SDR_LINEAR swapchain).
+ * Cyan lines: hex #4fc3f7 -> sRGB (0.310, 0.765, 0.969) -> linear */
+#define GRID_LINE_R       0.068f
+#define GRID_LINE_G       0.534f
+#define GRID_LINE_B       0.932f
+#define GRID_LINE_A       1.0f
+
+/* Dark surface: hex #252545 -> sRGB (0.145, 0.145, 0.271) -> linear */
+#define GRID_BG_R         0.014f
+#define GRID_BG_G         0.014f
+#define GRID_BG_B         0.045f
+#define GRID_BG_A         1.0f
+
+/* Grid line parameters */
+#define GRID_SPACING      1.0f   /* world units between grid lines */
+#define GRID_LINE_WIDTH   0.02f  /* line thickness in grid-space units */
+#define GRID_FADE_DIST    40.0f  /* distance at which grid fades out */
+#define GRID_AMBIENT      0.3f   /* ambient light on grid surface */
+#define GRID_SHININESS    32.0f  /* specular exponent for grid highlights */
+#define GRID_SPECULAR_STR 0.2f   /* specular intensity on grid */
+
+/* ── Model pipeline constants ─────────────────────────────────────────────── */
+
+/* Vertex attributes: position (float3) + normal (float3) + uv (float2).
+ * Same as Lesson 10 — ForgeGltfVertex layout. */
+#define MODEL_NUM_VERTEX_ATTRIBUTES 3
+
+/* Model shader resource counts (same as Lesson 10).
+ * Vertex:   0 samplers, 0 storage, 1 uniform (MVP + Model)
+ * Fragment: 1 sampler (diffuse texture), 0 storage, 1 uniform (lighting) */
+#define MODEL_VERT_NUM_SAMPLERS         0
+#define MODEL_VERT_NUM_STORAGE_TEXTURES 0
+#define MODEL_VERT_NUM_STORAGE_BUFFERS  0
+#define MODEL_VERT_NUM_UNIFORM_BUFFERS  1
+
+#define MODEL_FRAG_NUM_SAMPLERS         1
+#define MODEL_FRAG_NUM_STORAGE_TEXTURES 0
+#define MODEL_FRAG_NUM_STORAGE_BUFFERS  0
+#define MODEL_FRAG_NUM_UNIFORM_BUFFERS  1
+
+/* Default glTF file — relative to executable directory.
+ * CesiumMilkTruck now lives in the shared assets directory. */
 #define DEFAULT_MODEL_PATH "assets/models/CesiumMilkTruck/CesiumMilkTruck.gltf"
 #define PATH_BUFFER_SIZE   512
 
 /* Bytes per pixel for RGBA textures. */
 #define BYTES_PER_PIXEL 4
 
+/* White placeholder texture — 1x1 fully opaque white. */
+#define WHITE_TEX_DIM    1
+#define WHITE_TEX_LAYERS 1
+#define WHITE_TEX_LEVELS 1
+#define WHITE_RGBA       255
+
 /* Maximum LOD — effectively unlimited, standard GPU convention. */
 #define MAX_LOD_UNLIMITED 1000.0f
 
 /* ── Camera parameters ───────────────────────────────────────────────────── */
 
-/* Camera preset: CesiumMilkTruck (default model).
- * Front-right 3/4 view, close enough to see the Cesium logo texture. */
-#define CAM_TRUCK_X      6.0f
-#define CAM_TRUCK_Y      3.0f
-#define CAM_TRUCK_Z      6.0f
-#define CAM_TRUCK_YAW   45.0f    /* degrees — look left toward truck */
-#define CAM_TRUCK_PITCH -13.0f   /* degrees — look slightly down */
+/* 3/4 view of the truck on the grid — same angle as Lesson 9's truck
+ * camera, which shows the truck nicely from the front-right. */
+#define CAM_START_X     6.0f
+#define CAM_START_Y     3.0f
+#define CAM_START_Z     6.0f
+#define CAM_START_YAW   45.0f   /* degrees — look left toward truck */
+#define CAM_START_PITCH -13.0f  /* degrees — slightly looking down */
 
-/* Camera preset: large scene overview (VirtualCity, etc.).
- * VirtualCity raw geometry is ~6500 units but the root node applies
- * a 0.0254 scale (inches to meters), giving ~166×101 units on the
- * XZ ground plane and ~168 units tall.  We position outside the
- * scene looking inward for a city overview. */
-#define CAM_OVERVIEW_X      0.0f
-#define CAM_OVERVIEW_Y     15.0f
-#define CAM_OVERVIEW_Z     15.0f
-#define CAM_OVERVIEW_YAW    0.0f
-#define CAM_OVERVIEW_PITCH -10.0f
-
-/* Movement speed (units per second).
- * The truck preset is a close-up view; the overview is a huge scene. */
-#define MOVE_SPEED_TRUCK    5.0f
-#define MOVE_SPEED_OVERVIEW 30.0f
+/* Movement speed (units per second). */
+#define MOVE_SPEED 3.0f
 
 /* Mouse sensitivity: radians per pixel. */
 #define MOUSE_SENSITIVITY 0.002f
@@ -134,34 +190,79 @@
 /* Perspective projection. */
 #define FOV_DEG    60.0f
 #define NEAR_PLANE 0.1f
-#define FAR_PLANE  1000.0f
+#define FAR_PLANE  100.0f
 
 /* Time conversion and delta time clamping. */
 #define MS_TO_SEC      1000.0f
 #define MAX_DELTA_TIME 0.1f
 
+/* ── Lighting parameters ─────────────────────────────────────────────────── */
+
+/* Directional light from upper-right-front.  Direction points TOWARD the
+ * light (from surface to light), matching the convention in our shaders. */
+#define LIGHT_DIR_X 1.0f
+#define LIGHT_DIR_Y 1.0f
+#define LIGHT_DIR_Z 1.0f
+
+/* Blinn-Phong material parameters for the truck model. */
+#define MODEL_SHININESS     64.0f
+#define MODEL_AMBIENT_STR   0.15f
+#define MODEL_SPECULAR_STR  0.5f
+
 /* ── Uniform data ─────────────────────────────────────────────────────────── */
 
-typedef struct VertUniforms {
-    mat4 mvp;
-} VertUniforms;
+/* Grid vertex uniforms: just the VP matrix (64 bytes). */
+typedef struct GridVertUniforms {
+    mat4 vp;
+} GridVertUniforms;
 
-/* Fragment uniforms must match the HLSL cbuffer layout exactly:
- *   float4 base_color  (16 bytes)
- *   uint   has_texture  (4 bytes)
- *   uint3  padding      (12 bytes)
- * Total: 32 bytes, 16-byte aligned. */
-typedef struct FragUniforms {
+/* Grid fragment uniforms — must match the HLSL cbuffer layout (96 bytes):
+ *   float4 line_color     (16 bytes)
+ *   float4 bg_color       (16 bytes)
+ *   float4 light_dir      (16 bytes)
+ *   float4 eye_pos        (16 bytes)
+ *   float  grid_spacing    (4 bytes)
+ *   float  line_width      (4 bytes)
+ *   float  fade_distance   (4 bytes)
+ *   float  ambient         (4 bytes)
+ *   float  shininess       (4 bytes)
+ *   float  specular_str    (4 bytes)
+ *   float  _pad0           (4 bytes)
+ *   float  _pad1           (4 bytes) */
+typedef struct GridFragUniforms {
+    float line_color[4];
+    float bg_color[4];
+    float light_dir[4];
+    float eye_pos[4];
+    float grid_spacing;
+    float line_width;
+    float fade_distance;
+    float ambient;
+    float shininess;
+    float specular_str;
+    float _pad0;
+    float _pad1;
+} GridFragUniforms;
+
+/* Model vertex uniforms: MVP + Model matrix (128 bytes, same as Lesson 10). */
+typedef struct ModelVertUniforms {
+    mat4 mvp;
+    mat4 model;
+} ModelVertUniforms;
+
+/* Model fragment uniforms: material + lighting (64 bytes, same as Lesson 10). */
+typedef struct ModelFragUniforms {
     float base_color[4];
+    float light_dir[4];
+    float eye_pos[4];
     Uint32 has_texture;
-    Uint32 _pad0;
-    Uint32 _pad1;
-    Uint32 _pad2;
-} FragUniforms;
+    float shininess;
+    float ambient;
+    float specular_str;
+} ModelFragUniforms;
 
 /* ── GPU-side scene data ──────────────────────────────────────────────────── */
-/* After loading with forge_gltf.h, we upload vertex/index data to GPU
- * buffers and load textures.  These structs hold the GPU handles. */
+/* Same structures as Lesson 09/10 — parsed glTF uploaded to GPU buffers. */
 
 typedef struct GpuPrimitive {
     SDL_GPUBuffer *vertex_buffer;
@@ -184,10 +285,21 @@ typedef struct app_state {
     /* GPU resources */
     SDL_Window              *window;
     SDL_GPUDevice           *device;
-    SDL_GPUGraphicsPipeline *pipeline;
+
+    /* Two pipelines — the core of this lesson.
+     * Both are used within the same render pass: bind grid pipeline first,
+     * draw the grid, then bind model pipeline and draw the truck. */
+    SDL_GPUGraphicsPipeline *grid_pipeline;    /* procedural grid floor */
+    SDL_GPUGraphicsPipeline *model_pipeline;   /* lit truck (Lesson 10) */
+
+    /* Grid geometry — a simple 4-vertex quad with 6 indices (2 triangles). */
+    SDL_GPUBuffer           *grid_vertex_buffer;
+    SDL_GPUBuffer           *grid_index_buffer;
+
+    /* Shared resources */
     SDL_GPUTexture          *depth_texture;
     SDL_GPUSampler          *sampler;
-    SDL_GPUTexture          *white_texture;  /* 1x1 placeholder */
+    SDL_GPUTexture          *white_texture;    /* 1x1 placeholder */
     Uint32                   depth_width;
     Uint32                   depth_height;
 
@@ -198,11 +310,10 @@ typedef struct app_state {
     GpuMaterial    *gpu_materials;
     int             gpu_material_count;
 
-    /* Camera state (same pattern as Lesson 07/08) */
+    /* Camera state (same pattern as Lesson 07-10) */
     vec3  cam_position;
     float cam_yaw;
     float cam_pitch;
-    float move_speed;
 
     /* Timing */
     Uint64 last_ticks;
@@ -216,7 +327,7 @@ typedef struct app_state {
 } app_state;
 
 /* ── Depth texture helper ────────────────────────────────────────────────── */
-/* Same as Lesson 06/07/08 — creates a depth texture matching the window. */
+/* Same as Lesson 06-10 — creates a depth texture matching the window. */
 
 static SDL_GPUTexture *create_depth_texture(SDL_GPUDevice *device,
                                              Uint32 w, Uint32 h)
@@ -240,7 +351,7 @@ static SDL_GPUTexture *create_depth_texture(SDL_GPUDevice *device,
 }
 
 /* ── Shader helper ───────────────────────────────────────────────────────── */
-/* Same as Lesson 07/08 — creates a shader from SPIRV or DXIL bytecodes. */
+/* Same as Lesson 07-10 — creates a shader from SPIRV or DXIL bytecodes. */
 
 static SDL_GPUShader *create_shader(
     SDL_GPUDevice       *device,
@@ -287,7 +398,7 @@ static SDL_GPUShader *create_shader(
 
 /* ── GPU buffer upload helper ────────────────────────────────────────────── */
 /* Creates a GPU buffer and uploads data via the transfer buffer pattern.
- * Used to upload both vertex and index data from the parsed glTF scene. */
+ * Same pattern as Lesson 09-10. */
 
 static SDL_GPUBuffer *upload_gpu_buffer(SDL_GPUDevice *device,
                                         SDL_GPUBufferUsageFlags usage,
@@ -366,7 +477,7 @@ static SDL_GPUBuffer *upload_gpu_buffer(SDL_GPUDevice *device,
 }
 
 /* ── Texture loading helper ──────────────────────────────────────────────── */
-/* Same pattern as Lesson 08: load image → convert to RGBA → upload with
+/* Same pattern as Lesson 08-10: load image -> convert to RGBA -> upload with
  * mipmaps.  Works with BMP, PNG, QOI, and JPG (SDL3). */
 
 static SDL_GPUTexture *load_texture(SDL_GPUDevice *device, const char *path)
@@ -391,9 +502,7 @@ static SDL_GPUTexture *load_texture(SDL_GPUDevice *device, const char *path)
     int tex_h = converted->h;
     int num_levels = (int)forge_log2f((float)(tex_w > tex_h ? tex_w : tex_h)) + 1;
 
-    /* Create GPU texture with mip levels.
-     * SAMPLER — we'll sample in the fragment shader.
-     * COLOR_TARGET — required for SDL_GenerateMipmapsForGPUTexture. */
+    /* Create GPU texture with mip levels. */
     SDL_GPUTextureCreateInfo tex_info;
     SDL_zero(tex_info);
     tex_info.type                 = SDL_GPU_TEXTURETYPE_2D;
@@ -449,7 +558,7 @@ static SDL_GPUTexture *load_texture(SDL_GPUDevice *device, const char *path)
     SDL_UnmapGPUTransferBuffer(device, transfer);
     SDL_DestroySurface(converted);
 
-    /* Copy pass → upload base level → generate mipmaps. */
+    /* Copy pass -> upload base level -> generate mipmaps. */
     SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
     if (!cmd) {
         SDL_Log("Failed to acquire cmd for texture upload: %s", SDL_GetError());
@@ -506,10 +615,10 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
     tex_info.type                 = SDL_GPU_TEXTURETYPE_2D;
     tex_info.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
     tex_info.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    tex_info.width                = 1;
-    tex_info.height               = 1;
-    tex_info.layer_count_or_depth = 1;
-    tex_info.num_levels           = 1;
+    tex_info.width                = WHITE_TEX_DIM;
+    tex_info.height               = WHITE_TEX_DIM;
+    tex_info.layer_count_or_depth = WHITE_TEX_LAYERS;
+    tex_info.num_levels           = WHITE_TEX_LEVELS;
 
     SDL_GPUTexture *texture = SDL_CreateGPUTexture(device, &tex_info);
     if (!texture) {
@@ -517,7 +626,9 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
         return NULL;
     }
 
-    Uint8 white_pixel[4] = { 255, 255, 255, 255 };
+    Uint8 white_pixel[BYTES_PER_PIXEL] = {
+        WHITE_RGBA, WHITE_RGBA, WHITE_RGBA, WHITE_RGBA
+    };
 
     SDL_GPUTransferBufferCreateInfo xfer_info;
     SDL_zero(xfer_info);
@@ -565,8 +676,8 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
     SDL_GPUTextureRegion dst;
     SDL_zero(dst);
     dst.texture = texture;
-    dst.w = 1;
-    dst.h = 1;
+    dst.w = WHITE_TEX_DIM;
+    dst.h = WHITE_TEX_DIM;
     dst.d = 1;
 
     SDL_UploadToGPUTexture(copy, &src, &dst, false);
@@ -583,11 +694,11 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
 }
 
 /* ── Upload parsed scene to GPU ──────────────────────────────────────────── */
-/* Forward declaration: free_gpu_scene is defined later but called from upload_scene_to_gpu */
+/* Forward declaration: free_gpu_scene is defined later but called on error */
 static void free_gpu_scene(SDL_GPUDevice *device, app_state *state);
 
 /* Takes the CPU-side data from forge_gltf_load() and creates GPU buffers
- * and textures.  Keeps GPU resources separate from the parser library. */
+ * and textures.  Same pattern as Lesson 09-10. */
 
 static bool upload_scene_to_gpu(SDL_GPUDevice *device, app_state *state)
 {
@@ -648,8 +759,7 @@ static bool upload_scene_to_gpu(SDL_GPUDevice *device, app_state *state)
         return false;
     }
 
-    /* Track loaded textures to avoid loading the same image twice.
-     * Multiple materials can reference the same texture image. */
+    /* Track loaded textures to avoid loading the same image twice. */
     SDL_GPUTexture *loaded_textures[FORGE_GLTF_MAX_IMAGES];
     const char *loaded_paths[FORGE_GLTF_MAX_IMAGES];
     int loaded_count = 0;
@@ -739,14 +849,65 @@ static void free_gpu_scene(SDL_GPUDevice *device, app_state *state)
     }
 }
 
-/* ── Render the scene ────────────────────────────────────────────────────── */
-/* Iterates all nodes, and for each node with a mesh, draws every primitive
- * with the correct material. */
+/* ── Upload grid geometry to GPU ─────────────────────────────────────────── */
+/* Creates a flat quad on the XZ plane at Y=0.  The grid pattern is
+ * generated entirely in the fragment shader — we just need a surface
+ * to draw on.  4 vertices, 6 indices (2 triangles). */
 
-static void render_scene(SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *cmd,
-                         const app_state *state, const mat4 *vp)
+static bool upload_grid_geometry(SDL_GPUDevice *device, app_state *state)
+{
+    /* Grid vertices: 4 corners of a flat quad on the XZ plane (Y=0).
+     * Each vertex is just a float3 position — no normals or UVs needed
+     * because the fragment shader computes everything procedurally.
+     *
+     * Layout (looking down at the XZ plane):
+     *   v0 (-50, 0, -50) ──── v1 (+50, 0, -50)
+     *         |                      |
+     *         |     origin (0,0)     |
+     *         |                      |
+     *   v3 (-50, 0, +50) ──── v2 (+50, 0, +50)
+     */
+    float vertices[GRID_NUM_VERTS * 3] = {
+        -GRID_HALF_SIZE, 0.0f, -GRID_HALF_SIZE,   /* v0: back-left   */
+         GRID_HALF_SIZE, 0.0f, -GRID_HALF_SIZE,   /* v1: back-right  */
+         GRID_HALF_SIZE, 0.0f,  GRID_HALF_SIZE,   /* v2: front-right */
+        -GRID_HALF_SIZE, 0.0f,  GRID_HALF_SIZE,   /* v3: front-left  */
+    };
+
+    /* Two triangles forming the quad: {v0,v1,v2} and {v0,v2,v3}.
+     * Counter-clockwise winding when viewed from above (+Y). */
+    Uint16 indices[GRID_NUM_INDICES] = { 0, 1, 2, 0, 2, 3 };
+
+    state->grid_vertex_buffer = upload_gpu_buffer(
+        device, SDL_GPU_BUFFERUSAGE_VERTEX,
+        vertices, sizeof(vertices));
+    if (!state->grid_vertex_buffer) return false;
+
+    state->grid_index_buffer = upload_gpu_buffer(
+        device, SDL_GPU_BUFFERUSAGE_INDEX,
+        indices, sizeof(indices));
+    if (!state->grid_index_buffer) {
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
+        state->grid_vertex_buffer = NULL;
+        return false;
+    }
+
+    return true;
+}
+
+/* ── Render the truck model with lighting ────────────────────────────────── */
+/* Same as Lesson 10's render_scene: iterates all nodes, draws every
+ * primitive with the correct material, pushes lighting uniforms. */
+
+static void render_model(SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *cmd,
+                         const app_state *state, const mat4 *vp,
+                         const vec3 *cam_pos)
 {
     const ForgeGltfScene *scene = &state->scene;
+
+    /* Pre-compute normalized light direction (constant for all draws). */
+    vec3 light_raw = vec3_create(LIGHT_DIR_X, LIGHT_DIR_Y, LIGHT_DIR_Z);
+    vec3 light_dir = vec3_normalize(light_raw);
 
     for (int ni = 0; ni < scene->node_count; ni++) {
         const ForgeGltfNode *node = &scene->nodes[ni];
@@ -754,11 +915,13 @@ static void render_scene(SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *cmd,
             continue;
 
         /* Model matrix = this node's accumulated world transform. */
-        mat4 mvp = mat4_multiply(*vp, node->world_transform);
+        mat4 model = node->world_transform;
+        mat4 mvp = mat4_multiply(*vp, model);
 
-        /* Push vertex uniforms (MVP matrix). */
-        VertUniforms vu;
-        vu.mvp = mvp;
+        /* Push vertex uniforms: MVP + model matrix. */
+        ModelVertUniforms vu;
+        vu.mvp   = mvp;
+        vu.model = model;
         SDL_PushGPUVertexUniformData(cmd, 0, &vu, sizeof(vu));
 
         const ForgeGltfMesh *mesh = &scene->meshes[node->mesh_index];
@@ -768,23 +931,14 @@ static void render_scene(SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *cmd,
 
             if (!prim->vertex_buffer || !prim->index_buffer) continue;
 
-            /* Set up fragment uniforms (material). */
-            FragUniforms fu;
+            /* Set up fragment uniforms (material + lighting). */
+            ModelFragUniforms fu;
             SDL_GPUTexture *tex = state->white_texture;
 
             if (prim->material_index >= 0 &&
                 prim->material_index < state->gpu_material_count) {
                 const GpuMaterial *mat =
                     &state->gpu_materials[prim->material_index];
-
-                /* NOTE: This is not part of the glTF rendering lesson —
-                 * it works around a specific model issue.  VirtualCity
-                 * contains helper geometry (bounding boxes, camera
-                 * targets) exported from 3DS Max.  These primitives
-                 * have no UV coordinates and no texture, so we skip
-                 * them to avoid rendering white/gray boxes. */
-                if (!prim->has_uvs && !mat->has_texture)
-                    continue;
 
                 fu.base_color[0] = mat->base_color[0];
                 fu.base_color[1] = mat->base_color[1];
@@ -799,7 +953,21 @@ static void render_scene(SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *cmd,
                 fu.base_color[3] = 1.0f;
                 fu.has_texture = 0;
             }
-            fu._pad0 = fu._pad1 = fu._pad2 = 0;
+
+            /* Lighting parameters. */
+            fu.light_dir[0] = light_dir.x;
+            fu.light_dir[1] = light_dir.y;
+            fu.light_dir[2] = light_dir.z;
+            fu.light_dir[3] = 0.0f;
+
+            fu.eye_pos[0] = cam_pos->x;
+            fu.eye_pos[1] = cam_pos->y;
+            fu.eye_pos[2] = cam_pos->z;
+            fu.eye_pos[3] = 0.0f;
+
+            fu.shininess    = MODEL_SHININESS;
+            fu.ambient      = MODEL_AMBIENT_STR;
+            fu.specular_str = MODEL_SPECULAR_STR;
 
             SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
 
@@ -816,9 +984,7 @@ static void render_scene(SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *cmd,
             vb_binding.buffer = prim->vertex_buffer;
             SDL_BindGPUVertexBuffers(pass, 0, &vb_binding, 1);
 
-            /* Bind index buffer and draw.
-             * Indexed drawing is more memory-efficient than Lesson 08's
-             * de-indexed approach — vertices are shared across triangles. */
+            /* Bind index buffer and draw. */
             SDL_GPUBufferBinding ib_binding;
             SDL_zero(ib_binding);
             ib_binding.buffer = prim->index_buffer;
@@ -868,6 +1034,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     /* ── 4. Request an sRGB swapchain ─────────────────────────────────── */
+    /* SDR_LINEAR gives us a B8G8R8A8_UNORM_SRGB format — the GPU
+     * automatically converts our linear-space shader output to sRGB.
+     * All color constants in this file are in linear space. */
     if (SDL_WindowSupportsGPUSwapchainComposition(
             device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR)) {
         if (!SDL_SetGPUSwapchainParameters(
@@ -882,6 +1051,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             return SDL_APP_FAILURE;
         }
     }
+
+    /* Query the swapchain format AFTER setting params — it may have changed. */
+    SDL_GPUTextureFormat swapchain_format =
+        SDL_GetGPUSwapchainTextureFormat(device, window);
 
     /* ── 5. Create depth texture ──────────────────────────────────────── */
     int win_w = 0, win_h = 0;
@@ -913,8 +1086,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     /* ── 7. Create sampler ────────────────────────────────────────────── */
-    /* Trilinear filtering with REPEAT address mode — the best general-
-     * purpose sampler for textured meshes (Lesson 05 explains why). */
+    /* Trilinear filtering with REPEAT address mode (for the truck). */
     SDL_GPUSamplerCreateInfo smp_info;
     SDL_zero(smp_info);
     smp_info.min_filter     = SDL_GPU_FILTER_LINEAR;
@@ -937,43 +1109,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    /* ── 8. Load glTF scene (CPU-side parsing) ────────────────────────── */
-    /* forge_gltf_load() parses the JSON, loads .bin buffers, interleaves
-     * vertices, and builds the node hierarchy — all CPU work.  Then we
-     * upload the data to the GPU in upload_scene_to_gpu(). */
-    /* Accept an optional model path on the command line, e.g.:
-     *   09-scene-loading.exe assets/VirtualCity/VirtualCity.gltf
-     * We skip any arguments starting with "--" because those are capture
-     * flags (--screenshot, --capture-frame, etc.) added by the build system
-     * when FORGE_CAPTURE is enabled. */
-    const char *model_rel = DEFAULT_MODEL_PATH;
-    {
-        int i;
-        for (i = 1; i < argc; i++) {
-            if (SDL_strcmp(argv[i], "--screenshot") == 0 ||
-                SDL_strcmp(argv[i], "--capture-dir") == 0 ||
-                SDL_strcmp(argv[i], "--frames") == 0 ||
-                SDL_strcmp(argv[i], "--capture-frame") == 0) {
-                i++;  /* skip the flag's value argument */
-            } else if (argv[i][0] != '-') {
-                model_rel = argv[i];
-                break;
-            }
-        }
-    }
-
-    /* Pick camera defaults based on which model we're loading.
-     * CesiumMilkTruck is small and centered at the origin — a close 3/4
-     * view works well.  Other scenes (like VirtualCity) are much larger
-     * and need a high, distant overview to see the whole scene. */
-    bool is_default_model =
-        (SDL_strcmp(model_rel, DEFAULT_MODEL_PATH) == 0);
-    float start_x         = is_default_model ? CAM_TRUCK_X     : CAM_OVERVIEW_X;
-    float start_y         = is_default_model ? CAM_TRUCK_Y     : CAM_OVERVIEW_Y;
-    float start_z         = is_default_model ? CAM_TRUCK_Z     : CAM_OVERVIEW_Z;
-    float start_yaw_deg   = is_default_model ? CAM_TRUCK_YAW   : CAM_OVERVIEW_YAW;
-    float start_pitch_deg = is_default_model ? CAM_TRUCK_PITCH : CAM_OVERVIEW_PITCH;
-
+    /* ── 8. Load CesiumMilkTruck glTF model ──────────────────────────── */
     const char *base_path = SDL_GetBasePath();
     if (!base_path) {
         SDL_Log("SDL_GetBasePath failed: %s", SDL_GetError());
@@ -987,7 +1123,19 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     char gltf_path[PATH_BUFFER_SIZE];
-    SDL_snprintf(gltf_path, sizeof(gltf_path), "%s%s", base_path, model_rel);
+    int path_len = SDL_snprintf(gltf_path, sizeof(gltf_path), "%s%s",
+                                base_path, DEFAULT_MODEL_PATH);
+    if (path_len < 0 || (size_t)path_len >= sizeof(gltf_path)) {
+        SDL_Log("Model path too long or formatting error (len=%d, max=%u)",
+                path_len, (unsigned)sizeof(gltf_path));
+        SDL_ReleaseGPUSampler(device, sampler);
+        SDL_ReleaseGPUTexture(device, white_texture);
+        SDL_ReleaseGPUTexture(device, depth_texture);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyWindow(window);
+        SDL_DestroyGPUDevice(device);
+        return SDL_APP_FAILURE;
+    }
 
     /* Allocate state first so we can store the scene in it. */
     app_state *state = (app_state *)SDL_calloc(1, sizeof(app_state));
@@ -1039,16 +1187,33 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    /* ── 10. Create shaders ──────────────────────────────────────────── */
-    SDL_GPUShader *vertex_shader = create_shader(
+    /* ── 10. Upload grid geometry ─────────────────────────────────────── */
+    if (!upload_grid_geometry(device, state)) {
+        SDL_Log("Failed to upload grid geometry");
+        free_gpu_scene(device, state);
+        forge_gltf_free(&state->scene);
+        SDL_ReleaseGPUSampler(device, sampler);
+        SDL_ReleaseGPUTexture(device, white_texture);
+        SDL_ReleaseGPUTexture(device, depth_texture);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyWindow(window);
+        SDL_DestroyGPUDevice(device);
+        SDL_free(state);
+        return SDL_APP_FAILURE;
+    }
+
+    /* ── 11. Create grid shaders ──────────────────────────────────────── */
+    SDL_GPUShader *grid_vs = create_shader(
         device, SDL_GPU_SHADERSTAGE_VERTEX,
-        scene_vert_spirv, scene_vert_spirv_size,
-        scene_vert_dxil,  scene_vert_dxil_size,
-        VERT_NUM_SAMPLERS,
-        VERT_NUM_STORAGE_TEXTURES,
-        VERT_NUM_STORAGE_BUFFERS,
-        VERT_NUM_UNIFORM_BUFFERS);
-    if (!vertex_shader) {
+        grid_vert_spirv, grid_vert_spirv_size,
+        grid_vert_dxil,  grid_vert_dxil_size,
+        GRID_VERT_NUM_SAMPLERS,
+        GRID_VERT_NUM_STORAGE_TEXTURES,
+        GRID_VERT_NUM_STORAGE_BUFFERS,
+        GRID_VERT_NUM_UNIFORM_BUFFERS);
+    if (!grid_vs) {
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
         forge_gltf_free(&state->scene);
         SDL_ReleaseGPUSampler(device, sampler);
@@ -1061,16 +1226,18 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    SDL_GPUShader *fragment_shader = create_shader(
+    SDL_GPUShader *grid_fs = create_shader(
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
-        scene_frag_spirv, scene_frag_spirv_size,
-        scene_frag_dxil,  scene_frag_dxil_size,
-        FRAG_NUM_SAMPLERS,
-        FRAG_NUM_STORAGE_TEXTURES,
-        FRAG_NUM_STORAGE_BUFFERS,
-        FRAG_NUM_UNIFORM_BUFFERS);
-    if (!fragment_shader) {
-        SDL_ReleaseGPUShader(device, vertex_shader);
+        grid_frag_spirv, grid_frag_spirv_size,
+        grid_frag_dxil,  grid_frag_dxil_size,
+        GRID_FRAG_NUM_SAMPLERS,
+        GRID_FRAG_NUM_STORAGE_TEXTURES,
+        GRID_FRAG_NUM_STORAGE_BUFFERS,
+        GRID_FRAG_NUM_UNIFORM_BUFFERS);
+    if (!grid_fs) {
+        SDL_ReleaseGPUShader(device, grid_vs);
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
         forge_gltf_free(&state->scene);
         SDL_ReleaseGPUSampler(device, sampler);
@@ -1083,73 +1250,67 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    /* ── 11. Create graphics pipeline ────────────────────────────────── */
-    SDL_GPUVertexBufferDescription vertex_buffer_desc;
-    SDL_zero(vertex_buffer_desc);
-    vertex_buffer_desc.slot       = 0;
-    vertex_buffer_desc.pitch      = sizeof(ForgeGltfVertex);
-    vertex_buffer_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    /* ── 12. Create grid pipeline ─────────────────────────────────────── */
+    /* Grid pipeline: simple vertex format (position only), no texture
+     * samplers, no backface culling (visible from both sides). */
+    SDL_GPUVertexBufferDescription grid_vb_desc;
+    SDL_zero(grid_vb_desc);
+    grid_vb_desc.slot       = 0;
+    grid_vb_desc.pitch      = GRID_VERTEX_PITCH;
+    grid_vb_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
 
-    SDL_GPUVertexAttribute vertex_attributes[NUM_VERTEX_ATTRIBUTES];
-    SDL_zero(vertex_attributes);
+    SDL_GPUVertexAttribute grid_attrs[GRID_NUM_VERTEX_ATTRIBUTES];
+    SDL_zero(grid_attrs);
 
     /* Location 0: position (float3) — maps to HLSL TEXCOORD0 */
-    vertex_attributes[0].location    = 0;
-    vertex_attributes[0].buffer_slot = 0;
-    vertex_attributes[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-    vertex_attributes[0].offset      = offsetof(ForgeGltfVertex, position);
+    grid_attrs[0].location    = 0;
+    grid_attrs[0].buffer_slot = 0;
+    grid_attrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    grid_attrs[0].offset      = 0;
 
-    /* Location 1: normal (float3) — maps to HLSL TEXCOORD1 */
-    vertex_attributes[1].location    = 1;
-    vertex_attributes[1].buffer_slot = 0;
-    vertex_attributes[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-    vertex_attributes[1].offset      = offsetof(ForgeGltfVertex, normal);
+    SDL_GPUGraphicsPipelineCreateInfo grid_pipe_info;
+    SDL_zero(grid_pipe_info);
 
-    /* Location 2: uv (float2) — maps to HLSL TEXCOORD2 */
-    vertex_attributes[2].location    = 2;
-    vertex_attributes[2].buffer_slot = 0;
-    vertex_attributes[2].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-    vertex_attributes[2].offset      = offsetof(ForgeGltfVertex, uv);
+    grid_pipe_info.vertex_shader   = grid_vs;
+    grid_pipe_info.fragment_shader = grid_fs;
 
-    SDL_GPUGraphicsPipelineCreateInfo pipeline_info;
-    SDL_zero(pipeline_info);
+    grid_pipe_info.vertex_input_state.vertex_buffer_descriptions = &grid_vb_desc;
+    grid_pipe_info.vertex_input_state.num_vertex_buffers          = 1;
+    grid_pipe_info.vertex_input_state.vertex_attributes           = grid_attrs;
+    grid_pipe_info.vertex_input_state.num_vertex_attributes       = GRID_NUM_VERTEX_ATTRIBUTES;
 
-    pipeline_info.vertex_shader   = vertex_shader;
-    pipeline_info.fragment_shader = fragment_shader;
+    grid_pipe_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 
-    pipeline_info.vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_desc;
-    pipeline_info.vertex_input_state.num_vertex_buffers          = 1;
-    pipeline_info.vertex_input_state.vertex_attributes           = vertex_attributes;
-    pipeline_info.vertex_input_state.num_vertex_attributes       = NUM_VERTEX_ATTRIBUTES;
+    /* No backface culling — the grid should be visible from both sides.
+     * If the camera goes below the grid plane, you can still see the lines. */
+    grid_pipe_info.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+    grid_pipe_info.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+    grid_pipe_info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
 
-    pipeline_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-
-    /* Back-face culling — same as Lesson 06/07/08. */
-    pipeline_info.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
-    pipeline_info.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
-    pipeline_info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-
-    /* Depth testing — same as Lesson 06/07/08. */
-    pipeline_info.depth_stencil_state.enable_depth_test  = true;
-    pipeline_info.depth_stencil_state.enable_depth_write = true;
-    pipeline_info.depth_stencil_state.compare_op =
+    /* Depth testing — the grid participates in depth sorting with the truck. */
+    grid_pipe_info.depth_stencil_state.enable_depth_test  = true;
+    grid_pipe_info.depth_stencil_state.enable_depth_write = true;
+    grid_pipe_info.depth_stencil_state.compare_op =
         SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
 
-    SDL_GPUColorTargetDescription color_target_desc;
-    SDL_zero(color_target_desc);
-    color_target_desc.format = SDL_GetGPUSwapchainTextureFormat(device, window);
+    /* Color target must match the swapchain format. */
+    SDL_GPUColorTargetDescription grid_color_desc;
+    SDL_zero(grid_color_desc);
+    grid_color_desc.format = swapchain_format;
 
-    pipeline_info.target_info.color_target_descriptions = &color_target_desc;
-    pipeline_info.target_info.num_color_targets         = 1;
-    pipeline_info.target_info.has_depth_stencil_target  = true;
-    pipeline_info.target_info.depth_stencil_format      = DEPTH_FORMAT;
+    grid_pipe_info.target_info.color_target_descriptions = &grid_color_desc;
+    grid_pipe_info.target_info.num_color_targets         = 1;
+    grid_pipe_info.target_info.has_depth_stencil_target  = true;
+    grid_pipe_info.target_info.depth_stencil_format      = DEPTH_FORMAT;
 
-    SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(
-        device, &pipeline_info);
-    if (!pipeline) {
-        SDL_Log("Failed to create graphics pipeline: %s", SDL_GetError());
-        SDL_ReleaseGPUShader(device, fragment_shader);
-        SDL_ReleaseGPUShader(device, vertex_shader);
+    SDL_GPUGraphicsPipeline *grid_pipeline = SDL_CreateGPUGraphicsPipeline(
+        device, &grid_pipe_info);
+    if (!grid_pipeline) {
+        SDL_Log("Failed to create grid pipeline: %s", SDL_GetError());
+        SDL_ReleaseGPUShader(device, grid_fs);
+        SDL_ReleaseGPUShader(device, grid_vs);
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
         forge_gltf_free(&state->scene);
         SDL_ReleaseGPUSampler(device, sampler);
@@ -1162,24 +1323,164 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    /* Shaders can be released after pipeline creation. */
-    SDL_ReleaseGPUShader(device, fragment_shader);
-    SDL_ReleaseGPUShader(device, vertex_shader);
+    /* Grid shaders can be released after pipeline creation. */
+    SDL_ReleaseGPUShader(device, grid_fs);
+    SDL_ReleaseGPUShader(device, grid_vs);
 
-    state->pipeline = pipeline;
+    /* ── 13. Create model shaders ─────────────────────────────────────── */
+    SDL_GPUShader *model_vs = create_shader(
+        device, SDL_GPU_SHADERSTAGE_VERTEX,
+        lighting_vert_spirv, lighting_vert_spirv_size,
+        lighting_vert_dxil,  lighting_vert_dxil_size,
+        MODEL_VERT_NUM_SAMPLERS,
+        MODEL_VERT_NUM_STORAGE_TEXTURES,
+        MODEL_VERT_NUM_STORAGE_BUFFERS,
+        MODEL_VERT_NUM_UNIFORM_BUFFERS);
+    if (!model_vs) {
+        SDL_ReleaseGPUGraphicsPipeline(device, grid_pipeline);
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
+        free_gpu_scene(device, state);
+        forge_gltf_free(&state->scene);
+        SDL_ReleaseGPUSampler(device, sampler);
+        SDL_ReleaseGPUTexture(device, white_texture);
+        SDL_ReleaseGPUTexture(device, depth_texture);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyWindow(window);
+        SDL_DestroyGPUDevice(device);
+        SDL_free(state);
+        return SDL_APP_FAILURE;
+    }
 
-    /* Initialize camera from the model-dependent defaults computed above. */
-    state->cam_position = vec3_create(start_x, start_y, start_z);
-    state->cam_yaw      = start_yaw_deg * FORGE_DEG2RAD;
-    state->cam_pitch    = start_pitch_deg * FORGE_DEG2RAD;
-    state->move_speed   = is_default_model ? MOVE_SPEED_TRUCK : MOVE_SPEED_OVERVIEW;
+    SDL_GPUShader *model_fs = create_shader(
+        device, SDL_GPU_SHADERSTAGE_FRAGMENT,
+        lighting_frag_spirv, lighting_frag_spirv_size,
+        lighting_frag_dxil,  lighting_frag_dxil_size,
+        MODEL_FRAG_NUM_SAMPLERS,
+        MODEL_FRAG_NUM_STORAGE_TEXTURES,
+        MODEL_FRAG_NUM_STORAGE_BUFFERS,
+        MODEL_FRAG_NUM_UNIFORM_BUFFERS);
+    if (!model_fs) {
+        SDL_ReleaseGPUShader(device, model_vs);
+        SDL_ReleaseGPUGraphicsPipeline(device, grid_pipeline);
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
+        free_gpu_scene(device, state);
+        forge_gltf_free(&state->scene);
+        SDL_ReleaseGPUSampler(device, sampler);
+        SDL_ReleaseGPUTexture(device, white_texture);
+        SDL_ReleaseGPUTexture(device, depth_texture);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyWindow(window);
+        SDL_DestroyGPUDevice(device);
+        SDL_free(state);
+        return SDL_APP_FAILURE;
+    }
+
+    /* ── 14. Create model pipeline ────────────────────────────────────── */
+    /* Same as Lesson 10: 3 vertex attributes, back-face culling, 1 sampler. */
+    SDL_GPUVertexBufferDescription model_vb_desc;
+    SDL_zero(model_vb_desc);
+    model_vb_desc.slot       = 0;
+    model_vb_desc.pitch      = sizeof(ForgeGltfVertex);
+    model_vb_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+    SDL_GPUVertexAttribute model_attrs[MODEL_NUM_VERTEX_ATTRIBUTES];
+    SDL_zero(model_attrs);
+
+    /* Location 0: position (float3) — maps to HLSL TEXCOORD0 */
+    model_attrs[0].location    = 0;
+    model_attrs[0].buffer_slot = 0;
+    model_attrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    model_attrs[0].offset      = offsetof(ForgeGltfVertex, position);
+
+    /* Location 1: normal (float3) — maps to HLSL TEXCOORD1 */
+    model_attrs[1].location    = 1;
+    model_attrs[1].buffer_slot = 0;
+    model_attrs[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    model_attrs[1].offset      = offsetof(ForgeGltfVertex, normal);
+
+    /* Location 2: uv (float2) — maps to HLSL TEXCOORD2 */
+    model_attrs[2].location    = 2;
+    model_attrs[2].buffer_slot = 0;
+    model_attrs[2].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    model_attrs[2].offset      = offsetof(ForgeGltfVertex, uv);
+
+    SDL_GPUGraphicsPipelineCreateInfo model_pipe_info;
+    SDL_zero(model_pipe_info);
+
+    model_pipe_info.vertex_shader   = model_vs;
+    model_pipe_info.fragment_shader = model_fs;
+
+    model_pipe_info.vertex_input_state.vertex_buffer_descriptions = &model_vb_desc;
+    model_pipe_info.vertex_input_state.num_vertex_buffers          = 1;
+    model_pipe_info.vertex_input_state.vertex_attributes           = model_attrs;
+    model_pipe_info.vertex_input_state.num_vertex_attributes       = MODEL_NUM_VERTEX_ATTRIBUTES;
+
+    model_pipe_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+
+    /* Back-face culling for the truck — same as Lesson 06-10. */
+    model_pipe_info.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+    model_pipe_info.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
+    model_pipe_info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+
+    /* Depth testing — same as Lesson 06-10. */
+    model_pipe_info.depth_stencil_state.enable_depth_test  = true;
+    model_pipe_info.depth_stencil_state.enable_depth_write = true;
+    model_pipe_info.depth_stencil_state.compare_op =
+        SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+
+    SDL_GPUColorTargetDescription model_color_desc;
+    SDL_zero(model_color_desc);
+    model_color_desc.format = swapchain_format;
+
+    model_pipe_info.target_info.color_target_descriptions = &model_color_desc;
+    model_pipe_info.target_info.num_color_targets         = 1;
+    model_pipe_info.target_info.has_depth_stencil_target  = true;
+    model_pipe_info.target_info.depth_stencil_format      = DEPTH_FORMAT;
+
+    SDL_GPUGraphicsPipeline *model_pipeline = SDL_CreateGPUGraphicsPipeline(
+        device, &model_pipe_info);
+    if (!model_pipeline) {
+        SDL_Log("Failed to create model pipeline: %s", SDL_GetError());
+        SDL_ReleaseGPUShader(device, model_fs);
+        SDL_ReleaseGPUShader(device, model_vs);
+        SDL_ReleaseGPUGraphicsPipeline(device, grid_pipeline);
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
+        free_gpu_scene(device, state);
+        forge_gltf_free(&state->scene);
+        SDL_ReleaseGPUSampler(device, sampler);
+        SDL_ReleaseGPUTexture(device, white_texture);
+        SDL_ReleaseGPUTexture(device, depth_texture);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyWindow(window);
+        SDL_DestroyGPUDevice(device);
+        SDL_free(state);
+        return SDL_APP_FAILURE;
+    }
+
+    /* Model shaders can be released after pipeline creation. */
+    SDL_ReleaseGPUShader(device, model_fs);
+    SDL_ReleaseGPUShader(device, model_vs);
+
+    state->grid_pipeline  = grid_pipeline;
+    state->model_pipeline = model_pipeline;
+
+    /* Initialize camera: elevated view looking at the truck on the grid. */
+    state->cam_position = vec3_create(CAM_START_X, CAM_START_Y, CAM_START_Z);
+    state->cam_yaw      = CAM_START_YAW * FORGE_DEG2RAD;
+    state->cam_pitch    = CAM_START_PITCH * FORGE_DEG2RAD;
     state->last_ticks   = SDL_GetTicks();
 
     /* Capture mouse for FPS-style look. */
 #ifndef FORGE_CAPTURE
     if (!SDL_SetWindowRelativeMouseMode(window, true)) {
         SDL_Log("SDL_SetWindowRelativeMouseMode failed: %s", SDL_GetError());
-        SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, model_pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(device, grid_pipeline);
+        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
         forge_gltf_free(&state->scene);
         SDL_ReleaseGPUSampler(device, sampler);
@@ -1201,7 +1502,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (state->capture.mode != FORGE_CAPTURE_NONE) {
         if (!forge_capture_init(&state->capture, device, window)) {
             SDL_Log("Failed to initialise capture");
-            SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(device, model_pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(device, grid_pipeline);
+            SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
+            SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
             free_gpu_scene(device, state);
             forge_gltf_free(&state->scene);
             SDL_ReleaseGPUSampler(device, sampler);
@@ -1219,13 +1523,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     *appstate = state;
 
     SDL_Log("Controls: WASD=move, Mouse=look, Space=up, LShift=down, Esc=quit");
-    SDL_Log("Model: %s", model_rel);
+    SDL_Log("Grid: spacing=%.1f, fade=%.0f, lines=cyan on dark surface",
+            GRID_SPACING, GRID_FADE_DIST);
+    SDL_Log("Two pipelines: grid (procedural) + model (Blinn-Phong)");
 
     return SDL_APP_CONTINUE;
 }
 
 /* ── SDL_AppEvent ────────────────────────────────────────────────────────── */
-/* Same mouse/keyboard handling as Lesson 07/08. */
+/* Same mouse/keyboard handling as Lesson 07-10. */
 
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
@@ -1284,7 +1590,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     state->last_ticks = now_ms;
     if (dt > MAX_DELTA_TIME) dt = MAX_DELTA_TIME;
 
-    /* ── 2. Process keyboard input (same as Lesson 07/08) ────────────── */
+    /* ── 2. Process keyboard input (same as Lesson 07-10) ────────────── */
     quat cam_orientation = quat_from_euler(
         state->cam_yaw, state->cam_pitch, 0.0f);
 
@@ -1295,27 +1601,27 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) {
         state->cam_position = vec3_add(state->cam_position,
-            vec3_scale(forward, state->move_speed * dt));
+            vec3_scale(forward, MOVE_SPEED * dt));
     }
     if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) {
         state->cam_position = vec3_add(state->cam_position,
-            vec3_scale(forward, -state->move_speed * dt));
+            vec3_scale(forward, -MOVE_SPEED * dt));
     }
     if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) {
         state->cam_position = vec3_add(state->cam_position,
-            vec3_scale(right, state->move_speed * dt));
+            vec3_scale(right, MOVE_SPEED * dt));
     }
     if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]) {
         state->cam_position = vec3_add(state->cam_position,
-            vec3_scale(right, -state->move_speed * dt));
+            vec3_scale(right, -MOVE_SPEED * dt));
     }
     if (keys[SDL_SCANCODE_SPACE]) {
         state->cam_position = vec3_add(state->cam_position,
-            vec3_create(0.0f, state->move_speed * dt, 0.0f));
+            vec3_create(0.0f, MOVE_SPEED * dt, 0.0f));
     }
     if (keys[SDL_SCANCODE_LSHIFT]) {
         state->cam_position = vec3_add(state->cam_position,
-            vec3_create(0.0f, -state->move_speed * dt, 0.0f));
+            vec3_create(0.0f, -MOVE_SPEED * dt, 0.0f));
     }
 
     /* ── 3. Build view-projection matrix ─────────────────────────────── */
@@ -1388,10 +1694,72 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             return SDL_APP_FAILURE;
         }
 
-        SDL_BindGPUGraphicsPipeline(pass, state->pipeline);
+        /* ── Draw 1: Procedural grid ──────────────────────────────────── */
+        /* Bind the grid pipeline first.  The grid is drawn before the
+         * truck so the depth buffer correctly handles occlusion. */
+        SDL_BindGPUGraphicsPipeline(pass, state->grid_pipeline);
 
-        /* Render all scene nodes with meshes. */
-        render_scene(pass, cmd, state, &vp);
+        /* Push grid vertex uniforms: just the VP matrix. */
+        GridVertUniforms gvu;
+        gvu.vp = vp;
+        SDL_PushGPUVertexUniformData(cmd, 0, &gvu, sizeof(gvu));
+
+        /* Push grid fragment uniforms: colors, grid params, lighting. */
+        vec3 light_raw = vec3_create(LIGHT_DIR_X, LIGHT_DIR_Y, LIGHT_DIR_Z);
+        vec3 light_dir = vec3_normalize(light_raw);
+
+        GridFragUniforms gfu;
+        gfu.line_color[0] = GRID_LINE_R;
+        gfu.line_color[1] = GRID_LINE_G;
+        gfu.line_color[2] = GRID_LINE_B;
+        gfu.line_color[3] = GRID_LINE_A;
+
+        gfu.bg_color[0] = GRID_BG_R;
+        gfu.bg_color[1] = GRID_BG_G;
+        gfu.bg_color[2] = GRID_BG_B;
+        gfu.bg_color[3] = GRID_BG_A;
+
+        gfu.light_dir[0] = light_dir.x;
+        gfu.light_dir[1] = light_dir.y;
+        gfu.light_dir[2] = light_dir.z;
+        gfu.light_dir[3] = 0.0f;
+
+        gfu.eye_pos[0] = state->cam_position.x;
+        gfu.eye_pos[1] = state->cam_position.y;
+        gfu.eye_pos[2] = state->cam_position.z;
+        gfu.eye_pos[3] = 0.0f;
+
+        gfu.grid_spacing  = GRID_SPACING;
+        gfu.line_width    = GRID_LINE_WIDTH;
+        gfu.fade_distance = GRID_FADE_DIST;
+        gfu.ambient       = GRID_AMBIENT;
+        gfu.shininess     = GRID_SHININESS;
+        gfu.specular_str  = GRID_SPECULAR_STR;
+        gfu._pad0         = 0.0f;
+        gfu._pad1         = 0.0f;
+
+        SDL_PushGPUFragmentUniformData(cmd, 0, &gfu, sizeof(gfu));
+
+        /* Bind grid vertex and index buffers. */
+        SDL_GPUBufferBinding grid_vb;
+        SDL_zero(grid_vb);
+        grid_vb.buffer = state->grid_vertex_buffer;
+        SDL_BindGPUVertexBuffers(pass, 0, &grid_vb, 1);
+
+        SDL_GPUBufferBinding grid_ib;
+        SDL_zero(grid_ib);
+        grid_ib.buffer = state->grid_index_buffer;
+        SDL_BindGPUIndexBuffer(pass, &grid_ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+
+        SDL_DrawGPUIndexedPrimitives(pass, GRID_NUM_INDICES, 1, 0, 0, 0);
+
+        /* ── Draw 2: Lit truck model ──────────────────────────────────── */
+        /* Switch to the model pipeline within the same render pass.
+         * This is the key pattern: you can bind different pipelines
+         * in a single pass, sharing the same color and depth targets. */
+        SDL_BindGPUGraphicsPipeline(pass, state->model_pipeline);
+
+        render_model(pass, cmd, state, &vp, &state->cam_position);
 
         SDL_EndGPURenderPass(pass);
     }
@@ -1429,10 +1797,13 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 #endif
         free_gpu_scene(state->device, state);
         forge_gltf_free(&state->scene);
+        SDL_ReleaseGPUBuffer(state->device, state->grid_index_buffer);
+        SDL_ReleaseGPUBuffer(state->device, state->grid_vertex_buffer);
         SDL_ReleaseGPUSampler(state->device, state->sampler);
         SDL_ReleaseGPUTexture(state->device, state->white_texture);
         SDL_ReleaseGPUTexture(state->device, state->depth_texture);
-        SDL_ReleaseGPUGraphicsPipeline(state->device, state->pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(state->device, state->model_pipeline);
+        SDL_ReleaseGPUGraphicsPipeline(state->device, state->grid_pipeline);
         SDL_ReleaseWindowFromGPUDevice(state->device, state->window);
         SDL_DestroyWindow(state->window);
         SDL_DestroyGPUDevice(state->device);

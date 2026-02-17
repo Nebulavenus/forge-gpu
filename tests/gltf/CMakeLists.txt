@@ -17,7 +17,7 @@ endif()
 # Copy CesiumMilkTruck assets next to test executable for integration test
 add_custom_command(TARGET test_gltf POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/lessons/gpu/09-scene-loading/assets/CesiumMilkTruck
+        ${FORGE_ASSETS_DIR}/models/CesiumMilkTruck
         $<TARGET_FILE_DIR:test_gltf>/assets/CesiumMilkTruck
 )
 

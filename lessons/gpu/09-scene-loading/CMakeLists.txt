@@ -26,8 +26,8 @@ endif()
 # runtime via SDL_GetBasePath() + relative path.
 add_custom_command(TARGET 09-scene-loading POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets/CesiumMilkTruck
-        $<TARGET_FILE_DIR:09-scene-loading>/assets/CesiumMilkTruck
+        ${FORGE_ASSETS_DIR}/models/CesiumMilkTruck
+        $<TARGET_FILE_DIR:09-scene-loading>/assets/models/CesiumMilkTruck
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/VirtualCity
         $<TARGET_FILE_DIR:09-scene-loading>/assets/VirtualCity

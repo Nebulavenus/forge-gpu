@@ -24,9 +24,9 @@ Infrastructure that supports all lessons:
 - [x] **Lesson 09 — Loading a Scene (glTF)** — glTF 2.0 format; JSON scene description + binary buffers; node hierarchy, meshes, accessors, and buffer views; PBR materials; multi-material indexed rendering; reusable glTF parser library (`common/gltf/forge_gltf.h`)
 - [x] **Lesson 10 — Basic Lighting** — Blinn-Phong shading (ambient + diffuse + specular), world-space normal transformation, half-vector specular, lighting uniforms (light direction, camera position, shininess)
 - [x] **Lesson 11 — Compute Shaders** — Compute pipelines, storage textures, dispatch groups, fullscreen triangle, compute-then-render pattern
-- [ ] **Lesson 12 — Instanced Rendering** — Drawing many objects efficiently
-- [ ] **Lesson 13 — HDR & Tone Mapping** — Gamma/sRGB, render-to-texture, floating-point framebuffers, tone mapping operators (depends on compute for post-processing)
-- [ ] **Lesson ?? — Shader Grid** — Flat plane with GPU-rendered grid lines (shader-based technique)
+- [x] **Lesson 12 — Shader Grid** — Procedural grid rendering with fwidth()/smoothstep() anti-aliasing, distance fade, multiple pipelines in one render pass, combining procedural geometry with 3D models
+- [ ] **Lesson 13 — Instanced Rendering** — Drawing many objects efficiently
+- [ ] **Lesson 14 — HDR & Tone Mapping** — Gamma/sRGB, render-to-texture, floating-point framebuffers, tone mapping operators (depends on compute for post-processing)
 - [ ] **Lesson ?? — Point Lights & Shadows** — Multiple point light sources, shadow mapping
 - [ ] **Lesson ?? — Cascaded Shadow Maps (CSM)** — View-dependent shadow partitioning for large outdoor scenes
 - [ ] **Lesson ?? — Height Map Terrain** — GPU terrain from height map, LOD, normal computation

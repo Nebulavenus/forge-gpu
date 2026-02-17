@@ -32,8 +32,8 @@ From first triangle to full 3D scenes — here's what you'll build:
 </tr>
 <tr>
 <td align="center">
-<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/truck.png" width="400" alt="CesiumMilkTruck (glTF)" /></a><br />
-<b>Lesson 09</b> — Loading a Scene (glTF)
+<a href="lessons/gpu/12-shader-grid/"><img src="lessons/gpu/12-shader-grid/assets/screenshot.png" width="400" alt="CesiumMilkTruck on procedural grid" /></a><br />
+<b>Lesson 12</b> — Shader Grid (procedural anti-aliased grid + lit model)
 </td>
 <td align="center">
 <a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="400" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
@@ -81,6 +81,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 09 | [Loading a Scene (glTF)](lessons/gpu/09-scene-loading/) | glTF parsing, scene hierarchy, nested transforms, multi-material meshes, indexed drawing |
 | 10 | [Basic Lighting](lessons/gpu/10-basic-lighting/) | Blinn-Phong shading, ambient/diffuse/specular, normal transformation, world-space lighting |
 | 11 | [Compute Shaders](lessons/gpu/11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups, compute-then-render pattern |
+| 12 | [Shader Grid](lessons/gpu/12-shader-grid/) | Procedural grid, screen-space derivatives, anti-aliased patterns, multiple pipelines |
 
 ### Math Lessons (lessons/math/)
 
@@ -290,7 +291,8 @@ forge-gpu/
 │       ├── ...
 │       ├── 09-scene-loading/
 │       ├── 10-basic-lighting/
-│       └── 11-compute-shaders/
+│       ├── 11-compute-shaders/
+│       └── 12-shader-grid/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -350,6 +352,7 @@ project to enable Claude to build games and tools with you.
 | [scene-loading](.claude/skills/scene-loading/SKILL.md) | `/scene-loading` | Load glTF scenes, multi-material meshes, scene hierarchy, indexed rendering |
 | [basic-lighting](.claude/skills/basic-lighting/SKILL.md) | `/basic-lighting` | Blinn-Phong lighting, ambient/diffuse/specular, normal transformation |
 | [compute-shaders](.claude/skills/compute-shaders/SKILL.md) | `/compute-shaders` | Compute pipelines, storage textures, dispatch, compute-then-render pattern |
+| [shader-grid](.claude/skills/shader-grid/SKILL.md) | `/shader-grid` | Procedural grid, anti-aliased lines with fwidth/smoothstep, multiple pipelines |
 
 ### Development skills (used within this repo)
 
