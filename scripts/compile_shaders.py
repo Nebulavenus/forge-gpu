@@ -2,7 +2,7 @@
 """
 compile_shaders.py — Compile HLSL shaders to SPIRV and DXIL with embedded C headers.
 
-Finds .vert.hlsl and .frag.hlsl files and compiles them using dxc.
+Finds .vert.hlsl, .frag.hlsl, and .comp.hlsl files and compiles them using dxc.
 
 Usage:
     python scripts/compile_shaders.py                    # all lessons
@@ -29,6 +29,7 @@ LESSONS_DIR = os.path.join(REPO_ROOT, "lessons", "gpu")
 STAGE_PROFILES = {
     ".vert.hlsl": "vs_6_0",
     ".frag.hlsl": "ps_6_0",
+    ".comp.hlsl": "cs_6_0",
 }
 
 
@@ -108,8 +109,10 @@ def compile_shader(dxc_path, shader_path, verbose=False):
     basename = os.path.basename(base)  # e.g. triangle
     shader_dir = os.path.dirname(shader_path)
 
-    # Determine short stage name for naming output files
-    stage = "vert" if ".vert." in shader_path else "frag"
+    # Derive short stage name from the validated suffix
+    stage = suffix.removeprefix(".").removesuffix(
+        ".hlsl"
+    )  # e.g. ".vert.hlsl" -> "vert"
 
     spirv_out = f"{base}.{stage}.spv"
     dxil_out = f"{base}.{stage}.dxil"

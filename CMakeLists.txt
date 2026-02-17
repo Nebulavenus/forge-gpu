@@ -52,6 +52,7 @@ add_subdirectory(lessons/gpu/07-camera-and-input)
 add_subdirectory(lessons/gpu/08-mesh-loading)
 add_subdirectory(lessons/gpu/09-scene-loading)
 add_subdirectory(lessons/gpu/10-basic-lighting)
+add_subdirectory(lessons/gpu/11-compute-shaders)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

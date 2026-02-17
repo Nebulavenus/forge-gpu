@@ -26,12 +26,16 @@ From first triangle to full 3D scenes — here's what you'll build:
 <b>Lesson 08</b> — Loading a Mesh (OBJ)
 </td>
 <td align="center">
-<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/truck.png" width="400" alt="CesiumMilkTruck (glTF)" /></a><br />
-<b>Lesson 09</b> — Loading a Scene (glTF)
+<a href="lessons/gpu/11-compute-shaders/"><img src="lessons/gpu/11-compute-shaders/assets/screenshot.png" width="400" alt="Procedural plasma (compute shader)" /></a><br />
+<b>Lesson 11</b> — Compute Shaders
 </td>
 </tr>
 <tr>
-<td align="center" colspan="2">
+<td align="center">
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/truck.png" width="400" alt="CesiumMilkTruck (glTF)" /></a><br />
+<b>Lesson 09</b> — Loading a Scene (glTF)
+</td>
+<td align="center">
 <a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="400" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
 <b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
 </td>
@@ -76,6 +80,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 08 | [Loading a Mesh (OBJ)](lessons/gpu/08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmapped mesh rendering |
 | 09 | [Loading a Scene (glTF)](lessons/gpu/09-scene-loading/) | glTF parsing, scene hierarchy, nested transforms, multi-material meshes, indexed drawing |
 | 10 | [Basic Lighting](lessons/gpu/10-basic-lighting/) | Blinn-Phong shading, ambient/diffuse/specular, normal transformation, world-space lighting |
+| 11 | [Compute Shaders](lessons/gpu/11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups, compute-then-render pattern |
 
 ### Math Lessons (lessons/math/)
 
@@ -284,7 +289,8 @@ forge-gpu/
 │       ├── 01-hello-window/
 │       ├── ...
 │       ├── 09-scene-loading/
-│       └── 10-basic-lighting/
+│       ├── 10-basic-lighting/
+│       └── 11-compute-shaders/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -343,6 +349,7 @@ project to enable Claude to build games and tools with you.
 | [mesh-loading](.claude/skills/mesh-loading/SKILL.md) | `/mesh-loading` | Load OBJ models, textured mesh rendering, file-based textures |
 | [scene-loading](.claude/skills/scene-loading/SKILL.md) | `/scene-loading` | Load glTF scenes, multi-material meshes, scene hierarchy, indexed rendering |
 | [basic-lighting](.claude/skills/basic-lighting/SKILL.md) | `/basic-lighting` | Blinn-Phong lighting, ambient/diffuse/specular, normal transformation |
+| [compute-shaders](.claude/skills/compute-shaders/SKILL.md) | `/compute-shaders` | Compute pipelines, storage textures, dispatch, compute-then-render pattern |
 
 ### Development skills (used within this repo)
 
