@@ -98,7 +98,7 @@ g_x = \sqrt{\left(\frac{\partial U}{\partial x}\right)^2 + \left(\frac{\partial 
 $$
 
 $$
-\text{footprint} = \max(g_x,\; g_y) \times \text{texture}\_\text{size}
+\text{footprint} = \max(g_x, g_y) \times \text{texture}\_\text{size}
 $$
 
 $$
@@ -133,7 +133,7 @@ transitioning between mip levels.
 The formula combines two bilinear interpolations with a third lerp:
 
 $$
-\text{result} = \text{lerp}\!\big(\text{bilerp}(\text{mip}_N),\; \text{bilerp}(\text{mip}_{N+1}),\; \text{frac}(\text{LOD})\big)
+\text{result} = \text{lerp}\!\big(\text{bilerp}(\text{mip}_N), \text{bilerp}(\text{mip}_{N+1}), \text{frac}(\text{LOD})\big)
 $$
 
 This uses 8 texels total — 4 from each mip level — blended by three parameters:

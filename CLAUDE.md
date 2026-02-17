@@ -27,6 +27,39 @@ Either way, when answering questions or writing code:
 - When using the math library, link to both the library docs AND the math lesson
   explaining the concept
 
+## Lesson writing tone
+
+Lessons teach real techniques backed by math and engineering. The writing should
+reflect that — treat every concept with the respect it deserves.
+
+**Banned words:**
+
+- **"trick"** — This word cheapens the math and engineering behind a technique.
+  A cross product formulation is not a trick; it is a method. A half-vector is
+  not a trick; it is an insight. Use instead: *technique*, *method*, *approach*,
+  *insight*, *key idea*, or *shortcut* (when something is genuinely a faster
+  alternative to a longer method).
+
+**Tone principles for lesson prose:**
+
+- **Respect the material.** These are mathematical techniques and engineering
+  methods, not magic tricks. The reader should feel they are learning something
+  substantial, not collecting clever hacks.
+- **Be direct and precise.** Say what a technique does and why it works. Avoid
+  hedging phrases ("it turns out that", "as it happens", "there's a neat way
+  to") — just state the fact and explain the reasoning.
+- **Credit the ideas.** When a technique has a name or origin (Blinn-Phong,
+  Gram-Schmidt), use it. Named techniques carry weight and help readers find
+  more resources.
+- **Explain the reasoning, not the magic.** "We use the transpose because
+  rotation matrices are orthonormal" is better than "there's a neat trick with
+  the transpose." The reader should understand *why* something works, not just
+  be impressed that it does.
+- **Avoid hype words.** Words like *trick*, *hack*, *magic*, *clever*, and
+  *neat* signal that the writer doesn't fully understand or respect what they're
+  describing. Replace them with words that convey understanding: *technique*,
+  *method*, *property*, *insight*, *observation*.
+
 ## Philosophy
 
 **Learning enables building.** Understanding fundamentals makes working with AI

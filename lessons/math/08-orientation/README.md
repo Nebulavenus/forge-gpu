@@ -152,7 +152,7 @@ A unit quaternion (length = 1) represents a rotation of angle $\theta$ around
 axis $(a_x, a_y, a_z)$:
 
 $$
-q = \left(\cos\frac{\theta}{2},\; \sin\frac{\theta}{2}\cdot a_x,\; \sin\frac{\theta}{2}\cdot a_y,\; \sin\frac{\theta}{2}\cdot a_z\right)
+q = \left(\cos\frac{\theta}{2}, \sin\frac{\theta}{2}\cdot a_x, \sin\frac{\theta}{2}\cdot a_y, \sin\frac{\theta}{2}\cdot a_z\right)
 $$
 
 Key properties:

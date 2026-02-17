@@ -19,6 +19,7 @@ FetchContent_MakeAvailable(SDL3)
 # ── Common include path ─────────────────────────────────────────────────────
 # Header-only helpers shared across lessons live in common/
 set(FORGE_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
+set(FORGE_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 
 # ── Frame capture (optional) ───────────────────────────────────────────────
 # When enabled, lessons accept --screenshot / --capture-dir flags to save
@@ -50,6 +51,7 @@ add_subdirectory(lessons/gpu/06-depth-and-3d)
 add_subdirectory(lessons/gpu/07-camera-and-input)
 add_subdirectory(lessons/gpu/08-mesh-loading)
 add_subdirectory(lessons/gpu/09-scene-loading)
+add_subdirectory(lessons/gpu/10-basic-lighting)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

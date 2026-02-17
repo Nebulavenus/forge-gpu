@@ -100,7 +100,7 @@ static void print_float_bits(const char *label, float f)
  * This is the smallest change that can be represented at this magnitude. */
 static float float_spacing_at(float f)
 {
-    /* Use the standard trick: increment the bit pattern by 1 */
+    /* Use the standard technique: increment the bit pattern by 1 */
     uint32_t bits = float_to_bits(f);
     uint32_t next_bits = bits + 1;
     float next;

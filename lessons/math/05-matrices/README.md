@@ -173,7 +173,7 @@ All lengths = 1, all dot products = 0. Orthonormal!
 
 To compute $C = A \times B$, each column of C is A times the corresponding column of B.
 
-Or equivalently: $C_{ij} = \text{dot}(\text{row}_i(A),\; \text{col}_j(B))$.
+Or equivalently: $C_{ij} = \text{dot}(\text{row}_i(A), \text{col}_j(B))$.
 
 **Worked example:**
 

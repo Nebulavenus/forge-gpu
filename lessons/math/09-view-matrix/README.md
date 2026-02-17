@@ -176,7 +176,7 @@ $$
 Why the transpose? Rotation matrices are **orthonormal** — their columns are
 perpendicular unit vectors — so the inverse equals the transpose ($R^{-1} = R^T$).
 An orthonormal matrix is one where every column has length 1 and all columns are
-perpendicular to each other. This property is what makes the transpose trick
+perpendicular to each other. This property is what makes the transpose shortcut
 work: the dot products that define matrix multiplication naturally "undo" the
 rotation when the matrix is transposed. This is much cheaper than computing a
 general inverse.

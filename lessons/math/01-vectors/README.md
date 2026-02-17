@@ -80,7 +80,7 @@ Vectors are written as (x, y) in 2D or (x, y, z) in 3D.
 
 ![Vector addition](assets/vector_addition.png)
 
-**Formula:** $(a_x + b_x,\; a_y + b_y,\; a_z + b_z)$
+**Formula:** $(a_x + b_x, a_y + b_y, a_z + b_z)$
 
 **Geometric meaning:** Place the tail of `b` at the head of `a`. The result points from the origin to the combined displacement.
 
@@ -94,7 +94,7 @@ vec3 sum = vec3_add(a, b);  // (1, 2, 0) — combined movement
 
 ### Vector Subtraction
 
-**Formula:** $(a_x - b_x,\; a_y - b_y,\; a_z - b_z)$
+**Formula:** $(a_x - b_x, a_y - b_y, a_z - b_z)$
 
 **Geometric meaning:** The vector pointing from `b` to `a`.
 
@@ -108,7 +108,7 @@ vec3 direction_to_enemy = vec3_sub(enemy, player);  // (-3, -2, 0)
 
 ### Scalar Multiplication (Scaling)
 
-**Formula:** $(v_x \cdot s,\; v_y \cdot s,\; v_z \cdot s)$
+**Formula:** $(v_x \cdot s, v_y \cdot s, v_z \cdot s)$
 
 **Geometric meaning:** Scale the vector's length by `s`. Direction stays the same.
 

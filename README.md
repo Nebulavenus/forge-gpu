@@ -16,8 +16,8 @@ From first triangle to full 3D scenes — here's what you'll build:
 <b>Lesson 02</b> — First Triangle
 </td>
 <td align="center">
-<a href="lessons/gpu/03-uniforms-and-motion/"><img src="lessons/gpu/03-uniforms-and-motion/assets/preview.gif" width="400" alt="Uniforms & Motion" /></a><br />
-<b>Lesson 03</b> — Uniforms & Motion
+<a href="lessons/gpu/10-basic-lighting/"><img src="lessons/gpu/10-basic-lighting/assets/screenshot.png" width="400" alt="Suzanne with Blinn-Phong lighting" /></a><br />
+<b>Lesson 10</b> — Basic Lighting (Blinn-Phong)
 </td>
 </tr>
 <tr>
@@ -31,8 +31,8 @@ From first triangle to full 3D scenes — here's what you'll build:
 </td>
 </tr>
 <tr>
-<td colspan="2" align="center">
-<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="808" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
+<td align="center" colspan="2">
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="400" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
 <b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
 </td>
 </tr>
@@ -75,6 +75,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 07 | [Camera & Input](lessons/gpu/07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time, multiple objects |
 | 08 | [Loading a Mesh (OBJ)](lessons/gpu/08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmapped mesh rendering |
 | 09 | [Loading a Scene (glTF)](lessons/gpu/09-scene-loading/) | glTF parsing, scene hierarchy, nested transforms, multi-material meshes, indexed drawing |
+| 10 | [Basic Lighting](lessons/gpu/10-basic-lighting/) | Blinn-Phong shading, ambient/diffuse/specular, normal transformation, world-space lighting |
 
 ### Math Lessons (lessons/math/)
 
@@ -282,7 +283,8 @@ forge-gpu/
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
-│       └── 09-scene-loading/
+│       ├── 09-scene-loading/
+│       └── 10-basic-lighting/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -340,6 +342,7 @@ project to enable Claude to build games and tools with you.
 | [camera-and-input](.claude/skills/camera-and-input/SKILL.md) | `/camera-and-input` | First-person camera, keyboard/mouse input, delta time |
 | [mesh-loading](.claude/skills/mesh-loading/SKILL.md) | `/mesh-loading` | Load OBJ models, textured mesh rendering, file-based textures |
 | [scene-loading](.claude/skills/scene-loading/SKILL.md) | `/scene-loading` | Load glTF scenes, multi-material meshes, scene hierarchy, indexed rendering |
+| [basic-lighting](.claude/skills/basic-lighting/SKILL.md) | `/basic-lighting` | Blinn-Phong lighting, ambient/diffuse/specular, normal transformation |
 
 ### Development skills (used within this repo)
 
