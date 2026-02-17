@@ -67,24 +67,57 @@ The highlighted stages are where projection operates.
 Think of it like a pinhole camera: light from the 3D scene passes through a
 single point and hits a flat surface (the screen).
 
+### Similar triangles
+
+Two triangles are **similar** when they have the same angles. Their shapes are
+identical — one is just a scaled version of the other. The key property: the
+ratios of corresponding sides are equal. If one triangle has sides $a$, $b$, $c$
+and a similar triangle has sides $a'$, $b'$, $c'$, then:
+
+$$
+\frac{a'}{a} = \frac{b'}{b} = \frac{c'}{c}
+$$
+
+This property is the mathematical foundation of perspective projection.
+
 ### Perspective without a matrix
 
-The core insight requires no matrices at all — just similar triangles:
+The core insight requires no matrices at all — just similar triangles.
+
+Imagine a camera (eye) at the origin looking down the negative Z axis. A point
+$P$ sits at $(x, y, z)$ in view space, and the near plane is at distance $n$
+from the eye. Drawing a line from the eye through $P$ to the near plane creates
+two similar right triangles:
 
 ```text
-        near plane (distance n)
-            |
-            |     P = (x, y, z)     z is negative (into screen)
-            |    /
-            |   /
-            |  /
-            | /
-   eye -----+
-  (origin)  |
-            |
+                   n               -z
+         ◄──────────────►◄────────────────────►
+         :                :                    :
+         :       P'       :         P          :
+    eye--+-------*--------+- - - - -*- - - - - -
+         |      /         :       / |
+         |     /          :      /  |
+         |    / small     :     /   |
+         |   /  triangle  :    /    |
+         |  /             :   / big |
+         | / ·            :  /  triangle
+         |/ θ             : /   |
+    -----*- - - - - - - - -*- - - - - - - - - -
+    eye (origin)          :     x (or y)
+         :                :
+       near plane     point's depth
 ```
 
-A point at $(x, y, z)$ projects onto the near plane at:
+The small triangle (eye to $P'$ on the near plane) and the big triangle (eye
+to $P$ at depth $-z$) share the angle $\theta$ at the eye. Both have a right
+angle where the point meets the axis. Same angles mean similar triangles, so
+their side ratios are equal:
+
+$$
+\frac{x_{\text{screen}}}{n} = \frac{x}{-z}
+$$
+
+Solving for $x_{\text{screen}}$:
 
 $$
 x_{\text{screen}} = \frac{x \cdot n}{-z}, \quad y_{\text{screen}} = \frac{y \cdot n}{-z}

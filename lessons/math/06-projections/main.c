@@ -137,28 +137,44 @@ int main(int argc, char *argv[])
      *
      * The fundamental insight: perspective is just similar triangles.
      *
-     * Imagine a pinhole camera at the origin, looking down -Z.
-     * A point at (x, y, z) in view space (z < 0, since the camera looks
-     * down -Z) projects onto the near plane at distance n:
+     * Two triangles are "similar" when they have the same angles. Their
+     * shapes are identical — one is a scaled version of the other. The
+     * key property: the ratios of corresponding sides are equal.
      *
+     * Imagine a camera at the origin, looking down -Z. A point P sits
+     * at (x, y, z) in view space, and the near plane is at distance n.
+     * A line from the eye through P forms two right triangles:
+     *
+     *        n             -z
+     *   ◄─────────►◄────────────────►
+     *   :    P'     :       P        :
+     *   +----*------+- - - -*- - - - -    (the horizontal axis)
+     *   |   /       :     / |
+     *   |  / small  :    /  |
+     *   | /  tri    :   / big tri
+     *   |/ θ        :  /   |
+     *   *- - - - - -+*- - - - - - - -
+     *  eye         near   x (or y)
+     *
+     * Both triangles share angle θ at the eye, and both have a right
+     * angle where the point meets the axis. Same angles → similar
+     * triangles → equal side ratios:
+     *
+     *     x_screen / n = x / (-z)
      *     x_screen = x * near / (-z)
      *     y_screen = y * near / (-z)
      *
      * That's it. No matrices needed. Objects farther from the camera
      * (larger -z) get divided by a bigger number → appear smaller.
-     *
-     *          near plane
-     *              |
-     *    eye ------+------------- point at (x, y, z)
-     *    (0,0,0)   |  n           z (negative, into screen)
-     *              |
-     *
-     * The ratio n/(-z) is the scaling factor.
      */
     printf("── 1. Perspective without a matrix ────────────────────────\n\n");
-    printf("  The core insight: perspective = similar triangles.\n");
-    printf("  x_screen = x * near / (-z)\n");
-    printf("  y_screen = y * near / (-z)\n\n");
+    printf("  Similar triangles: two triangles with the same angles.\n");
+    printf("  Their side ratios are equal — one is a scaled copy of the other.\n\n");
+    printf("  A line from the eye through a point P creates two right triangles\n");
+    printf("  (one to the near plane, one to P). Same angles, so:\n\n");
+    printf("      x_screen / n  =  x / (-z)\n\n");
+    printf("  Solving: x_screen = x * near / (-z)\n");
+    printf("           y_screen = y * near / (-z)\n\n");
 
     {
         float near = SEC1_NEAR;
