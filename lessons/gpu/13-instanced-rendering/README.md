@@ -41,9 +41,10 @@ One draw call renders all instances.
 The key API concept:
 
 ```c
-/* Slot 1 advances per-INSTANCE, not per-vertex */
+/* Slot 1 advances per-INSTANCE, not per-vertex.
+ * Note: leave instance_step_rate at 0 (the default) — SDL3 GPU uses
+ * the input_rate flag alone to control per-instance advancement. */
 inst_vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
-inst_vb_descs[1].instance_step_rate = 1;
 ```
 
 And the draw call specifies the instance count:
