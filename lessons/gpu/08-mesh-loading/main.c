@@ -87,8 +87,8 @@
 
 /* File paths for the model and texture.  These files are copied next to
  * the executable at build time by CMakeLists.txt. */
-#define MODEL_PATH       "models/space-shuttle/space-shuttle.obj"
-#define TEXTURE_PATH     "models/space-shuttle/ShuttleDiffuseMap.png"
+#define MODEL_PATH       "assets/models/space-shuttle/space-shuttle.obj"
+#define TEXTURE_PATH     "assets/models/space-shuttle/ShuttleDiffuseMap.png"
 #define PATH_BUFFER_SIZE 512
 
 /* Texture mip levels: log2(1024) + 1 = 11 levels for a 1024x1024 texture. */

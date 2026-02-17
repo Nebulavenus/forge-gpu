@@ -22,8 +22,8 @@ From first triangle to full 3D scenes — here's what you'll build:
 </tr>
 <tr>
 <td align="center">
-<a href="lessons/gpu/08-mesh-loading/"><img src="lessons/gpu/08-mesh-loading/assets/screenshot.png" width="400" alt="Space Shuttle (OBJ)" /></a><br />
-<b>Lesson 08</b> — Loading a Mesh (OBJ)
+<a href="lessons/gpu/14-environment-mapping/"><img src="lessons/gpu/14-environment-mapping/assets/screenshot.png" width="400" alt="Space shuttle with environment reflections in a Milky Way skybox" /></a><br />
+<b>Lesson 14</b> — Environment Mapping (cube map skybox + reflections)
 </td>
 <td align="center">
 <a href="lessons/gpu/11-compute-shaders/"><img src="lessons/gpu/11-compute-shaders/assets/screenshot.png" width="400" alt="Procedural plasma (compute shader)" /></a><br />
@@ -91,6 +91,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 11 | [Compute Shaders](lessons/gpu/11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups, compute-then-render pattern |
 | 12 | [Shader Grid](lessons/gpu/12-shader-grid/) | Procedural grid, screen-space derivatives, anti-aliased patterns, multiple pipelines |
 | 13 | [Instanced Rendering](lessons/gpu/13-instanced-rendering/) | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
+| 14 | [Environment Mapping](lessons/gpu/14-environment-mapping/) | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
 
 ### Math Lessons (lessons/math/)
 
@@ -302,7 +303,8 @@ forge-gpu/
 │       ├── 10-basic-lighting/
 │       ├── 11-compute-shaders/
 │       ├── 12-shader-grid/
-│       └── 13-instanced-rendering/
+│       ├── 13-instanced-rendering/
+│       └── 14-environment-mapping/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -364,6 +366,7 @@ project to enable Claude to build games and tools with you.
 | [compute-shaders](.claude/skills/compute-shaders/SKILL.md) | `/compute-shaders` | Compute pipelines, storage textures, dispatch, compute-then-render pattern |
 | [shader-grid](.claude/skills/shader-grid/SKILL.md) | `/shader-grid` | Procedural grid, anti-aliased lines with fwidth/smoothstep, multiple pipelines |
 | [instanced-rendering](.claude/skills/instanced-rendering/SKILL.md) | `/instanced-rendering` | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
+| [environment-mapping](.claude/skills/environment-mapping/SKILL.md) | `/environment-mapping` | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
 
 ### Development skills (used within this repo)
 

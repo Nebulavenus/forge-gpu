@@ -673,6 +673,53 @@ static inline vec3 vec3_cross(vec3 a, vec3 b)
     );
 }
 
+/* Negate a vector (reverse its direction).
+ *
+ * Returns (-v.x, -v.y, -v.z).
+ *
+ * Common uses:
+ *   - Reversing a direction vector (e.g. flipping a view direction)
+ *   - Computing the opposite of a force or velocity
+ *
+ * Usage:
+ *   vec3 forward = vec3_create(0.0f, 0.0f, -1.0f);
+ *   vec3 backward = vec3_negate(forward);  // (0.0, 0.0, 1.0)
+ *
+ * See: lessons/math/01-vectors
+ */
+static inline vec3 vec3_negate(vec3 v)
+{
+    return vec3_create(-v.x, -v.y, -v.z);
+}
+
+/* Reflect an incident vector about a surface normal.
+ *
+ * Formula: R = I - 2 * dot(I, N) * N
+ *
+ * The incident vector I points *toward* the surface.  The result R points
+ * away from the surface, mirrored about N.  Both I and N should be unit
+ * length for a geometrically correct reflection.
+ *
+ * Common uses:
+ *   - Environment / reflection mapping: reflect the view direction about
+ *     the surface normal to get the cube map sample direction
+ *   - Specular highlights: reflect the light direction about the normal
+ *   - Physics: reflecting a velocity off a wall
+ *
+ * Usage:
+ *   vec3 incident = vec3_normalize(vec3_create(1.0f, -1.0f, 0.0f));
+ *   vec3 normal   = vec3_create(0.0f, 1.0f, 0.0f);
+ *   vec3 reflected = vec3_reflect(incident, normal);
+ *   // reflected ≈ (0.707, 0.707, 0.0) — bounces upward
+ *
+ * See: lessons/math/01-vectors, lessons/gpu/14-environment-mapping
+ */
+static inline vec3 vec3_reflect(vec3 incident, vec3 normal)
+{
+    float d = vec3_dot(incident, normal);
+    return vec3_sub(incident, vec3_scale(normal, 2.0f * d));
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * vec4 — 4D vectors
  * ══════════════════════════════════════════════════════════════════════════ */

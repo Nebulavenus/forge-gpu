@@ -1660,6 +1660,59 @@ static void test_vec3_rotate_axis_angle_120(void)
     END_TEST();
 }
 
+static void test_vec3_negate(void)
+{
+    TEST("vec3_negate");
+    vec3 v = TEST_V3_A;  /* (1, 2, 3) */
+    vec3 result = vec3_negate(v);
+    vec3 expected = vec3_create(-1.0f, -2.0f, -3.0f);
+    ASSERT_VEC3_EQ(result, expected);
+    END_TEST();
+}
+
+static void test_vec3_negate_zero(void)
+{
+    TEST("vec3_negate zero vector");
+    vec3 result = vec3_negate(TEST_V3_ZERO);
+    ASSERT_VEC3_EQ(result, TEST_V3_ZERO);
+    END_TEST();
+}
+
+static void test_vec3_reflect_horizontal(void)
+{
+    TEST("vec3_reflect off horizontal surface");
+    /* Ball falling at 45° onto a floor (normal = up) */
+    vec3 incident = vec3_normalize(vec3_create(1.0f, -1.0f, 0.0f));
+    vec3 normal   = TEST_V3_Y_AXIS;
+    vec3 result   = vec3_reflect(incident, normal);
+    vec3 expected = vec3_normalize(vec3_create(1.0f, 1.0f, 0.0f));
+    ASSERT_VEC3_EQ(result, expected);
+    END_TEST();
+}
+
+static void test_vec3_reflect_head_on(void)
+{
+    TEST("vec3_reflect head-on (reverses direction)");
+    /* Straight into the surface — should bounce straight back */
+    vec3 incident = vec3_create(0.0f, 0.0f, -1.0f);
+    vec3 normal   = TEST_V3_Z_AXIS;
+    vec3 result   = vec3_reflect(incident, normal);
+    vec3 expected = vec3_create(0.0f, 0.0f, 1.0f);
+    ASSERT_VEC3_EQ(result, expected);
+    END_TEST();
+}
+
+static void test_vec3_reflect_parallel(void)
+{
+    TEST("vec3_reflect parallel to surface (no change)");
+    /* Incident perpendicular to normal — dot(I,N) = 0 → no change */
+    vec3 incident = TEST_V3_X_AXIS;
+    vec3 normal   = TEST_V3_Y_AXIS;
+    vec3 result   = vec3_reflect(incident, normal);
+    ASSERT_VEC3_EQ(result, incident);
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -1705,6 +1758,11 @@ int main(int argc, char *argv[])
     test_vec3_normalize();
     test_vec3_lerp();
     test_vec3_trilerp();
+    test_vec3_negate();
+    test_vec3_negate_zero();
+    test_vec3_reflect_horizontal();
+    test_vec3_reflect_head_on();
+    test_vec3_reflect_parallel();
 
     /* vec4 tests */
     SDL_Log("\nvec4 tests:");

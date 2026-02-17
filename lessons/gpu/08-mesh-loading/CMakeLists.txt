@@ -15,15 +15,10 @@ if(TARGET SDL3::SDL3-shared)
     )
 endif()
 
-# Copy model files (OBJ + texture) next to the executable so they can be
-# loaded at runtime via SDL_GetBasePath() + relative path.
+# Copy model files (OBJ + texture) from shared assets directory next to the
+# executable so they can be loaded at runtime via SDL_GetBasePath() + relative path.
 add_custom_command(TARGET 08-mesh-loading POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        $<TARGET_FILE_DIR:08-mesh-loading>/models/space-shuttle
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/space-shuttle/space-shuttle.obj
-        $<TARGET_FILE_DIR:08-mesh-loading>/models/space-shuttle/space-shuttle.obj
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/space-shuttle/ShuttleDiffuseMap.png
-        $<TARGET_FILE_DIR:08-mesh-loading>/models/space-shuttle/ShuttleDiffuseMap.png
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${FORGE_ASSETS_DIR}/models/space-shuttle
+        $<TARGET_FILE_DIR:08-mesh-loading>/assets/models/space-shuttle
 )

@@ -26,7 +26,8 @@ Infrastructure that supports all lessons:
 - [x] **Lesson 11 — Compute Shaders** — Compute pipelines, storage textures, dispatch groups, fullscreen triangle, compute-then-render pattern
 - [x] **Lesson 12 — Shader Grid** — Procedural grid rendering with fwidth()/smoothstep() anti-aliasing, distance fade, multiple pipelines in one render pass, combining procedural geometry with 3D models
 - [x] **Lesson 13 — Instanced Rendering** — Per-instance vertex buffers, per-instance model matrices as vertex attributes, multi-model scenes (BoxTextured + Duck), efficient draw calls (3 calls for 303 objects: 47 boxes + 256 ducks)
-- [ ] **Lesson 14 — HDR & Tone Mapping** — Gamma/sRGB, render-to-texture, floating-point framebuffers, tone mapping operators (depends on compute for post-processing)
+- [x] **Lesson 14 — Environment Mapping** — Cube map textures, skybox rendering (z=w depth technique), environment reflections (reflect + cube map sample + lerp), multi-pipeline render pass, equirectangular-to-cubemap conversion
+- [ ] **Lesson ?? — HDR & Tone Mapping** — Gamma/sRGB, render-to-texture, floating-point framebuffers, tone mapping operators (depends on compute for post-processing)
 - [ ] **Lesson ?? — Point Lights & Shadows** — Multiple point light sources, shadow mapping
 - [ ] **Lesson ?? — Cascaded Shadow Maps (CSM)** — View-dependent shadow partitioning for large outdoor scenes
 - [ ] **Lesson ?? — Height Map Terrain** — GPU terrain from height map, LOD, normal computation
