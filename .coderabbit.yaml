@@ -29,6 +29,11 @@ reviews:
         - Check for proper error handling on all SDL calls
         - Ensure memory management is correct (SDL_calloc/SDL_free)
         - Flag any magic numbers that should be #define constants
+        - Do NOT suggest renaming typedefs to snake_case. This project uses
+          PascalCase for typedefs (e.g. Vertex, Uniforms, GpuPrimitive,
+          GridVertUniforms, ModelData) and snake_case only for local variables
+          and the app_state struct. This is intentional and consistent across
+          all lessons.
 
     - path: "lessons/**/*.hlsl"
       instructions: |

@@ -42,10 +42,12 @@ From first triangle to full 3D scenes — here's what you'll build:
 </tr>
 <tr>
 <td align="center">
-<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="400" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
-<b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
+<a href="lessons/gpu/15-cascaded-shadow-maps/"><img src="lessons/gpu/15-cascaded-shadow-maps/assets/screenshot.png" width="400" alt="Cascaded shadow maps with PCF soft shadows" /></a><br />
+<b>Lesson 15</b> — Cascaded Shadow Maps (3 cascades, PCF soft shadows)
 </td>
 <td align="center">
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="400" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
+<b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
 </td>
 </tr>
 </table>
@@ -92,6 +94,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 12 | [Shader Grid](lessons/gpu/12-shader-grid/) | Procedural grid, screen-space derivatives, anti-aliased patterns, multiple pipelines |
 | 13 | [Instanced Rendering](lessons/gpu/13-instanced-rendering/) | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
 | 14 | [Environment Mapping](lessons/gpu/14-environment-mapping/) | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
+| 15 | [Cascaded Shadow Maps](lessons/gpu/15-cascaded-shadow-maps/) | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes, debug overlay |
 
 ### Math Lessons (lessons/math/)
 
@@ -304,7 +307,8 @@ forge-gpu/
 │       ├── 11-compute-shaders/
 │       ├── 12-shader-grid/
 │       ├── 13-instanced-rendering/
-│       └── 14-environment-mapping/
+│       ├── 14-environment-mapping/
+│       └── 15-cascaded-shadow-maps/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -367,6 +371,7 @@ project to enable Claude to build games and tools with you.
 | [shader-grid](.claude/skills/shader-grid/SKILL.md) | `/shader-grid` | Procedural grid, anti-aliased lines with fwidth/smoothstep, multiple pipelines |
 | [instanced-rendering](.claude/skills/instanced-rendering/SKILL.md) | `/instanced-rendering` | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
 | [environment-mapping](.claude/skills/environment-mapping/SKILL.md) | `/environment-mapping` | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
+| [cascaded-shadow-maps](.claude/skills/cascaded-shadow-maps/SKILL.md) | `/cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
 
 ### Development skills (used within this repo)
 

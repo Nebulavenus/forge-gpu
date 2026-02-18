@@ -56,6 +56,7 @@ add_subdirectory(lessons/gpu/11-compute-shaders)
 add_subdirectory(lessons/gpu/12-shader-grid)
 add_subdirectory(lessons/gpu/13-instanced-rendering)
 add_subdirectory(lessons/gpu/14-environment-mapping)
+add_subdirectory(lessons/gpu/15-cascaded-shadow-maps)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

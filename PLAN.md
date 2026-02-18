@@ -29,7 +29,7 @@ Infrastructure that supports all lessons:
 - [x] **Lesson 14 — Environment Mapping** — Cube map textures, skybox rendering (z=w depth technique), environment reflections (reflect + cube map sample + lerp), multi-pipeline render pass, equirectangular-to-cubemap conversion
 - [ ] **Lesson ?? — HDR & Tone Mapping** — Gamma/sRGB, render-to-texture, floating-point framebuffers, tone mapping operators (depends on compute for post-processing)
 - [ ] **Lesson ?? — Point Lights & Shadows** — Multiple point light sources, shadow mapping
-- [ ] **Lesson ?? — Cascaded Shadow Maps (CSM)** — View-dependent shadow partitioning for large outdoor scenes
+- [x] **Lesson 15 — Cascaded Shadow Maps (CSM)** — View-dependent shadow partitioning for large outdoor scenes
 - [ ] **Lesson ?? — Height Map Terrain** — GPU terrain from height map, LOD, normal computation
 
 ## Math Lessons
