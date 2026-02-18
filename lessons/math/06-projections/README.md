@@ -89,24 +89,7 @@ $P$ sits at $(x, y, z)$ in view space, and the near plane is at distance $n$
 from the eye. Drawing a line from the eye through $P$ to the near plane creates
 two similar right triangles:
 
-```text
-                   n               -z
-         ◄──────────────►◄────────────────────►
-         :                :                    :
-         :       P'       :         P          :
-    eye--+-------*--------+- - - - -*- - - - - -
-         |      /         :       / |
-         |     /          :      /  |
-         |    / small     :     /   |
-         |   /  triangle  :    /    |
-         |  /             :   / big |
-         | / ·            :  /  triangle
-         |/ θ             : /   |
-    -----*- - - - - - - - -*- - - - - - - - - -
-    eye (origin)          :     x (or y)
-         :                :
-       near plane     point's depth
-```
+![Similar triangles in perspective projection](assets/similar_triangles.png)
 
 The small triangle (eye to $P'$ on the near plane) and the big triangle (eye
 to $P$ at depth $-z$) share the angle $\theta$ at the eye. Both have a right
