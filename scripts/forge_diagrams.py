@@ -4095,7 +4095,7 @@ def diagram_pcf_kernel():
     fig, axes = plt.subplots(
         1,
         2,
-        figsize=(10, 4.2),
+        figsize=(10, 5.0),
         facecolor=STYLE["bg"],
         gridspec_kw={"width_ratios": [1, 1], "wspace": 0.08},
     )
@@ -4205,12 +4205,15 @@ def diagram_pcf_kernel():
         path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
     )
 
-    ax_grid.set_title(
+    ax_grid.text(
+        0,
+        2.15,
         "3\u00d73 Sample Grid",
-        color=STYLE["text"],
+        ha="center",
+        va="center",
         fontsize=12,
         fontweight="bold",
-        pad=10,
+        color=STYLE["text"],
     )
 
     # --- Right panel: averaging result ------------------------------------
@@ -4344,12 +4347,15 @@ def diagram_pcf_kernel():
         markersize=8,
     )
 
-    ax_result.set_title(
+    ax_result.text(
+        0,
+        2.15,
         "Averaging",
-        color=STYLE["text"],
+        ha="center",
+        va="center",
         fontsize=12,
         fontweight="bold",
-        pad=10,
+        color=STYLE["text"],
     )
 
     # Overall title
@@ -4361,7 +4367,7 @@ def diagram_pcf_kernel():
         y=0.98,
     )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
     _save(fig, "gpu/15-cascaded-shadow-maps", "pcf_kernel.png")
 
 
