@@ -50,6 +50,14 @@ From first triangle to full 3D scenes — here's what you'll build:
 <b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
 </td>
 </tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/16-blending/"><img src="lessons/gpu/16-blending/assets/screenshot.png" width="400" alt="Alpha blending, alpha testing, and additive blending with glTF model" /></a><br />
+<b>Lesson 16</b> — Blending (alpha blend, alpha test, additive)
+</td>
+<td align="center">
+</td>
+</tr>
 </table>
 
 ## Why forge-gpu?
