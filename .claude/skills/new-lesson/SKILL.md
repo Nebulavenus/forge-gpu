@@ -250,7 +250,13 @@ Use mermaid for sequential flows; keep simple ASCII diagrams as-is.
 For **formulas**, use inline `$...$` and display `$$...$$` math notation:
 
 - Inline: `$\text{MVP} = P \times V \times M$`
-- Display: `$$x_{\text{screen}} = \frac{x \cdot n}{-z}$$`
+- Display math blocks must be split across three lines (CI enforces this):
+
+```text
+$$
+x_{\text{screen}} = \frac{x \cdot n}{-z}
+$$
+```
 
 Keep worked examples (step-by-step with numbers) in ` ```text ` blocks.
 
@@ -262,6 +268,11 @@ Keep worked examples (step-by-step with numbers) in ` ```text ` blocks.
 - Each lesson should introduce ONE new concept at a time
 - **Always use the math library** — no bespoke math in GPU lessons
 - Link to math lessons when explaining concepts
+- **Never extract assets from glTFs à la carte** — when a lesson uses a glTF
+  model, copy the complete model (`.gltf`, `.bin`, and all referenced textures)
+  into the lesson's `assets/` directory and load it with `forge_gltf_load()`.
+  The model's node transforms, materials, and textures should drive the scene
+  layout, not hand-coded geometry.
 - **Always check SDL return values** — every SDL GPU function that returns
   `bool` must be checked. Log the function name and `SDL_GetError()` on
   failure, then clean up resources and early-return. This includes

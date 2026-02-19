@@ -168,6 +168,14 @@ add_custom_command(TARGET my-app POST_BUILD
 )
 ```
 
+## Important rule
+
+**Never extract individual assets from a glTF model à la carte.** Always copy
+the complete model (`.gltf`, `.bin`, and all referenced textures) into the
+lesson's `assets/` directory and load it with `forge_gltf_load()`. The model's
+node transforms, materials, and textures should drive the scene — do not
+cherry-pick textures or meshes and build a hand-coded scene around them.
+
 ## Common mistakes
 
 1. **glTF quaternion order** — glTF stores quaternions as `[x, y, z, w]`, but

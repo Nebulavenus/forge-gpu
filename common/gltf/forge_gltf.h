@@ -47,6 +47,14 @@
 #define FORGE_GLTF_MAX_IMAGES     128
 #define FORGE_GLTF_MAX_BUFFERS    16
 
+/* glTF 2.0 spec default for alphaCutoff when alphaMode is MASK. */
+#define FORGE_GLTF_DEFAULT_ALPHA_CUTOFF 0.5f
+
+/* Approximate alpha for KHR_materials_transmission surfaces.
+ * Full transmission requires refraction and screen-space techniques;
+ * we approximate it as standard alpha blending at this opacity. */
+#define FORGE_GLTF_TRANSMISSION_ALPHA 0.5f
+
 /* glTF component type constants (from the spec). */
 #define FORGE_GLTF_BYTE           5120
 #define FORGE_GLTF_UNSIGNED_BYTE  5121
@@ -97,6 +105,17 @@ typedef struct ForgeGltfMesh {
     char name[FORGE_GLTF_NAME_SIZE];
 } ForgeGltfMesh;
 
+/* ── Alpha mode ───────────────────────────────────────────────────────────── */
+/* Maps directly to glTF 2.0 alphaMode.  OPAQUE is the default.
+ * When KHR_materials_transmission is present and no explicit alphaMode
+ * is set, the parser promotes the material to BLEND as an approximation. */
+
+typedef enum ForgeGltfAlphaMode {
+    FORGE_GLTF_ALPHA_OPAQUE = 0,   /* fully opaque (default)              */
+    FORGE_GLTF_ALPHA_MASK   = 1,   /* binary cutout via alphaCutoff       */
+    FORGE_GLTF_ALPHA_BLEND  = 2    /* smooth transparency, needs sorting  */
+} ForgeGltfAlphaMode;
+
 /* ── Material ─────────────────────────────────────────────────────────────── */
 /* Basic PBR material: base color + optional texture path.
  * We store the file path (not a GPU texture) so the caller can load
@@ -107,6 +126,9 @@ typedef struct ForgeGltfMaterial {
     char  texture_path[FORGE_GLTF_PATH_SIZE];  /* empty = no texture */
     bool  has_texture;
     char  name[FORGE_GLTF_NAME_SIZE];
+    ForgeGltfAlphaMode alpha_mode;             /* OPAQUE, MASK, or BLEND  */
+    float              alpha_cutoff;           /* MASK threshold (def 0.5)*/
+    bool               double_sided;           /* render both faces?      */
 } ForgeGltfMaterial;
 
 /* ── Node ─────────────────────────────────────────────────────────────────── */
@@ -515,14 +537,39 @@ static bool forge_gltf__parse_materials(const cJSON *root,
         const cJSON *mat = cJSON_GetArrayItem(mats, i);
         ForgeGltfMaterial *m = &scene->materials[i];
 
-        /* Defaults: opaque white, no texture. */
+        /* Defaults: opaque white, no texture, single-sided. */
         m->base_color[0] = 1.0f;
         m->base_color[1] = 1.0f;
         m->base_color[2] = 1.0f;
         m->base_color[3] = 1.0f;
         m->texture_path[0] = '\0';
         m->has_texture = false;
+        m->alpha_mode = FORGE_GLTF_ALPHA_OPAQUE;
+        m->alpha_cutoff = FORGE_GLTF_DEFAULT_ALPHA_CUTOFF;
+        m->double_sided = false;
         copy_name(m->name, sizeof(m->name), mat);
+
+        /* ── Alpha mode (glTF 2.0 core) ─────────────────────────────── */
+        const cJSON *am = cJSON_GetObjectItemCaseSensitive(mat, "alphaMode");
+        if (cJSON_IsString(am)) {
+            if (SDL_strcmp(am->valuestring, "MASK") == 0)
+                m->alpha_mode = FORGE_GLTF_ALPHA_MASK;
+            else if (SDL_strcmp(am->valuestring, "BLEND") == 0)
+                m->alpha_mode = FORGE_GLTF_ALPHA_BLEND;
+        }
+
+        /* ── Alpha cutoff (only meaningful for MASK, default 0.5) ──── */
+        const cJSON *ac = cJSON_GetObjectItemCaseSensitive(mat, "alphaCutoff");
+        if (cJSON_IsNumber(ac)) {
+            m->alpha_cutoff = (float)ac->valuedouble;
+            if (m->alpha_cutoff < 0.0f) m->alpha_cutoff = 0.0f;
+            if (m->alpha_cutoff > 1.0f) m->alpha_cutoff = 1.0f;
+        }
+
+        /* ── Double-sided flag ───────────────────────────────────────── */
+        const cJSON *ds = cJSON_GetObjectItemCaseSensitive(mat, "doubleSided");
+        if (cJSON_IsBool(ds))
+            m->double_sided = cJSON_IsTrue(ds);
 
         const cJSON *pbr = cJSON_GetObjectItemCaseSensitive(
             mat, "pbrMetallicRoughness");
@@ -538,6 +585,26 @@ static bool forge_gltf__parse_materials(const cJSON *root,
                 const cJSON *elem = cJSON_GetArrayItem(factor, fi);
                 m->base_color[fi] = elem ? (float)elem->valuedouble
                                          : defaults[fi];
+            }
+        }
+
+        /* ── Approximate KHR_materials_transmission as alpha blend ──── */
+        /* Transmission is a form of transparency where light passes
+         * through the surface.  We approximate it as standard alpha
+         * blending since full transmission requires refraction and
+         * screen-space techniques beyond this parser's scope.
+         *
+         * This runs AFTER base color parsing so the override of
+         * base_color[3] is not clobbered by baseColorFactor. */
+        {
+            const cJSON *exts = cJSON_GetObjectItemCaseSensitive(
+                mat, "extensions");
+            if (exts && cJSON_GetObjectItemCaseSensitive(
+                    exts, "KHR_materials_transmission")) {
+                if (m->alpha_mode == FORGE_GLTF_ALPHA_OPAQUE) {
+                    m->alpha_mode = FORGE_GLTF_ALPHA_BLEND;
+                    m->base_color[3] = FORGE_GLTF_TRANSMISSION_ALPHA;
+                }
             }
         }
 

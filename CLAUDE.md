@@ -97,6 +97,11 @@ provides reusable skills and libraries so humans and AI can build together.
   includes `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
   `SDL_Init`, and others. Never ignore a bool return value.
 - **Readability:** This code is meant to be learned from — clarity over cleverness
+- **glTF assets:** When a lesson uses a glTF model, load the entire model via
+  the parser — never extract individual textures or meshes from a glTF à la
+  carte. Copy the complete model (`.gltf`, `.bin`, and all referenced textures)
+  into the lesson's `assets/` directory and load it with `forge_gltf_load()`.
+  The model's node transforms, materials, and textures should drive the scene.
 - **IMPORTANT:** Always run build commands via a Task agent with `model: "haiku"`,
   never directly from the main agent. This keeps the main context clean, uses
   fewer tokens, and is faster.
@@ -151,6 +156,29 @@ corresponding tests.** Tests are registered with CTest and also run in CI.
 
 When adding a new parser or library to `common/`, add a matching test under
 `tests/` and register it in the root `CMakeLists.txt`.
+
+## Shader compilation
+
+Shaders are written in HLSL and compiled to both SPIRV and DXIL using
+`scripts/compile_shaders.py`. The script auto-detects `dxc` from the Vulkan
+SDK (`VULKAN_SDK` environment variable) or the system `PATH`.
+
+**Compiling shaders:**
+
+```bash
+python scripts/compile_shaders.py              # all lessons
+python scripts/compile_shaders.py 16            # lesson 16 only
+python scripts/compile_shaders.py blending      # by name fragment
+python scripts/compile_shaders.py 16 -v         # verbose (show dxc commands)
+```
+
+The script finds all `.vert.hlsl`, `.frag.hlsl`, and `.comp.hlsl` files in a
+lesson's `shaders/` directory, compiles each to `.spv` (SPIRV) and `.dxil`,
+then generates C byte-array headers (e.g. `scene_vert_spirv.h`) that are
+`#include`d directly in the lesson's `main.c`.
+
+**When to recompile:** After any change to an HLSL shader file, recompile
+before building the lesson. The C build does not auto-detect shader changes.
 
 ## When writing GPU lessons (lessons/gpu/)
 

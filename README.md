@@ -95,6 +95,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 13 | [Instanced Rendering](lessons/gpu/13-instanced-rendering/) | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
 | 14 | [Environment Mapping](lessons/gpu/14-environment-mapping/) | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
 | 15 | [Cascaded Shadow Maps](lessons/gpu/15-cascaded-shadow-maps/) | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes, debug overlay |
+| 16 | [Blending](lessons/gpu/16-blending/) | Alpha blending, alpha testing, blend equations, transparency sorting, additive blend |
 
 ### Math Lessons (lessons/math/)
 
@@ -308,7 +309,8 @@ forge-gpu/
 │       ├── 12-shader-grid/
 │       ├── 13-instanced-rendering/
 │       ├── 14-environment-mapping/
-│       └── 15-cascaded-shadow-maps/
+│       ├── 15-cascaded-shadow-maps/
+│       └── 16-blending/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -371,6 +373,7 @@ project to enable Claude to build games and tools with you.
 | [shader-grid](.claude/skills/shader-grid/SKILL.md) | `/shader-grid` | Procedural grid, anti-aliased lines with fwidth/smoothstep, multiple pipelines |
 | [instanced-rendering](.claude/skills/instanced-rendering/SKILL.md) | `/instanced-rendering` | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
 | [environment-mapping](.claude/skills/environment-mapping/SKILL.md) | `/environment-mapping` | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
+| [blending](.claude/skills/blending/SKILL.md) | `/blending` | Alpha blending, alpha testing, blend state configuration, transparency sorting |
 | [cascaded-shadow-maps](.claude/skills/cascaded-shadow-maps/SKILL.md) | `/cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
 
 ### Development skills (used within this repo)

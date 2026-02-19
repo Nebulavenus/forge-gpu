@@ -413,7 +413,13 @@ For **formulas**, use inline `$...$` and display `$$...$$` math notation.
 GitHub renders these via KaTeX:
 
 - Inline: `$\vec{a} \cdot \vec{b} = a_x b_x + a_y b_y$`
-- Display: `$$\text{lerp}(a, b, t) = a + t \cdot (b - a)$$`
+- Display math blocks must be split across three lines (CI enforces this):
+
+```text
+$$
+\text{lerp}(a, b, t) = a + t \cdot (b - a)
+$$
+```
 
 Keep worked-examples-with-numbers in ` ```text ` blocks — only convert
 symbolic/algebraic formulas to KaTeX.
