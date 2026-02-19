@@ -27,10 +27,68 @@ Infrastructure that supports all lessons:
 - [x] **Lesson 12 — Shader Grid** — Procedural grid rendering with fwidth()/smoothstep() anti-aliasing, distance fade, multiple pipelines in one render pass, combining procedural geometry with 3D models
 - [x] **Lesson 13 — Instanced Rendering** — Per-instance vertex buffers, per-instance model matrices as vertex attributes, multi-model scenes (BoxTextured + Duck), efficient draw calls (3 calls for 303 objects: 47 boxes + 256 ducks)
 - [x] **Lesson 14 — Environment Mapping** — Cube map textures, skybox rendering (z=w depth technique), environment reflections (reflect + cube map sample + lerp), multi-pipeline render pass, equirectangular-to-cubemap conversion
-- [ ] **Lesson ?? — HDR & Tone Mapping** — Gamma/sRGB, render-to-texture, floating-point framebuffers, tone mapping operators (depends on compute for post-processing)
-- [ ] **Lesson ?? — Point Lights & Shadows** — Multiple point light sources, shadow mapping
 - [x] **Lesson 15 — Cascaded Shadow Maps (CSM)** — View-dependent shadow partitioning for large outdoor scenes
-- [ ] **Lesson ?? — Height Map Terrain** — GPU terrain from height map, LOD, normal computation
+
+### Core Rendering Techniques
+
+- [ ] **Lesson 16 — Blending** — Alpha blending, blend equations and factors, transparency sorting, additive and premultiplied-alpha modes; when to use alpha test vs alpha blend; blend state configuration in SDL GPU
+- [ ] **Lesson 17 — Normal Maps** — Tangent-space normal mapping for surface detail without extra geometry; tangent and bitangent computation; TBN matrix construction; sampling and decoding normal maps in the fragment shader; comparing flat vs per-vertex vs normal-mapped shading
+- [ ] **Lesson 18 — Blinn-Phong with Materials** — Extending Lesson 10 with per-object material properties (ambient, diffuse, specular colors, shininess); material uniforms or material buffers; multiple objects with distinct materials in one scene; foundation for PBR-style material workflows
+- [ ] **Lesson 19 — Debug Lines** — Immediate-mode debug drawing for lines, circles, and coordinate-axis gizmos; dynamic vertex buffer updated each frame; line rendering pipeline (no depth test option, overlay mode); useful as a diagnostic tool for every lesson that follows
+
+### Atmosphere & Post-Processing
+
+- [ ] **Lesson 20 — Linear Fog** — Depth-based distance fog in the fragment shader; linear, exponential, and exponential-squared falloff; fog color blending; integrating fog with existing lit scenes
+- [ ] **Lesson 21 — HDR & Tone Mapping** — Rendering to floating-point (R16G16B16A16_FLOAT) render targets; why LDR clamps highlights; tone mapping operators (Reinhard, ACES); gamma correction pipeline; fullscreen blit pass from HDR to swapchain
+- [ ] **Lesson 22 — Bloom (Jorge Jimenez)** — Dual-filter (downsample + upsample) bloom using the Jimenez method from SIGGRAPH 2014; threshold extraction; progressive downsample chain; tent-filter upsample with additive blending; combining bloom with tone-mapped output (depends on Lesson 21)
+
+### Lighting Extensions
+
+- [ ] **Lesson 23 — Point Lights & Shadows** — Multiple point light sources; omnidirectional shadow mapping with cube map depth textures; shadow bias and Peter Panning; attenuation falloff
+- [ ] **Lesson 24 — Gobo Spotlight** — Projected-texture (cookie/gobo) spotlight; spotlight cone with inner/outer angles and smooth falloff; projecting a texture pattern through the light; shadow map for the spotlight frustum; theatrical/cinematic lighting applications
+
+### Noise & Procedural
+
+> **Prerequisite:** Math Lessons 11–13 must be completed before starting this
+> section. Lesson 25 relies on hash functions (Math Lesson 11), gradient noise
+> (Math Lesson 12), and blue noise dithering (Math Lesson 13). Lesson 26 builds
+> on the noise techniques from Lesson 25.
+
+- [ ] **Lesson 25 — Shader Noise** — Applying noise in fragment shaders; GPU-friendly hash functions for white noise (see [Math Lesson 11 — Hash Functions & White Noise](#planned-math-lessons)); Perlin/simplex noise for smooth randomness (see [Math Lesson 12 — Gradient Noise](#planned-math-lessons)); blue noise dithering for banding reduction (see [Math Lesson 13 — Blue Noise & Low-Discrepancy Sequences](#planned-math-lessons)); octave stacking (fBm) for natural patterns; practical uses — procedural textures, terrain variation, dissolve effects
+- [ ] **Lesson 26 — Procedural Sky (Hillaire)** — Single-scattering atmospheric model based on Sébastien Hillaire's approach; Rayleigh and Mie scattering; sun disc rendering; time-of-day color variation; LUT-based or per-pixel evaluation; integrating as a skybox replacement
+
+### Screen-Space Effects
+
+- [ ] **Lesson 27 — SSAO** — Screen-space ambient occlusion; sampling hemisphere kernel in view space; depth buffer reconstruction; random rotation via noise texture; blur pass for smooth results; combining AO factor with lighting (depends on Lesson 21 for render-to-texture pattern)
+- [ ] **Lesson 28 — Screen-Space Reflections (SSR)** — Ray marching against the depth buffer in screen space; hierarchical tracing for performance; handling misses and fallback to environment map; combining SSR with existing reflections from Lesson 14
+
+### Reflections
+
+- [ ] **Lesson 29 — Planar Reflections** — Rendering the scene from a mirrored camera; oblique near-plane clipping to prevent geometry behind the mirror from appearing; reflection texture compositing; application to water surfaces and mirrors
+
+### Animation
+
+- [ ] **Lesson 30 — Transform Animations** — Keyframe interpolation for translation, rotation (slerp), and scale; animation clips with timestamps; playing, blending, and looping animations; loading animation data from glTF
+- [ ] **Lesson 31 — Skinning Animations** — Skeletal animation with joint hierarchies; bind-pose inverse matrices; vertex skinning with joint indices and weights (4 joints per vertex); computing the skin matrix in the vertex shader; loading skinned meshes from glTF
+
+### Advanced Rendering
+
+- [ ] **Lesson 32 — Vertex Pulling** — Programmable vertex fetch using storage buffers instead of vertex input; raw buffer access in the vertex shader; decoupling vertex layout from pipeline input state; use cases — flexible vertex formats, mesh compression, compute-to-vertex pipelines
+- [ ] **Lesson 33 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
+- [ ] **Lesson 34 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on Lessons 11 and 16)
+- [ ] **Lesson 35 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
+
+### Advanced Materials & Effects
+
+- [ ] **Lesson 36 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
+- [ ] **Lesson 37 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
+- [ ] **Lesson 38 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
+
+### Volumetric & Terrain
+
+- [ ] **Lesson 39 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
+- [ ] **Lesson 40 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 35)
+- [ ] **Lesson 41 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
 ## Math Lessons
 
@@ -44,6 +102,16 @@ Infrastructure that supports all lessons:
 - [x] **Math Lesson 08 — Orientation** — *(Larger lesson, like Projections.)* Four representations of 3D rotation and how to convert between them. **Euler angles:** pitch, yaw, and roll diagram; rotation order conventions; gimbal lock explained and visualized. **Rotation matrices:** how each basis-axis rotation matrix (Rx, Ry, Rz) is constructed; rotation around an arbitrary axis (Rodrigues' formula). **Axis-angle:** compact representation (axis + angle); why it is commonly used as an input/interface format even when quaternions are the storage format. **Quaternions:** the imaginary-number basis (i, j, k) and their properties; representation as (w, x, y, z); identity quaternion; multiplication and how it composes rotations; conjugate and inverse; rotating a vector by a quaternion; unit quaternion constraint; slerp for smooth interpolation. Conversions: Euler↔matrix, axis-angle↔quaternion, quaternion↔matrix, and the full round-trip
 - [x] **Math Lesson 09 — View Matrix & Virtual Camera** — Building a view matrix from scratch; the camera as an inverse transform (world-to-view); constructing the view matrix from position + quaternion orientation; extracting forward/right/up vectors from a quaternion; look-at as a special case; how the view matrix feeds into the MVP pipeline (connects to Math Lesson 02 — Coordinate Spaces and Math Lesson 06 — Projections)
 - [x] **Math Lesson 10 — Anisotropy vs Isotropy** — Direction-dependent vs direction-independent behavior; isotropic sampling (equal in all directions) vs anisotropic filtering (stretches samples along the axis of greatest compression); anisotropic noise (Perlin/simplex stretched along a direction, e.g. wood grain, brushed metal); anisotropic friction in rigid body physics (ice rink, grooved surfaces, tire grip); eigenvalues of the screen-space Jacobian and how they drive the GPU's anisotropic sampler; practical demo comparing isotropic vs anisotropic texture filtering on a tilted plane
+
+### Planned Math Lessons
+
+> **Scheduling:** Math Lessons 11–13 are prerequisites for GPU Lesson 25
+> (Shader Noise) and must be implemented before the Noise & Procedural section
+> begins.
+
+- [ ] **Math Lesson 11 — Hash Functions & White Noise** — Integer hash functions for GPU use (Wang, PCG, xxHash-style); mapping hash output to uniform floats; why shader noise avoids `rand()` and relies on deterministic hashing; the "magic numbers" in common hash functions and where they come from; visualizing white noise patterns; seeding with position, time, and frame index
+- [ ] **Math Lesson 12 — Gradient Noise (Perlin & Simplex)** — Lattice-based noise: random gradients at grid points, dot product with distance vector, smooth interpolation; Ken Perlin's original noise and improved noise (2002); simplex noise — fewer samples, better isotropy, skewed grid; octave stacking (fBm) for multi-scale detail; lacunarity, persistence, and their visual effects; domain warping for organic shapes
+- [ ] **Math Lesson 13 — Blue Noise & Low-Discrepancy Sequences** — Why uniform random sampling clumps and gaps; blue noise — energy concentrated away from low frequencies; generating blue noise (void-and-cluster, Mitchell's best candidate); low-discrepancy sequences (Halton, Sobol, R2); application to dithering (replacing banding with imperceptible noise), sampling (anti-aliasing, AO kernels), and stippling
 
 ## Developer Experience / Tooling
 
