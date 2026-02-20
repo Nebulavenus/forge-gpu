@@ -149,12 +149,12 @@ library (`common/math/`) with documented, reusable implementations.
 Learn the practical engineering behind graphics applications — build systems,
 C fundamentals, debugging, and project structure:
 
-*Coming soon — this is a new lesson category.* Use the `/engine-lesson` skill
-to create new lessons.
+| # | Topic | What you'll learn |
+|---|-------|-------------------|
+| 01 | [Intro to C](lessons/engine/01-intro-to-c/) | Types, functions, control flow, arrays, strings, pointers, structs, dynamic memory |
 
-See [lessons/engine/README.md](lessons/engine/README.md) for details.
-
-See [PLAN.md](PLAN.md) for the full roadmap.
+See [lessons/engine/README.md](lessons/engine/README.md) for details and the
+full topic list. See [PLAN.md](PLAN.md) for the roadmap.
 
 ## Shared Libraries (`common/`)
 

@@ -237,6 +237,9 @@ build\lessons\engine\NN-topic-name\Debug\NN-topic-name.exe
 - **`CMakeLists.txt` (root)**: Add `add_subdirectory(lessons/engine/NN-topic-name)`
   under an "Engine Lessons" section (create the section if it doesn't exist yet,
   placed between Math Lessons and GPU Lessons)
+- **`README.md` (root)**: Add a row to the engine lessons table in the
+  "Engine Lessons (lessons/engine/)" section — follow the same format as the
+  existing rows (number, linked topic name, "What you'll learn" summary)
 - **`lessons/engine/README.md`**: Add a row to the lessons table
 - **`PLAN.md`**: Note the engine lesson if relevant
 
