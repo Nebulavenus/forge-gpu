@@ -49,12 +49,12 @@ Infrastructure that supports all lessons:
 
 ### Noise & Procedural
 
-> **Prerequisite:** Math Lessons 11–13 must be completed before starting this
-> section. Lesson 25 relies on hash functions (Math Lesson 11), gradient noise
-> (Math Lesson 12), and blue noise dithering (Math Lesson 13). Lesson 26 builds
+> **Prerequisite:** Math Lessons 12–14 must be completed before starting this
+> section. Lesson 25 relies on hash functions (Math Lesson 12), gradient noise
+> (Math Lesson 13), and blue noise dithering (Math Lesson 14). Lesson 26 builds
 > on the noise techniques from Lesson 25.
 
-- [ ] **Lesson 25 — Shader Noise** — Applying noise in fragment shaders; GPU-friendly hash functions for white noise (see [Math Lesson 11 — Hash Functions & White Noise](#planned-math-lessons)); Perlin/simplex noise for smooth randomness (see [Math Lesson 12 — Gradient Noise](#planned-math-lessons)); blue noise dithering for banding reduction (see [Math Lesson 13 — Blue Noise & Low-Discrepancy Sequences](#planned-math-lessons)); octave stacking (fBm) for natural patterns; practical uses — procedural textures, terrain variation, dissolve effects
+- [ ] **Lesson 25 — Shader Noise** — Applying noise in fragment shaders; GPU-friendly hash functions for white noise (see [Math Lesson 12 — Hash Functions & White Noise](#planned-math-lessons)); Perlin/simplex noise for smooth randomness (see [Math Lesson 13 — Gradient Noise](#planned-math-lessons)); blue noise dithering for banding reduction (see [Math Lesson 14 — Blue Noise & Low-Discrepancy Sequences](#planned-math-lessons)); octave stacking (fBm) for natural patterns; practical uses — procedural textures, terrain variation, dissolve effects
 - [ ] **Lesson 26 — Procedural Sky (Hillaire)** — Single-scattering atmospheric model based on Sébastien Hillaire's approach; Rayleigh and Mie scattering; sun disc rendering; time-of-day color variation; LUT-based or per-pixel evaluation; integrating as a skybox replacement
 
 ### Screen-Space Effects
@@ -127,15 +127,17 @@ graphics applications.
 - [x] **Math Lesson 09 — View Matrix & Virtual Camera** — Building a view matrix from scratch; the camera as an inverse transform (world-to-view); constructing the view matrix from position + quaternion orientation; extracting forward/right/up vectors from a quaternion; look-at as a special case; how the view matrix feeds into the MVP pipeline (connects to Math Lesson 02 — Coordinate Spaces and Math Lesson 06 — Projections)
 - [x] **Math Lesson 10 — Anisotropy vs Isotropy** — Direction-dependent vs direction-independent behavior; isotropic sampling (equal in all directions) vs anisotropic filtering (stretches samples along the axis of greatest compression); anisotropic noise (Perlin/simplex stretched along a direction, e.g. wood grain, brushed metal); anisotropic friction in rigid body physics (ice rink, grooved surfaces, tire grip); eigenvalues of the screen-space Jacobian and how they drive the GPU's anisotropic sampler; practical demo comparing isotropic vs anisotropic texture filtering on a tilted plane
 
+- [x] **Math Lesson 11 — Color Spaces** — Gamma correction (sRGB piecewise transfer function vs pow(x,2.2)); linear vs gamma space and why all math must be in linear; luminance (BT.709 coefficients, human spectral sensitivity); RGB↔HSL and RGB↔HSV conversions; CIE 1931 XYZ device-independent color; CIE xyY chromaticity and the chromaticity diagram; gamut (sRGB, DCI-P3, Rec.2020 triangles); tone mapping (Reinhard, ACES Narkowicz fit); exposure (photographic stops); prerequisite for GPU Lesson 21 (HDR & Tone Mapping)
+
 ### Planned Math Lessons
 
-> **Scheduling:** Math Lessons 11–13 are prerequisites for GPU Lesson 25
+> **Scheduling:** Math Lessons 12–14 are prerequisites for GPU Lesson 25
 > (Shader Noise) and must be implemented before the Noise & Procedural section
 > begins.
 
-- [ ] **Math Lesson 11 — Hash Functions & White Noise** — Integer hash functions for GPU use (Wang, PCG, xxHash-style); mapping hash output to uniform floats; why shader noise avoids `rand()` and relies on deterministic hashing; the "magic numbers" in common hash functions and where they come from; visualizing white noise patterns; seeding with position, time, and frame index
-- [ ] **Math Lesson 12 — Gradient Noise (Perlin & Simplex)** — Lattice-based noise: random gradients at grid points, dot product with distance vector, smooth interpolation; Ken Perlin's original noise and improved noise (2002); simplex noise — fewer samples, better isotropy, skewed grid; octave stacking (fBm) for multi-scale detail; lacunarity, persistence, and their visual effects; domain warping for organic shapes
-- [ ] **Math Lesson 13 — Blue Noise & Low-Discrepancy Sequences** — Why uniform random sampling clumps and gaps; blue noise — energy concentrated away from low frequencies; generating blue noise (void-and-cluster, Mitchell's best candidate); low-discrepancy sequences (Halton, Sobol, R2); application to dithering (replacing banding with imperceptible noise), sampling (anti-aliasing, AO kernels), and stippling
+- [ ] **Math Lesson 12 — Hash Functions & White Noise** — Integer hash functions for GPU use (Wang, PCG, xxHash-style); mapping hash output to uniform floats; why shader noise avoids `rand()` and relies on deterministic hashing; the "magic numbers" in common hash functions and where they come from; visualizing white noise patterns; seeding with position, time, and frame index
+- [ ] **Math Lesson 13 — Gradient Noise (Perlin & Simplex)** — Lattice-based noise: random gradients at grid points, dot product with distance vector, smooth interpolation; Ken Perlin's original noise and improved noise (2002); simplex noise — fewer samples, better isotropy, skewed grid; octave stacking (fBm) for multi-scale detail; lacunarity, persistence, and their visual effects; domain warping for organic shapes
+- [ ] **Math Lesson 14 — Blue Noise & Low-Discrepancy Sequences** — Why uniform random sampling clumps and gaps; blue noise — energy concentrated away from low frequencies; generating blue noise (void-and-cluster, Mitchell's best candidate); low-discrepancy sequences (Halton, Sobol, R2); application to dithering (replacing banding with imperceptible noise), sampling (anti-aliasing, AO kernels), and stippling
 
 ## Developer Experience / Tooling
 

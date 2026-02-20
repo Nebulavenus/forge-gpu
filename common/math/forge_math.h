@@ -2846,4 +2846,562 @@ static inline vec3 vec3_rotate_axis_angle(vec3 v, vec3 axis,
     );
 }
 
+/* ── Color Space Transforms ───────────────────────────────────────────── */
+/*
+ * Color science fundamentals for real-time graphics.
+ *
+ * Key principle: always do math (lighting, blending, interpolation) in
+ * LINEAR space — apply gamma encoding only at the very end for display.
+ * The sRGB transfer function is NOT a simple power curve; it has a linear
+ * segment near black for numerical stability.
+ *
+ * Spaces covered:
+ *   Linear RGB  — physically proportional light intensities (math here)
+ *   sRGB        — perceptually encoded for display (gamma ~2.2)
+ *   HSL / HSV   — hue-based representations for color picking / UI
+ *   CIE XYZ     — device-independent reference (1931 standard observer)
+ *   CIE xyY     — chromaticity (xy) + luminance (Y)
+ *
+ * Naming convention: color_<from>_to_<to> for conversions,
+ *                    color_<property> for scalar queries.
+ *
+ * See: lessons/math/11-color-spaces
+ */
+
+/* ── Gamma / Linear Conversion (sRGB Transfer Function) ──────────────── */
+
+/* Convert a single sRGB component (0-1) to linear light.
+ *
+ * The sRGB standard defines a piecewise transfer function — not a simple
+ * pow(x, 2.2). Values near zero use a linear segment to avoid an infinite
+ * slope at the origin:
+ *
+ *   if (s <= 0.04045)  linear = s / 12.92
+ *   else               linear = ((s + 0.055) / 1.055) ^ 2.4
+ *
+ * Why this matters: lighting math (dot products, interpolation, blending)
+ * must happen in linear space where doubling a value means doubling the
+ * light intensity. sRGB values are perceptually spaced — they pack more
+ * precision into dark tones where the human eye is most sensitive.
+ *
+ * Usage:
+ *   float linear_r = color_srgb_to_linear(srgb_r);
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline float color_srgb_to_linear(float s)
+{
+    if (s <= 0.04045f) {
+        return s / 12.92f;
+    }
+    return powf((s + 0.055f) / 1.055f, 2.4f);
+}
+
+/* Convert a single linear-light component (0-1) to sRGB encoding.
+ *
+ * Inverse of color_srgb_to_linear. Apply this when writing final pixel
+ * values for display on an sRGB monitor.
+ *
+ *   if (linear <= 0.0031308)  srgb = linear * 12.92
+ *   else                      srgb = 1.055 * linear^(1/2.4) - 0.055
+ *
+ * Usage:
+ *   float srgb_r = color_linear_to_srgb(linear_r);
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline float color_linear_to_srgb(float linear)
+{
+    if (linear <= 0.0031308f) {
+        return linear * 12.92f;
+    }
+    return 1.055f * powf(linear, 1.0f / 2.4f) - 0.055f;
+}
+
+/* Convert an RGB color from sRGB encoding to linear light.
+ *
+ * Applies the sRGB-to-linear transfer function to each channel independently.
+ * The alpha channel (if present) is NOT gamma-encoded and should not be
+ * converted.
+ *
+ * Usage:
+ *   vec3 srgb = vec3_create(0.5f, 0.5f, 0.5f);  // mid-gray in sRGB
+ *   vec3 linear = color_srgb_to_linear_rgb(srgb); // ~0.214 in linear
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_srgb_to_linear_rgb(vec3 srgb)
+{
+    return vec3_create(
+        color_srgb_to_linear(srgb.x),
+        color_srgb_to_linear(srgb.y),
+        color_srgb_to_linear(srgb.z)
+    );
+}
+
+/* Convert an RGB color from linear light to sRGB encoding.
+ *
+ * Applies the linear-to-sRGB transfer function to each channel independently.
+ *
+ * Usage:
+ *   vec3 linear = vec3_create(0.5f, 0.5f, 0.5f); // 50% light intensity
+ *   vec3 srgb = color_linear_to_srgb_rgb(linear); // ~0.735 in sRGB
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_linear_to_srgb_rgb(vec3 linear)
+{
+    return vec3_create(
+        color_linear_to_srgb(linear.x),
+        color_linear_to_srgb(linear.y),
+        color_linear_to_srgb(linear.z)
+    );
+}
+
+/* ── Luminance ───────────────────────────────────────────────────────── */
+
+/* Compute the relative luminance of a linear RGB color.
+ *
+ * Luminance is the perceptual brightness of a color as defined by the
+ * CIE 1931 standard observer. The coefficients come from the sRGB/BT.709
+ * color space primaries:
+ *
+ *   Y = 0.2126 * R + 0.7152 * G + 0.0722 * B
+ *
+ * Green dominates because human vision is most sensitive to green light.
+ * Blue contributes very little because our S-cones are far less numerous.
+ *
+ * IMPORTANT: The input must be in LINEAR space. If you pass sRGB-encoded
+ * values, the result will be wrong (too dark in the midtones).
+ *
+ * Usage:
+ *   vec3 color = vec3_create(1.0f, 0.0f, 0.0f);  // pure red
+ *   float lum = color_luminance(color);            // 0.2126
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline float color_luminance(vec3 linear_rgb)
+{
+    return 0.2126f * linear_rgb.x
+         + 0.7152f * linear_rgb.y
+         + 0.0722f * linear_rgb.z;
+}
+
+/* ── RGB <-> HSL ──────────────────────────────────────────────────────── */
+
+/* Convert a linear RGB color to HSL (Hue, Saturation, Lightness).
+ *
+ * HSL represents color as:
+ *   H (hue):        0-360 degrees around the color wheel
+ *                    0=red, 120=green, 240=blue
+ *   S (saturation):  0-1, where 0 is gray and 1 is fully vivid
+ *   L (lightness):   0-1, where 0 is black, 0.5 is pure color, 1 is white
+ *
+ * HSL is useful for color picking and artistic adjustments because hue,
+ * vividness, and brightness are separated into independent axes.
+ *
+ * Note: the input should be in linear RGB. If you need to convert sRGB
+ * values, call color_srgb_to_linear_rgb first.
+ *
+ * Returns: vec3 where x=H (0-360), y=S (0-1), z=L (0-1)
+ *
+ * Usage:
+ *   vec3 red = vec3_create(1.0f, 0.0f, 0.0f);
+ *   vec3 hsl = color_rgb_to_hsl(red);  // (0, 1, 0.5)
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_rgb_to_hsl(vec3 rgb)
+{
+    float r = rgb.x, g = rgb.y, b = rgb.z;
+    float max_c = fmaxf(fmaxf(r, g), b);
+    float min_c = fminf(fminf(r, g), b);
+    float delta = max_c - min_c;
+
+    /* Lightness is the average of the brightest and darkest channels */
+    float l = (max_c + min_c) * 0.5f;
+
+    if (delta < 1e-6f) {
+        /* Achromatic (gray) — no hue or saturation */
+        return vec3_create(0.0f, 0.0f, l);
+    }
+
+    /* Saturation depends on lightness:
+     * For L <= 0.5:  S = delta / (max + min)
+     * For L >  0.5:  S = delta / (2 - max - min)
+     * This keeps S in [0,1] across the full lightness range. */
+    float s = (l <= 0.5f)
+        ? delta / (max_c + min_c)
+        : delta / (2.0f - max_c - min_c);
+
+    /* Hue: which 60-degree sextant of the color wheel */
+    float h;
+    if (max_c == r) {
+        h = (g - b) / delta;
+        if (h < 0.0f) h += 6.0f;
+    } else if (max_c == g) {
+        h = (b - r) / delta + 2.0f;
+    } else {
+        h = (r - g) / delta + 4.0f;
+    }
+    h *= 60.0f;
+
+    return vec3_create(h, s, l);
+}
+
+/* Helper: convert a hue value to an RGB channel.
+ * Used internally by color_hsl_to_rgb. */
+static inline float color__hue_to_rgb(float p, float q, float t)
+{
+    if (t < 0.0f) t += 1.0f;
+    if (t > 1.0f) t -= 1.0f;
+    if (t < 1.0f / 6.0f) return p + (q - p) * 6.0f * t;
+    if (t < 0.5f)         return q;
+    if (t < 2.0f / 3.0f) return p + (q - p) * (2.0f / 3.0f - t) * 6.0f;
+    return p;
+}
+
+/* Convert HSL to linear RGB.
+ *
+ * Input: vec3 where x=H (0-360), y=S (0-1), z=L (0-1)
+ * Returns: vec3 with R, G, B in [0,1]
+ *
+ * Usage:
+ *   vec3 hsl = vec3_create(120.0f, 1.0f, 0.5f);  // pure green
+ *   vec3 rgb = color_hsl_to_rgb(hsl);             // (0, 1, 0)
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_hsl_to_rgb(vec3 hsl)
+{
+    float h = hsl.x / 360.0f; /* normalize to 0-1 */
+    float s = hsl.y;
+    float l = hsl.z;
+
+    if (s < 1e-6f) {
+        /* Achromatic */
+        return vec3_create(l, l, l);
+    }
+
+    float q = (l < 0.5f) ? l * (1.0f + s) : l + s - l * s;
+    float p = 2.0f * l - q;
+
+    return vec3_create(
+        color__hue_to_rgb(p, q, h + 1.0f / 3.0f),
+        color__hue_to_rgb(p, q, h),
+        color__hue_to_rgb(p, q, h - 1.0f / 3.0f)
+    );
+}
+
+/* ── RGB <-> HSV ──────────────────────────────────────────────────────── */
+
+/* Convert a linear RGB color to HSV (Hue, Saturation, Value).
+ *
+ * HSV represents color as:
+ *   H (hue):        0-360 degrees (same as HSL)
+ *   S (saturation):  0-1, where 0 is white/gray, 1 is fully vivid
+ *   V (value):       0-1, the brightness of the brightest channel
+ *
+ * HSV differs from HSL in how it defines "brightness":
+ *   - HSV value = max(R,G,B) — the peak channel intensity
+ *   - HSL lightness = (max+min)/2 — the midpoint
+ *
+ * HSV is common in color pickers (Photoshop, game engines) because
+ * S=1, V=1 gives vivid colors at any hue, while HSL requires L=0.5.
+ *
+ * Returns: vec3 where x=H (0-360), y=S (0-1), z=V (0-1)
+ *
+ * Usage:
+ *   vec3 orange = vec3_create(1.0f, 0.5f, 0.0f);
+ *   vec3 hsv = color_rgb_to_hsv(orange);  // (30, 1, 1)
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_rgb_to_hsv(vec3 rgb)
+{
+    float r = rgb.x, g = rgb.y, b = rgb.z;
+    float max_c = fmaxf(fmaxf(r, g), b);
+    float min_c = fminf(fminf(r, g), b);
+    float delta = max_c - min_c;
+
+    float v = max_c;
+
+    if (delta < 1e-6f) {
+        return vec3_create(0.0f, 0.0f, v);
+    }
+
+    float s = delta / max_c;
+
+    float h;
+    if (max_c == r) {
+        h = (g - b) / delta;
+        if (h < 0.0f) h += 6.0f;
+    } else if (max_c == g) {
+        h = (b - r) / delta + 2.0f;
+    } else {
+        h = (r - g) / delta + 4.0f;
+    }
+    h *= 60.0f;
+
+    return vec3_create(h, s, v);
+}
+
+/* Convert HSV to linear RGB.
+ *
+ * Input: vec3 where x=H (0-360), y=S (0-1), z=V (0-1)
+ * Returns: vec3 with R, G, B in [0,1]
+ *
+ * Usage:
+ *   vec3 hsv = vec3_create(240.0f, 1.0f, 1.0f);  // pure blue
+ *   vec3 rgb = color_hsv_to_rgb(hsv);             // (0, 0, 1)
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_hsv_to_rgb(vec3 hsv)
+{
+    float h = hsv.x / 60.0f; /* 0-6 sextant index */
+    float s = hsv.y;
+    float v = hsv.z;
+
+    if (s < 1e-6f) {
+        return vec3_create(v, v, v);
+    }
+
+    int i = (int)floorf(h);
+    float f = h - (float)i; /* fractional part within sextant */
+    float p = v * (1.0f - s);
+    float q = v * (1.0f - s * f);
+    float t = v * (1.0f - s * (1.0f - f));
+
+    switch (i % 6) {
+    case 0:  return vec3_create(v, t, p);
+    case 1:  return vec3_create(q, v, p);
+    case 2:  return vec3_create(p, v, t);
+    case 3:  return vec3_create(p, q, v);
+    case 4:  return vec3_create(t, p, v);
+    default: return vec3_create(v, p, q);
+    }
+}
+
+/* ── RGB <-> CIE XYZ (sRGB Primaries, D65 Illuminant) ────────────────── */
+
+/* Convert linear sRGB to CIE 1931 XYZ.
+ *
+ * CIE XYZ is the device-independent reference color space defined by the
+ * International Commission on Illumination (CIE) in 1931. It was designed
+ * so that:
+ *   X, Y, Z >= 0 for all visible colors
+ *   Y = luminance (perceptual brightness)
+ *   The space encompasses all colors a human can see
+ *
+ * The 3x3 matrix below converts from sRGB's primaries (red, green, blue
+ * phosphor/LED colors on a standard monitor) to XYZ. The matrix is derived
+ * from the chromaticity coordinates of the sRGB primaries and the D65
+ * white point (daylight illuminant, 6504K).
+ *
+ * sRGB primary chromaticities (CIE xy):
+ *   Red:   (0.6400, 0.3300)
+ *   Green: (0.3000, 0.6000)
+ *   Blue:  (0.1500, 0.0600)
+ *   White: D65 = (0.3127, 0.3290)
+ *
+ * IMPORTANT: Input must be in LINEAR sRGB, not gamma-encoded sRGB.
+ *
+ * Usage:
+ *   vec3 linear_rgb = vec3_create(1.0f, 0.0f, 0.0f);  // linear red
+ *   vec3 xyz = color_linear_rgb_to_xyz(linear_rgb);
+ *   // xyz ~ (0.4124, 0.2126, 0.0193) — red's position in XYZ
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_linear_rgb_to_xyz(vec3 rgb)
+{
+    /* sRGB to XYZ matrix (D65, row-by-row for readability) */
+    return vec3_create(
+        0.4124564f * rgb.x + 0.3575761f * rgb.y + 0.1804375f * rgb.z,
+        0.2126729f * rgb.x + 0.7151522f * rgb.y + 0.0721750f * rgb.z,
+        0.0193339f * rgb.x + 0.1191920f * rgb.y + 0.9503041f * rgb.z
+    );
+}
+
+/* Convert CIE 1931 XYZ to linear sRGB.
+ *
+ * Inverse of color_linear_rgb_to_xyz. Note that XYZ values outside the
+ * sRGB gamut will produce negative or >1 RGB components. Clamp after
+ * conversion if needed for display.
+ *
+ * Usage:
+ *   vec3 xyz = vec3_create(0.4124f, 0.2126f, 0.0193f);
+ *   vec3 rgb = color_xyz_to_linear_rgb(xyz);  // ~ (1, 0, 0)
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_xyz_to_linear_rgb(vec3 xyz)
+{
+    /* XYZ to sRGB matrix (D65, inverse of the above) */
+    return vec3_create(
+         3.2404542f * xyz.x - 1.5371385f * xyz.y - 0.4985314f * xyz.z,
+        -0.9692660f * xyz.x + 1.8760108f * xyz.y + 0.0415560f * xyz.z,
+         0.0556434f * xyz.x - 0.2040259f * xyz.y + 1.0572252f * xyz.z
+    );
+}
+
+/* ── CIE xyY (Chromaticity + Luminance) ──────────────────────────────── */
+
+/* Convert CIE XYZ to CIE xyY (chromaticity coordinates + luminance).
+ *
+ * The CIE xy chromaticity diagram separates color (hue + saturation) from
+ * brightness. Every color can be plotted as a point (x, y) on the
+ * chromaticity diagram, regardless of how bright it is:
+ *
+ *   x = X / (X + Y + Z)     — red-green axis
+ *   y = Y / (X + Y + Z)     — roughly a green axis
+ *   Y = luminance            — carried through unchanged
+ *
+ * The third coordinate z = 1 - x - y is implicit and not stored.
+ *
+ * This is how color gamuts are visualized: the sRGB gamut is a triangle
+ * on the xy diagram connecting the red, green, and blue primaries.
+ *
+ * Returns: vec3 where x=x, y=y, z=Y (luminance)
+ *
+ * Usage:
+ *   vec3 xyz = color_linear_rgb_to_xyz(vec3_create(1, 0, 0));
+ *   vec3 xyY = color_xyz_to_xyY(xyz);
+ *   // xyY ~ (0.6400, 0.3300, 0.2126) — red primary chromaticity
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_xyz_to_xyY(vec3 xyz)
+{
+    float sum = xyz.x + xyz.y + xyz.z;
+    if (sum < 1e-10f) {
+        /* Black — use D65 white point chromaticity to avoid 0/0 */
+        return vec3_create(0.3127f, 0.3290f, 0.0f);
+    }
+    return vec3_create(xyz.x / sum, xyz.y / sum, xyz.y);
+}
+
+/* Convert CIE xyY back to CIE XYZ.
+ *
+ * Reconstructs full XYZ from chromaticity (x, y) and luminance (Y):
+ *   X = Y * x / y
+ *   Z = Y * (1 - x - y) / y
+ *
+ * Input: vec3 where x=x, y=y, z=Y (luminance)
+ *
+ * Usage:
+ *   vec3 xyY = vec3_create(0.3127f, 0.3290f, 1.0f);  // D65 white, Y=1
+ *   vec3 xyz = color_xyY_to_xyz(xyY);
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_xyY_to_xyz(vec3 xyY)
+{
+    float cx = xyY.x;
+    float cy = xyY.y;
+    float Y  = xyY.z;
+    if (cy < 1e-10f) {
+        return vec3_create(0.0f, 0.0f, 0.0f);
+    }
+    return vec3_create(
+        Y * cx / cy,
+        Y,
+        Y * (1.0f - cx - cy) / cy
+    );
+}
+
+/* ── Tone Mapping (HDR -> LDR) ───────────────────────────────────────── */
+
+/* Apply Reinhard tone mapping to a linear HDR color.
+ *
+ * The simplest global tone mapping operator. Maps the infinite range
+ * [0, inf) to [0, 1):
+ *
+ *   mapped = color / (color + 1)
+ *
+ * Applied per-channel. This preserves hue but can desaturate bright
+ * colors. For more control, use the luminance-based variant or
+ * a filmic curve (ACES, AgX).
+ *
+ * Usage:
+ *   vec3 hdr = vec3_create(4.0f, 2.0f, 1.0f);  // bright HDR color
+ *   vec3 ldr = color_tonemap_reinhard(hdr);      // (0.80, 0.67, 0.50)
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_tonemap_reinhard(vec3 hdr)
+{
+    return vec3_create(
+        hdr.x / (hdr.x + 1.0f),
+        hdr.y / (hdr.y + 1.0f),
+        hdr.z / (hdr.z + 1.0f)
+    );
+}
+
+/* Apply exposure adjustment to an HDR color.
+ *
+ * Simulates a camera's exposure control. Multiplies the color by
+ * 2^exposure, matching photographic stops:
+ *
+ *   +1 EV = double the light (one stop brighter)
+ *   -1 EV = half the light (one stop darker)
+ *    0 EV = no change
+ *
+ * Apply this BEFORE tone mapping.
+ *
+ * Usage:
+ *   vec3 color = vec3_create(1.0f, 1.0f, 1.0f);
+ *   vec3 bright = color_apply_exposure(color, 2.0f);   // 4x brighter
+ *   vec3 dark   = color_apply_exposure(color, -1.0f);  // half brightness
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_apply_exposure(vec3 hdr, float exposure_ev)
+{
+    float scale = powf(2.0f, exposure_ev);
+    return vec3_scale(hdr, scale);
+}
+
+/* Apply the ACES filmic tone mapping curve (Narkowicz 2015 fit).
+ *
+ * A widely-used filmic curve that produces a natural, film-like response
+ * with a gentle highlight rolloff and slightly lifted blacks. This is the
+ * simplified "Krzysztof Narkowicz" fit to the ACES Reference Rendering
+ * Transform (RRT) + Output Device Transform (ODT):
+ *
+ *   f(x) = (x * (2.51x + 0.03)) / (x * (2.43x + 0.59) + 0.14)
+ *
+ * Input should be in linear sRGB (or a working space with similar
+ * primaries). The output is in [0, 1] and should be gamma-encoded
+ * for display.
+ *
+ * For production-quality ACES, a full ACES pipeline (AP0 -> RRT -> ODT)
+ * is more accurate, but this fit is excellent for real-time use.
+ *
+ * Usage:
+ *   vec3 hdr = vec3_create(4.0f, 2.0f, 1.0f);
+ *   vec3 ldr = color_tonemap_aces(hdr);
+ *   vec3 display = color_linear_to_srgb_rgb(ldr);
+ *
+ * See: lessons/math/11-color-spaces
+ */
+static inline vec3 color_tonemap_aces(vec3 hdr)
+{
+    /* Narkowicz 2015 ACES fit constants */
+    float a = 2.51f, b = 0.03f, c = 2.43f, d = 0.59f, e = 0.14f;
+
+    vec3 result;
+    result.x = (hdr.x * (a * hdr.x + b)) / (hdr.x * (c * hdr.x + d) + e);
+    result.y = (hdr.y * (a * hdr.y + b)) / (hdr.y * (c * hdr.y + d) + e);
+    result.z = (hdr.z * (a * hdr.z + b)) / (hdr.z * (c * hdr.z + d) + e);
+
+    /* Clamp to [0, 1] */
+    result.x = forge_clampf(result.x, 0.0f, 1.0f);
+    result.y = forge_clampf(result.y, 0.0f, 1.0f);
+    result.z = forge_clampf(result.z, 0.0f, 1.0f);
+
+    return result;
+}
+
 #endif /* FORGE_MATH_H */

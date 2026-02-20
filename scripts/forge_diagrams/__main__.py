@@ -42,12 +42,15 @@ from .gpu_diagrams import (
 from .math_diagrams import (
     diagram_bilinear_interpolation,
     diagram_camera_basis_vectors,
+    diagram_cie_chromaticity,
     diagram_dot_product,
     diagram_frustum,
+    diagram_gamma_perception,
     diagram_matrix_basis_vectors,
     diagram_mip_chain,
     diagram_pixel_footprint,
     diagram_similar_triangles,
+    diagram_tone_mapping_curves,
     diagram_trilinear_interpolation,
     diagram_vector_addition,
     diagram_view_transform,
@@ -82,6 +85,11 @@ DIAGRAMS = {
     ],
     "math/10": [
         ("pixel_footprint.png", diagram_pixel_footprint),
+    ],
+    "math/11": [
+        ("cie_chromaticity.png", diagram_cie_chromaticity),
+        ("gamma_perception.png", diagram_gamma_perception),
+        ("tone_mapping_curves.png", diagram_tone_mapping_curves),
     ],
     "gpu/04": [
         ("uv_mapping.png", diagram_uv_mapping),
@@ -127,6 +135,7 @@ LESSON_NAMES = {
     "math/06": "math/06-projections",
     "math/09": "math/09-view-matrix",
     "math/10": "math/10-anisotropy",
+    "math/11": "math/11-color-spaces",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",
     "gpu/11": "gpu/11-compute-shaders",

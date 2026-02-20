@@ -40,6 +40,7 @@ add_subdirectory(lessons/math/07-floating-point)
 add_subdirectory(lessons/math/08-orientation)
 add_subdirectory(lessons/math/09-view-matrix)
 add_subdirectory(lessons/math/10-anisotropy)
+add_subdirectory(lessons/math/11-color-spaces)
 
 # ── Engine Lessons ──────────────────────────────────────────────────────────
 add_subdirectory(lessons/engine/01-intro-to-c)

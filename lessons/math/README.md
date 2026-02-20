@@ -31,6 +31,7 @@ implementations for your projects.
 | 08 | [Orientation](08-orientation/) | Quaternions, Euler angles, axis-angle, rotation matrices, gimbal lock, slerp |
 | 09 | [View Matrix & Virtual Camera](09-view-matrix/) | Camera as inverse transform, basis extraction from quaternion, look-at, MVP pipeline |
 | 10 | [Anisotropy vs Isotropy](10-anisotropy/) | Jacobian, singular values, anisotropic filtering, noise, and friction |
+| 11 | [Color Spaces](11-color-spaces/) | Gamma correction, linear vs sRGB, luminance, HSL/HSV, CIE XYZ/xyY, gamut, tone mapping |
 
 ## How Math Lessons Work
 

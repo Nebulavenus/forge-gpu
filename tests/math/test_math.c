@@ -1714,6 +1714,269 @@ static void test_vec3_reflect_parallel(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Color Space Tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* --- sRGB ↔ linear roundtrip and boundary values --- */
+
+static void test_color_srgb_to_linear_boundaries(void)
+{
+    TEST("color_srgb_to_linear boundaries (0 and 1)");
+    ASSERT_FLOAT_EQ(color_srgb_to_linear(0.0f), 0.0f);
+    ASSERT_FLOAT_EQ(color_srgb_to_linear(1.0f), 1.0f);
+    END_TEST();
+}
+
+static void test_color_linear_to_srgb_boundaries(void)
+{
+    TEST("color_linear_to_srgb boundaries (0 and 1)");
+    ASSERT_FLOAT_EQ(color_linear_to_srgb(0.0f), 0.0f);
+    ASSERT_FLOAT_EQ(color_linear_to_srgb(1.0f), 1.0f);
+    END_TEST();
+}
+
+static void test_color_srgb_linear_roundtrip(void)
+{
+    TEST("color_srgb_to_linear / color_linear_to_srgb roundtrip");
+    float values[] = { 0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 1.0f };
+    for (int i = 0; i < 6; i++) {
+        float rt = color_linear_to_srgb(color_srgb_to_linear(values[i]));
+        ASSERT_FLOAT_EQ(rt, values[i]);
+    }
+    END_TEST();
+}
+
+static void test_color_srgb_linear_vec3_roundtrip(void)
+{
+    TEST("color_srgb_to_linear_rgb / color_linear_to_srgb_rgb roundtrip");
+    vec3 srgb = vec3_create(0.2f, 0.5f, 0.8f);
+    vec3 rt = color_linear_to_srgb_rgb(color_srgb_to_linear_rgb(srgb));
+    ASSERT_VEC3_EQ(rt, srgb);
+    END_TEST();
+}
+
+/* --- Luminance --- */
+
+static void test_color_luminance_known(void)
+{
+    TEST("color_luminance known values");
+    /* Pure red: Y = 0.2126 */
+    vec3 red = vec3_create(1.0f, 0.0f, 0.0f);
+    ASSERT_FLOAT_EQ(color_luminance(red), 0.2126f);
+    /* Pure green: Y = 0.7152 */
+    vec3 green = vec3_create(0.0f, 1.0f, 0.0f);
+    ASSERT_FLOAT_EQ(color_luminance(green), 0.7152f);
+    /* Pure blue: Y = 0.0722 */
+    vec3 blue = vec3_create(0.0f, 0.0f, 1.0f);
+    ASSERT_FLOAT_EQ(color_luminance(blue), 0.0722f);
+    /* White: Y = 1.0 */
+    vec3 white = vec3_create(1.0f, 1.0f, 1.0f);
+    ASSERT_FLOAT_EQ(color_luminance(white), 1.0f);
+    END_TEST();
+}
+
+/* --- RGB ↔ HSL --- */
+
+static void test_color_rgb_to_hsl_known(void)
+{
+    TEST("color_rgb_to_hsl known values (red, green, blue)");
+    /* Red = (1,0,0) → HSL (0, 1, 0.5) */
+    vec3 red_hsl = color_rgb_to_hsl(vec3_create(1.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ(red_hsl, vec3_create(0.0f, 1.0f, 0.5f));
+    /* Green = (0,1,0) → HSL (120, 1, 0.5) */
+    vec3 green_hsl = color_rgb_to_hsl(vec3_create(0.0f, 1.0f, 0.0f));
+    ASSERT_VEC3_EQ(green_hsl, vec3_create(120.0f, 1.0f, 0.5f));
+    /* Blue = (0,0,1) → HSL (240, 1, 0.5) */
+    vec3 blue_hsl = color_rgb_to_hsl(vec3_create(0.0f, 0.0f, 1.0f));
+    ASSERT_VEC3_EQ(blue_hsl, vec3_create(240.0f, 1.0f, 0.5f));
+    END_TEST();
+}
+
+static void test_color_rgb_hsl_roundtrip(void)
+{
+    TEST("color_rgb_to_hsl / color_hsl_to_rgb roundtrip");
+    vec3 colors[] = {
+        vec3_create(1.0f, 0.0f, 0.0f),   /* red */
+        vec3_create(0.0f, 1.0f, 0.0f),   /* green */
+        vec3_create(0.0f, 0.0f, 1.0f),   /* blue */
+        vec3_create(0.5f, 0.3f, 0.8f),   /* arbitrary */
+        vec3_create(1.0f, 1.0f, 1.0f),   /* white */
+        vec3_create(0.0f, 0.0f, 0.0f),   /* black */
+    };
+    for (int i = 0; i < 6; i++) {
+        vec3 rt = color_hsl_to_rgb(color_rgb_to_hsl(colors[i]));
+        ASSERT_VEC3_EQ(rt, colors[i]);
+    }
+    END_TEST();
+}
+
+static void test_color_hsl_to_rgb_gray(void)
+{
+    TEST("color_hsl_to_rgb achromatic (gray)");
+    /* HSL (0, 0, 0.5) → RGB (0.5, 0.5, 0.5) */
+    vec3 gray = color_hsl_to_rgb(vec3_create(0.0f, 0.0f, 0.5f));
+    ASSERT_VEC3_EQ(gray, vec3_create(0.5f, 0.5f, 0.5f));
+    END_TEST();
+}
+
+/* --- RGB ↔ HSV --- */
+
+static void test_color_rgb_to_hsv_known(void)
+{
+    TEST("color_rgb_to_hsv known values (red, green, blue)");
+    /* Red = (1,0,0) → HSV (0, 1, 1) */
+    vec3 red_hsv = color_rgb_to_hsv(vec3_create(1.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ(red_hsv, vec3_create(0.0f, 1.0f, 1.0f));
+    /* Green = (0,1,0) → HSV (120, 1, 1) */
+    vec3 green_hsv = color_rgb_to_hsv(vec3_create(0.0f, 1.0f, 0.0f));
+    ASSERT_VEC3_EQ(green_hsv, vec3_create(120.0f, 1.0f, 1.0f));
+    /* Blue = (0,0,1) → HSV (240, 1, 1) */
+    vec3 blue_hsv = color_rgb_to_hsv(vec3_create(0.0f, 0.0f, 1.0f));
+    ASSERT_VEC3_EQ(blue_hsv, vec3_create(240.0f, 1.0f, 1.0f));
+    END_TEST();
+}
+
+static void test_color_rgb_hsv_roundtrip(void)
+{
+    TEST("color_rgb_to_hsv / color_hsv_to_rgb roundtrip");
+    vec3 colors[] = {
+        vec3_create(1.0f, 0.0f, 0.0f),   /* red */
+        vec3_create(0.0f, 1.0f, 0.0f),   /* green */
+        vec3_create(0.0f, 0.0f, 1.0f),   /* blue */
+        vec3_create(0.5f, 0.3f, 0.8f),   /* arbitrary */
+        vec3_create(1.0f, 1.0f, 1.0f),   /* white */
+    };
+    for (int i = 0; i < 5; i++) {
+        vec3 rt = color_hsv_to_rgb(color_rgb_to_hsv(colors[i]));
+        ASSERT_VEC3_EQ(rt, colors[i]);
+    }
+    END_TEST();
+}
+
+/* --- RGB ↔ CIE XYZ --- */
+
+static void test_color_rgb_xyz_red_primary(void)
+{
+    TEST("color_linear_rgb_to_xyz red primary chromaticity");
+    /* Red (1,0,0) → XYZ should have known chromaticity (0.64, 0.33) */
+    vec3 xyz = color_linear_rgb_to_xyz(vec3_create(1.0f, 0.0f, 0.0f));
+    /* Y component = luminance of red = 0.2126 */
+    ASSERT_FLOAT_EQ(xyz.y, 0.2126f);
+    /* X should be ~0.4125, Z should be ~0.0193 */
+    ASSERT_FLOAT_EQ(xyz.x, 0.4125f);
+    ASSERT_FLOAT_EQ(xyz.z, 0.0193f);
+    END_TEST();
+}
+
+static void test_color_rgb_xyz_roundtrip(void)
+{
+    TEST("color_linear_rgb_to_xyz / color_xyz_to_linear_rgb roundtrip");
+    vec3 colors[] = {
+        vec3_create(1.0f, 0.0f, 0.0f),   /* red */
+        vec3_create(0.0f, 1.0f, 0.0f),   /* green */
+        vec3_create(0.0f, 0.0f, 1.0f),   /* blue */
+        vec3_create(1.0f, 1.0f, 1.0f),   /* white */
+        vec3_create(0.5f, 0.3f, 0.8f),   /* arbitrary */
+    };
+    for (int i = 0; i < 5; i++) {
+        vec3 rt = color_xyz_to_linear_rgb(color_linear_rgb_to_xyz(colors[i]));
+        ASSERT_VEC3_EQ(rt, colors[i]);
+    }
+    END_TEST();
+}
+
+/* --- CIE xyY --- */
+
+static void test_color_xyz_xyY_roundtrip(void)
+{
+    TEST("color_xyz_to_xyY / color_xyY_to_xyz roundtrip");
+    vec3 xyz = color_linear_rgb_to_xyz(vec3_create(0.5f, 0.3f, 0.8f));
+    vec3 xyY = color_xyz_to_xyY(xyz);
+    vec3 rt = color_xyY_to_xyz(xyY);
+    ASSERT_VEC3_EQ(rt, xyz);
+    END_TEST();
+}
+
+static void test_color_xyz_xyY_d65_white(void)
+{
+    TEST("color_xyz_to_xyY D65 white point");
+    /* D65 white in XYZ: (0.9505, 1.0, 1.0890) — from sRGB (1,1,1) */
+    vec3 xyz = color_linear_rgb_to_xyz(vec3_create(1.0f, 1.0f, 1.0f));
+    vec3 xyY = color_xyz_to_xyY(xyz);
+    /* D65 chromaticity: x ~= 0.3127, y ~= 0.3290 */
+    ASSERT_FLOAT_EQ(xyY.x, 0.3127f);
+    ASSERT_FLOAT_EQ(xyY.y, 0.3290f);
+    /* Luminance = 1.0 for white */
+    ASSERT_FLOAT_EQ(xyY.z, 1.0f);
+    END_TEST();
+}
+
+static void test_color_xyz_xyY_black(void)
+{
+    TEST("color_xyz_to_xyY black (zero XYZ)");
+    /* Black → xyY preserves D65 white point chromaticity, Y = 0 */
+    vec3 xyY = color_xyz_to_xyY(vec3_create(0.0f, 0.0f, 0.0f));
+    ASSERT_FLOAT_EQ(xyY.x, 0.3127f);  /* D65 x */
+    ASSERT_FLOAT_EQ(xyY.y, 0.3290f);  /* D65 y */
+    ASSERT_FLOAT_EQ(xyY.z, 0.0f);     /* luminance = 0 */
+    END_TEST();
+}
+
+/* --- Tone mapping --- */
+
+static void test_color_tonemap_reinhard(void)
+{
+    TEST("color_tonemap_reinhard known values");
+    /* Reinhard: x / (x + 1) */
+    /* Input 1.0 → 0.5, Input 0.0 → 0.0 */
+    vec3 one = color_tonemap_reinhard(vec3_create(1.0f, 1.0f, 1.0f));
+    ASSERT_VEC3_EQ(one, vec3_create(0.5f, 0.5f, 0.5f));
+    vec3 zero = color_tonemap_reinhard(vec3_create(0.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ(zero, vec3_create(0.0f, 0.0f, 0.0f));
+    /* Input 3.0 → 0.75 */
+    vec3 three = color_tonemap_reinhard(vec3_create(3.0f, 3.0f, 3.0f));
+    ASSERT_VEC3_EQ(three, vec3_create(0.75f, 0.75f, 0.75f));
+    END_TEST();
+}
+
+static void test_color_tonemap_aces(void)
+{
+    TEST("color_tonemap_aces output in [0, 1]");
+    /* ACES should map HDR values into [0, 1] range */
+    vec3 result = color_tonemap_aces(vec3_create(0.0f, 0.0f, 0.0f));
+    /* At 0: f(0) = 0.03 / 0.14 ≈ 0.214 — but the function clamps to 0 */
+    /* Actually: f(0) = (0*0.03)/(0*0.59 + 0.14) = 0/0.14 = 0 */
+    ASSERT_VEC3_EQ(result, vec3_create(0.0f, 0.0f, 0.0f));
+    /* High value should approach but not exceed ~1.0 */
+    vec3 bright = color_tonemap_aces(vec3_create(100.0f, 100.0f, 100.0f));
+    if (bright.x < 0.0f || bright.x > 1.1f) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: ACES output %.4f out of expected range", bright.x);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- Exposure --- */
+
+static void test_color_apply_exposure(void)
+{
+    TEST("color_apply_exposure EV stops");
+    vec3 color = vec3_create(0.5f, 0.5f, 0.5f);
+    /* EV 0 = no change */
+    vec3 ev0 = color_apply_exposure(color, 0.0f);
+    ASSERT_VEC3_EQ(ev0, color);
+    /* EV +1 = double */
+    vec3 ev1 = color_apply_exposure(color, 1.0f);
+    ASSERT_VEC3_EQ(ev1, vec3_create(1.0f, 1.0f, 1.0f));
+    /* EV -1 = halve */
+    vec3 evm1 = color_apply_exposure(color, -1.0f);
+    ASSERT_VEC3_EQ(evm1, vec3_create(0.25f, 0.25f, 0.25f));
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -1850,6 +2113,27 @@ int main(int argc, char *argv[])
     test_quat_nlerp_endpoints();
     test_vec3_rotate_axis_angle();
     test_vec3_rotate_axis_angle_120();
+
+    /* Color space tests */
+    SDL_Log("\ncolor space tests:");
+    test_color_srgb_to_linear_boundaries();
+    test_color_linear_to_srgb_boundaries();
+    test_color_srgb_linear_roundtrip();
+    test_color_srgb_linear_vec3_roundtrip();
+    test_color_luminance_known();
+    test_color_rgb_to_hsl_known();
+    test_color_rgb_hsl_roundtrip();
+    test_color_hsl_to_rgb_gray();
+    test_color_rgb_to_hsv_known();
+    test_color_rgb_hsv_roundtrip();
+    test_color_rgb_xyz_red_primary();
+    test_color_rgb_xyz_roundtrip();
+    test_color_xyz_xyY_roundtrip();
+    test_color_xyz_xyY_d65_white();
+    test_color_xyz_xyY_black();
+    test_color_tonemap_reinhard();
+    test_color_tonemap_aces();
+    test_color_apply_exposure();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");
