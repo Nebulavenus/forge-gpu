@@ -4,17 +4,24 @@ project(forge-gpu LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# ── Fetch SDL3 from source ──────────────────────────────────────────────────
-# This downloads and builds SDL3 as part of our project so learners don't
-# need to install it separately — just clone, configure, and build.
-include(FetchContent)
-FetchContent_Declare(
-    SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(SDL3)
+# ── SDL3 ──────────────────────────────────────────────────────────────────────
+# Try a pre-installed SDL3 first (e.g. -DCMAKE_PREFIX_PATH=/opt/sdl3).
+# If not found, fall back to building from source via FetchContent so learners
+# don't need to install it separately — just clone, configure, and build.
+find_package(SDL3 QUIET)
+if(NOT SDL3_FOUND)
+    message(STATUS "SDL3 not found — fetching from source")
+    include(FetchContent)
+    FetchContent_Declare(
+        SDL3
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG        release-3.4.0
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(SDL3)
+else()
+    message(STATUS "Using pre-installed SDL3: ${SDL3_DIR}")
+endif()
 
 # ── Common include path ─────────────────────────────────────────────────────
 # Header-only helpers shared across lessons live in common/
