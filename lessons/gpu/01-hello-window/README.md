@@ -51,6 +51,17 @@ you'll need vectors and coordinate transforms to place geometry on screen:
 - [Math 02 — Coordinate Spaces](../../math/02-coordinate-spaces/README.md) —
   how vertices move from model space to your screen
 
+## Engine connections
+
+This lesson's `CMakeLists.txt` uses the CMake patterns taught in the engine
+lessons. If the build fails or you want to understand what each line does:
+
+- [Engine 01 — Intro to C](../../engine/01-intro-to-c/) — the C language
+  features used throughout this lesson (types, functions, pointers, structs)
+- [Engine 02 — CMake Fundamentals](../../engine/02-cmake-fundamentals/) —
+  `add_executable`, `target_link_libraries`, generator expressions, and how
+  to read build errors
+
 ## Building
 
 From the repository root:

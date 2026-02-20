@@ -101,7 +101,7 @@ graphics applications.
 
 ### Build Systems
 
-- [ ] **Engine Lesson 02 — CMake Fundamentals** — Targets, properties, `add_executable`, `target_link_libraries`, generator expressions; what happens when you forget to link; reading CMake error messages
+- [x] **Engine Lesson 02 — CMake Fundamentals** — Targets, properties, `add_executable`, `target_link_libraries`, generator expressions; what happens when you forget to link; reading CMake error messages
 - [ ] **Engine Lesson 03 — FetchContent & Dependencies** — How forge-gpu downloads SDL automatically; adding your own dependencies; version pinning; offline builds
 
 ### C Language (continued)

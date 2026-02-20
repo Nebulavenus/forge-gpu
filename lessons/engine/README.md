@@ -34,6 +34,7 @@ source code into a working program.
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
 | 01 | [Intro to C](01-intro-to-c/) | Types, functions, control flow, arrays, strings, pointers, structs, dynamic memory — using SDL's cross-platform APIs |
+| 02 | [CMake Fundamentals](02-cmake-fundamentals/) | Targets, properties, `add_executable`, `target_link_libraries`, generator expressions, reading build errors |
 
 <!-- Add lessons here as they are created -->
 

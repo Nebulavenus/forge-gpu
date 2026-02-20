@@ -43,6 +43,7 @@ add_subdirectory(lessons/math/10-anisotropy)
 
 # ── Engine Lessons ──────────────────────────────────────────────────────────
 add_subdirectory(lessons/engine/01-intro-to-c)
+add_subdirectory(lessons/engine/02-cmake-fundamentals)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)

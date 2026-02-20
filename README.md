@@ -152,6 +152,7 @@ C fundamentals, debugging, and project structure:
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
 | 01 | [Intro to C](lessons/engine/01-intro-to-c/) | Types, functions, control flow, arrays, strings, pointers, structs, dynamic memory |
+| 02 | [CMake Fundamentals](lessons/engine/02-cmake-fundamentals/) | Targets, properties, `add_executable`, `target_link_libraries`, generator expressions, reading build errors |
 
 See [lessons/engine/README.md](lessons/engine/README.md) for details and the
 full topic list. See [PLAN.md](PLAN.md) for the roadmap.
