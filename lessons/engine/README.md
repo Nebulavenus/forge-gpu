@@ -31,10 +31,9 @@ source code into a working program.
 
 ## Lessons
 
-*Coming soon — this is a new lesson category.*
-
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
+| 01 | [Intro to C](01-intro-to-c/) | Types, functions, control flow, arrays, strings, pointers, structs, dynamic memory — using SDL's cross-platform APIs |
 
 <!-- Add lessons here as they are created -->
 

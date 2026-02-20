@@ -95,22 +95,24 @@ Infrastructure that supports all lessons:
 Practical engineering lessons covering the toolchain and infrastructure behind
 graphics applications.
 
-*This is a new lesson category — lessons will be added here as they are created.*
+### C Language
+
+- [x] **Engine Lesson 01 — Intro to C with SDL** — Types, functions, control flow, arrays, strings, pointers, structs, dynamic memory; using SDL's cross-platform APIs (SDL_Log, SDL_malloc, SDL_free, SDL_memcpy) instead of C standard library equivalents and why
 
 ### Build Systems
 
-- [ ] **Engine Lesson 01 — CMake Fundamentals** — Targets, properties, `add_executable`, `target_link_libraries`, generator expressions; what happens when you forget to link; reading CMake error messages
-- [ ] **Engine Lesson 02 — FetchContent & Dependencies** — How forge-gpu downloads SDL automatically; adding your own dependencies; version pinning; offline builds
+- [ ] **Engine Lesson 02 — CMake Fundamentals** — Targets, properties, `add_executable`, `target_link_libraries`, generator expressions; what happens when you forget to link; reading CMake error messages
+- [ ] **Engine Lesson 03 — FetchContent & Dependencies** — How forge-gpu downloads SDL automatically; adding your own dependencies; version pinning; offline builds
 
-### C Language
+### C Language (continued)
 
-- [ ] **Engine Lesson 03 — Pointers & Memory** — Stack vs heap, `malloc`/`free`, pointer arithmetic, `sizeof`/`offsetof`; how vertex buffer uploads work under the hood
-- [ ] **Engine Lesson 04 — Header-Only Libraries** — How `forge_math.h` works; `static inline`; include guards vs `#pragma once`; one-definition rule
+- [ ] **Engine Lesson 04 — Pointers & Memory** — Stack vs heap, `malloc`/`free`, pointer arithmetic, `sizeof`/`offsetof`; how vertex buffer uploads work under the hood
+- [ ] **Engine Lesson 05 — Header-Only Libraries** — How `forge_math.h` works; `static inline`; include guards vs `#pragma once`; one-definition rule
 
 ### Debugging
 
-- [ ] **Engine Lesson 05 — Reading Error Messages** — Compiler errors, linker errors, runtime crashes; what each type means and how to fix them
-- [ ] **Engine Lesson 06 — Using a Debugger** — Breakpoints, stepping, inspecting variables; finding crashes and logic errors
+- [ ] **Engine Lesson 06 — Reading Error Messages** — Compiler errors, linker errors, runtime crashes; what each type means and how to fix them
+- [ ] **Engine Lesson 07 — Using a Debugger** — Breakpoints, stepping, inspecting variables; finding crashes and logic errors
 
 ## Math Lessons
 

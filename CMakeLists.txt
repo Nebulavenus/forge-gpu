@@ -42,7 +42,7 @@ add_subdirectory(lessons/math/09-view-matrix)
 add_subdirectory(lessons/math/10-anisotropy)
 
 # ── Engine Lessons ──────────────────────────────────────────────────────────
-# (none yet — add_subdirectory entries go here as engine lessons are created)
+add_subdirectory(lessons/engine/01-intro-to-c)
 
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)
