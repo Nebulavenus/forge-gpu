@@ -262,7 +262,11 @@ Keep worked examples (step-by-step with numbers) in ` ```text ` blocks.
 
 ## Code style reminders
 
-- SDL naming: `SDL_PrefixedNames` for public, `lowercase_snake` for local
+- Naming: `PascalCase` for typedefs (e.g. `Vertex`, `GpuPrimitive`),
+  `lowercase_snake_case` for local variables and functions (e.g. `app_state`),
+  `UPPER_SNAKE_CASE` for `#define` constants,
+  `Prefix_PascalCase` for public API types (e.g. `ForgeCapture`) and
+  `prefix_snake_case` for public API functions (e.g. `forge_capture_init`)
 - The `app_state` struct holds all state passed between callbacks
 - Build on previous lessons — reference what was introduced before
 - Each lesson should introduce ONE new concept at a time
