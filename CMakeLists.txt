@@ -60,6 +60,7 @@ add_subdirectory(lessons/gpu/15-cascaded-shadow-maps)
 add_subdirectory(lessons/gpu/16-blending)
 add_subdirectory(lessons/gpu/17-normal-maps)
 add_subdirectory(lessons/gpu/18-blinn-phong-materials)
+add_subdirectory(lessons/gpu/19-debug-lines)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

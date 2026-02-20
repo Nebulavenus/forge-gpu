@@ -106,6 +106,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 16 | [Blending](lessons/gpu/16-blending/) | Alpha blending, alpha testing, blend equations, transparency sorting, additive blend |
 | 17 | [Normal Maps](lessons/gpu/17-normal-maps/) | Tangent-space normal mapping, TBN matrix, Lengyel's method, normal map decoding |
 | 18 | [Blinn-Phong with Materials](lessons/gpu/18-blinn-phong-materials/) | Per-material ambient/diffuse/specular colors, material parameter uniforms, multi-object scenes |
+| 19 | [Debug Lines](lessons/gpu/19-debug-lines/) | Immediate-mode debug drawing, dynamic vertex buffers, line primitives, overlay mode |
 
 ### Math Lessons (lessons/math/)
 
