@@ -57,10 +57,10 @@ echo ""
 echo "--- Installing GitHub CLI ---"
 GH_VERSION="2.74.0"
 if ! command -v gh &>/dev/null; then
-    curl -sSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+    curl -sSL https://github.com/cli/cli/releases/download/v2.65.0/gh_2.65.0_linux_amd64.tar.gz -o /tmp/gh.tar.gz
     tar -xzf /tmp/gh.tar.gz -C /tmp
-    sudo cp "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
-    rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64"
+    sudo cp /tmp/gh_2.65.0_linux_amd64/bin/gh /usr/local/bin/gh
+    rm -rf /tmp/gh.tar.gz /tmp/gh_2.65.0_linux_amd64
 fi
 echo "gh: $(gh --version | head -1)"
 if [ -n "${GH_TOKEN:-}" ]; then
