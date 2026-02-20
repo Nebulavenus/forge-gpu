@@ -175,7 +175,7 @@ float dist = vec3_length(vec3_sub(nearest, cam));
 ```
 
 The mesh-local AABB is computed once during upload, then transformed to
-world space each frame using [Arvo's method](https://doi.org/10.1016/B978-0-12-336156-1.50015-4)
+world space each frame using [Arvo's method](https://doi.org/10.1016/B978-0-08-050753-8.50119-4)
 — an efficient technique that transforms an AABB through a 4×4 matrix by
 decomposing it into per-axis min/max contributions, avoiding the cost of
 transforming all eight corners individually.
