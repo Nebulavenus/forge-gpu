@@ -105,6 +105,7 @@ Learn the SDL GPU API and modern rendering techniques:
 | 15 | [Cascaded Shadow Maps](lessons/gpu/15-cascaded-shadow-maps/) | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes, debug overlay |
 | 16 | [Blending](lessons/gpu/16-blending/) | Alpha blending, alpha testing, blend equations, transparency sorting, additive blend |
 | 17 | [Normal Maps](lessons/gpu/17-normal-maps/) | Tangent-space normal mapping, TBN matrix, Lengyel's method, normal map decoding |
+| 18 | [Blinn-Phong with Materials](lessons/gpu/18-blinn-phong-materials/) | Per-material ambient/diffuse/specular colors, material parameter uniforms, multi-object scenes |
 
 ### Math Lessons (lessons/math/)
 
