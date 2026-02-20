@@ -47,8 +47,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 11 Compute Shaders"
-#define WINDOW_WIDTH  600
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* Plasma texture dimensions.  Fixed size keeps the lesson simple;
  * dynamic resize (matching the window) is left as an exercise. */

@@ -63,7 +63,7 @@ SDL_GPUDevice *device = SDL_CreateGPUDevice(
 ## Window and swapchain
 
 ```c
-SDL_Window *window = SDL_CreateWindow("Title", 800, 600, 0);
+SDL_Window *window = SDL_CreateWindow("Title", 1280, 720, 0);
 SDL_ClaimWindowForGPUDevice(device, window);
 ```
 

@@ -20,7 +20,7 @@ single mesh with one material.
 
 ![CesiumMilkTruck](assets/truck.png)
 
-![VirtualCity](assets/city.png)
+![VirtualCity](assets/screenshot.png)
 
 The default model (CesiumMilkTruck) shows a textured truck with glass windshield,
 metal trim, and wheels — all loaded from a single glTF file. Pass a different

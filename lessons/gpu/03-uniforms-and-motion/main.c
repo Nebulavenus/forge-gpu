@@ -46,8 +46,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 03 Uniforms & Motion"
-#define WINDOW_WIDTH  600
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* Linear-space clear color — a dark blue-grey background. */
 #define CLEAR_R 0.02f

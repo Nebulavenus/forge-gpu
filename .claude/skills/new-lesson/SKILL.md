@@ -56,6 +56,8 @@ If any of these are missing, ask the user before proceeding.
      `SDL_SetGPUSwapchainParameters`, `SDL_AcquireGPUSwapchainTexture`, etc. all
      return `false` on failure. Log a descriptive error (include the function name)
      and clean up or early-return. Never ignore a bool return value.
+   - Use `#define WINDOW_WIDTH 1280` and `#define WINDOW_HEIGHT 720` (16:9).
+     All lessons use this standard size for consistent screenshots.
    - No magic numbers — `#define` or `enum` everything
    - Extensive comments explaining *why* and *purpose*, not just *what* —
      every pipeline setting, resource binding, and API call should have a brief

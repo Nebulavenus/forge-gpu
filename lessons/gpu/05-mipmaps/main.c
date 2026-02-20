@@ -47,8 +47,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 05 Mipmaps"
-#define WINDOW_WIDTH  600
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* Linear-space clear color — dark blue-grey. */
 #define CLEAR_R 0.02f

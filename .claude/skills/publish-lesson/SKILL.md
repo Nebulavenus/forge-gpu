@@ -40,6 +40,7 @@ Before committing, verify the lesson has all required pieces from the
   `SDL_ClaimWindowForGPUDevice`, `SDL_Init`, etc. Each failure path must log
   the function name + `SDL_GetError()` and clean up or early-return. This is
   the most common PR review finding — verify every call site before publishing.
+- [ ] Window size is 1280×720 (16:9) — standard for consistent screenshots
 - [ ] No magic numbers — all literals are `#define` or `enum` constants
 - [ ] Has comprehensive comments explaining *why* and *purpose*, not just *what* —
   every pipeline setting, resource binding, and API call states the reason for

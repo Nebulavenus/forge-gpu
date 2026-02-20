@@ -85,6 +85,11 @@ tell them where to find it.
 
 - Screenshots: `lessons/gpu/<name>/assets/screenshot.png`
 
+## Expected dimensions
+
+All lessons should use 1280×720 (16:9). If a screenshot has unexpected
+dimensions, verify the lesson's `WINDOW_WIDTH`/`WINDOW_HEIGHT` defines.
+
 ## Common issues
 
 - **Black image**: The `--capture-frame` default of 5 skips the first few

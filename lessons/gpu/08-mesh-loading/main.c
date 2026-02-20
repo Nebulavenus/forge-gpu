@@ -58,8 +58,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 08 Loading a Mesh (OBJ)"
-#define WINDOW_WIDTH  800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* Dark clear color so the model stands out. */
 #define CLEAR_R 0.02f

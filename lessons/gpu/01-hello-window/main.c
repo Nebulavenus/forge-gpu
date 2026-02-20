@@ -33,8 +33,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 01 Hello Window"
-#define WINDOW_WIDTH  800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* The color we clear the screen to each frame (dark blue-grey).
  * These are LINEAR values — the sRGB swapchain converts them to the

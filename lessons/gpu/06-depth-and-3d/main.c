@@ -47,8 +47,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 06 Depth Buffer & 3D Transforms"
-#define WINDOW_WIDTH  800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* Linear-space clear color — dark background so the cube stands out. */
 #define CLEAR_R 0.02f

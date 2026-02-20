@@ -46,8 +46,8 @@
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
 #define WINDOW_TITLE  "Forge GPU - 02 First Triangle"
-#define WINDOW_WIDTH  800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 720
 
 /* Linear-space clear color — a dark blue-grey background.
  * With an sRGB swapchain, low linear values produce a dark result. */
