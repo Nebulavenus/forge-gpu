@@ -218,11 +218,12 @@ This lesson uses:
 ### Matplotlib diagrams
 
 For geometric or visual diagrams (UV mapping, filtering comparison), add a
-diagram function to `scripts/forge_diagrams.py`:
+diagram function to `scripts/forge_diagrams/gpu_diagrams.py`:
 
-1. Write a function following the existing pattern (shared helpers)
-2. Register it in the `DIAGRAMS` dict with the lesson key (e.g. `"gpu/04"`)
-3. Run `python scripts/forge_diagrams.py --lesson gpu/NN` to generate the PNG
+1. Write a function following the existing pattern (shared `setup_axes`,
+   `draw_vector`, `save` helpers from `_common.py`)
+2. Register it in the `DIAGRAMS` dict in `__main__.py` with the lesson key (e.g. `"gpu/04"`)
+3. Run `python scripts/forge_diagrams --lesson gpu/NN` to generate the PNG
 4. Reference in the README: `![Description](assets/diagram_name.png)`
 
 ### Mermaid diagrams

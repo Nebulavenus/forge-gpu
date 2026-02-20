@@ -509,7 +509,7 @@ python scripts/compile_shaders.py 10
 To regenerate the diagrams:
 
 ```bash
-python scripts/forge_diagrams.py --lesson gpu/10
+python scripts/forge_diagrams --lesson gpu/10
 ```
 
 ## Exercises

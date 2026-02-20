@@ -383,12 +383,12 @@ Every function needs:
 ### Matplotlib diagrams
 
 For geometric or mathematical visuals (vector diagrams, interpolation grids,
-frustum views), add a diagram function to `scripts/forge_diagrams.py`:
+frustum views), add a diagram function to `scripts/forge_diagrams/math_diagrams.py`:
 
-1. Write a function following the existing pattern (shared `_style_axis`,
-   `_draw_vector`, `_save` helpers)
-2. Register it in the `DIAGRAMS` dict with the lesson key
-3. Run `python scripts/forge_diagrams.py --lesson math/NN` to generate the PNG
+1. Write a function following the existing pattern (shared `setup_axes`,
+   `draw_vector`, `save` helpers from `_common.py`)
+2. Register it in the `DIAGRAMS` dict in `__main__.py` with the lesson key
+3. Run `python scripts/forge_diagrams --lesson math/NN` to generate the PNG
 4. Reference in the README: `![Description](assets/diagram_name.png)`
 
 Output goes to each lesson's `assets/` directory at 200 DPI (PNG only).
