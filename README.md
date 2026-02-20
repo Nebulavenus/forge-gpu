@@ -70,7 +70,7 @@ Learn the SDL GPU API and modern rendering techniques:
 <b>08</b> — Mesh Loading
 </td>
 <td align="center">
-<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="200" alt="Scene Loading" /></a><br />
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/screenshot.png" width="200" alt="Scene Loading" /></a><br />
 <b>09</b> — Scene Loading
 </td>
 </tr>
