@@ -5,61 +5,6 @@
 A learning platform and building tool for real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
 
-## Gallery
-
-From first triangle to full 3D scenes — here's what you'll build:
-
-<table>
-<tr>
-<td align="center">
-<a href="lessons/gpu/02-first-triangle/"><img src="lessons/gpu/02-first-triangle/assets/screenshot.png" width="400" alt="First Triangle" /></a><br />
-<b>Lesson 02</b> — First Triangle
-</td>
-<td align="center">
-<a href="lessons/gpu/10-basic-lighting/"><img src="lessons/gpu/10-basic-lighting/assets/screenshot.png" width="400" alt="Suzanne with Blinn-Phong lighting" /></a><br />
-<b>Lesson 10</b> — Basic Lighting (Blinn-Phong)
-</td>
-</tr>
-<tr>
-<td align="center">
-<a href="lessons/gpu/14-environment-mapping/"><img src="lessons/gpu/14-environment-mapping/assets/screenshot.png" width="400" alt="Space shuttle with environment reflections in a Milky Way skybox" /></a><br />
-<b>Lesson 14</b> — Environment Mapping (cube map skybox + reflections)
-</td>
-<td align="center">
-<a href="lessons/gpu/11-compute-shaders/"><img src="lessons/gpu/11-compute-shaders/assets/screenshot.png" width="400" alt="Procedural plasma (compute shader)" /></a><br />
-<b>Lesson 11</b> — Compute Shaders
-</td>
-</tr>
-<tr>
-<td align="center">
-<a href="lessons/gpu/12-shader-grid/"><img src="lessons/gpu/12-shader-grid/assets/screenshot.png" width="400" alt="CesiumMilkTruck on procedural grid" /></a><br />
-<b>Lesson 12</b> — Shader Grid (procedural anti-aliased grid + lit model)
-</td>
-<td align="center">
-<a href="lessons/gpu/13-instanced-rendering/"><img src="lessons/gpu/13-instanced-rendering/assets/screenshot.png" width="400" alt="256 ducks and 47 boxes — instanced rendering" /></a><br />
-<b>Lesson 13</b> — Instanced Rendering (303 objects, 3 draw calls)
-</td>
-</tr>
-<tr>
-<td align="center">
-<a href="lessons/gpu/15-cascaded-shadow-maps/"><img src="lessons/gpu/15-cascaded-shadow-maps/assets/screenshot.png" width="400" alt="Cascaded shadow maps with PCF soft shadows" /></a><br />
-<b>Lesson 15</b> — Cascaded Shadow Maps (3 cascades, PCF soft shadows)
-</td>
-<td align="center">
-<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="400" alt="VirtualCity — 234 nodes, 167 materials, 20 textures" /></a><br />
-<b>Lesson 09</b> — VirtualCity (234 nodes, 167 materials, 20 textures)
-</td>
-</tr>
-<tr>
-<td align="center">
-<a href="lessons/gpu/16-blending/"><img src="lessons/gpu/16-blending/assets/screenshot.png" width="400" alt="Alpha blending, alpha testing, and additive blending with glTF model" /></a><br />
-<b>Lesson 16</b> — Blending (alpha blend, alpha test, additive)
-</td>
-<td align="center">
-</td>
-</tr>
-</table>
-
 ## Why forge-gpu?
 
 **Two ways to use this project:**
@@ -86,27 +31,98 @@ with AI when they understand what they're building.
 
 Learn the SDL GPU API and modern rendering techniques:
 
-| # | Name | What you'll learn |
-|---|------|-------------------|
-| 01 | [Hello Window](lessons/gpu/01-hello-window/) | GPU device, swapchain, command buffers, render passes |
-| 02 | [First Triangle](lessons/gpu/02-first-triangle/) | Vertex buffers, shaders, graphics pipeline |
-| 03 | [Uniforms & Motion](lessons/gpu/03-uniforms-and-motion/) | Uniform buffers, push uniforms, animating with time |
-| 04 | [Textures & Samplers](lessons/gpu/04-textures-and-samplers/) | Loading images, GPU textures, samplers, UV coordinates, index buffers |
-| 05 | [Mipmaps](lessons/gpu/05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes, procedural textures |
-| 06 | [Depth Buffer & 3D Transforms](lessons/gpu/06-depth-and-3d/) | MVP matrices, depth testing, back-face culling, perspective projection |
-| 07 | [Camera & Input](lessons/gpu/07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time, multiple objects |
-| 08 | [Loading a Mesh (OBJ)](lessons/gpu/08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmapped mesh rendering |
-| 09 | [Loading a Scene (glTF)](lessons/gpu/09-scene-loading/) | glTF parsing, scene hierarchy, nested transforms, multi-material meshes, indexed drawing |
-| 10 | [Basic Lighting](lessons/gpu/10-basic-lighting/) | Blinn-Phong shading, ambient/diffuse/specular, normal transformation, world-space lighting |
-| 11 | [Compute Shaders](lessons/gpu/11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups, compute-then-render pattern |
-| 12 | [Shader Grid](lessons/gpu/12-shader-grid/) | Procedural grid, screen-space derivatives, anti-aliased patterns, multiple pipelines |
-| 13 | [Instanced Rendering](lessons/gpu/13-instanced-rendering/) | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
-| 14 | [Environment Mapping](lessons/gpu/14-environment-mapping/) | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
-| 15 | [Cascaded Shadow Maps](lessons/gpu/15-cascaded-shadow-maps/) | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes, debug overlay |
-| 16 | [Blending](lessons/gpu/16-blending/) | Alpha blending, alpha testing, blend equations, transparency sorting, additive blend |
-| 17 | [Normal Maps](lessons/gpu/17-normal-maps/) | Tangent-space normal mapping, TBN matrix, Lengyel's method, normal map decoding |
-| 18 | [Blinn-Phong with Materials](lessons/gpu/18-blinn-phong-materials/) | Per-material ambient/diffuse/specular colors, material parameter uniforms, multi-object scenes |
-| 19 | [Debug Lines](lessons/gpu/19-debug-lines/) | Immediate-mode debug drawing, dynamic vertex buffers, line primitives, overlay mode |
+<table>
+<tr>
+<td align="center">
+<a href="lessons/gpu/01-hello-window/"><img src="lessons/gpu/01-hello-window/assets/screenshot.png" width="200" alt="Hello Window" /></a><br />
+<b>01</b> — Hello Window
+</td>
+<td align="center">
+<a href="lessons/gpu/02-first-triangle/"><img src="lessons/gpu/02-first-triangle/assets/screenshot.png" width="200" alt="First Triangle" /></a><br />
+<b>02</b> — First Triangle
+</td>
+<td align="center">
+<a href="lessons/gpu/03-uniforms-and-motion/"><img src="lessons/gpu/03-uniforms-and-motion/assets/preview.gif" width="200" alt="Uniforms and Motion" /></a><br />
+<b>03</b> — Uniforms &amp; Motion
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/04-textures-and-samplers/"><img src="lessons/gpu/04-textures-and-samplers/assets/screenshot.png" width="200" alt="Textures and Samplers" /></a><br />
+<b>04</b> — Textures &amp; Samplers
+</td>
+<td align="center">
+<a href="lessons/gpu/05-mipmaps/"><img src="lessons/gpu/05-mipmaps/assets/screenshot.png" width="200" alt="Mipmaps" /></a><br />
+<b>05</b> — Mipmaps
+</td>
+<td align="center">
+<a href="lessons/gpu/06-depth-and-3d/"><img src="lessons/gpu/06-depth-and-3d/assets/screenshot.png" width="200" alt="Depth Buffer and 3D Transforms" /></a><br />
+<b>06</b> — Depth &amp; 3D
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/07-camera-and-input/"><img src="lessons/gpu/07-camera-and-input/assets/screenshot.png" width="200" alt="Camera and Input" /></a><br />
+<b>07</b> — Camera &amp; Input
+</td>
+<td align="center">
+<a href="lessons/gpu/08-mesh-loading/"><img src="lessons/gpu/08-mesh-loading/assets/screenshot.png" width="200" alt="Mesh Loading" /></a><br />
+<b>08</b> — Mesh Loading
+</td>
+<td align="center">
+<a href="lessons/gpu/09-scene-loading/"><img src="lessons/gpu/09-scene-loading/assets/city.png" width="200" alt="Scene Loading" /></a><br />
+<b>09</b> — Scene Loading
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/10-basic-lighting/"><img src="lessons/gpu/10-basic-lighting/assets/screenshot.png" width="200" alt="Basic Lighting" /></a><br />
+<b>10</b> — Basic Lighting
+</td>
+<td align="center">
+<a href="lessons/gpu/11-compute-shaders/"><img src="lessons/gpu/11-compute-shaders/assets/screenshot.png" width="200" alt="Compute Shaders" /></a><br />
+<b>11</b> — Compute Shaders
+</td>
+<td align="center">
+<a href="lessons/gpu/12-shader-grid/"><img src="lessons/gpu/12-shader-grid/assets/screenshot.png" width="200" alt="Shader Grid" /></a><br />
+<b>12</b> — Shader Grid
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/13-instanced-rendering/"><img src="lessons/gpu/13-instanced-rendering/assets/screenshot.png" width="200" alt="Instanced Rendering" /></a><br />
+<b>13</b> — Instanced Rendering
+</td>
+<td align="center">
+<a href="lessons/gpu/14-environment-mapping/"><img src="lessons/gpu/14-environment-mapping/assets/screenshot.png" width="200" alt="Environment Mapping" /></a><br />
+<b>14</b> — Environment Mapping
+</td>
+<td align="center">
+<a href="lessons/gpu/15-cascaded-shadow-maps/"><img src="lessons/gpu/15-cascaded-shadow-maps/assets/screenshot.png" width="200" alt="Cascaded Shadow Maps" /></a><br />
+<b>15</b> — Shadow Maps
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/16-blending/"><img src="lessons/gpu/16-blending/assets/screenshot.png" width="200" alt="Blending" /></a><br />
+<b>16</b> — Blending
+</td>
+<td align="center">
+<a href="lessons/gpu/17-normal-maps/"><img src="lessons/gpu/17-normal-maps/assets/screenshot.png" width="200" alt="Normal Maps" /></a><br />
+<b>17</b> — Normal Maps
+</td>
+<td align="center">
+<a href="lessons/gpu/18-blinn-phong-materials/"><img src="lessons/gpu/18-blinn-phong-materials/assets/screenshot.png" width="200" alt="Blinn-Phong Materials" /></a><br />
+<b>18</b> — Materials
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/19-debug-lines/"><img src="lessons/gpu/19-debug-lines/assets/screenshot.png" width="200" alt="Debug Lines" /></a><br />
+<b>19</b> — Debug Lines
+</td>
+</tr>
+</table>
 
 ### Math Lessons (lessons/math/)
 
