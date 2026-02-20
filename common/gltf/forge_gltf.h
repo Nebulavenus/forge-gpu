@@ -63,6 +63,9 @@
 #define FORGE_GLTF_UNSIGNED_INT   5125
 #define FORGE_GLTF_FLOAT          5126
 
+/* glTF tangent vectors are VEC4: xyz = direction, w = handedness */
+#define FORGE_GLTF_TANGENT_COMPONENTS 4
+
 /* Maximum path length for file references. */
 #define FORGE_GLTF_PATH_SIZE 512
 
@@ -94,6 +97,8 @@ typedef struct ForgeGltfPrimitive {
     Uint32           index_stride;  /* 2 = uint16, 4 = uint32 */
     int              material_index; /* -1 = no material assigned */
     bool             has_uvs;       /* true if TEXCOORD_0 was present */
+    vec4            *tangents;      /* NULL if no TANGENT attribute */
+    bool             has_tangents;  /* true if TANGENT (VEC4) was present */
 } ForgeGltfPrimitive;
 
 /* ── Mesh ─────────────────────────────────────────────────────────────────── */
@@ -129,6 +134,8 @@ typedef struct ForgeGltfMaterial {
     ForgeGltfAlphaMode alpha_mode;             /* OPAQUE, MASK, or BLEND  */
     float              alpha_cutoff;           /* MASK threshold (def 0.5)*/
     bool               double_sided;           /* render both faces?      */
+    char  normal_map_path[FORGE_GLTF_PATH_SIZE]; /* empty = no normal map */
+    bool  has_normal_map;                      /* true if normalTexture set */
 } ForgeGltfMaterial;
 
 /* ── Node ─────────────────────────────────────────────────────────────────── */
@@ -373,7 +380,8 @@ static int type_component_count(const char *type)
 
 static const void *forge_gltf__get_accessor(
     const cJSON *root, const ForgeGltfScene *scene,
-    int accessor_idx, int *out_count, int *out_component_type)
+    int accessor_idx, int *out_count, int *out_component_type,
+    int *out_num_components)
 {
     const cJSON *accessors = cJSON_GetObjectItemCaseSensitive(root, "accessors");
     const cJSON *views = cJSON_GetObjectItemCaseSensitive(root, "bufferViews");
@@ -468,6 +476,7 @@ static const void *forge_gltf__get_accessor(
 
     if (out_count) *out_count = count;
     if (out_component_type) *out_component_type = comp->valueint;
+    if (out_num_components) *out_num_components = num_components;
 
     return scene->buffers[bi].data + bv_offset + (Uint32)acc_offset;
 }
@@ -547,6 +556,8 @@ static bool forge_gltf__parse_materials(const cJSON *root,
         m->alpha_mode = FORGE_GLTF_ALPHA_OPAQUE;
         m->alpha_cutoff = FORGE_GLTF_DEFAULT_ALPHA_CUTOFF;
         m->double_sided = false;
+        m->normal_map_path[0] = '\0';
+        m->has_normal_map = false;
         copy_name(m->name, sizeof(m->name), mat);
 
         /* ── Alpha mode (glTF 2.0 core) ─────────────────────────────── */
@@ -637,6 +648,45 @@ static bool forge_gltf__parse_materials(const cJSON *root,
                 }
             }
         }
+
+        /* Normal texture (resolve to file path).
+         * glTF stores normalTexture at the material level (not inside
+         * pbrMetallicRoughness).  The normal map stores tangent-space
+         * normals that add surface detail without extra geometry. */
+        {
+            const cJSON *norm_tex_info = cJSON_GetObjectItemCaseSensitive(
+                mat, "normalTexture");
+            if (norm_tex_info && cJSON_IsArray(textures_arr)) {
+                const cJSON *nidx = cJSON_GetObjectItemCaseSensitive(
+                    norm_tex_info, "index");
+                if (cJSON_IsNumber(nidx)) {
+                    const cJSON *tex_obj = cJSON_GetArrayItem(
+                        textures_arr, nidx->valueint);
+                    if (tex_obj) {
+                        const cJSON *source =
+                            cJSON_GetObjectItemCaseSensitive(
+                                tex_obj, "source");
+                        if (cJSON_IsNumber(source)
+                            && cJSON_IsArray(images_arr)) {
+                            const cJSON *img = cJSON_GetArrayItem(
+                                images_arr, source->valueint);
+                            if (img) {
+                                const cJSON *nuri =
+                                    cJSON_GetObjectItemCaseSensitive(
+                                        img, "uri");
+                                if (cJSON_IsString(nuri)) {
+                                    build_path(
+                                        m->normal_map_path,
+                                        sizeof(m->normal_map_path),
+                                        base_dir, nuri->valuestring);
+                                    m->has_normal_map = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     scene->material_count = count;
     return true;
@@ -686,7 +736,8 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
             int vert_count = 0;
             int comp_type = 0;
             const float *positions = (const float *)forge_gltf__get_accessor(
-                root, scene, pos_acc->valueint, &vert_count, &comp_type);
+                root, scene, pos_acc->valueint, &vert_count, &comp_type,
+                NULL);
             if (!positions || comp_type != FORGE_GLTF_FLOAT) continue;
 
             const float *normals = NULL;
@@ -696,7 +747,8 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
                 int norm_count = 0;
                 int norm_comp = 0;
                 const float *n = (const float *)forge_gltf__get_accessor(
-                    root, scene, norm_acc->valueint, &norm_count, &norm_comp);
+                    root, scene, norm_acc->valueint, &norm_count, &norm_comp,
+                    NULL);
                 if (n && norm_count == vert_count
                       && norm_comp == FORGE_GLTF_FLOAT) {
                     normals = n;
@@ -710,7 +762,8 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
                 int uv_count = 0;
                 int uv_comp = 0;
                 const float *u = (const float *)forge_gltf__get_accessor(
-                    root, scene, uv_acc->valueint, &uv_count, &uv_comp);
+                    root, scene, uv_acc->valueint, &uv_count, &uv_comp,
+                    NULL);
                 if (u && uv_count == vert_count
                       && uv_comp == FORGE_GLTF_FLOAT) {
                     uvs = u;
@@ -718,6 +771,28 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
             }
 
             gp->has_uvs = (uvs != NULL);
+
+            /* Read tangent data (VEC4: xyz = direction, w = handedness).
+             * Tangent vectors are needed for normal mapping — they define
+             * the local surface coordinate system together with the normal
+             * and bitangent.  Stored in a separate array to avoid changing
+             * the base ForgeGltfVertex layout. */
+            const float *tangent_data = NULL;
+            const cJSON *tangent_acc = cJSON_GetObjectItemCaseSensitive(
+                attrs, "TANGENT");
+            if (tangent_acc) {
+                int tang_count = 0;
+                int tang_comp = 0;
+                int tang_num = 0;
+                const float *t = (const float *)forge_gltf__get_accessor(
+                    root, scene, tangent_acc->valueint,
+                    &tang_count, &tang_comp, &tang_num);
+                if (t && tang_count == vert_count
+                      && tang_comp == FORGE_GLTF_FLOAT
+                      && tang_num == FORGE_GLTF_TANGENT_COMPONENTS) {
+                    tangent_data = t;
+                }
+            }
 
             /* Interleave into ForgeGltfVertex array. */
             gp->vertices = (ForgeGltfVertex *)SDL_calloc(
@@ -742,6 +817,24 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
                 }
             }
 
+            /* Copy tangent data into a separate VEC4 array.  Stored
+             * separately from ForgeGltfVertex so that lessons which don't
+             * need tangents can use the same base vertex layout. */
+            if (tangent_data) {
+                gp->tangents = (vec4 *)SDL_calloc(
+                    (size_t)vert_count, sizeof(vec4));
+                if (gp->tangents) {
+                    gp->has_tangents = true;
+                    int tv;
+                    for (tv = 0; tv < vert_count; tv++) {
+                        gp->tangents[tv].x = tangent_data[tv * FORGE_GLTF_TANGENT_COMPONENTS + 0];
+                        gp->tangents[tv].y = tangent_data[tv * FORGE_GLTF_TANGENT_COMPONENTS + 1];
+                        gp->tangents[tv].z = tangent_data[tv * FORGE_GLTF_TANGENT_COMPONENTS + 2];
+                        gp->tangents[tv].w = tangent_data[tv * FORGE_GLTF_TANGENT_COMPONENTS + 3];
+                    }
+                }
+            }
+
             /* Read index data. */
             const cJSON *idx_acc = cJSON_GetObjectItemCaseSensitive(
                 prim, "indices");
@@ -749,7 +842,8 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
                 int idx_count = 0;
                 int idx_comp = 0;
                 const void *idx_data = forge_gltf__get_accessor(
-                    root, scene, idx_acc->valueint, &idx_count, &idx_comp);
+                    root, scene, idx_acc->valueint, &idx_count, &idx_comp,
+                    NULL);
 
                 if (idx_data && idx_count > 0) {
                     Uint32 elem_size = 0;
@@ -1004,6 +1098,7 @@ static void forge_gltf_free(ForgeGltfScene *scene)
     for (int i = 0; i < scene->primitive_count; i++) {
         SDL_free(scene->primitives[i].vertices);
         SDL_free(scene->primitives[i].indices);
+        SDL_free(scene->primitives[i].tangents);
     }
 
     for (int i = 0; i < scene->buffer_count; i++) {

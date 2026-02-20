@@ -32,7 +32,7 @@ Infrastructure that supports all lessons:
 ### Core Rendering Techniques
 
 - [x] **Lesson 16 — Blending** — Alpha blending, blend equations and factors, transparency sorting, additive and premultiplied-alpha modes; when to use alpha test vs alpha blend; blend state configuration in SDL GPU
-- [ ] **Lesson 17 — Normal Maps** — Tangent-space normal mapping for surface detail without extra geometry; tangent and bitangent computation; TBN matrix construction; sampling and decoding normal maps in the fragment shader; comparing flat vs per-vertex vs normal-mapped shading
+- [x] **Lesson 17 — Normal Maps** — Tangent-space normal mapping for surface detail without extra geometry; tangent and bitangent computation; TBN matrix construction; sampling and decoding normal maps in the fragment shader; comparing flat vs per-vertex vs normal-mapped shading
 - [ ] **Lesson 18 — Blinn-Phong with Materials** — Extending Lesson 10 with per-object material properties (ambient, diffuse, specular colors, shininess); material uniforms or material buffers; multiple objects with distinct materials in one scene; foundation for PBR-style material workflows
 - [ ] **Lesson 19 — Debug Lines** — Immediate-mode debug drawing for lines, circles, and coordinate-axis gizmos; dynamic vertex buffer updated each frame; line rendering pipeline (no depth test option, overlay mode); useful as a diagnostic tool for every lesson that follows
 

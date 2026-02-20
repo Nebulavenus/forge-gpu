@@ -58,6 +58,7 @@ add_subdirectory(lessons/gpu/13-instanced-rendering)
 add_subdirectory(lessons/gpu/14-environment-mapping)
 add_subdirectory(lessons/gpu/15-cascaded-shadow-maps)
 add_subdirectory(lessons/gpu/16-blending)
+add_subdirectory(lessons/gpu/17-normal-maps)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

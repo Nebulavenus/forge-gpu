@@ -180,6 +180,40 @@ world space each frame using [Arvo's method](https://doi.org/10.1016/B978-0-08-0
 decomposing it into per-axis min/max contributions, avoiding the cost of
 transforming all eight corners individually.
 
+#### Arvo's method — transforming an AABB without corner transforms
+
+![Arvo's method diagram](assets/arvo_method.png)
+
+The naive approach transforms all 8 corners of the AABB through the matrix,
+then finds the min/max of the results. Arvo's method avoids this by
+observing that each element of the output min/max depends independently on
+whether the corresponding matrix entry is positive or negative:
+
+```c
+for (i = 0; i < 3; i++) {
+    out_min[i] = translation[i];   /* start with translation */
+    out_max[i] = translation[i];
+    for (j = 0; j < 3; j++) {
+        float e = M[j][i] * local_min[j];
+        float f = M[j][i] * local_max[j];
+        if (e < f) {
+            out_min[i] += e;
+            out_max[i] += f;
+        } else {
+            out_min[i] += f;
+            out_max[i] += e;
+        }
+    }
+}
+```
+
+For each output axis, the method sums the minimum and maximum contributions
+from each matrix column scaled by the AABB extents. A positive matrix entry
+maps `local_min` to the output minimum and `local_max` to the output
+maximum; a negative entry swaps them. This produces the same
+world-space AABB as the corner approach, using 18 multiplies and 18
+comparisons instead of 8 full matrix–vector multiplies.
+
 ### KHR_materials_transmission approximation
 
 The TransmissionOrderTest model uses `KHR_materials_transmission` for its
