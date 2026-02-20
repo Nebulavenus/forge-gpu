@@ -40,7 +40,13 @@ float2 aa_line = 1.0 - smoothstep(line_width, line_width + fw, dist);
 /* Step 5: Combine X and Z lines */
 float grid = max(aa_line.x, aa_line.y);
 
-/* Step 6: Distance fade (prevent far-field moiré) */
+/* Step 6a: Frequency-based fade (prevent moiré at low angles) */
+/* When fwidth >= 0.5, a pixel spans more than half a grid cell —
+ * the grid pattern exceeds the Nyquist limit and cannot be resolved. */
+float max_fw = max(fw.x, fw.y);
+grid *= 1.0 - smoothstep(0.3, 0.5, max_fw);
+
+/* Step 6b: Distance fade (secondary limit for extreme distances) */
 float cam_dist = length(world_pos - eye_pos.xyz);
 float fade = 1.0 - smoothstep(fade_distance * 0.5, fade_distance, cam_dist);
 grid *= fade;
@@ -53,7 +59,10 @@ float3 surface = lerp(bg_color.rgb, line_color.rgb, grid);
 
 - `fwidth()` uses the same derivative hardware as mip selection (Lesson 05)
 - The transition width is always one pixel, so lines look crisp at any distance
-- Distance fade removes moiré when grid cells become sub-pixel
+- Frequency-based fade detects when grid cells become sub-pixel (Nyquist limit)
+  and fades the grid regardless of viewing angle — this prevents moiré at low
+  grazing angles where the distance fade alone is insufficient
+- Distance fade provides a secondary limit for extreme distances
 
 ## Multiple pipelines pattern
 
@@ -188,6 +197,10 @@ float4 main(float4 clip_pos : SV_Position, float3 world_pos : TEXCOORD0) : SV_Ta
     float2 aa_line = 1.0 - smoothstep(line_width, line_width + fw, dist);
     float  grid    = max(aa_line.x, aa_line.y);
 
+    /* Frequency-based fade: prevent moire at low grazing angles */
+    float max_fw = max(fw.x, fw.y);
+    grid *= 1.0 - smoothstep(0.3, 0.5, max_fw);
+
     float cam_dist = length(world_pos - eye_pos.xyz);
     float fade     = 1.0 - smoothstep(fade_distance * 0.5, fade_distance, cam_dist);
     grid *= fade;
@@ -233,7 +246,10 @@ SDL_BindGPUGraphicsPipeline(pass, model_pipeline);
 ## Common mistakes
 
 1. **Forgetting `fwidth()`** — without it, lines alias badly at distance
-2. **No distance fade** — distant grid creates moiré/shimmer at the horizon
+2. **No frequency-based fade** — distance fade alone is not enough; at low
+   grazing angles, grid cells become sub-pixel before the distance fade kicks in.
+   Use `max(fwidth(grid_uv).x, fwidth(grid_uv).y)` with smoothstep to fade when
+   pixels span more than ~30–50% of a grid cell (the Nyquist limit)
 3. **Using `frac()` directly** — `frac(grid_uv)` puts the discontinuity at
    the grid line; `frac(grid_uv - 0.5) - 0.5` centers the smooth region on
    the line, which is what you want

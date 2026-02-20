@@ -85,7 +85,13 @@ float4 main(PSInput input) : SV_Target
     float2 aa_line = 1.0 - smoothstep(line_width, line_width + fw, dist);
     float grid = max(aa_line.x, aa_line.y);
 
-    /* Distance fade to prevent moire at the horizon */
+    /* Frequency-based fade: when a pixel spans more than half a grid
+     * cell the pattern cannot be resolved.  Fade at the Nyquist limit
+     * to prevent moire, especially at low grazing angles. */
+    float max_fw = max(fw.x, fw.y);
+    grid *= 1.0 - smoothstep(0.3, 0.5, max_fw);
+
+    /* Distance fade (secondary limit for extreme distances) */
     float cam_dist = length(input.world_pos - eye_pos.xyz);
     float fade = 1.0 - smoothstep(fade_distance * 0.5, fade_distance, cam_dist);
     grid *= fade;

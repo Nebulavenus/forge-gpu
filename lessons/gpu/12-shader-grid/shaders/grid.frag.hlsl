@@ -101,9 +101,18 @@ float4 main(PSInput input) : SV_Target
      * or Z-aligned grid line, you see a line. */
     float grid = max(aa_line.x, aa_line.y);
 
-    /* ── Step 6: Distance fade ────────────────────────────────────────── */
-    /* At large distances, grid cells become sub-pixel and create moire
-     * artifacts.  Fade the grid to the background color beyond
+    /* ── Step 6a: Frequency-based fade (prevents moire at low angles) ── */
+    /* When fwidth exceeds ~0.5, a single pixel spans more than half a
+     * grid cell and the grid pattern cannot be resolved — this is the
+     * Nyquist limit for the grid frequency.  Smoothly fade the grid as
+     * fwidth approaches this threshold.  This naturally handles both
+     * distance and viewing angle: at grazing angles, fwidth along the
+     * view direction grows large even at moderate distances. */
+    float max_fw = max(fw.x, fw.y);
+    grid *= 1.0 - smoothstep(0.3, 0.5, max_fw);
+
+    /* ── Step 6b: Distance fade ───────────────────────────────────────── */
+    /* Secondary limit: fade the grid to the background color beyond
      * fade_distance.  The fade starts at half the distance to give a
      * gradual transition. */
     float cam_dist = length(input.world_pos - eye_pos.xyz);

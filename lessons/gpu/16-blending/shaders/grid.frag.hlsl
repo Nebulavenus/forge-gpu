@@ -41,20 +41,34 @@ float4 main(PSInput input) : SV_Target
     /* Compute grid coordinates from world XZ position */
     float2 coord = input.world_pos.xz / grid_spacing;
 
+    /* Screen-space rate of change: how many grid cells one pixel spans.
+     * This is the key to both anti-aliasing and moire prevention. */
+    float2 fw = fwidth(coord);
+
     /* Distance to the nearest grid line in each axis.
      * fwidth() gives the screen-space rate of change — dividing by it
      * converts the world-space distance to pixel-space, which is what
      * we need for anti-aliased step functions. */
-    float2 grid_dist = abs(frac(coord - 0.5) - 0.5) / fwidth(coord);
+    float2 grid_dist = abs(frac(coord - 0.5) - 0.5) / fw;
     float nearest = min(grid_dist.x, grid_dist.y);
 
     /* Convert distance-to-line into an alpha: 0 = on line, 1 = off line.
      * Clamping to [0,1] gives us a smooth anti-aliased transition. */
     float alpha = 1.0 - saturate(nearest);
 
-    /* Fade grid lines with distance to prevent aliasing at the horizon */
-    float dist = length(input.world_pos.xz);
-    float fade = 1.0 - saturate(dist / fade_distance);
+    /* Frequency-based fade (prevents moire at low angles).
+     * When fwidth exceeds ~0.5, a single pixel spans more than half a
+     * grid cell and the grid pattern cannot be resolved — this is the
+     * Nyquist limit for the grid frequency.  Smoothly fade the grid as
+     * fwidth approaches this threshold.  This naturally handles both
+     * distance and viewing angle: at grazing angles, fwidth along the
+     * view direction grows large even at moderate distances. */
+    float max_fw = max(fw.x, fw.y);
+    alpha *= 1.0 - smoothstep(0.3, 0.5, max_fw);
+
+    /* Distance fade (secondary limit for extreme distances) */
+    float cam_dist = length(input.world_pos.xz - eye_pos.xz);
+    float fade = 1.0 - smoothstep(fade_distance * 0.5, fade_distance, cam_dist);
     alpha *= fade;
 
     /* Unlit surface color */
