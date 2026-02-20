@@ -41,7 +41,10 @@ Before committing, verify the lesson has all required pieces from the
   the function name + `SDL_GetError()` and clean up or early-return. This is
   the most common PR review finding — verify every call site before publishing.
 - [ ] Window size is 1280×720 (16:9) — standard for consistent screenshots
-- [ ] No magic numbers — all literals are `#define` or `enum` constants
+- [ ] No magic numbers in production/library code — `#define` or `enum`
+  constants. Inline numeric literals are acceptable in lesson files when one-off
+  demonstration values improve readability (e.g. vertex positions, color
+  components, sample coordinates)
 - [ ] Has comprehensive comments explaining *why* and *purpose*, not just *what* —
   every pipeline setting, resource binding, and API call states the reason for
   the choice (e.g. why CULLMODE_NONE, why we push uniforms each frame)

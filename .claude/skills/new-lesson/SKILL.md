@@ -58,7 +58,10 @@ If any of these are missing, ask the user before proceeding.
      and clean up or early-return. Never ignore a bool return value.
    - Use `#define WINDOW_WIDTH 1280` and `#define WINDOW_HEIGHT 720` (16:9).
      All lessons use this standard size for consistent screenshots.
-   - No magic numbers — `#define` or `enum` everything
+   - No magic numbers in production/library code — `#define` or `enum`
+     everything. In lesson files, inline numeric literals are acceptable when
+     one-off demonstration values improve readability (e.g. vertex positions,
+     color components, sample coordinates)
    - Extensive comments explaining *why* and *purpose*, not just *what* —
      every pipeline setting, resource binding, and API call should have a brief
      comment stating why that choice was made (e.g. why CULLMODE_NONE, why

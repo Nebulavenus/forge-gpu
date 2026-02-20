@@ -41,6 +41,9 @@ add_subdirectory(lessons/math/08-orientation)
 add_subdirectory(lessons/math/09-view-matrix)
 add_subdirectory(lessons/math/10-anisotropy)
 
+# ── Engine Lessons ──────────────────────────────────────────────────────────
+# (none yet — add_subdirectory entries go here as engine lessons are created)
+
 # ── GPU Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/gpu/01-hello-window)
 add_subdirectory(lessons/gpu/02-first-triangle)

@@ -12,7 +12,7 @@ A learning platform and building tool for real-time graphics with
 1. **Learn** — Follow guided lessons teaching GPU programming, math, and game techniques
    - Each lesson is a standalone program introducing one concept
    - Progressive curriculum from "Hello Window" to advanced rendering
-   - Covers SDL GPU API, math fundamentals, techniques, and physics
+   - Covers SDL GPU API, math fundamentals, engine/toolchain skills, and more
    - Every line commented to explain *why*, not just *what*
 
 2. **Forge** — Use skills and libraries to build games and tools with AI
@@ -143,6 +143,16 @@ Standalone programs teaching the math behind graphics:
 
 Each math lesson includes a demo program and updates the shared math
 library (`common/math/`) with documented, reusable implementations.
+
+### Engine Lessons (lessons/engine/)
+
+Learn the practical engineering behind graphics applications — build systems,
+C fundamentals, debugging, and project structure:
+
+*Coming soon — this is a new lesson category.* Use the `/engine-lesson` skill
+to create new lessons.
+
+See [lessons/engine/README.md](lessons/engine/README.md) for details.
 
 See [PLAN.md](PLAN.md) for the full roadmap.
 
@@ -327,6 +337,9 @@ forge-gpu/
 │   ├── math/              Math lessons — standalone programs + theory
 │   │   ├── README.md      Overview and navigation
 │   │   └── NN-concept/    Each concept: program, README, updates math lib
+│   ├── engine/            Engine lessons — build systems, C, debugging
+│   │   ├── README.md      Overview and navigation
+│   │   └── NN-topic/      Each topic: example project, README, common errors
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
@@ -371,6 +384,7 @@ forge-gpu/
 **How it fits together:**
 
 - **Math lessons** teach concepts and add to `common/math/`
+- **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
 - **GPU lessons** use the shared libraries and link to math lessons for theory
 - **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
 - **Skills** automate lesson creation and teach AI agents the patterns
@@ -408,6 +422,7 @@ project to enable Claude to build games and tools with you.
 | Skill | Invoke with | What it does |
 |-------|-------------|--------------|
 | [math-lesson](.claude/skills/math-lesson/SKILL.md) | `/math-lesson` | Add math concept: lesson + program + update library |
+| [engine-lesson](.claude/skills/engine-lesson/SKILL.md) | `/engine-lesson` | Add engine lesson: build systems, C, debugging, project structure |
 | [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson` | Scaffold a new GPU lesson with all required files |
 | [publish-lesson](.claude/skills/publish-lesson/SKILL.md) | `/publish-lesson` | Validate, commit, and PR a completed lesson |
 

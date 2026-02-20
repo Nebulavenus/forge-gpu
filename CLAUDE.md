@@ -114,6 +114,9 @@ forge-gpu/
 │   ├── math/              # Math fundamentals (vectors, matrices, etc.)
 │   │   ├── README.md      # Overview of math lessons
 │   │   └── NN-concept/    # Each concept: program + README + adds to math lib
+│   ├── engine/            # Engine fundamentals (CMake, C, debugging, project structure)
+│   │   ├── README.md      # Overview of engine lessons
+│   │   └── NN-topic/      # Each topic: example project + README + common errors
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 │       └── NN-name/       # Each lesson: standalone buildable project
 ├── common/
@@ -133,9 +136,10 @@ forge-gpu/
 ### How it fits together
 
 1. **Math lessons** teach concepts, add to `common/math/`
-2. **GPU lessons** use math library, refer to math lessons for theory
-3. **Skills** automate lesson creation and teach AI agents the patterns
-4. **Math library** is reusable in any project (lessons or real builds)
+2. **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
+3. **GPU lessons** use math library, refer to math lessons for theory
+4. **Skills** automate lesson creation and teach AI agents the patterns
+5. **Math library** is reusable in any project (lessons or real builds)
 
 ## Testing
 
@@ -193,6 +197,15 @@ before building the lesson. The C build does not auto-detect shader changes.
   with name and description, then the key API calls, correct order, common
   mistakes, and a ready-to-use code template
 
+## When writing engine lessons (lessons/engine/)
+
+- Use the **/engine-lesson** skill to scaffold lesson + example project
+- Focus on practical engineering: build systems, C language, debugging, project structure
+- Show common errors and how to diagnose them — this is what learners need most
+- README explains the concept, shows real error messages, and provides fixes
+- Cross-reference GPU and math lessons where the concept appears in practice
+- Keep it readable — this code is meant to be learned from
+
 ## When writing math lessons (lessons/math/)
 
 - Use the **/math-lesson** skill to scaffold lesson + update library
@@ -233,6 +246,7 @@ Skills are Claude Code commands that teach AI agents patterns from lessons.
 **Available skills:**
 
 - **/math-lesson** — Add a math concept (lesson + library update)
+- **/engine-lesson** — Add an engine/toolchain lesson (build systems, C, debugging)
 - **/new-lesson** — Create a new GPU lesson
 - **/publish-lesson** — Commit and PR a completed lesson
 - **/sdl-gpu-setup** — Scaffold SDL3 GPU application

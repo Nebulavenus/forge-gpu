@@ -90,6 +90,28 @@ Infrastructure that supports all lessons:
 - [ ] **Lesson 40 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 35)
 - [ ] **Lesson 41 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
+## Engine Lessons
+
+Practical engineering lessons covering the toolchain and infrastructure behind
+graphics applications.
+
+*This is a new lesson category — lessons will be added here as they are created.*
+
+### Build Systems
+
+- [ ] **Engine Lesson 01 — CMake Fundamentals** — Targets, properties, `add_executable`, `target_link_libraries`, generator expressions; what happens when you forget to link; reading CMake error messages
+- [ ] **Engine Lesson 02 — FetchContent & Dependencies** — How forge-gpu downloads SDL automatically; adding your own dependencies; version pinning; offline builds
+
+### C Language
+
+- [ ] **Engine Lesson 03 — Pointers & Memory** — Stack vs heap, `malloc`/`free`, pointer arithmetic, `sizeof`/`offsetof`; how vertex buffer uploads work under the hood
+- [ ] **Engine Lesson 04 — Header-Only Libraries** — How `forge_math.h` works; `static inline`; include guards vs `#pragma once`; one-definition rule
+
+### Debugging
+
+- [ ] **Engine Lesson 05 — Reading Error Messages** — Compiler errors, linker errors, runtime crashes; what each type means and how to fix them
+- [ ] **Engine Lesson 06 — Using a Debugger** — Breakpoints, stepping, inspecting variables; finding crashes and logic errors
+
 ## Math Lessons
 
 - [x] **Math Lesson 01 — Vectors** — vec2/vec3/vec4, dot product, cross product, normalization, lerp
