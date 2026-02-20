@@ -204,7 +204,7 @@ sections.
 
 - [ ] Starts with `# Lesson NN — Title`
 - [ ] Has "What you'll learn" section near the top
-- [ ] Has screenshot or GIF in a "Result" section (not a placeholder)
+- [ ] Has screenshot in a "Result" section (not a placeholder)
 - [ ] Has "Building" section with build commands
 - [ ] Has "AI skill" section linking to the skill
 - [ ] Ends with "Exercises" section (3-4 exercises)

@@ -77,6 +77,9 @@
 /* Rotation speed in radians per second. */
 #define ROTATION_SPEED 1.0f
 
+/* Starting angle so the triangle is visibly rotated in a static screenshot. */
+#define INITIAL_ROTATION 0.8f
+
 /* ── Vertex format ────────────────────────────────────────────────────────── */
 /* Same as Lesson 02: each vertex has a 2D position and an RGB color.
  *
@@ -480,7 +483,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     float aspect = (h > 0) ? (float)w / (float)h : 1.0f;
 
     Uniforms uniforms;
-    uniforms.time   = elapsed * ROTATION_SPEED;
+    uniforms.time   = elapsed * ROTATION_SPEED + INITIAL_ROTATION;
     uniforms.aspect = aspect;
 
     /* ── 2. Acquire command buffer ────────────────────────────────────── */

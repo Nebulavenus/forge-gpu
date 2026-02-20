@@ -42,7 +42,7 @@ Learn the SDL GPU API and modern rendering techniques:
 <b>02</b> — First Triangle
 </td>
 <td align="center">
-<a href="lessons/gpu/03-uniforms-and-motion/"><img src="lessons/gpu/03-uniforms-and-motion/assets/preview.gif" width="200" alt="Uniforms and Motion" /></a><br />
+<a href="lessons/gpu/03-uniforms-and-motion/"><img src="lessons/gpu/03-uniforms-and-motion/assets/screenshot.png" width="200" alt="Uniforms and Motion" /></a><br />
 <b>03</b> — Uniforms &amp; Motion
 </td>
 </tr>

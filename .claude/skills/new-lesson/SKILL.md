@@ -107,12 +107,6 @@ If any of these are missing, ask the user before proceeding.
     python scripts/capture_lesson.py lessons/gpu/NN-name
     ```
 
-    If the lesson has animation, capture a GIF instead:
-
-    ```bash
-    python scripts/capture_lesson.py lessons/gpu/NN-name --gif --frames 60
-    ```
-
     Verify the image is in `lessons/gpu/NN-name/assets/` and the README
     references it with `![Lesson NN screenshot](assets/screenshot.png)`.
 

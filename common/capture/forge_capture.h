@@ -1,7 +1,7 @@
 /*
  * forge_capture.h — Frame capture utility for forge-gpu lessons
  *
- * Captures rendered frames to BMP files for screenshot and GIF generation.
+ * Captures a rendered frame to a BMP file for screenshot generation.
  * Header-only — #include behind an #ifdef FORGE_CAPTURE guard.
  *
  * How it works:
@@ -16,7 +16,6 @@
  *
  * Command-line flags (when compiled with FORGE_CAPTURE):
  *   --screenshot <file.bmp>          Capture one frame and save
- *   --capture-dir <dir> --frames N   Capture N frames as a sequence
  *   --capture-frame N                Frame to start capturing (default: 5)
  *
  * SPDX-License-Identifier: Zlib
@@ -34,9 +33,6 @@
  * and any first-frame artifacts are gone. */
 #define FORGE_CAPTURE_DEFAULT_START_FRAME  5
 
-/* Default number of frames to capture in sequence mode. */
-#define FORGE_CAPTURE_DEFAULT_DURATION  60
-
 /* Bytes per pixel for RGBA/BGRA formats (used for transfer buffer sizing). */
 #define FORGE_CAPTURE_BYTES_PER_PIXEL  4
 
@@ -47,8 +43,7 @@
 
 typedef enum ForgeCaptureMode {
     FORGE_CAPTURE_NONE,        /* Normal operation — no capture            */
-    FORGE_CAPTURE_SCREENSHOT,  /* Capture a single frame as one BMP file   */
-    FORGE_CAPTURE_SEQUENCE     /* Capture N frames as numbered BMP files   */
+    FORGE_CAPTURE_SCREENSHOT   /* Capture a single frame as one BMP file   */
 } ForgeCaptureMode;
 
 /* ── Capture state ────────────────────────────────────────────────────────── */
@@ -58,11 +53,10 @@ typedef struct ForgeCapture {
     ForgeCaptureMode mode;
     char             output_path[FORGE_CAPTURE_MAX_PATH];
     int              start_frame;
-    int              frame_count;   /* total frames for SEQUENCE mode */
 
     /* Runtime counters */
     int              current_frame;
-    int              frames_saved;
+    bool             saved;
 
     /* GPU resources (created by forge_capture_init) */
     SDL_GPUDevice         *device;
@@ -99,22 +93,12 @@ static inline bool forge_capture_parse_args(
 {
     SDL_memset(cap, 0, sizeof(*cap));
     cap->start_frame = FORGE_CAPTURE_DEFAULT_START_FRAME;
-    cap->frame_count = FORGE_CAPTURE_DEFAULT_DURATION;
 
     for (int i = 1; i < argc; i++) {
         if (SDL_strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             cap->mode = FORGE_CAPTURE_SCREENSHOT;
             SDL_strlcpy(cap->output_path, argv[i + 1],
                         FORGE_CAPTURE_MAX_PATH);
-            i++;
-        } else if (SDL_strcmp(argv[i], "--capture-dir") == 0 && i + 1 < argc) {
-            cap->mode = FORGE_CAPTURE_SEQUENCE;
-            SDL_strlcpy(cap->output_path, argv[i + 1],
-                        FORGE_CAPTURE_MAX_PATH);
-            i++;
-        } else if (SDL_strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
-            cap->frame_count = SDL_atoi(argv[i + 1]);
-            if (cap->frame_count < 1) cap->frame_count = 1;
             i++;
         } else if (SDL_strcmp(argv[i], "--capture-frame") == 0 && i + 1 < argc) {
             cap->start_frame = SDL_atoi(argv[i + 1]);
@@ -238,12 +222,8 @@ static inline bool forge_capture_finish_frame(
         return false;
     }
 
-    /* Already captured everything we need. */
-    if (cap->mode == FORGE_CAPTURE_SCREENSHOT && cap->frames_saved >= 1) {
-        return false;
-    }
-    if (cap->mode == FORGE_CAPTURE_SEQUENCE &&
-        cap->frames_saved >= cap->frame_count) {
+    /* Already captured the screenshot. */
+    if (cap->saved) {
         return false;
     }
 
@@ -290,18 +270,8 @@ static inline bool forge_capture_finish_frame(
     /* ── Map and save ─────────────────────────────────────────────────── */
     void *pixels = SDL_MapGPUTransferBuffer(cap->device, cap->buffer, false);
     if (pixels) {
-        char filepath[FORGE_CAPTURE_MAX_PATH];
-
-        if (cap->mode == FORGE_CAPTURE_SCREENSHOT) {
-            SDL_strlcpy(filepath, cap->output_path, FORGE_CAPTURE_MAX_PATH);
-        } else {
-            SDL_snprintf(filepath, FORGE_CAPTURE_MAX_PATH,
-                         "%s/frame_%03d.bmp",
-                         cap->output_path, cap->frames_saved);
-        }
-
-        if (forge_capture__save_bmp(cap, pixels, filepath)) {
-            cap->frames_saved++;
+        if (forge_capture__save_bmp(cap, pixels, cap->output_path)) {
+            cap->saved = true;
         }
         SDL_UnmapGPUTransferBuffer(cap->device, cap->buffer);
     } else {
@@ -319,14 +289,7 @@ static inline bool forge_capture_finish_frame(
  */
 static inline bool forge_capture_should_quit(const ForgeCapture *cap)
 {
-    if (cap->mode == FORGE_CAPTURE_SCREENSHOT && cap->frames_saved >= 1) {
-        return true;
-    }
-    if (cap->mode == FORGE_CAPTURE_SEQUENCE &&
-        cap->frames_saved >= cap->frame_count) {
-        return true;
-    }
-    return false;
+    return cap->mode == FORGE_CAPTURE_SCREENSHOT && cap->saved;
 }
 
 /*

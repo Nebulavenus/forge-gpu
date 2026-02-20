@@ -11,7 +11,7 @@
 
 ## Result
 
-![Lesson 07 preview](assets/preview.gif)
+![Lesson 07 preview](assets/screenshot.png)
 
 A small scene of colored cubes at different positions, sizes, and rotation
 speeds. Move through the scene with WASD, look around with the mouse, and
