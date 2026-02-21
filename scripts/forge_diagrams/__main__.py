@@ -32,8 +32,11 @@ from .gpu_diagrams import (
     diagram_arvo_method,
     diagram_blend_modes,
     diagram_blinn_phong_vectors,
+    diagram_bloom_pipeline,
+    diagram_brightness_threshold,
     diagram_cascade_ortho_projections,
     diagram_cascaded_shadow_maps,
+    diagram_downsample_13tap,
     diagram_exposure_effect,
     diagram_filtering_comparison,
     diagram_fog_blending,
@@ -41,14 +44,17 @@ from .gpu_diagrams import (
     diagram_fog_scene_layout,
     diagram_fullscreen_triangle,
     diagram_hdr_pipeline,
+    diagram_karis_averaging,
     diagram_ldr_clipping,
     diagram_lengyel_tangent_basis,
+    diagram_mip_chain_flow,
     diagram_normal_transformation,
     diagram_pcf_kernel,
     diagram_peter_panning,
     diagram_reflection_mapping,
     diagram_specular_comparison,
     diagram_tangent_space,
+    diagram_tent_filter,
     diagram_tone_map_comparison,
     diagram_undersampling,
     diagram_uv_mapping,
@@ -194,6 +200,14 @@ DIAGRAMS = {
         ("tone_map_comparison.png", diagram_tone_map_comparison),
         ("exposure_effect.png", diagram_exposure_effect),
     ],
+    "gpu/22": [
+        ("bloom_pipeline.png", diagram_bloom_pipeline),
+        ("downsample_13tap.png", diagram_downsample_13tap),
+        ("tent_filter.png", diagram_tent_filter),
+        ("karis_averaging.png", diagram_karis_averaging),
+        ("mip_chain_flow.png", diagram_mip_chain_flow),
+        ("brightness_threshold.png", diagram_brightness_threshold),
+    ],
 }
 
 # Full lesson directory names for display
@@ -220,6 +234,7 @@ LESSON_NAMES = {
     "gpu/17": "gpu/17-normal-maps",
     "gpu/20": "gpu/20-linear-fog",
     "gpu/21": "gpu/21-hdr-tone-mapping",
+    "gpu/22": "gpu/22-bloom",
 }
 
 

@@ -130,6 +130,12 @@ Learn the SDL GPU API and modern rendering techniques:
 <b>21</b> — HDR &amp; Tone Mapping
 </td>
 </tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/22-bloom/"><img src="lessons/gpu/22-bloom/assets/screenshot.png" width="200" alt="Bloom" /></a><br />
+<b>22</b> — Bloom
+</td>
+</tr>
 </table>
 
 ### Math Lessons (lessons/math/)
@@ -432,6 +438,7 @@ project to enable Claude to build games and tools with you.
 | [environment-mapping](.claude/skills/environment-mapping/SKILL.md) | `/environment-mapping` | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
 | [blending](.claude/skills/blending/SKILL.md) | `/blending` | Alpha blending, alpha testing, blend state configuration, transparency sorting |
 | [cascaded-shadow-maps](.claude/skills/cascaded-shadow-maps/SKILL.md) | `/cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
+| [bloom](.claude/skills/bloom/SKILL.md) | `/bloom` | Jimenez dual-filter bloom, 13-tap downsample, Karis averaging, tent-filter upsample, additive blending |
 
 ### Development skills (used within this repo)
 

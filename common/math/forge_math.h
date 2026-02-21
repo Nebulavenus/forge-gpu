@@ -121,6 +121,32 @@ static inline float forge_log2f(float x)
     return log2f(x);
 }
 
+/* Compute the sine of an angle in radians.
+ *
+ * Thin wrapper providing a forge_-prefixed interface for consistency
+ * with other scalar helpers (forge_lerpf, forge_clampf, forge_log2f).
+ *
+ * Usage:
+ *   float y = forge_sinf(angle);  // sine of angle in radians
+ */
+static inline float forge_sinf(float x)
+{
+    return sinf(x);
+}
+
+/* Compute the cosine of an angle in radians.
+ *
+ * Thin wrapper providing a forge_-prefixed interface for consistency
+ * with other scalar helpers (forge_lerpf, forge_clampf, forge_log2f).
+ *
+ * Usage:
+ *   float y = forge_cosf(angle);  // cosine of angle in radians
+ */
+static inline float forge_cosf(float x)
+{
+    return cosf(x);
+}
+
 /* Clamp a scalar to a range [lo, hi].
  *
  * Returns lo if x < lo, hi if x > hi, otherwise x.

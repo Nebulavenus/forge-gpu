@@ -1,0 +1,172 @@
+/*
+ * bloom_downsample.frag.hlsl — Jimenez 13-tap weighted downsample
+ *
+ * Implements the downsample filter from Jorge Jimenez's SIGGRAPH 2014
+ * presentation "Next Generation Post Processing in Call of Duty: Advanced
+ * Warfare."  This is the industry-standard bloom downsample method.
+ *
+ * The filter samples 13 positions forming 5 overlapping 2x2 boxes:
+ *
+ *   a . b . c        box_tl = (a+b+f+g)/4
+ *   . d . e .        box_tr = (b+c+g+h)/4
+ *   f . g . h        box_bl = (f+g+k+l)/4
+ *   . i . j .        box_br = (g+h+l+m)/4
+ *   k . l . m        box_ct = (d+e+i+j)/4
+ *
+ * Standard weighting: 0.125*(tl+tr+bl+br) + 0.5*ct = 1.0 total
+ *
+ * First pass (mip 0) additions:
+ *   - Brightness threshold: subtract threshold from each sample's
+ *     luminance, discard values below zero.  This selects only the
+ *     bright parts of the image for bloom.
+ *   - Karis averaging: weight each 2x2 box by 1/(1+luma) to suppress
+ *     fireflies — isolated bright pixels that would cause flickering
+ *     bloom artifacts.  Named after Brian Karis (Epic Games).
+ *
+ * Uniform layout (16 bytes):
+ *   float2 texel_size    (8 bytes) — 1/source_width, 1/source_height
+ *   float  threshold     (4 bytes) — brightness cutoff (first pass only)
+ *   float  use_karis     (4 bytes) — 1.0 for first pass, 0.0 otherwise
+ *
+ * Fragment sampler:
+ *   register(t0/s0, space2) -> source texture (slot 0)
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+Texture2D    src_tex : register(t0, space2);
+SamplerState src_smp : register(s0, space2);
+
+cbuffer BloomDownsampleUniforms : register(b0, space3)
+{
+    float2 texel_size;   /* 1.0 / source dimensions */
+    float  threshold;    /* brightness cutoff        */
+    float  use_karis;    /* 1.0 = first pass (Karis + threshold) */
+};
+
+struct PSInput
+{
+    float4 clip_pos : SV_Position;
+    float2 uv       : TEXCOORD0;
+};
+
+/* BT.709 luminance — perceptual brightness of an RGB color.
+ * Green contributes most because the human eye is most sensitive to it. */
+float luminance(float3 c)
+{
+    return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+/* Apply brightness threshold: subtract threshold from luminance,
+ * scale color to preserve hue.  Values below threshold become zero. */
+float3 apply_threshold(float3 c, float thresh)
+{
+    float luma = luminance(c);
+    float contribution = max(luma - thresh, 0.0);
+    /* Scale color by the fraction that exceeds the threshold.
+     * This preserves the original hue while removing dim pixels. */
+    return c * (contribution / max(luma, 0.0001));
+}
+
+/* Karis weight: 1/(1+luma).  Brighter boxes get less weight, which
+ * prevents a single very bright pixel from dominating the average.
+ * This is the key technique for suppressing bloom fireflies. */
+float karis_weight(float3 c)
+{
+    return 1.0 / (1.0 + luminance(c));
+}
+
+float4 main(PSInput input) : SV_Target
+{
+    float2 uv = input.uv;
+    float2 ts = texel_size;
+
+    /* ── 13-tap sample positions ────────────────────────────────────── */
+    /* The offsets form a 5x5 grid at 2-texel spacing, sampling 13 of
+     * the 25 positions.  The hardware bilinear filter effectively
+     * averages nearby texels, giving sub-pixel accuracy. */
+    float3 a = src_tex.Sample(src_smp, uv + float2(-2, -2) * ts).rgb;
+    float3 b = src_tex.Sample(src_smp, uv + float2( 0, -2) * ts).rgb;
+    float3 c = src_tex.Sample(src_smp, uv + float2( 2, -2) * ts).rgb;
+    float3 d = src_tex.Sample(src_smp, uv + float2(-1, -1) * ts).rgb;
+    float3 e = src_tex.Sample(src_smp, uv + float2( 1, -1) * ts).rgb;
+    float3 f = src_tex.Sample(src_smp, uv + float2(-2,  0) * ts).rgb;
+    float3 g = src_tex.Sample(src_smp, uv                       ).rgb;
+    float3 h = src_tex.Sample(src_smp, uv + float2( 2,  0) * ts).rgb;
+    float3 i = src_tex.Sample(src_smp, uv + float2(-1,  1) * ts).rgb;
+    float3 j = src_tex.Sample(src_smp, uv + float2( 1,  1) * ts).rgb;
+    float3 k = src_tex.Sample(src_smp, uv + float2(-2,  2) * ts).rgb;
+    float3 l = src_tex.Sample(src_smp, uv + float2( 0,  2) * ts).rgb;
+    float3 m = src_tex.Sample(src_smp, uv + float2( 2,  2) * ts).rgb;
+
+    float3 result;
+
+    if (use_karis > 0.5)
+    {
+        /* ── First pass: threshold + Karis averaging ─────────────────── */
+
+        /* Apply brightness threshold to each sample. */
+        a = apply_threshold(a, threshold);
+        b = apply_threshold(b, threshold);
+        c = apply_threshold(c, threshold);
+        d = apply_threshold(d, threshold);
+        e = apply_threshold(e, threshold);
+        f = apply_threshold(f, threshold);
+        g = apply_threshold(g, threshold);
+        h = apply_threshold(h, threshold);
+        i = apply_threshold(i, threshold);
+        j = apply_threshold(j, threshold);
+        k = apply_threshold(k, threshold);
+        l = apply_threshold(l, threshold);
+        m = apply_threshold(m, threshold);
+
+        /* Compute the 5 overlapping 2x2 box averages. */
+        float3 box_tl = (a + b + f + g) * 0.25;
+        float3 box_tr = (b + c + g + h) * 0.25;
+        float3 box_bl = (f + g + k + l) * 0.25;
+        float3 box_br = (g + h + l + m) * 0.25;
+        float3 box_ct = (d + e + i + j) * 0.25;
+
+        /* Karis-weighted average: weight each box by 1/(1+luma).
+         * The center box gets 0.5 weight, corner boxes get 0.125 each. */
+        float w_tl = karis_weight(box_tl);
+        float w_tr = karis_weight(box_tr);
+        float w_bl = karis_weight(box_bl);
+        float w_br = karis_weight(box_br);
+        float w_ct = karis_weight(box_ct);
+
+        /* Weighted sum with Jimenez box weights (0.125 corners, 0.5 center). */
+        float corner_w = 0.125;
+        float center_w = 0.5;
+
+        result = box_tl * (w_tl * corner_w)
+               + box_tr * (w_tr * corner_w)
+               + box_bl * (w_bl * corner_w)
+               + box_br * (w_br * corner_w)
+               + box_ct * (w_ct * center_w);
+
+        /* Normalize by total weight. */
+        float total_w = (w_tl + w_tr + w_bl + w_br) * corner_w
+                      + w_ct * center_w;
+        result /= max(total_w, 0.0001);
+    }
+    else
+    {
+        /* ── Subsequent passes: standard uniform weighting ───────────── */
+        /* No threshold, no Karis — just the 13-tap weighted average.
+         * The weights sum to 1.0:
+         *   4 corner boxes * 0.125 = 0.5
+         *   1 center box   * 0.5   = 0.5
+         *   Total                  = 1.0 */
+        float3 box_tl = (a + b + f + g) * 0.25;
+        float3 box_tr = (b + c + g + h) * 0.25;
+        float3 box_bl = (f + g + k + l) * 0.25;
+        float3 box_br = (g + h + l + m) * 0.25;
+        float3 box_ct = (d + e + i + j) * 0.25;
+
+        result = 0.125 * (box_tl + box_tr + box_bl + box_br)
+               + 0.5   * box_ct;
+    }
+
+    return float4(result, 1.0);
+}
