@@ -3626,4 +3626,543 @@ static inline float forge_hash_to_sfloat(uint32_t h)
     return forge_hash_to_float(h) * 2.0f - 1.0f;
 }
 
+/* ── Gradient Noise (Perlin & Simplex) ──────────────────────────────── */
+/*
+ * Coherent noise functions that produce smooth, continuous pseudorandom
+ * values. Unlike white noise (where every sample is independent), gradient
+ * noise has spatial structure — nearby inputs produce nearby outputs.
+ *
+ * The core idea: assign random gradient vectors at integer lattice points,
+ * compute the dot product between each gradient and the vector from that
+ * lattice point to the sample position, then smoothly interpolate the
+ * results. The smooth interpolation uses Perlin's quintic fade curve to
+ * avoid visible grid artifacts.
+ *
+ * Functions provided:
+ *   forge_noise_fade         — Perlin's quintic fade (6t^5 - 15t^4 + 10t^3)
+ *   forge_noise_grad1d       — 1D gradient dot product
+ *   forge_noise_grad2d       — 2D gradient dot product
+ *   forge_noise_grad3d       — 3D gradient dot product (Perlin's improved set)
+ *   forge_noise_perlin1d     — 1D gradient noise
+ *   forge_noise_perlin2d     — 2D gradient noise
+ *   forge_noise_perlin3d     — 3D gradient noise
+ *   forge_noise_simplex2d    — 2D simplex noise (triangular grid)
+ *   forge_noise_fbm2d        — 2D fractal Brownian motion (octave stacking)
+ *   forge_noise_fbm3d        — 3D fractal Brownian motion
+ *   forge_noise_domain_warp2d — 2D domain warping for organic distortion
+ *
+ * All noise functions use the hash functions from the previous section
+ * (forge_hash_wang, forge_hash3d) as their source of randomness — no
+ * permutation tables needed.
+ *
+ * Naming convention: forge_noise_ prefix for all noise functions.
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+
+/* Perlin's improved fade curve (quintic smoothstep).
+ *
+ * Maps t from [0, 1] to [0, 1] using the polynomial:
+ *
+ *   fade(t) = 6t^5 - 15t^4 + 10t^3
+ *
+ * This curve has zero first AND second derivatives at t=0 and t=1.
+ * The zero first derivative ensures C1 continuity (no visible seams
+ * at grid boundaries). The zero second derivative ensures C2 continuity
+ * (the gradient of the noise is also smooth, which matters for lighting
+ * normals derived from noise).
+ *
+ * Perlin's original 1985 noise used the simpler smoothstep 3t^2 - 2t^3
+ * (C1 only). The improved fade from his 2002 paper eliminates the subtle
+ * second-derivative discontinuities that caused artifacts in derivative-
+ * dependent applications.
+ *
+ * Usage:
+ *   float t = x - floorf(x);    // fractional part [0, 1]
+ *   float u = forge_noise_fade(t);  // smooth interpolation weight
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_fade(float t)
+{
+    return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+}
+
+/* Compute a 1D gradient dot product.
+ *
+ * In one dimension, the gradient at each lattice point is simply +1 or -1
+ * (a slope direction). The "dot product" with the distance vector dx is
+ * just: gradient * dx.
+ *
+ * The lowest bit of the hash selects the gradient direction:
+ *   bit 0 = 0  →  gradient = +1  →  returns +dx
+ *   bit 0 = 1  →  gradient = -1  →  returns -dx
+ *
+ * Usage:
+ *   float dot = forge_noise_grad1d(hash, x - grid_x);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_grad1d(uint32_t hash, float dx)
+{
+    return (hash & 1u) ? -dx : dx;
+}
+
+/* Compute a 2D gradient dot product.
+ *
+ * Selects one of four gradient directions based on the lowest 2 bits
+ * of the hash, then returns the dot product with the distance vector
+ * (dx, dy).
+ *
+ * The four gradients are (1,1), (-1,1), (1,-1), (-1,-1) — the diagonals
+ * of a unit square. All four have the same magnitude (sqrt(2)), so the
+ * noise amplitude is consistent regardless of which gradient is selected.
+ *
+ * The dot product for gradient (gx, gy) and distance (dx, dy) is:
+ *   gx*dx + gy*dy
+ *
+ * Since each g component is +/-1, this simplifies to additions and
+ * subtractions — no multiplication needed.
+ *
+ * Usage:
+ *   float dot = forge_noise_grad2d(hash, fx, fy);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_grad2d(uint32_t hash, float dx, float dy)
+{
+    switch (hash & 3u) {
+    case 0u: return  dx + dy;   /* gradient ( 1,  1) */
+    case 1u: return -dx + dy;   /* gradient (-1,  1) */
+    case 2u: return  dx - dy;   /* gradient ( 1, -1) */
+    case 3u: return -dx - dy;   /* gradient (-1, -1) */
+    default: return 0.0f;       /* unreachable */
+    }
+}
+
+/* Compute a 3D gradient dot product (Perlin's improved gradient set).
+ *
+ * Selects one of 12 gradient directions — the midpoints of the 12 edges
+ * of a cube. These directions have good angular distribution and give
+ * the noise consistent amplitude in all directions (isotropy).
+ *
+ * The 12 edge midpoints are:
+ *   (1,1,0) (-1,1,0) (1,-1,0) (-1,-1,0)
+ *   (1,0,1) (-1,0,1) (1,0,-1) (-1,0,-1)
+ *   (0,1,1) (0,-1,1) (0,1,-1) (0,-1,-1)
+ *
+ * Perlin's bit-manipulation encoding (using hash & 15) maps 16 hash
+ * values to these 12 directions with a small amount of duplication
+ * (cases 12-15 repeat earlier gradients). This avoids a lookup table
+ * while maintaining good distribution.
+ *
+ * The encoding works by selecting two of the three axes and assigning
+ * signs based on the low bits:
+ *   - h < 8:          primary = x,  else primary = y
+ *   - h < 4:          secondary = y
+ *   - h == 12 or 14:  secondary = x  (wrap-around cases)
+ *   - otherwise:      secondary = z
+ *   - bit 0:          sign of primary
+ *   - bit 1:          sign of secondary
+ *
+ * Usage:
+ *   float dot = forge_noise_grad3d(hash, fx, fy, fz);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_grad3d(uint32_t hash, float dx, float dy, float dz)
+{
+    uint32_t h = hash & 15u;
+    float u = h < 8u ? dx : dy;
+    float v = h < 4u ? dy : (h == 12u || h == 14u ? dx : dz);
+    return ((h & 1u) ? -u : u) + ((h & 2u) ? -v : v);
+}
+
+/* 1D Perlin gradient noise.
+ *
+ * Produces smooth, continuous noise from a single float input.
+ * Output range is approximately [-0.5, 0.5].
+ *
+ * Algorithm:
+ *   1. Find the two integer grid points bracketing x
+ *   2. Hash each grid point (with seed) to select gradient +1 or -1
+ *   3. Compute dot product: gradient * distance-to-sample
+ *   4. Interpolate using the quintic fade curve
+ *
+ * The seed parameter allows multiple independent noise channels
+ * from the same coordinates — change the seed to get different patterns.
+ *
+ * Usage:
+ *   float n = forge_noise_perlin1d(x * 0.1f, 42);  // scale controls frequency
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_perlin1d(float x, uint32_t seed)
+{
+    int ix = (int)floorf(x);
+    float fx = x - (float)ix;
+
+    float u = forge_noise_fade(fx);
+
+    /* Hash the two endpoints (XOR with seed for seeding) */
+    uint32_t h0 = forge_hash_wang((uint32_t)ix ^ seed);
+    uint32_t h1 = forge_hash_wang((uint32_t)(ix + 1) ^ seed);
+
+    /* Gradient dot products */
+    float g0 = forge_noise_grad1d(h0, fx);
+    float g1 = forge_noise_grad1d(h1, fx - 1.0f);
+
+    /* Interpolate */
+    return g0 + u * (g1 - g0);
+}
+
+/* 2D Perlin gradient noise.
+ *
+ * Produces smooth, continuous noise from a 2D position.
+ * Output range is approximately [-0.7, 0.7].
+ *
+ * Algorithm:
+ *   1. Find the four grid points of the cell containing (x, y)
+ *   2. Hash each corner (using forge_hash3d with seed as z) to get gradients
+ *   3. Compute dot product of each gradient with the distance vector from
+ *      that corner to the sample point
+ *   4. Bilinearly interpolate the four dot products using fade curves
+ *
+ * The hash functions from lesson 12 replace the traditional permutation
+ * table approach. Using forge_hash3d(ix, iy, seed) gives us seeded 2D
+ * hashing with excellent distribution.
+ *
+ * Usage:
+ *   float n = forge_noise_perlin2d(x * 0.05f, y * 0.05f, 42);
+ *   // Scale controls frequency: smaller scale = larger features
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_perlin2d(float x, float y, uint32_t seed)
+{
+    int ix = (int)floorf(x);
+    int iy = (int)floorf(y);
+    float fx = x - (float)ix;
+    float fy = y - (float)iy;
+
+    /* Fade curves for interpolation weights */
+    float u = forge_noise_fade(fx);
+    float v = forge_noise_fade(fy);
+
+    /* Hash the four corners of the grid cell.
+     * Using forge_hash3d with the seed as z gives seeded 2D hashing. */
+    uint32_t h00 = forge_hash3d((uint32_t)ix,       (uint32_t)iy,       seed);
+    uint32_t h10 = forge_hash3d((uint32_t)(ix + 1), (uint32_t)iy,       seed);
+    uint32_t h01 = forge_hash3d((uint32_t)ix,       (uint32_t)(iy + 1), seed);
+    uint32_t h11 = forge_hash3d((uint32_t)(ix + 1), (uint32_t)(iy + 1), seed);
+
+    /* Gradient dot products: each corner's gradient dotted with the
+     * vector from that corner to the sample point */
+    float g00 = forge_noise_grad2d(h00, fx,        fy);
+    float g10 = forge_noise_grad2d(h10, fx - 1.0f, fy);
+    float g01 = forge_noise_grad2d(h01, fx,        fy - 1.0f);
+    float g11 = forge_noise_grad2d(h11, fx - 1.0f, fy - 1.0f);
+
+    /* Bilinear interpolation with fade weights */
+    float x0 = g00 + u * (g10 - g00);  /* lerp along bottom edge */
+    float x1 = g01 + u * (g11 - g01);  /* lerp along top edge */
+    return x0 + v * (x1 - x0);         /* lerp between edges */
+}
+
+/* 3D Perlin gradient noise.
+ *
+ * Produces smooth, continuous noise from a 3D position.
+ * Output range is approximately [-1.0, 1.0].
+ *
+ * Extends the 2D algorithm to three dimensions:
+ *   - 8 corner points instead of 4
+ *   - 12 possible gradient directions (edge midpoints of a cube)
+ *   - Trilinear interpolation with fade curves on all three axes
+ *
+ * Useful for volumetric effects (clouds, fog), animating 2D noise
+ * (use z as time), and 3D textures (wood grain, marble).
+ *
+ * Usage:
+ *   float n = forge_noise_perlin3d(x * 0.1f, y * 0.1f, z * 0.1f, 42);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_perlin3d(float x, float y, float z, uint32_t seed)
+{
+    int ix = (int)floorf(x);
+    int iy = (int)floorf(y);
+    int iz = (int)floorf(z);
+    float fx = x - (float)ix;
+    float fy = y - (float)iy;
+    float fz = z - (float)iz;
+
+    float u = forge_noise_fade(fx);
+    float v = forge_noise_fade(fy);
+    float w = forge_noise_fade(fz);
+
+    /* Mix the seed into coordinates by adding a hashed seed to x.
+     * Since forge_hash3d cascades hashes through all dimensions,
+     * the seed propagates into the full output. */
+    uint32_t hs  = forge_hash_wang(seed);
+    uint32_t sx0 = (uint32_t)ix + hs;
+    uint32_t sx1 = sx0 + 1u;
+    uint32_t sy0 = (uint32_t)iy;
+    uint32_t sy1 = sy0 + 1u;
+    uint32_t sz0 = (uint32_t)iz;
+    uint32_t sz1 = sz0 + 1u;
+
+    /* Hash all 8 corners */
+    uint32_t h000 = forge_hash3d(sx0, sy0, sz0);
+    uint32_t h100 = forge_hash3d(sx1, sy0, sz0);
+    uint32_t h010 = forge_hash3d(sx0, sy1, sz0);
+    uint32_t h110 = forge_hash3d(sx1, sy1, sz0);
+    uint32_t h001 = forge_hash3d(sx0, sy0, sz1);
+    uint32_t h101 = forge_hash3d(sx1, sy0, sz1);
+    uint32_t h011 = forge_hash3d(sx0, sy1, sz1);
+    uint32_t h111 = forge_hash3d(sx1, sy1, sz1);
+
+    /* Gradient dot products for all 8 corners */
+    float g000 = forge_noise_grad3d(h000, fx,        fy,        fz);
+    float g100 = forge_noise_grad3d(h100, fx - 1.0f, fy,        fz);
+    float g010 = forge_noise_grad3d(h010, fx,        fy - 1.0f, fz);
+    float g110 = forge_noise_grad3d(h110, fx - 1.0f, fy - 1.0f, fz);
+    float g001 = forge_noise_grad3d(h001, fx,        fy,        fz - 1.0f);
+    float g101 = forge_noise_grad3d(h101, fx - 1.0f, fy,        fz - 1.0f);
+    float g011 = forge_noise_grad3d(h011, fx,        fy - 1.0f, fz - 1.0f);
+    float g111 = forge_noise_grad3d(h111, fx - 1.0f, fy - 1.0f, fz - 1.0f);
+
+    /* Trilinear interpolation */
+    float x00 = g000 + u * (g100 - g000);
+    float x10 = g010 + u * (g110 - g010);
+    float x01 = g001 + u * (g101 - g001);
+    float x11 = g011 + u * (g111 - g011);
+
+    float y0 = x00 + v * (x10 - x00);
+    float y1 = x01 + v * (x11 - x01);
+
+    return y0 + w * (y1 - y0);
+}
+
+/* 2D simplex noise.
+ *
+ * An alternative to Perlin noise that uses a triangular (simplex) grid
+ * instead of a square grid. Advantages over Perlin noise:
+ *   - Fewer gradient evaluations: 3 per sample (vs 4 for 2D Perlin)
+ *   - Better isotropy: the triangular grid has no axis-aligned bias
+ *   - Scales better to higher dimensions: N+1 corners vs 2^N
+ *
+ * Output range is approximately [-1.0, 1.0].
+ *
+ * Algorithm:
+ *   1. Skew the input to transform the triangular grid into a square grid
+ *      (makes it easy to find which triangle we're in)
+ *   2. Determine which of the two triangles in the skewed cell contains
+ *      the sample point (upper-left or lower-right)
+ *   3. For each of the 3 triangle corners:
+ *      a. Hash the corner to get a gradient
+ *      b. Compute distance from corner to sample point
+ *      c. Apply a radial falloff kernel: max(0, 0.5 - d^2)^4
+ *      d. Multiply by the gradient dot product
+ *   4. Sum the three contributions
+ *
+ * The skew factor F2 = (sqrt(3) - 1) / 2 transforms the equilateral
+ * triangle grid so that triangles align with a square grid.
+ * The unskew factor G2 = (3 - sqrt(3)) / 6 reverses this.
+ *
+ * Ken Perlin introduced simplex noise in 2001 as a successor to his
+ * original lattice noise.
+ *
+ * Usage:
+ *   float n = forge_noise_simplex2d(x * 0.05f, y * 0.05f, 42);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_simplex2d(float x, float y, uint32_t seed)
+{
+    /* Skew/unskew constants for 2D simplex grid */
+    const float F2 = 0.36602540378f;  /* (sqrt(3) - 1) / 2 */
+    const float G2 = 0.21132486540f;  /* (3 - sqrt(3)) / 6 */
+
+    /* Skew input space to determine which simplex cell we're in */
+    float s = (x + y) * F2;
+    int i = (int)floorf(x + s);
+    int j = (int)floorf(y + s);
+
+    /* Unskew cell origin back to (x, y) space */
+    float t = (float)(i + j) * G2;
+    float x0 = x - ((float)i - t);
+    float y0 = y - ((float)j - t);
+
+    /* Determine which triangle (simplex) we're in.
+     * The skewed cell is divided into two triangles by the diagonal.
+     * If x0 > y0, we're in the lower-right triangle;
+     * otherwise, we're in the upper-left triangle. */
+    int i1, j1;
+    if (x0 > y0) {
+        i1 = 1; j1 = 0;  /* lower-right triangle: (0,0) -> (1,0) -> (1,1) */
+    } else {
+        i1 = 0; j1 = 1;  /* upper-left triangle:  (0,0) -> (0,1) -> (1,1) */
+    }
+
+    /* Offsets for the middle and far corners in unskewed space */
+    float x1 = x0 - (float)i1 + G2;
+    float y1 = y0 - (float)j1 + G2;
+    float x2 = x0 - 1.0f + 2.0f * G2;
+    float y2 = y0 - 1.0f + 2.0f * G2;
+
+    /* Hash the three corners to get gradient indices */
+    uint32_t ui = (uint32_t)i;
+    uint32_t uj = (uint32_t)j;
+    uint32_t h0 = forge_hash3d(ui,              uj,              seed);
+    uint32_t h1 = forge_hash3d(ui + (uint32_t)i1, uj + (uint32_t)j1, seed);
+    uint32_t h2 = forge_hash3d(ui + 1u,         uj + 1u,         seed);
+
+    /* Compute contributions from each corner.
+     * Each uses a radial falloff: max(0, 0.5 - distance^2)^4
+     * multiplied by the gradient dot product. The 0.5 radius gives
+     * each vertex a circular influence zone with radius sqrt(0.5). */
+    float n0 = 0.0f, n1 = 0.0f, n2 = 0.0f;
+
+    float t0 = 0.5f - x0 * x0 - y0 * y0;
+    if (t0 >= 0.0f) {
+        t0 *= t0;
+        n0 = t0 * t0 * forge_noise_grad2d(h0, x0, y0);
+    }
+
+    float t1 = 0.5f - x1 * x1 - y1 * y1;
+    if (t1 >= 0.0f) {
+        t1 *= t1;
+        n1 = t1 * t1 * forge_noise_grad2d(h1, x1, y1);
+    }
+
+    float t2 = 0.5f - x2 * x2 - y2 * y2;
+    if (t2 >= 0.0f) {
+        t2 *= t2;
+        n2 = t2 * t2 * forge_noise_grad2d(h2, x2, y2);
+    }
+
+    /* Scale to approximately [-1, 1] */
+    return 70.0f * (n0 + n1 + n2);
+}
+
+/* 2D fractal Brownian motion (fBm) using Perlin noise.
+ *
+ * Stacks multiple "octaves" of Perlin noise at increasing frequencies
+ * and decreasing amplitudes to produce multi-scale detail. This is
+ * the standard method for generating natural-looking terrain, clouds,
+ * and other organic textures.
+ *
+ * Parameters:
+ *   octaves     — Number of noise layers to stack (1-8 typical)
+ *   lacunarity  — Frequency multiplier per octave (typically 2.0)
+ *   persistence — Amplitude multiplier per octave (typically 0.5)
+ *
+ * Each octave uses a different seed (seed + octave_index) to avoid
+ * correlation between layers.
+ *
+ * The result is normalized by dividing by the total possible amplitude,
+ * keeping the output in approximately [-1, 1].
+ *
+ * Usage:
+ *   float terrain = forge_noise_fbm2d(x * 0.01f, y * 0.01f, 42,
+ *                                      6, 2.0f, 0.5f);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_fbm2d(float x, float y, uint32_t seed,
+                                       int octaves, float lacunarity,
+                                       float persistence)
+{
+    if (octaves <= 0) { return 0.0f; }
+
+    float sum = 0.0f;
+    float amplitude = 1.0f;
+    float frequency = 1.0f;
+    float max_amplitude = 0.0f;
+
+    for (int i = 0; i < octaves; i++) {
+        sum += amplitude * forge_noise_perlin2d(x * frequency,
+                                                 y * frequency,
+                                                 seed + (uint32_t)i);
+        max_amplitude += amplitude;
+        frequency *= lacunarity;
+        amplitude *= persistence;
+    }
+
+    return sum / max_amplitude;
+}
+
+/* 3D fractal Brownian motion (fBm) using Perlin noise.
+ *
+ * The 3D equivalent of forge_noise_fbm2d. Useful for volumetric effects
+ * (clouds, fog), animated 2D noise (use z as time), and 3D textures.
+ *
+ * Parameters are identical to the 2D version.
+ *
+ * Usage:
+ *   float cloud = forge_noise_fbm3d(x, y, time, 42, 4, 2.0f, 0.5f);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_fbm3d(float x, float y, float z, uint32_t seed,
+                                       int octaves, float lacunarity,
+                                       float persistence)
+{
+    if (octaves <= 0) { return 0.0f; }
+
+    float sum = 0.0f;
+    float amplitude = 1.0f;
+    float frequency = 1.0f;
+    float max_amplitude = 0.0f;
+
+    for (int i = 0; i < octaves; i++) {
+        sum += amplitude * forge_noise_perlin3d(x * frequency,
+                                                 y * frequency,
+                                                 z * frequency,
+                                                 seed + (uint32_t)i);
+        max_amplitude += amplitude;
+        frequency *= lacunarity;
+        amplitude *= persistence;
+    }
+
+    return sum / max_amplitude;
+}
+
+/* 2D domain warping using fBm.
+ *
+ * Domain warping distorts the input coordinates before sampling noise,
+ * producing organic, fluid-like patterns. The method:
+ *   1. Sample fBm at (x, y) to get a warp offset for x
+ *   2. Sample fBm at (x, y) with a different seed for a y offset
+ *   3. Sample fBm at the warped position (x + offset_x, y + offset_y)
+ *
+ * The warp_strength parameter controls how much distortion to apply.
+ * Values around 1.0-4.0 produce interesting results; larger values
+ * create more extreme distortion.
+ *
+ * Internally uses 4 octaves of fBm with lacunarity=2.0 and
+ * persistence=0.5 for both the warp offsets and the final sample.
+ *
+ * This method was popularized by Inigo Quilez for creating terrain,
+ * marble textures, and other natural-looking procedural patterns.
+ *
+ * Usage:
+ *   float marble = forge_noise_domain_warp2d(x * 0.02f, y * 0.02f,
+ *                                             42, 2.5f);
+ *
+ * See: lessons/math/13-gradient-noise
+ */
+static inline float forge_noise_domain_warp2d(float x, float y, uint32_t seed,
+                                               float warp_strength)
+{
+    /* Compute warp offsets using fBm with two different seeds */
+    float warp_x = forge_noise_fbm2d(x, y, seed, 4, 2.0f, 0.5f);
+    float warp_y = forge_noise_fbm2d(x, y, seed + 1u, 4, 2.0f, 0.5f);
+
+    /* Sample fBm at the warped position with a third seed */
+    return forge_noise_fbm2d(x + warp_strength * warp_x,
+                              y + warp_strength * warp_y,
+                              seed + 2u, 4, 2.0f, 0.5f);
+}
+
 #endif /* FORGE_MATH_H */

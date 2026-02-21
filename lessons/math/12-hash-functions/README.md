@@ -345,7 +345,7 @@ static). But it is the **foundation** for structured noise:
 
 - **Gradient noise** (Perlin, simplex): random gradients at integer lattice
   points, smoothly interpolated between them
-  (see [Math Lesson 13 — Gradient Noise](../13-gradient-noise/) when available)
+  (see [Math Lesson 13 — Gradient Noise](../13-gradient-noise/))
 - **Blue noise**: white noise with low-frequency content suppressed, reducing
   visible clumps
   (see [Math Lesson 14 — Blue Noise](../14-blue-noise/) when available)
@@ -410,7 +410,7 @@ and an ASCII white noise visualization.
 
 ## Further reading
 
-- [Math Lesson 13 — Gradient Noise](../13-gradient-noise/) (when available) —
+- [Math Lesson 13 — Gradient Noise](../13-gradient-noise/) —
   builds on hash functions to create smooth, continuous noise
 - [Math Lesson 14 — Blue Noise](../14-blue-noise/) (when available) —
   improving sample distribution by removing low-frequency clumps

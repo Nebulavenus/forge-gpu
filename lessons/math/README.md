@@ -33,6 +33,7 @@ implementations for your projects.
 | 10 | [Anisotropy vs Isotropy](10-anisotropy/) | Jacobian, singular values, anisotropic filtering, noise, and friction |
 | 11 | [Color Spaces](11-color-spaces/) | Gamma correction, linear vs sRGB, luminance, HSL/HSV, CIE XYZ/xyY, gamut, tone mapping |
 | 12 | [Hash Functions & White Noise](12-hash-functions/) | Integer hash functions (Wang, PCG, xxHash32), avalanche effect, hash-to-float, seeding, white noise |
+| 13 | [Gradient Noise (Perlin & Simplex)](13-gradient-noise/) | Gradient noise algorithm, Perlin improved noise, simplex noise, fBm, lacunarity, persistence, domain warping |
 
 ## How Math Lessons Work
 
