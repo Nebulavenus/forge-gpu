@@ -22,7 +22,8 @@
 #ifndef FORGE_MATH_H
 #define FORGE_MATH_H
 
-#include <math.h>  /* sqrtf, sinf, cosf, tanf, etc. */
+#include <math.h>    /* sqrtf, sinf, cosf, tanf, etc. */
+#include <stdint.h>  /* uint32_t for hash functions */
 
 /* ── Scalar Helpers ──────────────────────────────────────────────────────── */
 
@@ -3402,6 +3403,227 @@ static inline vec3 color_tonemap_aces(vec3 hdr)
     result.z = forge_clampf(result.z, 0.0f, 1.0f);
 
     return result;
+}
+
+/* ── Hash Functions (Integer Hashing for Noise) ──────────────────────── */
+/*
+ * Deterministic integer hash functions for procedural noise, dithering,
+ * and any situation requiring reproducible pseudorandom values without
+ * mutable state.
+ *
+ * GPUs execute thousands of shader invocations in parallel. There is no
+ * shared random number generator — each fragment must compute its own
+ * "random" value from its coordinates. Hash functions fill this role:
+ * given an integer seed (pixel position, frame index, etc.), they produce
+ * a uniformly-distributed 32-bit output that looks random but is fully
+ * deterministic and reproducible.
+ *
+ * Three hash functions are provided, each with different trade-offs:
+ *   forge_hash_wang     — Thomas Wang (2007), fast, simple, well-known
+ *   forge_hash_pcg      — PCG output permutation (O'Neill 2014), high quality
+ *   forge_hash_xxhash32 — xxHash32 finalizer (Collet 2012), excellent avalanche
+ *
+ * Naming convention: forge_hash_ prefix (scalar helpers, not tied to a type).
+ *
+ * See: lessons/math/12-hash-functions
+ */
+
+/* Thomas Wang's 32-bit integer hash (2007).
+ *
+ * A fast multiply-xor-shift hash with good avalanche properties.
+ * Each step serves a specific purpose:
+ *   - XOR with shifted self: mixes upper bits into lower bits
+ *   - Multiply by odd constant: spreads bit influence across all positions
+ *
+ * The constant 0x27d4eb2d (668,265,261) is a large odd number chosen to
+ * maximize the avalanche effect — the probability that flipping one input
+ * bit will flip any given output bit (ideally 50%).
+ *
+ * This is one of the most widely-used hash functions in shader code due to
+ * its simplicity and speed.
+ *
+ * Usage:
+ *   uint32_t h = forge_hash_wang(pixel_x + pixel_y * width);
+ *   float noise = forge_hash_to_float(h);
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline uint32_t forge_hash_wang(uint32_t key)
+{
+    key = (key ^ 61u) ^ (key >> 16);
+    key *= 9u;
+    key ^= key >> 4;
+    key *= 0x27d4eb2du;
+    key ^= key >> 15;
+    return key;
+}
+
+/* PCG output permutation hash (based on O'Neill, 2014).
+ *
+ * Derived from Melissa O'Neill's Permuted Congruential Generator. This
+ * version uses the PCG output permutation as a standalone hash function,
+ * as described by Jarzynski & Olano (JCGT, 2020).
+ *
+ * The algorithm has two stages:
+ *   1. Linear congruential step: state = input * 747796405 + 2891336453
+ *      This spreads the input across the state using a carefully-chosen
+ *      multiplier (found by O'Neill through statistical testing).
+ *
+ *   2. Output permutation: a data-dependent right-shift controlled by
+ *      the top 4 bits of the state, followed by a multiply and final
+ *      XOR. The data-dependent shift is the key insight — it makes the
+ *      output depend on the input in a non-linear way.
+ *
+ * Higher quality than Wang hash, slightly more expensive.
+ *
+ * Usage:
+ *   uint32_t h = forge_hash_pcg(seed);
+ *   float r = forge_hash_to_float(h);
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline uint32_t forge_hash_pcg(uint32_t input)
+{
+    uint32_t state = input * 747796405u + 2891336453u;
+    uint32_t word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+/* xxHash32 avalanche finalizer (Collet, 2012).
+ *
+ * The finalization step from Yann Collet's xxHash, a fast non-cryptographic
+ * hash used in compression (LZ4, Zstandard) and databases. This finalizer
+ * ensures full avalanche — every input bit affects every output bit.
+ *
+ * The pattern — xor-shift, then multiply by a prime, repeated twice —
+ * is the same structure used in MurmurHash3's finalizer. The specific
+ * constants are xxHash's PRIME32_2 (0x85ebca77 = 2,246,822,519) and
+ * PRIME32_3 (0xc2b2ae3d = 3,266,489,917), selected by Collet through
+ * automated search to minimize statistical bias.
+ *
+ * Excellent avalanche properties. Useful as a general-purpose bit mixer.
+ *
+ * Usage:
+ *   uint32_t h = forge_hash_xxhash32(pixel_index);
+ *   float noise = forge_hash_to_float(h);
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline uint32_t forge_hash_xxhash32(uint32_t h)
+{
+    h ^= h >> 15;
+    h *= 0x85ebca77u;
+    h ^= h >> 13;
+    h *= 0xc2b2ae3du;
+    h ^= h >> 16;
+    return h;
+}
+
+/* ── Hash Seed Combination ───────────────────────────────────────────── */
+
+/* Combine a hash seed with an additional value.
+ *
+ * Based on the widely-used boost::hash_combine pattern. Mixes a new
+ * value into an existing seed using the golden ratio constant, addition,
+ * and bidirectional shifts. This is how you build multi-dimensional
+ * seeds from individual coordinates.
+ *
+ * The constant 0x9e3779b9 is floor(2^32 / phi), where phi is the golden
+ * ratio (1 + sqrt(5)) / 2. The golden ratio has the slowest-converging
+ * continued fraction of any irrational number, making it distribute
+ * additive sequences as evenly as possible around the integer ring.
+ *
+ * Usage:
+ *   uint32_t seed = 0;
+ *   seed = forge_hash_combine(seed, pixel_x);
+ *   seed = forge_hash_combine(seed, pixel_y);
+ *   seed = forge_hash_combine(seed, frame);
+ *   uint32_t h = forge_hash_wang(seed);
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline uint32_t forge_hash_combine(uint32_t seed, uint32_t value)
+{
+    seed ^= value + 0x9e3779b9u + (seed << 6) + (seed >> 2);
+    return seed;
+}
+
+/* Hash a 2D integer coordinate pair to a single uint32.
+ *
+ * Cascaded hashing: hash y first, XOR with x, then hash again. This
+ * ensures that (1, 2) and (2, 1) produce different outputs, unlike
+ * simple XOR (which is commutative).
+ *
+ * This is the standard approach for position-based shader noise:
+ * convert pixel coordinates to integers and hash them.
+ *
+ * Usage:
+ *   uint32_t h = forge_hash2d(pixel_x, pixel_y);
+ *   float noise = forge_hash_to_float(h);
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline uint32_t forge_hash2d(uint32_t x, uint32_t y)
+{
+    return forge_hash_wang(x ^ forge_hash_wang(y));
+}
+
+/* Hash a 3D integer coordinate triple to a single uint32.
+ *
+ * Extends the cascaded approach to three dimensions. Useful for
+ * 3D noise or 2D noise with a time/frame seed:
+ *   forge_hash3d(pixel_x, pixel_y, frame_index)
+ *
+ * Usage:
+ *   uint32_t h = forge_hash3d(x, y, frame);
+ *   float noise = forge_hash_to_float(h);
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline uint32_t forge_hash3d(uint32_t x, uint32_t y, uint32_t z)
+{
+    return forge_hash_wang(x ^ forge_hash_wang(y ^ forge_hash_wang(z)));
+}
+
+/* ── Hash to Float Conversion ────────────────────────────────────────── */
+
+/* Convert a 32-bit hash to a uniform float in [0, 1).
+ *
+ * Uses the top 24 bits of the hash (>> 8) divided by 2^24. Why 24 bits?
+ * A 32-bit IEEE 754 float has 23 explicit mantissa bits plus 1 implicit
+ * leading bit, giving 24 bits of integer precision. Every integer from
+ * 0 to 2^24 (16,777,216) maps to a unique float value. Beyond 2^24,
+ * consecutive integers map to the same float (rounding occurs).
+ *
+ * By restricting to 24 bits, we get exactly 16,777,216 uniformly-spaced
+ * values in [0, 1) with no rounding gaps or duplicates.
+ *
+ * Usage:
+ *   uint32_t h = forge_hash_wang(seed);
+ *   float noise = forge_hash_to_float(h);  // [0.0, 1.0)
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline float forge_hash_to_float(uint32_t h)
+{
+    return (float)(h >> 8) * (1.0f / 16777216.0f);
+}
+
+/* Convert a 32-bit hash to a uniform float in [-1, 1).
+ *
+ * Maps the hash to [0, 1) and then rescales to [-1, 1). Useful for
+ * gradient noise where random directions can point in both positive
+ * and negative directions.
+ *
+ * Usage:
+ *   uint32_t h = forge_hash_wang(seed);
+ *   float offset = forge_hash_to_sfloat(h);  // [-1.0, 1.0)
+ *
+ * See: lessons/math/12-hash-functions
+ */
+static inline float forge_hash_to_sfloat(uint32_t h)
+{
+    return forge_hash_to_float(h) * 2.0f - 1.0f;
 }
 
 #endif /* FORGE_MATH_H */

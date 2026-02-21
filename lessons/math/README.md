@@ -32,6 +32,7 @@ implementations for your projects.
 | 09 | [View Matrix & Virtual Camera](09-view-matrix/) | Camera as inverse transform, basis extraction from quaternion, look-at, MVP pipeline |
 | 10 | [Anisotropy vs Isotropy](10-anisotropy/) | Jacobian, singular values, anisotropic filtering, noise, and friction |
 | 11 | [Color Spaces](11-color-spaces/) | Gamma correction, linear vs sRGB, luminance, HSL/HSV, CIE XYZ/xyY, gamut, tone mapping |
+| 12 | [Hash Functions & White Noise](12-hash-functions/) | Integer hash functions (Wang, PCG, xxHash32), avalanche effect, hash-to-float, seeding, white noise |
 
 ## How Math Lessons Work
 

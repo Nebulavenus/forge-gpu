@@ -1977,6 +1977,329 @@ static void test_color_apply_exposure(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Hash Function Tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Number of samples for statistical hash tests */
+#define HASH_SAMPLE_COUNT 10000
+
+/* Tolerance for statistical tests (mean should be near 0.5) */
+#define HASH_STAT_EPSILON 0.02f
+
+/* --- Wang hash --- */
+
+static void test_hash_wang_deterministic(void)
+{
+    TEST("forge_hash_wang deterministic");
+    uint32_t a = forge_hash_wang(42);
+    uint32_t b = forge_hash_wang(42);
+    if (a != b) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected same output for same input");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash_wang_avalanche(void)
+{
+    TEST("forge_hash_wang avalanche (adjacent inputs differ)");
+    uint32_t h0 = forge_hash_wang(0);
+    uint32_t h1 = forge_hash_wang(1);
+    if (h0 == h1) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Adjacent inputs produced same hash");
+        fail_count++;
+        return;
+    }
+    /* Count differing bits — should be roughly 16 for good avalanche */
+    uint32_t diff = h0 ^ h1;
+    int bits_changed = 0;
+    while (diff) {
+        bits_changed += (int)(diff & 1u);
+        diff >>= 1;
+    }
+    /* Accept 8-24 bits changed (generous range for single-pair test) */
+    if (bits_changed < 8 || bits_changed > 24) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected ~16 bits changed, got %d",
+                     bits_changed);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- PCG hash --- */
+
+static void test_hash_pcg_deterministic(void)
+{
+    TEST("forge_hash_pcg deterministic");
+    uint32_t a = forge_hash_pcg(42);
+    uint32_t b = forge_hash_pcg(42);
+    if (a != b) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected same output for same input");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash_pcg_avalanche(void)
+{
+    TEST("forge_hash_pcg avalanche (adjacent inputs differ)");
+    uint32_t h0 = forge_hash_pcg(0);
+    uint32_t h1 = forge_hash_pcg(1);
+    if (h0 == h1) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Adjacent inputs produced same hash");
+        fail_count++;
+        return;
+    }
+    uint32_t diff = h0 ^ h1;
+    int bits_changed = 0;
+    while (diff) {
+        bits_changed += (int)(diff & 1u);
+        diff >>= 1;
+    }
+    if (bits_changed < 8 || bits_changed > 24) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected ~16 bits changed, got %d",
+                     bits_changed);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- xxHash32 finalizer --- */
+
+static void test_hash_xxhash32_deterministic(void)
+{
+    TEST("forge_hash_xxhash32 deterministic");
+    uint32_t a = forge_hash_xxhash32(42);
+    uint32_t b = forge_hash_xxhash32(42);
+    if (a != b) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected same output for same input");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash_xxhash32_avalanche(void)
+{
+    TEST("forge_hash_xxhash32 avalanche (adjacent inputs differ)");
+    uint32_t h0 = forge_hash_xxhash32(0);
+    uint32_t h1 = forge_hash_xxhash32(1);
+    if (h0 == h1) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Adjacent inputs produced same hash");
+        fail_count++;
+        return;
+    }
+    uint32_t diff = h0 ^ h1;
+    int bits_changed = 0;
+    while (diff) {
+        bits_changed += (int)(diff & 1u);
+        diff >>= 1;
+    }
+    if (bits_changed < 8 || bits_changed > 24) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected ~16 bits changed, got %d",
+                     bits_changed);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- Cross-function comparison --- */
+
+static void test_hash_functions_differ(void)
+{
+    TEST("all three hash functions produce different outputs");
+    uint32_t w = forge_hash_wang(12345);
+    uint32_t p = forge_hash_pcg(12345);
+    uint32_t x = forge_hash_xxhash32(12345);
+    if (w == p || w == x || p == x) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Different hash functions produced same output");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- Hash-to-float conversion --- */
+
+static void test_hash_to_float_range(void)
+{
+    TEST("forge_hash_to_float range [0, 1)");
+    for (uint32_t i = 0; i < HASH_SAMPLE_COUNT; i++) {
+        float f = forge_hash_to_float(forge_hash_wang(i));
+        if (f < 0.0f || f >= 1.0f) {
+            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                         "    FAIL: hash_to_float(wang(%u)) = %.6f outside [0, 1)",
+                         i, (double)f);
+            fail_count++;
+            return;
+        }
+    }
+    END_TEST();
+}
+
+static void test_hash_to_float_zero(void)
+{
+    TEST("forge_hash_to_float(0) == 0.0");
+    float f = forge_hash_to_float(0);
+    ASSERT_FLOAT_EQ(f, 0.0f);
+    END_TEST();
+}
+
+static void test_hash_to_float_max(void)
+{
+    TEST("forge_hash_to_float(0xFFFFFFFF) < 1.0");
+    float f = forge_hash_to_float(0xFFFFFFFFu);
+    if (f >= 1.0f) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: hash_to_float(MAX) = %.6f >= 1.0", (double)f);
+        fail_count++;
+        return;
+    }
+    /* 0xFFFFFF / 16777216 = 16777215/16777216 ~ 0.99999994 */
+    if (f < 0.999f) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: hash_to_float(MAX) = %.6f unexpectedly small",
+                     (double)f);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash_to_sfloat_range(void)
+{
+    TEST("forge_hash_to_sfloat range [-1, 1)");
+    for (uint32_t i = 0; i < HASH_SAMPLE_COUNT; i++) {
+        float f = forge_hash_to_sfloat(forge_hash_wang(i));
+        if (f < -1.0f || f >= 1.0f) {
+            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                         "    FAIL: hash_to_sfloat(wang(%u)) = %.6f outside [-1, 1)",
+                         i, (double)f);
+            fail_count++;
+            return;
+        }
+    }
+    END_TEST();
+}
+
+static void test_hash_to_sfloat_zero(void)
+{
+    TEST("forge_hash_to_sfloat(0) == -1.0");
+    float f = forge_hash_to_sfloat(0);
+    ASSERT_FLOAT_EQ(f, -1.0f);
+    END_TEST();
+}
+
+/* --- Hash combine --- */
+
+static void test_hash_combine_non_commutative(void)
+{
+    TEST("forge_hash_combine is non-commutative");
+    uint32_t ab = forge_hash_combine(forge_hash_combine(0, 1), 2);
+    uint32_t ba = forge_hash_combine(forge_hash_combine(0, 2), 1);
+    if (ab == ba) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: combine(0,1,2) == combine(0,2,1)");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- Multi-dimensional hashing --- */
+
+static void test_hash2d_asymmetric(void)
+{
+    TEST("forge_hash2d(1,2) != forge_hash2d(2,1)");
+    uint32_t h12 = forge_hash2d(1, 2);
+    uint32_t h21 = forge_hash2d(2, 1);
+    if (h12 == h21) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: hash2d is symmetric");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash2d_deterministic(void)
+{
+    TEST("forge_hash2d deterministic");
+    uint32_t a = forge_hash2d(10, 20);
+    uint32_t b = forge_hash2d(10, 20);
+    if (a != b) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected same output for same input");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash3d_asymmetric(void)
+{
+    TEST("forge_hash3d(1,2,3) != forge_hash3d(3,2,1)");
+    uint32_t h123 = forge_hash3d(1, 2, 3);
+    uint32_t h321 = forge_hash3d(3, 2, 1);
+    if (h123 == h321) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: hash3d is symmetric");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_hash3d_deterministic(void)
+{
+    TEST("forge_hash3d deterministic");
+    uint32_t a = forge_hash3d(5, 10, 15);
+    uint32_t b = forge_hash3d(5, 10, 15);
+    if (a != b) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Expected same output for same input");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* --- Statistical quality --- */
+
+static void test_hash_distribution_mean(void)
+{
+    TEST("hash-to-float mean is near 0.5");
+    double sum = 0.0;
+    for (uint32_t i = 0; i < HASH_SAMPLE_COUNT; i++) {
+        sum += (double)forge_hash_to_float(forge_hash_wang(i));
+    }
+    float mean = (float)(sum / (double)HASH_SAMPLE_COUNT);
+    if (SDL_fabsf(mean - 0.5f) > HASH_STAT_EPSILON) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "    FAIL: Mean = %.4f, expected ~0.5 (tolerance %.3f)",
+                     (double)mean, (double)HASH_STAT_EPSILON);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -2134,6 +2457,27 @@ int main(int argc, char *argv[])
     test_color_tonemap_reinhard();
     test_color_tonemap_aces();
     test_color_apply_exposure();
+
+    /* Hash function tests */
+    SDL_Log("\nhash function tests:");
+    test_hash_wang_deterministic();
+    test_hash_wang_avalanche();
+    test_hash_pcg_deterministic();
+    test_hash_pcg_avalanche();
+    test_hash_xxhash32_deterministic();
+    test_hash_xxhash32_avalanche();
+    test_hash_functions_differ();
+    test_hash_to_float_range();
+    test_hash_to_float_zero();
+    test_hash_to_float_max();
+    test_hash_to_sfloat_range();
+    test_hash_to_sfloat_zero();
+    test_hash_combine_non_commutative();
+    test_hash2d_asymmetric();
+    test_hash2d_deterministic();
+    test_hash3d_asymmetric();
+    test_hash3d_deterministic();
+    test_hash_distribution_mean();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");

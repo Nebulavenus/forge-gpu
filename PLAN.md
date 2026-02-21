@@ -135,7 +135,7 @@ graphics applications.
 > (Shader Noise) and must be implemented before the Noise & Procedural section
 > begins.
 
-- [ ] **Math Lesson 12 — Hash Functions & White Noise** — Integer hash functions for GPU use (Wang, PCG, xxHash-style); mapping hash output to uniform floats; why shader noise avoids `rand()` and relies on deterministic hashing; the "magic numbers" in common hash functions and where they come from; visualizing white noise patterns; seeding with position, time, and frame index
+- [x] **Math Lesson 12 — Hash Functions & White Noise** — Integer hash functions for GPU use (Wang, PCG, xxHash-style); mapping hash output to uniform floats; why shader noise avoids `rand()` and relies on deterministic hashing; the "magic numbers" in common hash functions and where they come from; visualizing white noise patterns; seeding with position, time, and frame index
 - [ ] **Math Lesson 13 — Gradient Noise (Perlin & Simplex)** — Lattice-based noise: random gradients at grid points, dot product with distance vector, smooth interpolation; Ken Perlin's original noise and improved noise (2002); simplex noise — fewer samples, better isotropy, skewed grid; octave stacking (fBm) for multi-scale detail; lacunarity, persistence, and their visual effects; domain warping for organic shapes
 - [ ] **Math Lesson 14 — Blue Noise & Low-Discrepancy Sequences** — Why uniform random sampling clumps and gaps; blue noise — energy concentrated away from low frequencies; generating blue noise (void-and-cluster, Mitchell's best candidate); low-discrepancy sequences (Halton, Sobol, R2); application to dithering (replacing banding with imperceptible noise), sampling (anti-aliasing, AO kernels), and stippling
 

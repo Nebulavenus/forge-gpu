@@ -40,12 +40,15 @@ from .gpu_diagrams import (
     diagram_uv_mapping,
 )
 from .math_diagrams import (
+    diagram_avalanche_matrix,
     diagram_bilinear_interpolation,
     diagram_camera_basis_vectors,
     diagram_cie_chromaticity,
+    diagram_distribution_histogram,
     diagram_dot_product,
     diagram_frustum,
     diagram_gamma_perception,
+    diagram_hash_pipeline,
     diagram_matrix_basis_vectors,
     diagram_mip_chain,
     diagram_pixel_footprint,
@@ -54,6 +57,7 @@ from .math_diagrams import (
     diagram_trilinear_interpolation,
     diagram_vector_addition,
     diagram_view_transform,
+    diagram_white_noise_comparison,
 )
 
 # ---------------------------------------------------------------------------
@@ -90,6 +94,12 @@ DIAGRAMS = {
         ("cie_chromaticity.png", diagram_cie_chromaticity),
         ("gamma_perception.png", diagram_gamma_perception),
         ("tone_mapping_curves.png", diagram_tone_mapping_curves),
+    ],
+    "math/12": [
+        ("white_noise_comparison.png", diagram_white_noise_comparison),
+        ("avalanche_matrix.png", diagram_avalanche_matrix),
+        ("distribution_histogram.png", diagram_distribution_histogram),
+        ("hash_pipeline.png", diagram_hash_pipeline),
     ],
     "gpu/04": [
         ("uv_mapping.png", diagram_uv_mapping),
@@ -136,6 +146,7 @@ LESSON_NAMES = {
     "math/09": "math/09-view-matrix",
     "math/10": "math/10-anisotropy",
     "math/11": "math/11-color-spaces",
+    "math/12": "math/12-hash-functions",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",
     "gpu/11": "gpu/11-compute-shaders",
