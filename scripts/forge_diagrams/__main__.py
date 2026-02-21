@@ -28,6 +28,9 @@ from .gpu_diagrams import (
     diagram_cascade_ortho_projections,
     diagram_cascaded_shadow_maps,
     diagram_filtering_comparison,
+    diagram_fog_blending,
+    diagram_fog_falloff_curves,
+    diagram_fog_scene_layout,
     diagram_fullscreen_triangle,
     diagram_lengyel_tangent_basis,
     diagram_normal_transformation,
@@ -150,6 +153,11 @@ DIAGRAMS = {
         ("tangent_space.png", diagram_tangent_space),
         ("lengyel_tangent_basis.png", diagram_lengyel_tangent_basis),
     ],
+    "gpu/20": [
+        ("fog_falloff_curves.png", diagram_fog_falloff_curves),
+        ("fog_blending.png", diagram_fog_blending),
+        ("fog_scene_layout.png", diagram_fog_scene_layout),
+    ],
 }
 
 # Full lesson directory names for display
@@ -172,6 +180,7 @@ LESSON_NAMES = {
     "gpu/15": "gpu/15-cascaded-shadow-maps",
     "gpu/16": "gpu/16-blending",
     "gpu/17": "gpu/17-normal-maps",
+    "gpu/20": "gpu/20-linear-fog",
 }
 
 

@@ -121,6 +121,10 @@ Learn the SDL GPU API and modern rendering techniques:
 <a href="lessons/gpu/19-debug-lines/"><img src="lessons/gpu/19-debug-lines/assets/screenshot.png" width="200" alt="Debug Lines" /></a><br />
 <b>19</b> — Debug Lines
 </td>
+<td align="center">
+<a href="lessons/gpu/20-linear-fog/"><img src="lessons/gpu/20-linear-fog/assets/screenshot.png" width="200" alt="Linear Fog" /></a><br />
+<b>20</b> — Linear Fog
+</td>
 </tr>
 </table>
 

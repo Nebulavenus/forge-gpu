@@ -75,6 +75,7 @@ add_subdirectory(lessons/gpu/16-blending)
 add_subdirectory(lessons/gpu/17-normal-maps)
 add_subdirectory(lessons/gpu/18-blinn-phong-materials)
 add_subdirectory(lessons/gpu/19-debug-lines)
+add_subdirectory(lessons/gpu/20-linear-fog)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
