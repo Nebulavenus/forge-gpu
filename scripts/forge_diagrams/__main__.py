@@ -20,6 +20,13 @@ if __name__ == "__main__" and not __package__:
 import argparse
 import sys
 
+from .engine_diagrams import (
+    diagram_gpu_upload_pipeline,
+    diagram_pointer_arithmetic,
+    diagram_stack_vs_heap,
+    diagram_struct_padding,
+    diagram_vertex_memory_layout,
+)
 from .gpu_diagrams import (
     diagram_aabb_sorting,
     diagram_arvo_method,
@@ -80,6 +87,13 @@ from .math_diagrams import (
 # ---------------------------------------------------------------------------
 
 DIAGRAMS = {
+    "engine/04": [
+        ("stack_vs_heap.png", diagram_stack_vs_heap),
+        ("vertex_memory_layout.png", diagram_vertex_memory_layout),
+        ("pointer_arithmetic.png", diagram_pointer_arithmetic),
+        ("struct_padding.png", diagram_struct_padding),
+        ("gpu_upload_pipeline.png", diagram_gpu_upload_pipeline),
+    ],
     "math/01": [
         ("vector_addition.png", diagram_vector_addition),
         ("dot_product.png", diagram_dot_product),
@@ -174,6 +188,7 @@ DIAGRAMS = {
 
 # Full lesson directory names for display
 LESSON_NAMES = {
+    "engine/04": "engine/04-pointers-and-memory",
     "math/01": "math/01-vectors",
     "math/03": "math/03-bilinear-interpolation",
     "math/04": "math/04-mipmaps-and-lod",
