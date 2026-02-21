@@ -4165,4 +4165,357 @@ static inline float forge_noise_domain_warp2d(float x, float y, uint32_t seed,
                               seed + 2u, 4, 2.0f, 0.5f);
 }
 
+/* ── Low-Discrepancy Sequences ───────────────────────────────────────── */
+
+/* Low-discrepancy sequences produce sample points that are more evenly
+ * distributed than random (white noise) samples. Where random sampling
+ * creates clumps and gaps, low-discrepancy sequences fill space more
+ * uniformly, reducing variance in numerical estimates like integration.
+ *
+ * Three families are provided here, ordered by complexity:
+ *
+ *   forge_halton       — Radical-inverse sequence (Van der Corput generalized)
+ *   forge_r2           — Additive recurrence based on the plastic constant
+ *   forge_sobol_2d     — Sobol direction-number construction (2D only)
+ *
+ * All three produce values in [0, 1) and are deterministic: the same index
+ * always gives the same sample. This makes them ideal for reproducible
+ * rendering (anti-aliasing, AO kernels, dithering, stippling).
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+
+/* ── Halton Sequence ─────────────────────────────────────────────────── */
+
+/* Compute the radical inverse of an integer in the given base.
+ *
+ * The radical inverse takes the digits of `index` in the specified base,
+ * reverses them, and places them after the decimal point. For example,
+ * in base 2:
+ *
+ *   index 1 (binary 1)    -> 0.1   = 0.5
+ *   index 2 (binary 10)   -> 0.01  = 0.25
+ *   index 3 (binary 11)   -> 0.11  = 0.75
+ *   index 4 (binary 100)  -> 0.001 = 0.125
+ *   index 5 (binary 101)  -> 0.101 = 0.625
+ *
+ * This produces a sequence that fills [0, 1) progressively — each new
+ * sample lands in the largest remaining gap.
+ *
+ * The Halton sequence in N dimensions uses radical inverses in the
+ * first N prime bases (2, 3, 5, 7, ...) to generate coordinates.
+ *
+ * Parameters:
+ *   index — sample index (1-based; index 0 always returns 0.0)
+ *   base  — prime base (2 for x-axis, 3 for y-axis, etc.)
+ *
+ * Returns: a value in [0.0, 1.0)
+ *
+ * Usage:
+ *   // 2D Halton point at index i
+ *   float x = forge_halton(i, 2);  // base-2 for x
+ *   float y = forge_halton(i, 3);  // base-3 for y
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+static inline float forge_halton(uint32_t index, uint32_t base)
+{
+    float result = 0.0f;
+    float fraction = 1.0f / (float)base;
+    uint32_t i = index;
+
+    while (i > 0u) {
+        result += (float)(i % base) * fraction;
+        i /= base;
+        fraction /= (float)base;
+    }
+
+    return result;
+}
+
+/* ── R2 Sequence (Roberts, 2018) ─────────────────────────────────────── */
+
+/* Generate the nth point of the R2 quasi-random sequence (2D).
+ *
+ * The R2 sequence is an additive recurrence:
+ *   x_n = frac(0.5 + n * alpha_1)
+ *   y_n = frac(0.5 + n * alpha_2)
+ *
+ * where alpha_1 and alpha_2 are derived from the plastic constant
+ * (the real root of x^3 = x + 1, approximately 1.3247...).
+ *
+ * R2 achieves near-optimal coverage of the unit square with the
+ * simplest possible computation — just a multiply and a fractional part.
+ * It has lower discrepancy than Halton in 2D and avoids the correlation
+ * patterns that Halton shows at higher dimensions.
+ *
+ * The name comes from Martin Roberts' 2018 article "The Unreasonable
+ * Effectiveness of Quasirandom Sequences."
+ *
+ * Parameters:
+ *   index — sample index (0-based)
+ *   out_x — pointer to receive the x coordinate [0, 1)
+ *   out_y — pointer to receive the y coordinate [0, 1)
+ *
+ * Usage:
+ *   float x, y;
+ *   forge_r2(42, &x, &y);   // 42nd R2 sample
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+static inline void forge_r2(uint32_t index, float *out_x, float *out_y)
+{
+    /* Plastic constant p ≈ 1.3247179572...
+     * alpha_1 = 1/p   ≈ 0.7548776662...
+     * alpha_2 = 1/p^2 ≈ 0.5698402910... */
+    const float alpha1 = 0.7548776662466927f;
+    const float alpha2 = 0.5698402909980532f;
+
+    float x = 0.5f + (float)index * alpha1;
+    float y = 0.5f + (float)index * alpha2;
+
+    /* frac(): subtract the integer part to keep in [0, 1) */
+    x = x - floorf(x);
+    y = y - floorf(y);
+
+    *out_x = x;
+    *out_y = y;
+}
+
+/* Generate the nth point of the R1 quasi-random sequence (1D).
+ *
+ * This is the 1D analogue of R2, using the golden ratio conjugate
+ * alpha = 1/phi ≈ 0.6180339887... as the additive recurrence constant.
+ *
+ * R1 is the optimal 1D low-discrepancy additive recurrence — no other
+ * single constant fills [0, 1) more uniformly. This is a direct
+ * consequence of the golden ratio being the "most irrational" number.
+ *
+ * Parameters:
+ *   index — sample index (0-based)
+ *
+ * Returns: a value in [0.0, 1.0)
+ *
+ * Usage:
+ *   for (int i = 0; i < 64; i++) {
+ *       float t = forge_r1(i);  // uniformly-distributed threshold
+ *   }
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+static inline float forge_r1(uint32_t index)
+{
+    /* 1/phi = (sqrt(5) - 1) / 2 ≈ 0.6180339887... */
+    const float inv_phi = 0.6180339887498949f;
+
+    float x = 0.5f + (float)index * inv_phi;
+    return x - floorf(x);
+}
+
+/* ── Sobol 2D Sequence ───────────────────────────────────────────────── */
+
+/* Generate the nth point of the Sobol sequence in 2D.
+ *
+ * The Sobol sequence uses direction numbers (powers of two and XOR
+ * operations) to construct a sequence that fills [0, 1)^2 with low
+ * discrepancy. Each new sample bisects the largest gap in a
+ * dimension-aware way.
+ *
+ * The first dimension uses Van der Corput base-2 (bit reversal).
+ * The second dimension uses Sobol direction numbers derived from
+ * the primitive polynomial x + 1 over GF(2).
+ *
+ * Sobol sequences are the standard choice for quasi-Monte Carlo
+ * integration because they have the best theoretical discrepancy
+ * bounds in low dimensions.
+ *
+ * Parameters:
+ *   index — sample index (0-based)
+ *   out_x — pointer to receive the x coordinate [0, 1)
+ *   out_y — pointer to receive the y coordinate [0, 1)
+ *
+ * Usage:
+ *   float x, y;
+ *   forge_sobol_2d(42, &x, &y);
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+static inline void forge_sobol_2d(uint32_t index, float *out_x, float *out_y)
+{
+    /* Dimension 1: Van der Corput base-2 (bit reversal).
+     * This reverses the bits of `index` and divides by 2^32 to place
+     * the value in [0, 1). It's equivalent to forge_halton(index, 2)
+     * but computed with bit operations for speed. */
+    uint32_t x_bits = index;
+    x_bits = ((x_bits & 0xFFFF0000u) >> 16u) | ((x_bits & 0x0000FFFFu) << 16u);
+    x_bits = ((x_bits & 0xFF00FF00u) >>  8u) | ((x_bits & 0x00FF00FFu) <<  8u);
+    x_bits = ((x_bits & 0xF0F0F0F0u) >>  4u) | ((x_bits & 0x0F0F0F0Fu) <<  4u);
+    x_bits = ((x_bits & 0xCCCCCCCCu) >>  2u) | ((x_bits & 0x33333333u) <<  2u);
+    x_bits = ((x_bits & 0xAAAAAAAAu) >>  1u) | ((x_bits & 0x55555555u) <<  1u);
+
+    /* Dimension 2: Sobol direction numbers for primitive polynomial x+1.
+     * Direction numbers for dimension 2: v_i = 2^(31-i) XOR v_{i-1}.
+     * We build this incrementally using the Gray-code optimization. */
+    uint32_t y_bits = 0u;
+    uint32_t v = 1u << 31u;  /* First direction number: 2^31 */
+    uint32_t idx = index;
+
+    while (idx != 0u) {
+        if (idx & 1u) {
+            y_bits ^= v;
+        }
+        v ^= (v >> 1u);  /* Next direction number via primitive polynomial x+1 */
+        idx >>= 1u;
+    }
+
+    /* Convert to [0, 1) by dividing by 2^32 */
+    *out_x = (float)x_bits * (1.0f / 4294967296.0f);
+    *out_y = (float)y_bits * (1.0f / 4294967296.0f);
+}
+
+/* ── Blue Noise via Mitchell's Best Candidate ────────────────────────── */
+
+/* Generate blue-noise-distributed 2D points using Mitchell's best
+ * candidate algorithm.
+ *
+ * Blue noise is a spatial distribution where no two points are too
+ * close together — the frequency spectrum has suppressed low frequencies
+ * (no clumps) and energy concentrated at high frequencies (even spacing).
+ * This creates a visually pleasing, well-separated point distribution.
+ *
+ * Mitchell's best candidate algorithm (1991):
+ *   For each new point, generate `num_candidates` random candidates
+ *   and pick the one that is farthest from all existing points.
+ *   This is an O(n * m * k) approximation of a Poisson disk distribution
+ *   (n = point count, m = candidates per point, k = existing points).
+ *
+ * Parameters:
+ *   out_x      — array to receive x coordinates (must hold `count` floats)
+ *   out_y      — array to receive y coordinates (must hold `count` floats)
+ *   count      — number of blue noise points to generate
+ *   candidates — candidates per point (higher = better quality, slower;
+ *                typical value: 10-30)
+ *   seed       — hash seed for reproducibility
+ *
+ * Note: This is intended for offline or setup-time generation (e.g., building
+ * a dither pattern or stipple set). For real-time use, pre-compute the points
+ * and store them.
+ *
+ * Usage:
+ *   float px[256], py[256];
+ *   forge_blue_noise_2d(px, py, 256, 20, 42);
+ *   // px[], py[] now contain 256 blue-noise-distributed points in [0, 1)
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+static inline void forge_blue_noise_2d(float *out_x, float *out_y,
+                                         int count, int candidates,
+                                         uint32_t seed)
+{
+    if (count <= 0) { return; }
+
+    /* Place the first point using the hash seed */
+    out_x[0] = forge_hash_to_float(forge_hash_wang(seed));
+    out_y[0] = forge_hash_to_float(forge_hash_wang(seed ^ 0x9E3779B9u));
+
+    for (int i = 1; i < count; i++) {
+        float best_x = 0.0f, best_y = 0.0f;
+        float best_dist = -1.0f;
+
+        for (int c = 0; c < candidates; c++) {
+            /* Generate a random candidate */
+            uint32_t h1 = forge_hash_combine(seed, (uint32_t)(i * candidates + c));
+            uint32_t h2 = forge_hash_wang(h1);
+            float cx = forge_hash_to_float(h1);
+            float cy = forge_hash_to_float(h2);
+
+            /* Find the minimum distance to all existing points */
+            float min_dist = 1e30f;
+            for (int j = 0; j < i; j++) {
+                /* Toroidal (wrapping) distance for tileable blue noise */
+                float dx = cx - out_x[j];
+                float dy = cy - out_y[j];
+
+                /* Wrap to [-0.5, 0.5] for tiling */
+                if (dx > 0.5f) dx -= 1.0f;
+                if (dx < -0.5f) dx += 1.0f;
+                if (dy > 0.5f) dy -= 1.0f;
+                if (dy < -0.5f) dy += 1.0f;
+
+                float d2 = dx * dx + dy * dy;
+                if (d2 < min_dist) min_dist = d2;
+            }
+
+            /* Keep the candidate with the largest minimum distance */
+            if (min_dist > best_dist) {
+                best_dist = min_dist;
+                best_x = cx;
+                best_y = cy;
+            }
+        }
+
+        out_x[i] = best_x;
+        out_y[i] = best_y;
+    }
+}
+
+/* ── Discrepancy Measurement ─────────────────────────────────────────── */
+
+/* Compute the star discrepancy of a 2D point set (brute-force).
+ *
+ * Star discrepancy D* measures how uniformly a set of points fills the
+ * unit square. It is the maximum difference between the fraction of
+ * points inside any axis-aligned box [0,u) x [0,v) and the box's area.
+ *
+ * D* = max over all (u,v) of | (count in [0,u) x [0,v)) / N  -  u*v |
+ *
+ * A perfectly uniform grid has D* ~ 1/N. Random points have D* ~ sqrt(log(N)/N).
+ * Low-discrepancy sequences achieve D* ~ (log N)^2 / N — much lower than random.
+ *
+ * This brute-force version checks discrepancy only at the sample points
+ * themselves (the Niederreiter bound states the max occurs at a point).
+ * It runs in O(N^2) and is meant for educational comparisons, not
+ * production use.
+ *
+ * Parameters:
+ *   xs    — array of x coordinates in [0, 1)
+ *   ys    — array of y coordinates in [0, 1)
+ *   count — number of points
+ *
+ * Returns: estimated star discrepancy in [0, 1]
+ *
+ * Usage:
+ *   float d_halton = forge_star_discrepancy_2d(hx, hy, 64);
+ *   float d_random = forge_star_discrepancy_2d(rx, ry, 64);
+ *   // d_halton will be significantly lower than d_random
+ *
+ * See: lessons/math/14-blue-noise-sequences
+ */
+static inline float forge_star_discrepancy_2d(const float *xs, const float *ys,
+                                                int count)
+{
+    if (count <= 0) { return 0.0f; }
+
+    float max_disc = 0.0f;
+    float inv_n = 1.0f / (float)count;
+
+    for (int i = 0; i < count; i++) {
+        float u = xs[i];
+        float v = ys[i];
+
+        /* Count points in [0, u) x [0, v) */
+        int inside = 0;
+        for (int j = 0; j < count; j++) {
+            if (xs[j] < u && ys[j] < v) {
+                inside++;
+            }
+        }
+
+        float disc = fabsf((float)inside * inv_n - u * v);
+        if (disc > max_disc) max_disc = disc;
+    }
+
+    return max_disc;
+}
+
 #endif /* FORGE_MATH_H */

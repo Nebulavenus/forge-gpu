@@ -34,6 +34,7 @@ implementations for your projects.
 | 11 | [Color Spaces](11-color-spaces/) | Gamma correction, linear vs sRGB, luminance, HSL/HSV, CIE XYZ/xyY, gamut, tone mapping |
 | 12 | [Hash Functions & White Noise](12-hash-functions/) | Integer hash functions (Wang, PCG, xxHash32), avalanche effect, hash-to-float, seeding, white noise |
 | 13 | [Gradient Noise (Perlin & Simplex)](13-gradient-noise/) | Gradient noise algorithm, Perlin improved noise, simplex noise, fBm, lacunarity, persistence, domain warping |
+| 14 | [Blue Noise & Low-Discrepancy Sequences](14-blue-noise-sequences/) | Halton, R2, Sobol sequences; blue noise (Mitchell's best candidate); discrepancy; dithering, sampling, stippling |
 
 ## How Math Lessons Work
 

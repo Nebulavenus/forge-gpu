@@ -50,6 +50,7 @@ add_subdirectory(lessons/math/10-anisotropy)
 add_subdirectory(lessons/math/11-color-spaces)
 add_subdirectory(lessons/math/12-hash-functions)
 add_subdirectory(lessons/math/13-gradient-noise)
+add_subdirectory(lessons/math/14-blue-noise-sequences)
 
 # ── Engine Lessons ──────────────────────────────────────────────────────────
 add_subdirectory(lessons/engine/01-intro-to-c)
