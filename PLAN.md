@@ -107,7 +107,7 @@ graphics applications.
 ### C Language (continued)
 
 - [x] **Engine Lesson 04 — Pointers & Memory** — Stack vs heap, `malloc`/`free`, pointer arithmetic, `sizeof`/`offsetof`; how vertex buffer uploads work under the hood
-- [ ] **Engine Lesson 05 — Header-Only Libraries** — How `forge_math.h` works; `static inline`; include guards vs `#pragma once`; one-definition rule
+- [x] **Engine Lesson 05 — Header-Only Libraries** — How `forge_math.h` works; `static inline`; include guards vs `#pragma once`; one-definition rule
 
 ### Debugging
 

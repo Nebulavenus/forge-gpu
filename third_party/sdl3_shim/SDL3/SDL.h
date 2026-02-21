@@ -1,0 +1,116 @@
+/*
+ * SDL3 Shim — Minimal SDL3 stand-in for console-only lessons
+ *
+ * Provides just enough of the SDL3 API (SDL_Log, SDL_Init, SDL_malloc, etc.)
+ * to build engine and math lessons without the full SDL3 library.
+ * GPU lessons still require real SDL3.
+ *
+ * Usage:
+ *   cmake -B build -DFORGE_USE_SHIM=ON
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+#ifndef SDL3_SHIM_SDL_H
+#define SDL3_SHIM_SDL_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <math.h>
+
+/* ── Types ──────────────────────────────────────────────────────────────── */
+
+typedef uint32_t Uint32;
+
+/* ── Init / Quit ────────────────────────────────────────────────────────── */
+
+#define SDL_INIT_VIDEO 0x00000020u
+
+static inline bool SDL_Init(Uint32 flags)
+{
+    (void)flags;
+    return true;
+}
+
+static inline void SDL_Quit(void) { }
+
+static inline const char *SDL_GetError(void)
+{
+    return "(SDL3 shim)";
+}
+
+/* ── Logging ────────────────────────────────────────────────────────────── */
+/*
+ * SDL_Log is printf-style.  The real implementation writes to the platform
+ * debug output; this shim uses printf to stdout.
+ *
+ * Implemented as a variadic static inline because a macro wrapping printf
+ * with __VA_ARGS__ is less portable across C standards.
+ */
+
+static inline void SDL_Log(const char *fmt, ...)
+{
+    printf("INFO: ");
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
+}
+
+/* ── Memory ─────────────────────────────────────────────────────────────── */
+
+static inline void *SDL_malloc(size_t size)            { return malloc(size); }
+static inline void *SDL_calloc(size_t n, size_t sz)    { return calloc(n, sz); }
+static inline void *SDL_realloc(void *p, size_t size)  { return realloc(p, size); }
+static inline void  SDL_free(void *p)                  { free(p); }
+
+static inline void *SDL_memcpy(void *dst, const void *src, size_t n)
+{
+    return memcpy(dst, src, n);
+}
+
+static inline void *SDL_memset(void *dst, int c, size_t n)
+{
+    return memset(dst, c, n);
+}
+
+static inline int SDL_memcmp(const void *a, const void *b, size_t n)
+{
+    return memcmp(a, b, n);
+}
+
+/* ── String helpers ─────────────────────────────────────────────────────── */
+
+static inline size_t SDL_strlen(const char *s)         { return strlen(s); }
+static inline int    SDL_strcmp(const char *a, const char *b) { return strcmp(a, b); }
+
+static inline char *SDL_strdup(const char *s)
+{
+    size_t len = strlen(s) + 1;
+    char *copy = (char *)malloc(len);
+    if (copy) memcpy(copy, s, len);
+    return copy;
+}
+
+static inline int SDL_snprintf(char *buf, size_t n, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int ret = vsnprintf(buf, n, fmt, args);
+    va_end(args);
+    return ret;
+}
+
+/* ── Math ───────────────────────────────────────────────────────────────── */
+
+static inline float SDL_fabsf(float x)  { return x < 0 ? -x : x; }
+static inline float SDL_sqrtf(float x)  { return (float)sqrt((double)x); }
+static inline float SDL_fmodf(float x, float y) { return (float)fmod((double)x, (double)y); }
+
+#endif /* SDL3_SHIM_SDL_H */

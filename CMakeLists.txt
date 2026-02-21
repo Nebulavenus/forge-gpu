@@ -8,8 +8,22 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Try a pre-installed SDL3 first (e.g. -DCMAKE_PREFIX_PATH=/opt/sdl3).
 # If not found, fall back to building from source via FetchContent so learners
 # don't need to install it separately — just clone, configure, and build.
+#
+# For environments without network access or a GPU, pass -DFORGE_USE_SHIM=ON
+# to use a minimal SDL3 shim.  This builds math and engine lessons (console
+# programs) but skips GPU lessons, which require the real SDL3 library.
+option(FORGE_USE_SHIM "Use minimal SDL3 shim (console-only lessons)" OFF)
+
 find_package(SDL3 QUIET)
-if(NOT SDL3_FOUND)
+if(SDL3_FOUND)
+    message(STATUS "Using pre-installed SDL3: ${SDL3_DIR}")
+elseif(FORGE_USE_SHIM)
+    message(STATUS "SDL3 shim enabled — building console-only lessons")
+    add_library(sdl3_shim INTERFACE)
+    target_include_directories(sdl3_shim INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl3_shim)
+    add_library(SDL3::SDL3 ALIAS sdl3_shim)
+else()
     message(STATUS "SDL3 not found — fetching from source")
     include(FetchContent)
     FetchContent_Declare(
@@ -19,8 +33,6 @@ if(NOT SDL3_FOUND)
         GIT_SHALLOW    TRUE
     )
     FetchContent_MakeAvailable(SDL3)
-else()
-    message(STATUS "Using pre-installed SDL3: ${SDL3_DIR}")
 endif()
 
 # ── Common include path ─────────────────────────────────────────────────────
@@ -56,30 +68,35 @@ add_subdirectory(lessons/math/14-blue-noise-sequences)
 add_subdirectory(lessons/engine/01-intro-to-c)
 add_subdirectory(lessons/engine/02-cmake-fundamentals)
 add_subdirectory(lessons/engine/04-pointers-and-memory)
+add_subdirectory(lessons/engine/05-header-only-libraries)
 
-# ── GPU Lessons ─────────────────────────────────────────────────────────────
-add_subdirectory(lessons/gpu/01-hello-window)
-add_subdirectory(lessons/gpu/02-first-triangle)
-add_subdirectory(lessons/gpu/03-uniforms-and-motion)
-add_subdirectory(lessons/gpu/04-textures-and-samplers)
-add_subdirectory(lessons/gpu/05-mipmaps)
-add_subdirectory(lessons/gpu/06-depth-and-3d)
-add_subdirectory(lessons/gpu/07-camera-and-input)
-add_subdirectory(lessons/gpu/08-mesh-loading)
-add_subdirectory(lessons/gpu/09-scene-loading)
-add_subdirectory(lessons/gpu/10-basic-lighting)
-add_subdirectory(lessons/gpu/11-compute-shaders)
-add_subdirectory(lessons/gpu/12-shader-grid)
-add_subdirectory(lessons/gpu/13-instanced-rendering)
-add_subdirectory(lessons/gpu/14-environment-mapping)
-add_subdirectory(lessons/gpu/15-cascaded-shadow-maps)
-add_subdirectory(lessons/gpu/16-blending)
-add_subdirectory(lessons/gpu/17-normal-maps)
-add_subdirectory(lessons/gpu/18-blinn-phong-materials)
-add_subdirectory(lessons/gpu/19-debug-lines)
-add_subdirectory(lessons/gpu/20-linear-fog)
+# ── GPU Lessons (require real SDL3) ─────────────────────────────────────────
+if(NOT FORGE_USE_SHIM)
+    add_subdirectory(lessons/gpu/01-hello-window)
+    add_subdirectory(lessons/gpu/02-first-triangle)
+    add_subdirectory(lessons/gpu/03-uniforms-and-motion)
+    add_subdirectory(lessons/gpu/04-textures-and-samplers)
+    add_subdirectory(lessons/gpu/05-mipmaps)
+    add_subdirectory(lessons/gpu/06-depth-and-3d)
+    add_subdirectory(lessons/gpu/07-camera-and-input)
+    add_subdirectory(lessons/gpu/08-mesh-loading)
+    add_subdirectory(lessons/gpu/09-scene-loading)
+    add_subdirectory(lessons/gpu/10-basic-lighting)
+    add_subdirectory(lessons/gpu/11-compute-shaders)
+    add_subdirectory(lessons/gpu/12-shader-grid)
+    add_subdirectory(lessons/gpu/13-instanced-rendering)
+    add_subdirectory(lessons/gpu/14-environment-mapping)
+    add_subdirectory(lessons/gpu/15-cascaded-shadow-maps)
+    add_subdirectory(lessons/gpu/16-blending)
+    add_subdirectory(lessons/gpu/17-normal-maps)
+    add_subdirectory(lessons/gpu/18-blinn-phong-materials)
+    add_subdirectory(lessons/gpu/19-debug-lines)
+    add_subdirectory(lessons/gpu/20-linear-fog)
+endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
-add_subdirectory(tests/obj)
-add_subdirectory(tests/gltf)
+if(NOT FORGE_USE_SHIM)
+    add_subdirectory(tests/obj)
+    add_subdirectory(tests/gltf)
+endif()

@@ -121,7 +121,12 @@ with `SDL_DrawGPUPrimitives` (no index buffer needed).
 ## The OBJ parser library
 
 The parser lives in `common/obj/forge_obj.h` — a header-only library following
-the same pattern as `common/capture/forge_capture.h`.
+the same pattern as `common/capture/forge_capture.h`. See
+[Engine Lesson 05](../../engine/05-header-only-libraries/) for how header-only
+libraries work (`static inline` (functions with internal linkage defined directly
+in headers to avoid duplicate symbols), include guards, and the one-definition
+rule (ODR: each symbol must have exactly one definition across the whole
+program)).
 
 ### Two-pass parsing
 
