@@ -41,35 +41,38 @@ VSOutput main(VSInput input)
 {
     VSOutput output;
 
-    /* ── Aspect ratio correction ──────────────────────────────────────
-     * NDC goes from -1 to +1 on both axes, but the window is wider
-     * than it is tall (e.g. 800×600 → aspect = 1.333).  Without
-     * correction, a shape that should look circular gets stretched
-     * horizontally.  Dividing x by the aspect ratio squishes the
-     * x-axis back to equal proportions.
-     *
-     * We do this BEFORE rotation so we rotate in a uniform coordinate
-     * space.  If we corrected after rotation the squish would apply
-     * to the already-rotated coordinates, making the triangle look
-     * narrow when vertical but wide when horizontal. */
-    float2 corrected = float2(input.position.x / aspect, input.position.y);
-
     /* ── 2D rotation matrix ───────────────────────────────────────────
-     * Rotate the corrected position around the origin by `time` radians.
+     * Rotate the input position around the origin by `time` radians.
      *
      *   | cos(t)  -sin(t) |   | x |   | x*cos(t) - y*sin(t) |
      *   | sin(t)   cos(t) | × | y | = | x*sin(t) + y*cos(t) |
      *
      * This is the standard 2D rotation formula.  Because our triangle
-     * is centered at the origin, it spins in place. */
+     * is centered at the origin, it spins in place.
+     *
+     * We rotate BEFORE aspect correction so the rotation happens in
+     * the isotropic input space (where x and y have equal scale).
+     * If we corrected first, the rotation would happen in a squished
+     * coordinate space, distorting the triangle as it spins. */
     float c = cos(time);
     float s = sin(time);
 
     float2 rotated;
-    rotated.x = corrected.x * c - corrected.y * s;
-    rotated.y = corrected.x * s + corrected.y * c;
+    rotated.x = input.position.x * c - input.position.y * s;
+    rotated.y = input.position.x * s + input.position.y * c;
 
-    output.position = float4(rotated, 0.0, 1.0);
+    /* ── Aspect ratio correction ──────────────────────────────────────
+     * NDC goes from -1 to +1 on both axes, but the window is wider
+     * than it is tall (e.g. 1280×720 → aspect = 1.778).  Without
+     * correction, a shape that should look circular gets stretched
+     * horizontally.  Dividing x by the aspect ratio squishes the
+     * x-axis back to equal proportions.
+     *
+     * We apply this AFTER rotation so the triangle maintains its
+     * shape while spinning.  The aspect correction then maps the
+     * rotated coordinates to clip space where they display correctly
+     * on the non-square window. */
+    output.position = float4(rotated.x / aspect, rotated.y, 0.0, 1.0);
     output.color    = float4(input.color, 1.0);
     return output;
 }

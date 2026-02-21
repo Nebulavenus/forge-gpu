@@ -82,7 +82,7 @@ the CPU and re-uploading.
 ### Aspect ratio correction
 
 NDC (normalized device coordinates) range from -1 to +1 on both axes, but
-our window is 800×600 — wider than it is tall. Without correction, a shape
+our window is 1280×720 — wider than it is tall. Without correction, a shape
 that should look circular gets stretched horizontally.
 
 The fix is simple: divide x by the aspect ratio (`width / height`) after

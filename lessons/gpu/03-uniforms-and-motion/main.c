@@ -471,7 +471,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      *
      * The aspect ratio corrects for non-square windows.  Without it,
      * NDC coordinates map directly to pixels — a circle in NDC becomes
-     * an ellipse on an 800×600 window because the x-axis is stretched.
+     * an ellipse on a 1280×720 window because the x-axis is stretched.
      * We query the window size each frame so this stays correct even if
      * the window were resized (we don't handle resize yet, but it's
      * good practice). */
