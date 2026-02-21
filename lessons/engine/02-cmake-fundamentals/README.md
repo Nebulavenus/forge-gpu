@@ -516,6 +516,8 @@ build\lessons\engine\02-cmake-fundamentals\Debug\02-cmake-fundamentals.exe
 
 - [Engine Lesson 01 — Intro to C](../01-intro-to-c/) covers the C language
   features used in this lesson's example program
+- [Engine Lesson 03 — FetchContent & Dependencies](../03-fetchcontent-dependencies/)
+  explains where `SDL3::SDL3` comes from and how to add your own dependencies
 - [CMake Tutorial](https://cmake.org/cmake/help/latest/guide/tutorial/index.html)
   — Official step-by-step introduction to CMake
 - [CMake `add_executable` reference](https://cmake.org/cmake/help/latest/command/add_executable.html)

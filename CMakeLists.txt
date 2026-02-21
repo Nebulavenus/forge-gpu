@@ -22,6 +22,7 @@ elseif(FORGE_USE_SHIM)
     add_library(sdl3_shim INTERFACE)
     target_include_directories(sdl3_shim INTERFACE
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl3_shim)
+    target_compile_definitions(sdl3_shim INTERFACE FORGE_USE_SHIM)
     add_library(SDL3::SDL3 ALIAS sdl3_shim)
 else()
     message(STATUS "SDL3 not found — fetching from source")
@@ -67,6 +68,7 @@ add_subdirectory(lessons/math/14-blue-noise-sequences)
 # ── Engine Lessons ──────────────────────────────────────────────────────────
 add_subdirectory(lessons/engine/01-intro-to-c)
 add_subdirectory(lessons/engine/02-cmake-fundamentals)
+add_subdirectory(lessons/engine/03-fetchcontent-dependencies)
 add_subdirectory(lessons/engine/04-pointers-and-memory)
 add_subdirectory(lessons/engine/05-header-only-libraries)
 

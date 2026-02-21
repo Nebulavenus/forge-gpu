@@ -35,6 +35,7 @@ source code into a working program.
 |---|-------|-------------------|
 | 01 | [Intro to C](01-intro-to-c/) | Types, functions, control flow, arrays, strings, pointers, structs, dynamic memory — using SDL's cross-platform APIs |
 | 02 | [CMake Fundamentals](02-cmake-fundamentals/) | Targets, properties, `add_executable`, `target_link_libraries`, generator expressions, reading build errors |
+| 03 | [FetchContent & Dependencies](03-fetchcontent-dependencies/) | `FetchContent` lifecycle, version pinning with `GIT_TAG`, imported targets, adding dependencies, offline builds |
 | 04 | [Pointers & Memory](04-pointers-and-memory/) | Stack vs heap, `malloc`/`free`, pointer arithmetic, `sizeof`/`offsetof`, struct padding, vertex buffer uploads |
 | 05 | [Header-Only Libraries](05-header-only-libraries/) | `static inline`, include guards vs `#pragma once`, one-definition rule, how `forge_math.h` works |
 
