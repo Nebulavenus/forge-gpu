@@ -7,6 +7,7 @@ Usage:
     python scripts/run.py first-triangle          # by name fragment
     python scripts/run.py math/01                 # math lesson 01
     python scripts/run.py gpu/03                  # explicit GPU lesson 03
+    python scripts/run.py engine/01               # engine lesson 01
     python scripts/run.py                         # list available lessons
 
 Extra arguments after the lesson name are forwarded to the executable:
@@ -28,7 +29,7 @@ BUILD_CONFIGS = ["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]
 def discover_lessons():
     """Find all lesson directories, returning list of (type, dirname) tuples."""
     lessons = []
-    for lesson_type in ["gpu", "math"]:
+    for lesson_type in ["gpu", "math", "engine"]:
         type_dir = os.path.join(LESSONS_DIR, lesson_type)
         if not os.path.isdir(type_dir):
             continue
@@ -67,7 +68,7 @@ def match_lesson(query, lessons):
     forced_type = None
     if "/" in query:
         parts = query.split("/", 1)
-        if parts[0] in ("gpu", "math"):
+        if parts[0] in ("gpu", "math", "engine"):
             forced_type = parts[0]
             query = parts[1]
 
@@ -93,7 +94,7 @@ def match_lesson(query, lessons):
         print(f"Ambiguous query '{query}' matches multiple lessons:")
         for t, d in matches:
             print(f"  {t}/{d}")
-        print("Be more specific, e.g.: gpu/02 or math/01")
+        print("Be more specific, e.g.: gpu/02, math/01, or engine/01")
         return None
 
     return None
@@ -117,6 +118,7 @@ def list_lessons(lessons):
     print("  e.g.: python scripts/run.py 02")
     print("        python scripts/run.py first-triangle")
     print("        python scripts/run.py math/01")
+    print("        python scripts/run.py engine/01")
 
 
 def main():
