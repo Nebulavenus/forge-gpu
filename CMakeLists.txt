@@ -92,6 +92,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/18-blinn-phong-materials)
     add_subdirectory(lessons/gpu/19-debug-lines)
     add_subdirectory(lessons/gpu/20-linear-fog)
+    add_subdirectory(lessons/gpu/21-hdr-tone-mapping)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

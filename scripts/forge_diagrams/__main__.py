@@ -34,11 +34,14 @@ from .gpu_diagrams import (
     diagram_blinn_phong_vectors,
     diagram_cascade_ortho_projections,
     diagram_cascaded_shadow_maps,
+    diagram_exposure_effect,
     diagram_filtering_comparison,
     diagram_fog_blending,
     diagram_fog_falloff_curves,
     diagram_fog_scene_layout,
     diagram_fullscreen_triangle,
+    diagram_hdr_pipeline,
+    diagram_ldr_clipping,
     diagram_lengyel_tangent_basis,
     diagram_normal_transformation,
     diagram_pcf_kernel,
@@ -46,6 +49,7 @@ from .gpu_diagrams import (
     diagram_reflection_mapping,
     diagram_specular_comparison,
     diagram_tangent_space,
+    diagram_tone_map_comparison,
     diagram_undersampling,
     diagram_uv_mapping,
 )
@@ -184,6 +188,12 @@ DIAGRAMS = {
         ("fog_blending.png", diagram_fog_blending),
         ("fog_scene_layout.png", diagram_fog_scene_layout),
     ],
+    "gpu/21": [
+        ("hdr_pipeline.png", diagram_hdr_pipeline),
+        ("ldr_clipping.png", diagram_ldr_clipping),
+        ("tone_map_comparison.png", diagram_tone_map_comparison),
+        ("exposure_effect.png", diagram_exposure_effect),
+    ],
 }
 
 # Full lesson directory names for display
@@ -209,6 +219,7 @@ LESSON_NAMES = {
     "gpu/16": "gpu/16-blending",
     "gpu/17": "gpu/17-normal-maps",
     "gpu/20": "gpu/20-linear-fog",
+    "gpu/21": "gpu/21-hdr-tone-mapping",
 }
 
 

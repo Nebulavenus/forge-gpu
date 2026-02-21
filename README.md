@@ -125,6 +125,10 @@ Learn the SDL GPU API and modern rendering techniques:
 <a href="lessons/gpu/20-linear-fog/"><img src="lessons/gpu/20-linear-fog/assets/screenshot.png" width="200" alt="Linear Fog" /></a><br />
 <b>20</b> — Linear Fog
 </td>
+<td align="center">
+<a href="lessons/gpu/21-hdr-tone-mapping/"><img src="lessons/gpu/21-hdr-tone-mapping/assets/screenshot.png" width="200" alt="HDR Tone Mapping" /></a><br />
+<b>21</b> — HDR &amp; Tone Mapping
+</td>
 </tr>
 </table>
 
@@ -147,6 +151,7 @@ Standalone programs teaching the math behind graphics:
 | 11 | [Color Spaces](lessons/math/11-color-spaces/) | Gamma correction, linear vs sRGB, luminance, HSL/HSV, CIE XYZ/xyY, gamut, tone mapping |
 | 12 | [Hash Functions & White Noise](lessons/math/12-hash-functions/) | Integer hash functions (Wang, PCG, xxHash32), avalanche effect, hash-to-float, seeding, white noise |
 | 13 | [Gradient Noise (Perlin & Simplex)](lessons/math/13-gradient-noise/) | Gradient noise algorithm, Perlin improved noise, simplex noise, fBm, lacunarity, persistence, domain warping |
+| 14 | [Blue Noise & Low-Discrepancy Sequences](lessons/math/14-blue-noise-sequences/) | Blue noise, Halton/Sobol/R2 sequences, dithering, sampling quality, discrepancy |
 
 Each math lesson includes a demo program and updates the shared math
 library (`common/math/`) with documented, reusable implementations.

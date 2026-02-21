@@ -39,7 +39,7 @@ Infrastructure that supports all lessons:
 ### Atmosphere & Post-Processing
 
 - [x] **Lesson 20 — Linear Fog** — Depth-based distance fog in the fragment shader; linear, exponential, and exponential-squared falloff; fog color blending; integrating fog with existing lit scenes
-- [ ] **Lesson 21 — HDR & Tone Mapping** — Rendering to floating-point (R16G16B16A16_FLOAT) render targets; why LDR clamps highlights; tone mapping operators (Reinhard, ACES); gamma correction pipeline; fullscreen blit pass from HDR to swapchain
+- [x] **Lesson 21 — HDR & Tone Mapping** — Rendering to floating-point (R16G16B16A16_FLOAT) render targets; why LDR clamps highlights; tone mapping operators (Reinhard, ACES); gamma correction pipeline; fullscreen blit pass from HDR to swapchain
 - [ ] **Lesson 22 — Bloom (Jorge Jimenez)** — Dual-filter (downsample + upsample) bloom using the Jimenez method from SIGGRAPH 2014; threshold extraction; progressive downsample chain; tent-filter upsample with additive blending; combining bloom with tone-mapped output (depends on Lesson 21)
 
 ### Lighting Extensions
