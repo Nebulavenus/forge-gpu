@@ -12,77 +12,32 @@ License: zlib (matching SDL)
 
 ## Tone
 
-Many users are learning graphics or game programming for the first time. Others
-are building projects and hit a problem that requires deeper understanding.
-Either way, when answering questions or writing code:
+Many users are learning graphics or game programming for the first time. When
+answering questions or writing code:
 
 - Be encouraging and patient — there are no dumb questions about GPU APIs or math
 - Explain *why*, not just *what* — connect each concept to the bigger picture
 - Use plain language before jargon; when jargon is unavoidable, define it
-- If a user's approach won't work, explain the reason gently and suggest an
-  alternative rather than just correcting them
-- Reference specific lessons when relevant ("this is the pattern from Lesson 02",
-  "see lessons/math/01-vectors for the dot product explanation")
-- Remember that getting a triangle on screen for the first time is a big deal
+- Suggest alternatives gently rather than just correcting
+- Reference specific lessons when relevant
 - When using the math library, link to both the library docs AND the math lesson
-  explaining the concept
 
-## Lesson writing tone
+### Lesson writing tone
 
-Lessons teach real techniques backed by math and engineering. The writing should
-reflect that — treat every concept with the respect it deserves.
+Lessons teach real techniques backed by math and engineering — treat every
+concept with the respect it deserves.
 
-**Banned words:**
+- **Banned words:** *trick*, *hack*, *magic*, *clever*, *neat* — these cheapen
+  the material. Use instead: *technique*, *method*, *approach*, *insight*,
+  *key idea*, *shortcut*, *property*, *observation*.
+- **Be direct and precise.** State what a technique does and why it works.
+  Avoid hedging phrases ("it turns out that", "there's a neat way to").
+- **Credit named techniques** (Blinn-Phong, Gram-Schmidt) — they carry weight
+  and help readers find more resources.
+- **Explain reasoning, not magic.** "We use the transpose because rotation
+  matrices are orthonormal" beats "there's a neat trick with the transpose."
 
-- **"trick"** — This word cheapens the math and engineering behind a technique.
-  A cross product formulation is not a trick; it is a method. A half-vector is
-  not a trick; it is an insight. Use instead: *technique*, *method*, *approach*,
-  *insight*, *key idea*, or *shortcut* (when something is genuinely a faster
-  alternative to a longer method).
-
-**Tone principles for lesson prose:**
-
-- **Respect the material.** These are mathematical techniques and engineering
-  methods, not magic tricks. The reader should feel they are learning something
-  substantial, not collecting clever hacks.
-- **Be direct and precise.** Say what a technique does and why it works. Avoid
-  hedging phrases ("it turns out that", "as it happens", "there's a neat way
-  to") — just state the fact and explain the reasoning.
-- **Credit the ideas.** When a technique has a name or origin (Blinn-Phong,
-  Gram-Schmidt), use it. Named techniques carry weight and help readers find
-  more resources.
-- **Explain the reasoning, not the magic.** "We use the transpose because
-  rotation matrices are orthonormal" is better than "there's a neat trick with
-  the transpose." The reader should understand *why* something works, not just
-  be impressed that it does.
-- **Avoid hype words.** Words like *trick*, *hack*, *magic*, *clever*, and
-  *neat* signal that the writer doesn't fully understand or respect what they're
-  describing. Replace them with words that convey understanding: *technique*,
-  *method*, *property*, *insight*, *observation*.
-
-## Philosophy
-
-**Learning enables building.** Understanding fundamentals makes working with AI
-more productive. This project teaches graphics, math, and game techniques — then
-provides reusable skills and libraries so humans and AI can build together.
-
-### Learning (lessons/)
-
-- Every line of code understandable by someone new to graphics/game dev
-- Extensive comments explaining *why*, not just *what*
-- Progressive curriculum: each lesson builds on the previous
-- Topics: SDL GPU API, math fundamentals, rendering techniques, physics, etc.
-- Math lessons are standalone (small programs demonstrating concepts)
-- GPU lessons integrate math library (no bespoke math in GPU code)
-
-### Forging (skills + libraries)
-
-- **Skills** (.claude/skills/) — Reusable Claude Code skills distilled from lessons
-- **Math library** (common/math/) — Documented, readable, learning-focused
-- Every lesson produces a skill; AI agents learn the same patterns as humans
-- Goal: Enable anyone to use Claude to build games and renderers confidently
-
-### Code conventions
+## Code conventions
 
 - **Language:** C99, matching SDL's own style conventions
 - **Naming:** `Prefix_PascalCase` for public API (e.g. `forge_capture_init`,
@@ -97,17 +52,19 @@ provides reusable skills and libraries so humans and AI can build together.
   includes `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
   `SDL_Init`, and others. Never ignore a bool return value.
 - **Line endings:** Always use Unix-style (LF) line endings — never CRLF.
-  The repository enforces this via `.gitattributes`. This applies to all files:
-  C source, HLSL shaders, CMakeLists, Markdown, Python scripts, etc.
+  The repository enforces this via `.gitattributes`.
 - **Readability:** This code is meant to be learned from — clarity over cleverness
-- **glTF assets:** When a lesson uses a glTF model, load the entire model via
-  the parser — never extract individual textures or meshes from a glTF à la
-  carte. Copy the complete model (`.gltf`, `.bin`, and all referenced textures)
-  into the lesson's `assets/` directory and load it with `forge_gltf_load()`.
-  The model's node transforms, materials, and textures should drive the scene.
-- **IMPORTANT:** Always run build commands via a Task agent with `model: "haiku"`,
-  never directly from the main agent. This keeps the main context clean, uses
-  fewer tokens, and is faster.
+- **glTF assets:** Load entire models via `forge_gltf_load()` — never extract
+  individual textures or meshes à la carte. Copy the complete model (`.gltf`,
+  `.bin`, textures) into the lesson's `assets/` directory.
+- **Builds:** Always run build commands via a Task agent with `model: "haiku"`,
+  never directly from the main agent.
+
+## Git workflow
+
+- **Never commit directly to `main`.** All changes go through pull requests.
+- Create a feature branch, commit there, push, and open a PR with `gh pr create`.
+- Use the **/publish-lesson** skill for lesson PRs — it handles branch + PR creation.
 
 ## Project Structure
 
@@ -115,42 +72,17 @@ provides reusable skills and libraries so humans and AI can build together.
 forge-gpu/
 ├── lessons/
 │   ├── math/              # Math fundamentals (vectors, matrices, etc.)
-│   │   ├── README.md      # Overview of math lessons
-│   │   └── NN-concept/    # Each concept: program + README + adds to math lib
-│   ├── engine/            # Engine fundamentals (CMake, C, debugging, project structure)
-│   │   ├── README.md      # Overview of engine lessons
-│   │   └── NN-topic/      # Each topic: example project + README + common errors
+│   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
-│       └── NN-name/       # Each lesson: standalone buildable project
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
-│   └── ...                # Other shared utilities
-├── tests/
-│   ├── math/              # Math library tests
-│   ├── obj/               # OBJ parser tests
-│   └── gltf/              # glTF parser tests
+│   └── ...                # Other shared utilities (capture, parsers)
+├── tests/                 # Tests per module (math, obj, gltf)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
-│   ├── math-lesson/       # Skill: add math concept + lesson + update lib
-│   ├── new-lesson/        # Skill: create new GPU lesson
-│   └── ...
 └── third_party/           # Dependencies (SDL3, etc.)
 ```
 
-### How it fits together
-
-1. **Math lessons** teach concepts, add to `common/math/`
-2. **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
-3. **GPU lessons** use math library, refer to math lessons for theory
-4. **Skills** automate lesson creation and teach AI agents the patterns
-5. **Math library** is reusable in any project (lessons or real builds)
-
 ## Testing
-
-Tests live in `tests/` with one subdirectory per module (math, obj, gltf).
-Each test is a standalone C program using a simple assert-based framework —
-no external test dependency required.
-
-**Running tests:**
 
 ```bash
 cmake --build build --target test_gltf   # build one test
@@ -158,191 +90,81 @@ ctest --test-dir build -R gltf           # run one test
 ctest --test-dir build                   # run all tests
 ```
 
-**When modifying parsers or libraries in `common/`, always build and run the
-corresponding tests.** Tests are registered with CTest and also run in CI.
-
-When adding a new parser or library to `common/`, add a matching test under
+When modifying parsers or libraries in `common/`, always build and run the
+corresponding tests. When adding a new module, add a matching test under
 `tests/` and register it in the root `CMakeLists.txt`.
 
 ## Shader compilation
 
-Shaders are written in HLSL and compiled to both SPIRV and DXIL using
-`scripts/compile_shaders.py`. The script auto-detects `dxc` from the Vulkan
-SDK (`VULKAN_SDK` environment variable) or the system `PATH`.
-
-**Compiling shaders:**
+Shaders are written in HLSL and compiled to SPIRV + DXIL using
+`scripts/compile_shaders.py`:
 
 ```bash
 python scripts/compile_shaders.py              # all lessons
 python scripts/compile_shaders.py 16            # lesson 16 only
 python scripts/compile_shaders.py blending      # by name fragment
-python scripts/compile_shaders.py 16 -v         # verbose (show dxc commands)
 ```
 
-The script finds all `.vert.hlsl`, `.frag.hlsl`, and `.comp.hlsl` files in a
-lesson's `shaders/` directory, compiles each to `.spv` (SPIRV) and `.dxil`,
-then generates C byte-array headers (e.g. `scene_vert_spirv.h`). All generated
-files (`.spv`, `.dxil`, and C headers) are placed in `shaders/compiled/` so the
-`shaders/` directory contains only HLSL source. The headers are `#include`d in
-the lesson's `main.c` as `"shaders/compiled/scene_vert_spirv.h"`.
+Generated files (`.spv`, `.dxil`, C headers) go in `shaders/compiled/`.
+Headers are included as `"shaders/compiled/scene_vert_spirv.h"`. Recompile
+after any HLSL change — the C build does not auto-detect shader changes.
 
-**When to recompile:** After any change to an HLSL shader file, recompile
-before building the lesson. The C build does not auto-detect shader changes.
+## Writing lessons
 
-## When writing GPU lessons (lessons/gpu/)
+### GPU lessons (lessons/gpu/)
 
-- Start each README.md with what the reader will learn
-- Show the result (screenshot) before diving into code
+- Start README with what the reader will learn, show result before code
 - Introduce API calls one at a time with context
-- **Use the math library** for all math operations — no bespoke math in GPU code
-- Link to relevant math lessons when explaining concepts
+- **Use the math library** — no bespoke math in GPU code
+- Link to relevant math lessons for theory
 - End with exercises that extend the lesson
-- **Also write a matching skill** in .claude/skills/<name>/SKILL.md that
-  distills the lesson into a reusable Claude Code skill: YAML frontmatter
-  with name and description, then the key API calls, correct order, common
-  mistakes, and a ready-to-use code template
+- Write a matching skill in `.claude/skills/<name>/SKILL.md`
 
-## When writing engine lessons (lessons/engine/)
+### Engine lessons (lessons/engine/)
 
-- Use the **/engine-lesson** skill to scaffold lesson + example project
-- Focus on practical engineering: build systems, C language, debugging, project structure
-- Show common errors and how to diagnose them — this is what learners need most
-- README explains the concept, shows real error messages, and provides fixes
-- Cross-reference GPU and math lessons where the concept appears in practice
-- Keep it readable — this code is meant to be learned from
+- Use **/engine-lesson** skill to scaffold
+- Focus on practical engineering: build systems, C, debugging, project structure
+- Show common errors and how to diagnose them
+- Cross-reference GPU and math lessons where relevant
 
-## When writing math lessons (lessons/math/)
+### Math lessons (lessons/math/)
 
-- Use the **/math-lesson** skill to scaffold lesson + update library
-- Small, focused program demonstrating one concept clearly
-- README explains the math, the intuition, and where it's used in graphics/games
-- Add the implementation to `common/math/` with extensive inline docs
+- Use **/math-lesson** skill to scaffold + update library
+- Small, focused program demonstrating one concept
+- Add implementation to `common/math/` with extensive inline docs
 - Cross-reference GPU lessons that use this math
-- Keep it readable — this code is meant to be learned from
 
-## Using the math library (common/math/)
+### Math library usage
 
-**In your code:**
+GPU lessons and real projects should always use `common/math/`. When you need
+a function that doesn't exist yet, use **/math-lesson** to add it (creates
+lesson + updates library + documents the concept).
 
-```c
-#include "math/forge_math.h"  // Or whatever we name it
+## Skills
 
-vec3 position = vec3_create(0.0f, 1.0f, 0.0f);
-mat4 rotation = mat4_rotate_z(angle);
-```
-
-**When to use existing math:**
-
-- GPU lessons should always use the math library
-- Real projects building with forge-gpu should use it too
-- Reference the math library README and relevant lessons for documentation
-
-**When to add new math:**
-
-- You need a function that doesn't exist yet
-- Use **/math-lesson** skill (invokable by humans or Claude automatically)
-- This creates: math lesson + updates library + documents the concept
-- Even simple operations deserve a lesson (dot product, normalize, etc.)
-
-## Using skills (.claude/skills/)
-
-Skills are Claude Code commands that teach AI agents patterns from lessons.
-
-**Available skills:**
-
-- **/math-lesson** — Add a math concept (lesson + library update)
-- **/engine-lesson** — Add an engine/toolchain lesson (build systems, C, debugging)
-- **/new-lesson** — Create a new GPU lesson
-- **/publish-lesson** — Commit and PR a completed lesson
-- **/sdl-gpu-setup** — Scaffold SDL3 GPU application
-- And more — see `.claude/skills/` directory
-
-**How they work:**
-
-- Users invoke with `/skill-name` in the chat
-- Claude can also invoke them automatically when relevant
-- Each skill knows the project conventions and generates correct code
-- Skills are themselves documented and maintainable
-
-**For Claude:** When you need to add math functionality, use the /math-lesson
-skill. When creating GPU lessons, ensure they use the math library and reference
-math lessons for theory.
+Skills in `.claude/skills/` are Claude Code commands that automate lesson
+creation and teach AI agents the patterns from lessons. Users invoke with
+`/skill-name` in chat. Claude can also invoke them automatically when relevant.
 
 ## Quality Assurance
 
-This project maintains quality through automated linting and CI workflows. These
-checks ensure consistency, readability, and maintainability for learners and
-contributors.
-
 ### Markdown linting
 
-All markdown files are linted with markdownlint-cli2 in CI. Configuration is in
-`.markdownlint-cli2.jsonc`.
-
-**Key rules:**
-
-- **MD040** — All code blocks MUST have language tags (` ```c`, ` ```bash`, ` ```text`)
-- **MD060** — Tables must have consistent column alignment
-- Line length limits are disabled (lessons need flexibility)
-- Blank lines around lists/code blocks are lenient
-
-**Testing locally:**
-
-```bash
-npx markdownlint-cli2 "**/*.md"
-```
-
-**Common fixes:**
-
-- Missing language tag: ` ``` ` → ` ```c` or ` ```text` or ` ```bash`
-- Use `text` for plain output, diagrams, or examples without syntax
-
-The linter runs automatically on PRs and will fail if issues are found.
+All markdown is linted with markdownlint-cli2 (config: `.markdownlint-cli2.jsonc`).
+Key rule: all code blocks MUST have language tags (`` ```c ``, `` ```bash ``, `` ```text ``).
+Test locally: `npx markdownlint-cli2 "**/*.md"`
 
 ### Python linting
 
-All Python scripts in `scripts/` are linted and formatted with
-[Ruff](https://docs.astral.sh/ruff/). Configuration is in `pyproject.toml`.
-
-**Rules enabled:** pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify.
-
-**Testing locally:**
-
-```bash
-ruff check scripts/
-ruff format --check scripts/
-```
-
-**Auto-fix:**
-
-```bash
-ruff check --fix scripts/
-ruff format scripts/
-```
-
-The linter runs automatically on PRs and will fail if issues are found.
+Scripts are linted with [Ruff](https://docs.astral.sh/ruff/) (config: `pyproject.toml`).
+Test locally: `ruff check scripts/ && ruff format --check scripts/`
+Auto-fix: `ruff check --fix scripts/ && ruff format scripts/`
 
 ### CRITICAL: Never circumvent quality checks
 
-**NEVER do any of the following to "unblock" changes:**
-
-- ❌ Disable or remove lint rules to make errors pass
-- ❌ Relax lint requirements or thresholds to allow failing code
-- ❌ Remove or disable CI workflows (`.github/workflows/*.yml`)
-- ❌ Add lint ignore comments to skip validation
-- ❌ Modify `.markdownlint-cli2.jsonc` or `pyproject.toml` to weaken existing rules
-
-**Always fix the underlying issue instead:**
-
-- ✅ Fix markdown formatting to meet the existing standards
-- ✅ Add proper language tags to code blocks
-- ✅ Correct table formatting
-- ✅ Fix Python lint/format issues (`ruff check --fix` and `ruff format`)
-- ✅ Ask the user if the rule seems problematic (don't bypass it yourself)
-
-Quality checks exist to maintain learning quality and consistency. Bypassing them
-degrades the project for all users. When CI fails, fix the code — never weaken
-the checks.
+Never disable lint rules, remove CI workflows, add ignore comments, or relax
+thresholds to make errors pass. Always fix the underlying issue. If a rule
+seems problematic, ask the user — don't bypass it yourself.
 
 ## Dependencies
 
