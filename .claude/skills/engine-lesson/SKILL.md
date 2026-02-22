@@ -368,6 +368,11 @@ Follow the same conventions as all forge-gpu code:
 
 ## Diagrams and Formulas
 
+**Find opportunities to create compelling diagrams and visualizations via the
+matplotlib scripts** — they increase reader engagement and help learners
+understand the topics being taught. Use the `/create-diagram` skill to add
+diagrams following the project's visual identity and quality standards.
+
 ### Mermaid diagrams
 
 For **flow/pipeline diagrams** (build process, compilation stages, memory
@@ -396,20 +401,6 @@ to the appropriate file in `scripts/forge_diagrams/`:
 2. Register it in the `DIAGRAMS` dict in `__main__.py`
 3. Run `python scripts/forge_diagrams --lesson engine/NN` to generate the PNG
 4. Reference in the README: `![Description](assets/diagram_name.png)`
-
-### ASCII diagrams
-
-For simple layouts (< 10 lines), inline ASCII art in ` ```text ` blocks is
-often clearer than a generated image:
-
-```text
-Stack (grows down)         Heap (grows up)
-+------------------+       +------------------+
-| local variables  |       | malloc'd memory  |
-| return address   |       | ...              |
-| parameters       |       |                  |
-+------------------+       +------------------+
-```
 
 ## Example: CMake Fundamentals Lesson
 

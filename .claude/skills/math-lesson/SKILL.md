@@ -380,6 +380,11 @@ Every function needs:
 
 ## Diagrams and Formulas
 
+**Find opportunities to create compelling diagrams and visualizations via the
+matplotlib scripts** — they increase reader engagement and help learners
+understand the topics being taught. Use the `/create-diagram` skill to add
+diagrams following the project's visual identity and quality standards.
+
 ### Matplotlib diagrams
 
 For geometric or mathematical visuals (vector diagrams, interpolation grids,
@@ -405,7 +410,7 @@ flowchart LR
 ```
 ````
 
-Use mermaid for sequential flows; keep simple ASCII layouts (< 5 lines) as-is.
+Use mermaid for sequential flows.
 
 ### KaTeX math
 
