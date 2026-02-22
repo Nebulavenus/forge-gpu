@@ -512,6 +512,9 @@ build\lessons\engine\05-header-only-libraries\Debug\05-header-only-libraries.exe
 
 ## Further reading
 
+- [Engine Lesson 06 — Reading Error Messages](../06-reading-error-messages/) —
+  How to read the "multiple definition" linker errors that result from
+  one-definition rule violations
 - [Engine Lesson 02 — CMake Fundamentals](../02-cmake-fundamentals/) — How
   `target_include_directories` makes headers findable
 - [Engine Lesson 04 — Pointers & Memory](../04-pointers-and-memory/) — Memory

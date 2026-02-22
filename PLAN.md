@@ -111,7 +111,7 @@ graphics applications.
 
 ### Debugging
 
-- [ ] **Engine Lesson 06 — Reading Error Messages** — Compiler errors, linker errors, runtime crashes; what each type means and how to fix them
+- [x] **Engine Lesson 06 — Reading Error Messages** — Compiler errors, linker errors, runtime crashes; what each type means and how to fix them
 - [ ] **Engine Lesson 07 — Using a Debugger** — Breakpoints, stepping, inspecting variables; finding crashes and logic errors
 
 ## Math Lessons

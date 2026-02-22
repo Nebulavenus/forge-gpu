@@ -514,6 +514,9 @@ build\lessons\engine\02-cmake-fundamentals\Debug\02-cmake-fundamentals.exe
 
 ## Further reading
 
+- [Engine Lesson 06 — Reading Error Messages](../06-reading-error-messages/) —
+  A systematic guide to reading compiler, linker, and runtime errors (builds on
+  the common errors covered in this lesson)
 - [Engine Lesson 01 — Intro to C](../01-intro-to-c/) covers the C language
   features used in this lesson's example program
 - [Engine Lesson 03 — FetchContent & Dependencies](../03-fetchcontent-dependencies/)

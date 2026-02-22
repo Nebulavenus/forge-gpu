@@ -590,6 +590,9 @@ build\lessons\engine\04-pointers-and-memory\Debug\04-pointers-and-memory.exe
 
 ## Further reading
 
+- [Engine Lesson 06 — Reading Error Messages](../06-reading-error-messages/) —
+  How to diagnose segmentation faults and other runtime crashes caused by memory
+  bugs
 - [GPU Lesson 02 — First Triangle](../../gpu/02-first-triangle/) — see
   the vertex buffer upload code that this lesson explains
 - [Engine Lesson 01 — Intro to C](../01-intro-to-c/) — the broader C

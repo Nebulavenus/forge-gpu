@@ -113,4 +113,44 @@ static inline float SDL_fabsf(float x)  { return x < 0 ? -x : x; }
 static inline float SDL_sqrtf(float x)  { return (float)sqrt((double)x); }
 static inline float SDL_fmodf(float x, float y) { return (float)fmod((double)x, (double)y); }
 
+/* ── File I/O ───────────────────────────────────────────────────────────── */
+
+static inline void *SDL_LoadFile(const char *file, size_t *datasize)
+{
+    FILE *fp = fopen(file, "rb");
+    if (!fp) {
+        if (datasize) *datasize = 0;
+        return NULL;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    if (size < 0) {
+        fclose(fp);
+        if (datasize) *datasize = 0;
+        return NULL;
+    }
+
+    void *data = malloc((size_t)size);
+    if (!data) {
+        fclose(fp);
+        if (datasize) *datasize = 0;
+        return NULL;
+    }
+
+    size_t bytes_read = fread(data, 1, (size_t)size, fp);
+    fclose(fp);
+
+    if (bytes_read != (size_t)size) {
+        free(data);
+        if (datasize) *datasize = 0;
+        return NULL;
+    }
+
+    if (datasize) *datasize = (size_t)size;
+    return data;
+}
+
 #endif /* SDL3_SHIM_SDL_H */
