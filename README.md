@@ -135,6 +135,10 @@ Learn the SDL GPU API and modern rendering techniques:
 <a href="lessons/gpu/22-bloom/"><img src="lessons/gpu/22-bloom/assets/screenshot.png" width="200" alt="Bloom" /></a><br />
 <b>22</b> — Bloom
 </td>
+<td align="center">
+<a href="lessons/gpu/23-point-light-shadows/"><img src="lessons/gpu/23-point-light-shadows/assets/screenshot.png" width="200" alt="Point Light Shadows" /></a><br />
+<b>23</b> — Point Light Shadows
+</td>
 </tr>
 </table>
 
@@ -441,6 +445,7 @@ project to enable Claude to build games and tools with you.
 | [blending](.claude/skills/blending/SKILL.md) | `/blending` | Alpha blending, alpha testing, blend state configuration, transparency sorting |
 | [cascaded-shadow-maps](.claude/skills/cascaded-shadow-maps/SKILL.md) | `/cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
 | [bloom](.claude/skills/bloom/SKILL.md) | `/bloom` | Jimenez dual-filter bloom, 13-tap downsample, Karis averaging, tent-filter upsample, additive blending |
+| [point-light-shadows](.claude/skills/point-light-shadows/SKILL.md) | `/point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
 
 ### Development skills (used within this repo)
 

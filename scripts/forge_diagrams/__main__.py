@@ -39,6 +39,7 @@ from .gpu_diagrams import (
     diagram_brightness_threshold,
     diagram_cascade_ortho_projections,
     diagram_cascaded_shadow_maps,
+    diagram_cube_face_layout,
     diagram_downsample_13tap,
     diagram_exposure_effect,
     diagram_filtering_comparison,
@@ -50,11 +51,13 @@ from .gpu_diagrams import (
     diagram_karis_averaging,
     diagram_ldr_clipping,
     diagram_lengyel_tangent_basis,
+    diagram_linear_vs_hardware_depth,
     diagram_mip_chain_flow,
     diagram_normal_transformation,
     diagram_pcf_kernel,
     diagram_peter_panning,
     diagram_reflection_mapping,
+    diagram_shadow_lookup,
     diagram_specular_comparison,
     diagram_tangent_space,
     diagram_tent_filter,
@@ -216,6 +219,11 @@ DIAGRAMS = {
         ("mip_chain_flow.png", diagram_mip_chain_flow),
         ("brightness_threshold.png", diagram_brightness_threshold),
     ],
+    "gpu/23": [
+        ("cube_face_layout.png", diagram_cube_face_layout),
+        ("linear_vs_hardware_depth.png", diagram_linear_vs_hardware_depth),
+        ("shadow_lookup.png", diagram_shadow_lookup),
+    ],
 }
 
 # Full lesson directory names for display
@@ -244,6 +252,7 @@ LESSON_NAMES = {
     "gpu/20": "gpu/20-linear-fog",
     "gpu/21": "gpu/21-hdr-tone-mapping",
     "gpu/22": "gpu/22-bloom",
+    "gpu/23": "gpu/23-point-light-shadows",
 }
 
 

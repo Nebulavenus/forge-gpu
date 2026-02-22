@@ -251,7 +251,7 @@ Tell the user:
 - Does **not** create a branch or PR (that's `/publish-lesson`)
 - Does **not** do a full quality review (that's `/final-pass`)
 
-## Code style reminders
+## README-style reminders
 
 - README uses `# Lesson NN — Title` format (em dash, not hyphen)
 - All code blocks have language tags (` ```c `, ` ```bash `, ` ```text `)
@@ -260,3 +260,74 @@ Tell the user:
 - Cross-reference previous GPU lessons when building on their concepts
 - No banned words: "trick", "hack", "magic", "clever", "neat"
 - Explain *why* techniques work, not just *what* they do
+
+## Diagrams and Formulas
+
+**Find opportunities to create compelling diagrams and visualizations via the
+matplotlib scripts** — they increase reader engagement and help learners
+understand the topics being taught. Use the `/create-diagram` skill to add
+diagrams following the project's visual identity and quality standards.
+
+### Matplotlib diagrams
+
+For geometric or visual diagrams (UV mapping, filtering comparison), add a
+diagram function to `scripts/forge_diagrams/gpu_diagrams.py`:
+
+1. Write a function following the existing pattern (shared `setup_axes`,
+   `draw_vector`, `save` helpers from `_common.py`)
+2. Register it in the `DIAGRAMS` dict in `__main__.py` with the lesson key (e.g. `"gpu/04"`)
+3. Run `python scripts/forge_diagrams --lesson gpu/NN` to generate the PNG
+4. Reference in the README: `![Description](assets/diagram_name.png)`
+
+### Mermaid diagrams
+
+For **flow/pipeline diagrams** (texture upload flow, MVP pipeline), use inline
+mermaid blocks — GitHub renders them natively:
+
+````markdown
+```mermaid
+flowchart LR
+    A[Step 1] -->|transform| B[Step 2] --> C[Step 3]
+```
+````
+
+Use mermaid for sequential flows.
+
+### KaTeX math
+
+For **formulas**, use inline `$...$` and display `$$...$$` math notation:
+
+- Inline: `$\text{MVP} = P \times V \times M$`
+- Display math blocks must be split across three lines (CI enforces this):
+
+```text
+$$
+x_{\text{screen}} = \frac{x \cdot n}{-z}
+$$
+```
+
+Keep worked examples (step-by-step with numbers) in ` ```text ` blocks.
+
+## Code style reminders
+
+- Naming: `PascalCase` for typedefs (e.g. `Vertex`, `GpuPrimitive`),
+  `lowercase_snake_case` for local variables and functions (e.g. `app_state`),
+  `UPPER_SNAKE_CASE` for `#define` constants,
+  `Prefix_PascalCase` for public API types (e.g. `ForgeCapture`) and
+  `prefix_snake_case` for public API functions (e.g. `forge_capture_init`)
+- The `app_state` struct holds all state passed between callbacks
+- Build on previous lessons — reference what was introduced before
+- Each lesson should introduce ONE new concept at a time
+- **Always use the math library** — no bespoke math in GPU lessons
+- Link to math lessons when explaining concepts
+- **Never extract assets from glTFs à la carte** — when a lesson uses a glTF
+  model, copy the complete model (`.gltf`, `.bin`, and all referenced textures)
+  into the lesson's `assets/` directory and load it with `forge_gltf_load()`.
+  The model's node transforms, materials, and textures should drive the scene
+  layout, not hand-coded geometry.
+- **Always check SDL return values** — every SDL GPU function that returns
+  `bool` must be checked. Log the function name and `SDL_GetError()` on
+  failure, then clean up resources and early-return. This includes
+  `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
+  `SDL_ClaimWindowForGPUDevice`, `SDL_Init`, and others. This is a
+  recurring PR review item — get it right the first time.
