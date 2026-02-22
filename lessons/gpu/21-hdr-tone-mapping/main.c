@@ -58,28 +58,28 @@
 /* ── Compiled shader bytecodes ────────────────────────────────────────────── */
 
 /* Shadow pass — depth-only rendering from the light's perspective */
-#include "shaders/shadow_frag_dxil.h"
-#include "shaders/shadow_frag_spirv.h"
-#include "shaders/shadow_vert_dxil.h"
-#include "shaders/shadow_vert_spirv.h"
+#include "shaders/compiled/shadow_frag_dxil.h"
+#include "shaders/compiled/shadow_frag_spirv.h"
+#include "shaders/compiled/shadow_vert_dxil.h"
+#include "shaders/compiled/shadow_vert_spirv.h"
 
 /* Scene shaders — Blinn-Phong + cascaded shadows → HDR */
-#include "shaders/scene_frag_dxil.h"
-#include "shaders/scene_frag_spirv.h"
-#include "shaders/scene_vert_dxil.h"
-#include "shaders/scene_vert_spirv.h"
+#include "shaders/compiled/scene_frag_dxil.h"
+#include "shaders/compiled/scene_frag_spirv.h"
+#include "shaders/compiled/scene_vert_dxil.h"
+#include "shaders/compiled/scene_vert_spirv.h"
 
 /* Grid shaders — procedural grid + shadows → HDR */
-#include "shaders/grid_frag_dxil.h"
-#include "shaders/grid_frag_spirv.h"
-#include "shaders/grid_vert_dxil.h"
-#include "shaders/grid_vert_spirv.h"
+#include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_spirv.h"
+#include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_spirv.h"
 
 /* Tone mapping — fullscreen quad, HDR → swapchain */
-#include "shaders/tonemap_frag_dxil.h"
-#include "shaders/tonemap_frag_spirv.h"
-#include "shaders/tonemap_vert_dxil.h"
-#include "shaders/tonemap_vert_spirv.h"
+#include "shaders/compiled/tonemap_frag_dxil.h"
+#include "shaders/compiled/tonemap_frag_spirv.h"
+#include "shaders/compiled/tonemap_vert_dxil.h"
+#include "shaders/compiled/tonemap_vert_spirv.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

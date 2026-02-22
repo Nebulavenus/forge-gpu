@@ -52,10 +52,10 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-#include "shaders/scene_vert_spirv.h"
-#include "shaders/scene_frag_spirv.h"
-#include "shaders/scene_vert_dxil.h"
-#include "shaders/scene_frag_dxil.h"
+#include "shaders/compiled/scene_vert_spirv.h"
+#include "shaders/compiled/scene_frag_spirv.h"
+#include "shaders/compiled/scene_vert_dxil.h"
+#include "shaders/compiled/scene_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

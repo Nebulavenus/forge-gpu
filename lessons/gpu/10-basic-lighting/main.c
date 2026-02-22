@@ -51,10 +51,10 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-#include "shaders/lighting_vert_spirv.h"
-#include "shaders/lighting_frag_spirv.h"
-#include "shaders/lighting_vert_dxil.h"
-#include "shaders/lighting_frag_dxil.h"
+#include "shaders/compiled/lighting_vert_spirv.h"
+#include "shaders/compiled/lighting_frag_spirv.h"
+#include "shaders/compiled/lighting_vert_dxil.h"
+#include "shaders/compiled/lighting_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

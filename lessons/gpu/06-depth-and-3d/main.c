@@ -39,10 +39,10 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-#include "shaders/cube_vert_spirv.h"
-#include "shaders/cube_frag_spirv.h"
-#include "shaders/cube_vert_dxil.h"
-#include "shaders/cube_frag_dxil.h"
+#include "shaders/compiled/cube_vert_spirv.h"
+#include "shaders/compiled/cube_frag_spirv.h"
+#include "shaders/compiled/cube_vert_dxil.h"
+#include "shaders/compiled/cube_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

@@ -46,10 +46,10 @@
 /* These headers contain SPIRV (Vulkan) and DXIL (D3D12) bytecodes compiled
  * from the HLSL source files in shaders/.  See README.md for how to
  * recompile them if you modify the HLSL. */
-#include "shaders/quad_vert_spirv.h"
-#include "shaders/quad_frag_spirv.h"
-#include "shaders/quad_vert_dxil.h"
-#include "shaders/quad_frag_dxil.h"
+#include "shaders/compiled/quad_vert_spirv.h"
+#include "shaders/compiled/quad_frag_spirv.h"
+#include "shaders/compiled/quad_vert_dxil.h"
+#include "shaders/compiled/quad_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

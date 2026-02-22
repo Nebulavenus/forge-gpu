@@ -63,14 +63,14 @@
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────── */
 
-#include "shaders/fog_vert_spirv.h"
-#include "shaders/fog_frag_spirv.h"
-#include "shaders/fog_vert_dxil.h"
-#include "shaders/fog_frag_dxil.h"
-#include "shaders/grid_fog_vert_spirv.h"
-#include "shaders/grid_fog_frag_spirv.h"
-#include "shaders/grid_fog_vert_dxil.h"
-#include "shaders/grid_fog_frag_dxil.h"
+#include "shaders/compiled/fog_vert_spirv.h"
+#include "shaders/compiled/fog_frag_spirv.h"
+#include "shaders/compiled/fog_vert_dxil.h"
+#include "shaders/compiled/fog_frag_dxil.h"
+#include "shaders/compiled/grid_fog_vert_spirv.h"
+#include "shaders/compiled/grid_fog_frag_spirv.h"
+#include "shaders/compiled/grid_fog_vert_dxil.h"
+#include "shaders/compiled/grid_fog_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 

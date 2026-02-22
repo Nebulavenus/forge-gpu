@@ -59,36 +59,36 @@
 /* ── Compiled shader bytecodes ────────────────────────────────────────────── */
 
 /* Scene shaders — Blinn-Phong with point light → HDR */
-#include "shaders/scene_frag_dxil.h"
-#include "shaders/scene_frag_spirv.h"
-#include "shaders/scene_vert_dxil.h"
-#include "shaders/scene_vert_spirv.h"
+#include "shaders/compiled/scene_frag_dxil.h"
+#include "shaders/compiled/scene_frag_spirv.h"
+#include "shaders/compiled/scene_vert_dxil.h"
+#include "shaders/compiled/scene_vert_spirv.h"
 
 /* Grid shaders — procedural grid with point light → HDR */
-#include "shaders/grid_frag_dxil.h"
-#include "shaders/grid_frag_spirv.h"
-#include "shaders/grid_vert_dxil.h"
-#include "shaders/grid_vert_spirv.h"
+#include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_spirv.h"
+#include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_spirv.h"
 
 /* Emissive shader — constant HDR emission (reuses scene vertex shader) */
-#include "shaders/emissive_frag_dxil.h"
-#include "shaders/emissive_frag_spirv.h"
+#include "shaders/compiled/emissive_frag_dxil.h"
+#include "shaders/compiled/emissive_frag_spirv.h"
 
 /* Fullscreen vertex — shared by bloom downsample, upsample, and tonemap */
-#include "shaders/fullscreen_vert_dxil.h"
-#include "shaders/fullscreen_vert_spirv.h"
+#include "shaders/compiled/fullscreen_vert_dxil.h"
+#include "shaders/compiled/fullscreen_vert_spirv.h"
 
 /* Bloom downsample — 13-tap Jimenez filter */
-#include "shaders/bloom_downsample_frag_dxil.h"
-#include "shaders/bloom_downsample_frag_spirv.h"
+#include "shaders/compiled/bloom_downsample_frag_dxil.h"
+#include "shaders/compiled/bloom_downsample_frag_spirv.h"
 
 /* Bloom upsample — 9-tap tent filter */
-#include "shaders/bloom_upsample_frag_dxil.h"
-#include "shaders/bloom_upsample_frag_spirv.h"
+#include "shaders/compiled/bloom_upsample_frag_dxil.h"
+#include "shaders/compiled/bloom_upsample_frag_spirv.h"
 
 /* Tone mapping — HDR + bloom → swapchain */
-#include "shaders/tonemap_frag_dxil.h"
-#include "shaders/tonemap_frag_spirv.h"
+#include "shaders/compiled/tonemap_frag_dxil.h"
+#include "shaders/compiled/tonemap_frag_spirv.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

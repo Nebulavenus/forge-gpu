@@ -58,16 +58,16 @@
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
 /* Grid shaders — procedural anti-aliased grid on a flat quad (from L12) */
-#include "shaders/grid_vert_spirv.h"
-#include "shaders/grid_frag_spirv.h"
-#include "shaders/grid_vert_dxil.h"
-#include "shaders/grid_frag_dxil.h"
+#include "shaders/compiled/grid_vert_spirv.h"
+#include "shaders/compiled/grid_frag_spirv.h"
+#include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_frag_dxil.h"
 
 /* Instanced shaders — per-instance model matrix + Blinn-Phong lighting */
-#include "shaders/instanced_vert_spirv.h"
-#include "shaders/instanced_frag_spirv.h"
-#include "shaders/instanced_vert_dxil.h"
-#include "shaders/instanced_frag_dxil.h"
+#include "shaders/compiled/instanced_vert_spirv.h"
+#include "shaders/compiled/instanced_frag_spirv.h"
+#include "shaders/compiled/instanced_vert_dxil.h"
+#include "shaders/compiled/instanced_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

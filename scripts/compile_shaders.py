@@ -99,23 +99,30 @@ def get_stage_suffix(shader_path):
 
 
 def compile_shader(dxc_path, shader_path, verbose=False):
-    """Compile a single HLSL shader to SPIRV and DXIL, then generate C headers."""
+    """Compile a single HLSL shader to SPIRV and DXIL, then generate C headers.
+
+    Generated files (.spv, .dxil, and C headers) are placed in a compiled/
+    subdirectory so that the shaders/ directory contains only HLSL source.
+    """
     suffix = get_stage_suffix(shader_path)
     if suffix is None:
         print(f"  Unknown shader stage: {os.path.basename(shader_path)}")
         return False
     profile = STAGE_PROFILES[suffix]
-    base = shader_path[: -len(suffix)]  # e.g. .../shaders/triangle
-    basename = os.path.basename(base)  # e.g. triangle
+    basename = os.path.basename(shader_path[: -len(suffix)])  # e.g. triangle
     shader_dir = os.path.dirname(shader_path)
+
+    # Output compiled artifacts to a compiled/ subdirectory
+    compiled_dir = os.path.join(shader_dir, "compiled")
+    os.makedirs(compiled_dir, exist_ok=True)
 
     # Derive short stage name from the validated suffix
     stage = suffix.removeprefix(".").removesuffix(
         ".hlsl"
     )  # e.g. ".vert.hlsl" -> "vert"
 
-    spirv_out = f"{base}.{stage}.spv"
-    dxil_out = f"{base}.{stage}.dxil"
+    spirv_out = os.path.join(compiled_dir, f"{basename}.{stage}.spv")
+    dxil_out = os.path.join(compiled_dir, f"{basename}.{stage}.dxil")
 
     success = True
 
@@ -141,11 +148,11 @@ def compile_shader(dxc_path, shader_path, verbose=False):
     else:
         # Generate C header from SPIRV
         array_name = f"{basename}_{stage}_spirv"
-        header_path = os.path.join(shader_dir, f"{array_name}.h")
+        header_path = os.path.join(compiled_dir, f"{array_name}.h")
         generate_header(spirv_out, array_name, header_path)
         if verbose:
             size = os.path.getsize(spirv_out)
-            print(f"  SPIRV: {size} bytes -> {os.path.basename(header_path)}")
+            print(f"  SPIRV: {size} bytes -> compiled/{array_name}.h")
 
     # Compile DXIL (plain dxc, no -spirv)
     dxil_cmd = [dxc_path, "-T", profile, "-E", "main", shader_path, "-Fo", dxil_out]
@@ -159,11 +166,11 @@ def compile_shader(dxc_path, shader_path, verbose=False):
     else:
         # Generate C header from DXIL
         array_name = f"{basename}_{stage}_dxil"
-        header_path = os.path.join(shader_dir, f"{array_name}.h")
+        header_path = os.path.join(compiled_dir, f"{array_name}.h")
         generate_header(dxil_out, array_name, header_path)
         if verbose:
             size = os.path.getsize(dxil_out)
-            print(f"  DXIL:  {size} bytes -> {os.path.basename(header_path)}")
+            print(f"  DXIL:  {size} bytes -> compiled/{array_name}.h")
 
     return success
 

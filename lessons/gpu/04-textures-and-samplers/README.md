@@ -180,12 +180,12 @@ Or manually:
 
 ```bash
 # SPIRV (requires Vulkan SDK)
-dxc -spirv -T vs_6_0 -E main shaders/quad.vert.hlsl -Fo shaders/quad.vert.spv
-dxc -spirv -T ps_6_0 -E main shaders/quad.frag.hlsl -Fo shaders/quad.frag.spv
+dxc -spirv -T vs_6_0 -E main shaders/quad.vert.hlsl -Fo shaders/compiled/quad.vert.spv
+dxc -spirv -T ps_6_0 -E main shaders/quad.frag.hlsl -Fo shaders/compiled/quad.frag.spv
 
 # DXIL (requires Windows SDK or Vulkan SDK)
-dxc -T vs_6_0 -E main shaders/quad.vert.hlsl -Fo shaders/quad.vert.dxil
-dxc -T ps_6_0 -E main shaders/quad.frag.hlsl -Fo shaders/quad.frag.dxil
+dxc -T vs_6_0 -E main shaders/quad.vert.hlsl -Fo shaders/compiled/quad.vert.dxil
+dxc -T ps_6_0 -E main shaders/quad.frag.hlsl -Fo shaders/compiled/quad.frag.dxil
 ```
 
 ## Building

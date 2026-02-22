@@ -64,14 +64,14 @@
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────── */
 
-#include "shaders/material_vert_spirv.h"
-#include "shaders/material_frag_spirv.h"
-#include "shaders/material_vert_dxil.h"
-#include "shaders/material_frag_dxil.h"
-#include "shaders/grid_vert_spirv.h"
-#include "shaders/grid_frag_spirv.h"
-#include "shaders/grid_vert_dxil.h"
-#include "shaders/grid_frag_dxil.h"
+#include "shaders/compiled/material_vert_spirv.h"
+#include "shaders/compiled/material_frag_spirv.h"
+#include "shaders/compiled/material_vert_dxil.h"
+#include "shaders/compiled/material_frag_dxil.h"
+#include "shaders/compiled/grid_vert_spirv.h"
+#include "shaders/compiled/grid_frag_spirv.h"
+#include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 

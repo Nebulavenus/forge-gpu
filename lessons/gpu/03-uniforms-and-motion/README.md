@@ -110,21 +110,21 @@ DXIL (D3D12). If you modify a shader, recompile with:
 # From lessons/03-uniforms-and-motion/
 
 # SPIRV (requires Vulkan SDK)
-dxc -spirv -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.spv
-dxc -spirv -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.spv
+dxc -spirv -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/compiled/triangle.vert.spv
+dxc -spirv -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/compiled/triangle.frag.spv
 
 # DXIL (requires Windows SDK or Vulkan SDK)
-dxc -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.dxil
-dxc -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.dxil
+dxc -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/compiled/triangle.vert.dxil
+dxc -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/compiled/triangle.frag.dxil
 ```
 
 Then regenerate the C headers:
 
 ```bash
-python ../../scripts/bin_to_header.py shaders/triangle.vert.spv triangle_vert_spirv shaders/triangle_vert_spirv.h
-python ../../scripts/bin_to_header.py shaders/triangle.frag.spv triangle_frag_spirv shaders/triangle_frag_spirv.h
-python ../../scripts/bin_to_header.py shaders/triangle.vert.dxil triangle_vert_dxil shaders/triangle_vert_dxil.h
-python ../../scripts/bin_to_header.py shaders/triangle.frag.dxil triangle_frag_dxil shaders/triangle_frag_dxil.h
+python ../../scripts/bin_to_header.py shaders/compiled/triangle.vert.spv triangle_vert_spirv shaders/compiled/triangle_vert_spirv.h
+python ../../scripts/bin_to_header.py shaders/compiled/triangle.frag.spv triangle_frag_spirv shaders/compiled/triangle_frag_spirv.h
+python ../../scripts/bin_to_header.py shaders/compiled/triangle.vert.dxil triangle_vert_dxil shaders/compiled/triangle_vert_dxil.h
+python ../../scripts/bin_to_header.py shaders/compiled/triangle.frag.dxil triangle_frag_dxil shaders/compiled/triangle_frag_dxil.h
 ```
 
 ## Building

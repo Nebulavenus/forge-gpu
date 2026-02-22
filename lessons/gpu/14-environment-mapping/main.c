@@ -58,16 +58,16 @@
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
 /* Skybox shaders: unit cube with cube map sampling */
-#include "shaders/skybox_vert_spirv.h"
-#include "shaders/skybox_frag_spirv.h"
-#include "shaders/skybox_vert_dxil.h"
-#include "shaders/skybox_frag_dxil.h"
+#include "shaders/compiled/skybox_vert_spirv.h"
+#include "shaders/compiled/skybox_frag_spirv.h"
+#include "shaders/compiled/skybox_vert_dxil.h"
+#include "shaders/compiled/skybox_frag_dxil.h"
 
 /* Shuttle shaders: Blinn-Phong + environment reflection */
-#include "shaders/shuttle_vert_spirv.h"
-#include "shaders/shuttle_frag_spirv.h"
-#include "shaders/shuttle_vert_dxil.h"
-#include "shaders/shuttle_frag_dxil.h"
+#include "shaders/compiled/shuttle_vert_spirv.h"
+#include "shaders/compiled/shuttle_frag_spirv.h"
+#include "shaders/compiled/shuttle_vert_dxil.h"
+#include "shaders/compiled/shuttle_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

@@ -178,8 +178,10 @@ python scripts/compile_shaders.py 16 -v         # verbose (show dxc commands)
 
 The script finds all `.vert.hlsl`, `.frag.hlsl`, and `.comp.hlsl` files in a
 lesson's `shaders/` directory, compiles each to `.spv` (SPIRV) and `.dxil`,
-then generates C byte-array headers (e.g. `scene_vert_spirv.h`) that are
-`#include`d directly in the lesson's `main.c`.
+then generates C byte-array headers (e.g. `scene_vert_spirv.h`). All generated
+files (`.spv`, `.dxil`, and C headers) are placed in `shaders/compiled/` so the
+`shaders/` directory contains only HLSL source. The headers are `#include`d in
+the lesson's `main.c` as `"shaders/compiled/scene_vert_spirv.h"`.
 
 **When to recompile:** After any change to an HLSL shader file, recompile
 before building the lesson. The C build does not auto-detect shader changes.

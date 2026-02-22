@@ -56,7 +56,7 @@ directly. In later lessons, we'll transform from model space using matrices
 (see [Lesson 03 — Uniforms & Motion](../03-uniforms-and-motion/)).
 
 Shader source is in `shaders/*.hlsl`. Pre-compiled SPIRV and DXIL bytecodes
-are in `shaders/*_spirv.h` and `shaders/*_dxil.h`.
+are in `shaders/compiled/` (`*_spirv.h` and `*_dxil.h`).
 
 ### Graphics pipeline
 
@@ -88,18 +88,18 @@ DXIL (D3D12). If you modify a shader, recompile with:
 
 ```bash
 # SPIRV (requires Vulkan SDK)
-dxc -spirv -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.spv
-dxc -spirv -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.spv
+dxc -spirv -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/compiled/triangle.vert.spv
+dxc -spirv -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/compiled/triangle.frag.spv
 
 # DXIL (requires Windows SDK or Vulkan SDK)
-dxc -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/triangle.vert.dxil
-dxc -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/triangle.frag.dxil
+dxc -T vs_6_0 -E main shaders/triangle.vert.hlsl -Fo shaders/compiled/triangle.vert.dxil
+dxc -T ps_6_0 -E main shaders/triangle.frag.hlsl -Fo shaders/compiled/triangle.frag.dxil
 ```
 
 Then regenerate the C headers (Python):
 
 ```bash
-python scripts/spirv_to_header.py shaders/triangle.vert.spv triangle_vert_spirv shaders/triangle_vert_spirv.h
+python scripts/spirv_to_header.py shaders/compiled/triangle.vert.spv triangle_vert_spirv shaders/compiled/triangle_vert_spirv.h
 ```
 
 ## Building

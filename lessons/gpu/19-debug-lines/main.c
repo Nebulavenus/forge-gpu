@@ -62,10 +62,10 @@
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────── */
 
-#include "shaders/debug_vert_spirv.h"
-#include "shaders/debug_frag_spirv.h"
-#include "shaders/debug_vert_dxil.h"
-#include "shaders/debug_frag_dxil.h"
+#include "shaders/compiled/debug_vert_spirv.h"
+#include "shaders/compiled/debug_frag_spirv.h"
+#include "shaders/compiled/debug_vert_dxil.h"
+#include "shaders/compiled/debug_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 

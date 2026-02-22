@@ -39,10 +39,10 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-#include "shaders/quad_vert_spirv.h"
-#include "shaders/quad_frag_spirv.h"
-#include "shaders/quad_vert_dxil.h"
-#include "shaders/quad_frag_dxil.h"
+#include "shaders/compiled/quad_vert_spirv.h"
+#include "shaders/compiled/quad_frag_spirv.h"
+#include "shaders/compiled/quad_vert_dxil.h"
+#include "shaders/compiled/quad_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

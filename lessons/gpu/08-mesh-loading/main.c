@@ -50,10 +50,10 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-#include "shaders/mesh_vert_spirv.h"
-#include "shaders/mesh_frag_spirv.h"
-#include "shaders/mesh_vert_dxil.h"
-#include "shaders/mesh_frag_dxil.h"
+#include "shaders/compiled/mesh_vert_spirv.h"
+#include "shaders/compiled/mesh_frag_spirv.h"
+#include "shaders/compiled/mesh_vert_dxil.h"
+#include "shaders/compiled/mesh_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

@@ -35,14 +35,14 @@
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
 /* Compute shader (plasma generator) */
-#include "shaders/plasma_comp_spirv.h"
-#include "shaders/plasma_comp_dxil.h"
+#include "shaders/compiled/plasma_comp_spirv.h"
+#include "shaders/compiled/plasma_comp_dxil.h"
 
 /* Graphics shaders (fullscreen display) */
-#include "shaders/fullscreen_vert_spirv.h"
-#include "shaders/fullscreen_vert_dxil.h"
-#include "shaders/fullscreen_frag_spirv.h"
-#include "shaders/fullscreen_frag_dxil.h"
+#include "shaders/compiled/fullscreen_vert_spirv.h"
+#include "shaders/compiled/fullscreen_vert_dxil.h"
+#include "shaders/compiled/fullscreen_frag_spirv.h"
+#include "shaders/compiled/fullscreen_frag_dxil.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 

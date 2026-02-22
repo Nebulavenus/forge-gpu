@@ -62,28 +62,28 @@
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────── */
 
 /* Shadow pass — depth-only rendering from the light's perspective */
-#include "shaders/shadow_frag_dxil.h"
-#include "shaders/shadow_frag_spirv.h"
-#include "shaders/shadow_vert_dxil.h"
-#include "shaders/shadow_vert_spirv.h"
+#include "shaders/compiled/shadow_frag_dxil.h"
+#include "shaders/compiled/shadow_frag_spirv.h"
+#include "shaders/compiled/shadow_vert_dxil.h"
+#include "shaders/compiled/shadow_vert_spirv.h"
 
 /* Scene shaders — Blinn-Phong + cascaded shadow receiving */
-#include "shaders/scene_frag_dxil.h"
-#include "shaders/scene_frag_spirv.h"
-#include "shaders/scene_vert_dxil.h"
-#include "shaders/scene_vert_spirv.h"
+#include "shaders/compiled/scene_frag_dxil.h"
+#include "shaders/compiled/scene_frag_spirv.h"
+#include "shaders/compiled/scene_vert_dxil.h"
+#include "shaders/compiled/scene_vert_spirv.h"
 
 /* Grid shaders — procedural grid + shadow receiving */
-#include "shaders/grid_frag_dxil.h"
-#include "shaders/grid_frag_spirv.h"
-#include "shaders/grid_vert_dxil.h"
-#include "shaders/grid_vert_spirv.h"
+#include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_spirv.h"
+#include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_spirv.h"
 
 /* Debug quad — shadow map visualization overlay */
-#include "shaders/debug_quad_frag_dxil.h"
-#include "shaders/debug_quad_frag_spirv.h"
-#include "shaders/debug_quad_vert_dxil.h"
-#include "shaders/debug_quad_vert_spirv.h"
+#include "shaders/compiled/debug_quad_frag_dxil.h"
+#include "shaders/compiled/debug_quad_frag_spirv.h"
+#include "shaders/compiled/debug_quad_vert_dxil.h"
+#include "shaders/compiled/debug_quad_vert_spirv.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
