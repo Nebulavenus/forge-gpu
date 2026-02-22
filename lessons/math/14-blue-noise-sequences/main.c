@@ -494,7 +494,7 @@ static void demo_sampling(void)
     printf("  Drop N points in [0,1)^2, count how many satisfy x^2+y^2 < 1.\n\n");
 
     int sample_counts[] = {16, 64, 256, 1024};
-    float true_value = (float)M_PI / 4.0f;  /* pi/4 = area of quarter circle */
+    float true_value = (float)FORGE_PI / 4.0f;  /* pi/4 = area of quarter circle */
 
     printf("  %-8s  %-14s  %-14s  %-14s\n",
            "N", "Random error", "Halton error", "R2 error");
