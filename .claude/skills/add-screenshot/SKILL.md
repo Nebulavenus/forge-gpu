@@ -20,6 +20,10 @@ Lessons include `capture/forge_capture.h` which adds a `--screenshot`
 command-line flag. The Python orchestration script runs the lesson, converts
 the BMP output to PNG, and updates the README.
 
+**Important:** The lesson's `main.c` must have capture support integrated.
+If it doesn't, you must add it before the capture script will work (see
+"Adding capture support to a lesson" below).
+
 ## Key API calls
 
 - **Configure build:** `cmake -B build -DFORGE_CAPTURE=ON`
@@ -32,10 +36,11 @@ the BMP output to PNG, and updates the README.
 ## Code template
 
 ```bash
-# 1. Configure with capture support
+# 1. Configure with capture support (REQUIRED — without this the capture
+#    code is not compiled even if main.c has the #ifdef blocks)
 cmake -B build -DFORGE_CAPTURE=ON
 
-# 2. Build the lesson
+# 2. Build the lesson (use a Task agent with model: "haiku")
 cmake --build build --config Debug --target <target-name>
 
 # 3. Capture a static screenshot
@@ -51,27 +56,140 @@ From the user's argument, resolve the lesson directory path. Accept any of:
 - `01` or `01-hello-window` (resolved to `lessons/gpu/01-hello-window`)
 - `lessons/gpu/01-hello-window` (used directly)
 
-### 2. Build the lesson
+### 2. Check for capture support
+
+Search the lesson's `main.c` for `forge_capture`. If it is missing, add
+capture support following the integration guide below before proceeding.
+
+### 3. Configure with capture support
+
+```bash
+cmake -B build -DFORGE_CAPTURE=ON
+```
+
+This step is **required** — without it, `FORGE_CAPTURE` is not defined and
+all capture `#ifdef` blocks compile to nothing. If you skip this, the
+executable will run but never exit (no `--screenshot` handling), and the
+capture script will time out after 30 seconds.
+
+### 4. Build the lesson
+
+Use a Task agent with `model: "haiku"` per project conventions:
 
 ```bash
 cmake --build build --config Debug --target <target-name>
 ```
 
-### 3. Run the capture script
+### 5. Run the capture script
 
 ```bash
 python scripts/capture_lesson.py lessons/gpu/<lesson-dir>
 ```
 
-### 4. Verify the output
+### 6. Verify the output
 
 - Check that `lessons/gpu/<lesson-dir>/assets/screenshot.png` exists
 - Verify the README was updated (TODO placeholder replaced with image markdown)
 
-### 5. Report to the user
+### 7. Report to the user
 
 Show the output file path and size. If the user wants to inspect the image,
 tell them where to find it.
+
+## Adding capture support to a lesson
+
+If a lesson's `main.c` does not reference `forge_capture`, you must add it
+in five places. The CMakeLists.txt `FORGE_CAPTURE` define is usually already
+present — check and add it if not.
+
+Use any existing lesson (e.g. `lessons/gpu/01-hello-window/main.c`) as a
+reference. The pattern has five insertion points:
+
+### 1. Include (after other `#include` lines)
+
+```c
+/* This is NOT part of the lesson — it's build infrastructure that lets us
+ * programmatically capture screenshots for the README.  Compiled only when
+ * cmake is run with -DFORGE_CAPTURE=ON.  You can ignore these #ifdef blocks
+ * entirely; the lesson works the same with or without them.
+ * See: scripts/capture_lesson.py, common/capture/forge_capture.h */
+#ifdef FORGE_CAPTURE
+#include "capture/forge_capture.h"
+#endif
+```
+
+### 2. AppState field (inside the `app_state` typedef)
+
+```c
+#ifdef FORGE_CAPTURE
+    ForgeCapture capture;   /* screenshot infrastructure — see note above */
+#endif
+```
+
+### 3. AppInit — parse args and init (after state is allocated and device/window are assigned)
+
+Remove `(void)argc; (void)argv;` if present (the capture code uses them).
+
+```c
+#ifdef FORGE_CAPTURE
+    forge_capture_parse_args(&state->capture, argc, argv);
+    if (state->capture.mode != FORGE_CAPTURE_NONE) {
+        if (!forge_capture_init(&state->capture, device, window)) {
+            SDL_Log("Failed to initialise capture");
+            SDL_ReleaseWindowFromGPUDevice(device, window);
+            SDL_DestroyWindow(window);
+            SDL_DestroyGPUDevice(device);
+            SDL_free(state);
+            return SDL_APP_FAILURE;
+        }
+    }
+#endif
+```
+
+### 4. AppIterate — finish frame and conditional submit
+
+**Critical:** `forge_capture_finish_frame` submits the command buffer
+internally. The lesson's normal `SDL_SubmitGPUCommandBuffer` call must be
+wrapped in an `else` block so it only runs when capture is inactive.
+Without this, you get an assertion failure: `"Command buffer already
+submitted!"`.
+
+Replace the existing submit:
+
+```c
+/* BEFORE (causes double-submit assertion when capture is active): */
+if (!SDL_SubmitGPUCommandBuffer(cmd)) { ... }
+
+/* AFTER: */
+#ifdef FORGE_CAPTURE
+    if (state->capture.mode != FORGE_CAPTURE_NONE) {
+        if (!forge_capture_finish_frame(&state->capture, cmd, swapchain_tex)) {
+            SDL_SubmitGPUCommandBuffer(cmd);
+        }
+        if (forge_capture_should_quit(&state->capture)) {
+            return SDL_APP_SUCCESS;
+        }
+    } else
+#endif
+    {
+        if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+            SDL_Log("SDL_SubmitGPUCommandBuffer failed: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+    }
+```
+
+The `else` on the `#endif` line connects the `#ifdef` block to the normal
+submit block — when `FORGE_CAPTURE` is not defined, the braces compile as
+a plain block and the submit runs unconditionally.
+
+### 5. AppQuit — destroy capture resources (before other cleanup)
+
+```c
+#ifdef FORGE_CAPTURE
+    forge_capture_destroy(&state->capture, state->device);
+#endif
+```
 
 ## Capture script options
 
@@ -92,10 +210,17 @@ dimensions, verify the lesson's `WINDOW_WIDTH`/`WINDOW_HEIGHT` defines.
 
 ## Common issues
 
-- **Black image**: The `--capture-frame` default of 5 skips the first few
+- **Timeout (executable never exits):** The lesson is missing capture
+  support, or you forgot `cmake -B build -DFORGE_CAPTURE=ON`. The
+  executable runs normally but ignores `--screenshot` because the capture
+  code was compiled out. Reconfigure with `-DFORGE_CAPTURE=ON` and rebuild.
+- **"Command buffer already submitted!" assertion:** The lesson submits
+  the command buffer after `forge_capture_finish_frame` already submitted
+  it. Wrap the normal submit in the `else` pattern shown above.
+- **Black image:** The `--capture-frame` default of 5 skips the first few
   frames so the GPU pipeline is warmed up. If you still get black, try
   `--capture-frame 10`.
-- **Build not found**: Run `cmake --build build --config Debug` first or
+- **Build not found:** Run `cmake --build build --config Debug` first or
   pass `--build` to the capture script.
-- **Wrong colors**: The capture uses the swapchain's sRGB format. If the
+- **Wrong colors:** The capture uses the swapchain's sRGB format. If the
   lesson does not set `SDR_LINEAR`, colors may look washed out.

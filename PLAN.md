@@ -45,7 +45,7 @@ Infrastructure that supports all lessons:
 ### Lighting Extensions
 
 - [x] **Lesson 23 — Point Lights & Shadows** — Multiple point light sources; omnidirectional shadow mapping with cube map depth textures; shadow bias and Peter Panning; attenuation falloff
-- [ ] **Lesson 24 — Gobo Spotlight** — Projected-texture (cookie/gobo) spotlight; spotlight cone with inner/outer angles and smooth falloff; projecting a texture pattern through the light; shadow map for the spotlight frustum; theatrical/cinematic lighting applications
+- [x] **Lesson 24 — Gobo Spotlight** — Projected-texture (cookie/gobo) spotlight; spotlight cone with inner/outer angles and smooth falloff; projecting a texture pattern through the light; shadow map for the spotlight frustum; theatrical/cinematic lighting applications
 
 ### Noise & Procedural
 

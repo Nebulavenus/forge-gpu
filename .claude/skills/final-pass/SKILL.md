@@ -22,6 +22,13 @@ Work through each section below **in order**. For each check, read the relevant
 files and verify compliance. Report a summary at the end with pass/fail per
 section and specific issues found.
 
+**Be literal and exhaustive.** This is C — no RAII, no garbage collector. Every
+resource you acquire must be released on every exit path, every struct field
+must be documented, every error must be handled. Do not rationalize away
+findings with "it's probably fine" or "the section comment covers it." If the
+check says every field, check every field. If it says every error path, trace
+every error path.
+
 Use a Task agent (model: haiku) for builds, shader compilation, linting, and
 other command execution — never run those directly from the main agent.
 
@@ -40,6 +47,7 @@ returns `bool` has error handling.
 - `SDL_ClaimWindowForGPUDevice`
 - `SDL_SetGPUSwapchainParameters`
 - `SDL_SubmitGPUCommandBuffer`
+- `SDL_CancelGPUCommandBuffer`
 - `SDL_UploadToGPUBuffer` (via command buffer submit)
 - `SDL_WindowSupportsGPUSwapchainComposition`
 - `SDL_SetGPUBufferName` / `SDL_SetGPUTextureName`
@@ -70,7 +78,36 @@ and verify each has an `if (!...)` wrapper.
 
 ---
 
-## 2. Magic numbers (20+ PR comments)
+## 2. Command buffer lifecycle (acquired from Lesson 24 review)
+
+**Every acquired command buffer must be either submitted or canceled.** There
+is no automatic cleanup — an abandoned command buffer is a resource leak. This
+is C: if you acquire it, you release it, on every path.
+
+**Key SDL3 constraint:** `SDL_CancelGPUCommandBuffer` is **not allowed** after
+a swapchain texture has been acquired on that command buffer. After swapchain
+acquisition, you **must** submit (even on error).
+
+**What to check:**
+
+- [ ] Every `SDL_AcquireGPUCommandBuffer` has a matching submit or cancel on
+  **every** code path that follows — including early returns from failed
+  `BeginRenderPass`, failed `ensure_*` helpers, etc.
+- [ ] Error paths **before** swapchain acquisition use
+  `SDL_CancelGPUCommandBuffer(cmd)`
+- [ ] Error paths **after** swapchain acquisition use
+  `SDL_SubmitGPUCommandBuffer(cmd)` (submit the partial/empty command buffer)
+- [ ] The `!swapchain_tex` (minimized window) path submits the empty
+  command buffer and returns `SDL_APP_CONTINUE`
+
+**How to check:** Find `SDL_AcquireGPUCommandBuffer` in `SDL_AppIterate`, then
+trace **every** `return` statement between that acquire and the final submit.
+Each one must either submit or cancel `cmd` first. Do not skip any — enumerate
+them all and verify individually.
+
+---
+
+## 3. Magic numbers (20+ PR comments)
 
 Every numeric literal that represents a tuning parameter, spec-defined default,
 buffer size, or domain constant must be a `#define` or `enum` at the top of the
@@ -93,10 +130,11 @@ integer patterns. Inspect each for whether it should be a named constant.
 
 ---
 
-## 3. Resource leaks on error paths (15+ PR comments)
+## 4. Resource leaks on error paths (15+ PR comments)
 
 When initialization fails partway through, all resources allocated before the
-failure point must be released. This is especially important for GPU resources.
+failure point must be released. This is C — no destructors, no RAII, no GC.
+If you allocate it, you must free it on every exit path.
 
 **What to check:**
 
@@ -108,14 +146,20 @@ failure point must be released. This is especially important for GPU resources.
 - [ ] Sampler creation failures don't leak previously created samplers
 - [ ] Helper functions (e.g. `upload_gpu_buffer`, `create_white_texture`) return
   NULL on failure and don't leak internal resources
+- [ ] `init_fail` cleanup matches `SDL_AppQuit` cleanup — every resource freed
+  in `SDL_AppQuit` must also be freed in `init_fail` (including conditional
+  resources like `#ifdef FORGE_CAPTURE`)
+- [ ] `ensure_*` functions that destroy-then-recreate handle partial failure
+  (some resources recreated, some not) without leaking
 
 **How to check:** Read each init/load function, identify all `SDL_CreateGPU*`
 and `SDL_ReleaseGPU*` calls, and verify every create has a matching release on
-every error path.
+every error path. Then diff `init_fail` against `SDL_AppQuit` line by line —
+any resource freed in one but not the other is a bug.
 
 ---
 
-## 4. Naming conventions (15+ PR comments)
+## 5. Naming conventions (15+ PR comments)
 
 **Public API** (in `common/` headers): `Prefix_PascalCase` for types
 (e.g. `ForgeGltfScene`), `prefix_snake_case` for functions
@@ -142,17 +186,27 @@ PascalCase. Grep for `static` functions and verify snake_case.
 
 ---
 
-## 5. Per-field intent comments (15+ PR comments)
+## 6. Per-field intent comments (15+ PR comments)
 
-Every struct field in uniform blocks, configuration structs, and vertex layouts
-needs a comment explaining its purpose, units, and valid range.
+**Every** struct field needs an inline comment — no exceptions, no "the section
+header covers it." Section headers group related fields; inline comments
+explain each individual field's purpose, units, format, or valid range.
+
+A field named `exposure` is not self-documenting. Is it a multiplier or an EV
+stop? What range is valid? What happens at 0? The inline comment answers this:
+`/* brightness multiplier before tone mapping (>0) */`
 
 **What to check:**
 
 - [ ] Uniform struct fields have inline comments (units, range, purpose)
 - [ ] Vertex layout fields document their semantic meaning
-- [ ] Configuration/state struct fields explain what they control
+- [ ] **`app_state` fields each have an inline comment** — not just section
+  headers. Every pipeline, texture, sampler, buffer, setting, and state
+  variable gets its own comment explaining what it is, its format/units
+  where applicable, and how it's used
 - [ ] Push constant structs explain each member
+- [ ] GPU type struct fields (e.g. `GpuPrimitive`, `GpuMaterial`, `ModelData`)
+  document each field
 
 **Example of good comments:**
 
@@ -165,9 +219,27 @@ typedef struct {
 } shadow_params;
 ```
 
+**Bad — section headers are not field comments:**
+
+```c
+/* Camera. */
+vec3  cam_position;
+float cam_yaw;
+float cam_pitch;
+```
+
+**Good — every field documented:**
+
+```c
+/* Camera. */
+vec3  cam_position;  /* world-space camera position */
+float cam_yaw;       /* horizontal rotation (radians, 0 = +Z) */
+float cam_pitch;     /* vertical rotation (radians, clamped ±1.5) */
+```
+
 ---
 
-## 6. Spec and documentation accuracy (5+ PR comments)
+## 7. Spec and documentation accuracy (5+ PR comments)
 
 When referencing specifications (glTF 2.0, Vulkan, etc.) or external standards,
 the wording must match the spec's normative language.
@@ -182,7 +254,7 @@ the wording must match the spec's normative language.
 
 ---
 
-## 7. Skill documentation completeness (5+ PR comments)
+## 8. Skill documentation completeness (5+ PR comments)
 
 The matching skill in `.claude/skills/<topic>/SKILL.md` must have all required
 sections.
@@ -198,7 +270,7 @@ sections.
 
 ---
 
-## 8. README structure and content
+## 9. README structure and content
 
 **What to check:**
 
@@ -214,7 +286,7 @@ sections.
 
 ---
 
-## 9. Markdown linting
+## 10. Markdown linting
 
 Run the linter and resolve all issues.
 
@@ -231,7 +303,7 @@ npx markdownlint-cli2 "lessons/gpu/NN-name/**/*.md" "lessons/math/NN-name/**/*.m
 
 ---
 
-## 10. Python linting (if scripts were modified)
+## 11. Python linting (if scripts were modified)
 
 If any Python scripts in `scripts/` were added or modified:
 
@@ -246,7 +318,7 @@ ruff format --check scripts/
 
 ---
 
-## 11. Build and shader compilation
+## 12. Build and shader compilation
 
 Verify the lesson compiles and shaders are up to date.
 
@@ -270,16 +342,17 @@ Final Pass Results — Lesson NN: Name
 =====================================
 
  1. SDL bool returns      ✅ PASS  (N calls checked)
- 2. Magic numbers         ✅ PASS
- 3. Resource leaks        ⚠️  WARN  (1 potential leak in load_scene)
- 4. Naming conventions    ✅ PASS
- 5. Intent comments       ✅ PASS
- 6. Spec accuracy         ✅ PASS
- 7. Skill completeness    ✅ PASS
- 8. README structure      ✅ PASS
- 9. Markdown lint         ✅ PASS
-10. Python lint           ⏭️  SKIP  (no scripts modified)
-11. Build & shaders       ✅ PASS
+ 2. Command buffer life   ✅ PASS  (N paths checked)
+ 3. Magic numbers         ✅ PASS
+ 4. Resource leaks        ⚠️  WARN  (1 potential leak in load_scene)
+ 5. Naming conventions    ✅ PASS
+ 6. Intent comments       ✅ PASS
+ 7. Spec accuracy         ✅ PASS
+ 8. Skill completeness    ✅ PASS
+ 9. README structure      ✅ PASS
+10. Markdown lint         ✅ PASS
+11. Python lint           ⏭️  SKIP  (no scripts modified)
+12. Build & shaders       ✅ PASS
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

@@ -139,6 +139,10 @@ Learn the SDL GPU API and modern rendering techniques:
 <a href="lessons/gpu/23-point-light-shadows/"><img src="lessons/gpu/23-point-light-shadows/assets/screenshot.png" width="200" alt="Point Light Shadows" /></a><br />
 <b>23</b> — Point Light Shadows
 </td>
+<td align="center">
+<a href="lessons/gpu/24-gobo-spotlight/"><img src="lessons/gpu/24-gobo-spotlight/assets/screenshot.png" width="200" alt="Gobo Spotlight" /></a><br />
+<b>24</b> — Gobo Spotlight
+</td>
 </tr>
 </table>
 
@@ -447,6 +451,7 @@ project to enable Claude to build games and tools with you.
 | [cascaded-shadow-maps](.claude/skills/cascaded-shadow-maps/SKILL.md) | `/cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
 | [bloom](.claude/skills/bloom/SKILL.md) | `/bloom` | Jimenez dual-filter bloom, 13-tap downsample, Karis averaging, tent-filter upsample, additive blending |
 | [point-light-shadows](.claude/skills/point-light-shadows/SKILL.md) | `/point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
+| [gobo-spotlight](.claude/skills/gobo-spotlight/SKILL.md) | `/gobo-spotlight` | Projected-texture spotlight, cone falloff, gobo pattern projection, single 2D shadow map |
 
 ### Development skills (used within this repo)
 

@@ -100,6 +100,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/21-hdr-tone-mapping)
     add_subdirectory(lessons/gpu/22-bloom)
     add_subdirectory(lessons/gpu/23-point-light-shadows)
+    add_subdirectory(lessons/gpu/24-gobo-spotlight)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────
