@@ -39,6 +39,7 @@ source code into a working program.
 | 04 | [Pointers & Memory](04-pointers-and-memory/) | Stack vs heap, `malloc`/`free`, pointer arithmetic, `sizeof`/`offsetof`, struct padding, vertex buffer uploads |
 | 05 | [Header-Only Libraries](05-header-only-libraries/) | `static inline`, include guards vs `#pragma once`, one-definition rule, how `forge_math.h` works |
 | 06 | [Reading Error Messages](06-reading-error-messages/) | Build pipeline phases, compiler errors, linker errors, runtime crashes, warnings, systematic fixing strategy |
+| 07 | [Using a Debugger](07-using-a-debugger/) | Breakpoints, stepping, inspecting variables, call stack, conditional breakpoints, watchpoints |
 
 <!-- Add lessons here as they are created -->
 

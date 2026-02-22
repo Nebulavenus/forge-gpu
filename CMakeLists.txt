@@ -72,6 +72,7 @@ add_subdirectory(lessons/engine/03-fetchcontent-dependencies)
 add_subdirectory(lessons/engine/04-pointers-and-memory)
 add_subdirectory(lessons/engine/05-header-only-libraries)
 add_subdirectory(lessons/engine/06-reading-error-messages)
+add_subdirectory(lessons/engine/07-using-a-debugger)
 
 # ── GPU Lessons (require real SDL3) ─────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)

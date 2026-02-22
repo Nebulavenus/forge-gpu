@@ -21,9 +21,12 @@ import argparse
 import sys
 
 from .engine_diagrams import (
+    diagram_call_stack,
+    diagram_debugger_workflow,
     diagram_gpu_upload_pipeline,
     diagram_pointer_arithmetic,
     diagram_stack_vs_heap,
+    diagram_stepping_modes,
     diagram_struct_padding,
     diagram_vertex_memory_layout,
 )
@@ -103,6 +106,11 @@ DIAGRAMS = {
         ("pointer_arithmetic.png", diagram_pointer_arithmetic),
         ("struct_padding.png", diagram_struct_padding),
         ("gpu_upload_pipeline.png", diagram_gpu_upload_pipeline),
+    ],
+    "engine/07": [
+        ("debugger_workflow.png", diagram_debugger_workflow),
+        ("stepping_modes.png", diagram_stepping_modes),
+        ("call_stack.png", diagram_call_stack),
     ],
     "math/01": [
         ("vector_addition.png", diagram_vector_addition),
@@ -213,6 +221,7 @@ DIAGRAMS = {
 # Full lesson directory names for display
 LESSON_NAMES = {
     "engine/04": "engine/04-pointers-and-memory",
+    "engine/07": "engine/07-using-a-debugger",
     "math/01": "math/01-vectors",
     "math/03": "math/03-bilinear-interpolation",
     "math/04": "math/04-mipmaps-and-lod",
