@@ -96,6 +96,9 @@ provides reusable skills and libraries so humans and AI can build together.
   `SDL_GetError()` on failure, then clean up resources and early-return. This
   includes `SDL_SubmitGPUCommandBuffer`, `SDL_SetGPUSwapchainParameters`,
   `SDL_Init`, and others. Never ignore a bool return value.
+- **Line endings:** Always use Unix-style (LF) line endings — never CRLF.
+  The repository enforces this via `.gitattributes`. This applies to all files:
+  C source, HLSL shaders, CMakeLists, Markdown, Python scripts, etc.
 - **Readability:** This code is meant to be learned from — clarity over cleverness
 - **glTF assets:** When a lesson uses a glTF model, load the entire model via
   the parser — never extract individual textures or meshes from a glTF à la
