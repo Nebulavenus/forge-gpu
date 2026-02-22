@@ -144,6 +144,12 @@ Learn the SDL GPU API and modern rendering techniques:
 <b>24</b> — Gobo Spotlight
 </td>
 </tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/25-shader-noise/"><img src="lessons/gpu/25-shader-noise/assets/screenshot.png" width="200" alt="Shader Noise" /></a><br />
+<b>25</b> — Shader Noise
+</td>
+</tr>
 </table>
 
 ### Math Lessons (lessons/math/)
@@ -452,6 +458,7 @@ project to enable Claude to build games and tools with you.
 | [bloom](.claude/skills/bloom/SKILL.md) | `/bloom` | Jimenez dual-filter bloom, 13-tap downsample, Karis averaging, tent-filter upsample, additive blending |
 | [point-light-shadows](.claude/skills/point-light-shadows/SKILL.md) | `/point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
 | [gobo-spotlight](.claude/skills/gobo-spotlight/SKILL.md) | `/gobo-spotlight` | Projected-texture spotlight, cone falloff, gobo pattern projection, single 2D shadow map |
+| [shader-noise](.claude/skills/shader-noise/SKILL.md) | `/shader-noise` | GPU noise functions (hash, value, Perlin, fBm, domain warping), procedural textures, dithering |
 
 ### Development skills (used within this repo)
 

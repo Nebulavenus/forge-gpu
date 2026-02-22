@@ -54,7 +54,7 @@ Infrastructure that supports all lessons:
 > (Math Lesson 13), and blue noise dithering (Math Lesson 14). Lesson 26 builds
 > on the noise techniques from Lesson 25.
 
-- [ ] **Lesson 25 — Shader Noise** — Applying noise in fragment shaders; GPU-friendly hash functions for white noise (see [Math Lesson 12 — Hash Functions & White Noise](#planned-math-lessons)); Perlin/simplex noise for smooth randomness (see [Math Lesson 13 — Gradient Noise](#planned-math-lessons)); blue noise dithering for banding reduction (see [Math Lesson 14 — Blue Noise & Low-Discrepancy Sequences](#planned-math-lessons)); octave stacking (fBm) for natural patterns; practical uses — procedural textures, terrain variation, dissolve effects
+- [x] **Lesson 25 — Shader Noise** — Applying noise in fragment shaders; GPU-friendly hash functions for white noise (see [Math Lesson 12 — Hash Functions & White Noise](#planned-math-lessons)); Perlin/simplex noise for smooth randomness (see [Math Lesson 13 — Gradient Noise](#planned-math-lessons)); blue noise dithering for banding reduction (see [Math Lesson 14 — Blue Noise & Low-Discrepancy Sequences](#planned-math-lessons)); octave stacking (fBm) for natural patterns; practical uses — procedural textures, terrain variation, dissolve effects
 - [ ] **Lesson 26 — Procedural Sky (Hillaire)** — Single-scattering atmospheric model based on Sébastien Hillaire's approach; Rayleigh and Mie scattering; sun disc rendering; time-of-day color variation; LUT-based or per-pixel evaluation; integrating as a skybox replacement
 
 ### Screen-Space Effects
