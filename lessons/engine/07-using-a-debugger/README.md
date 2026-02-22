@@ -559,3 +559,6 @@ lldb ./build/lessons/engine/07-using-a-debugger/07-using-a-debugger
   with LLDB on macOS and Linux
 - [GDB to LLDB command map](https://lldb.llvm.org/use/map.html) — Side-by-side
   translation of GDB commands to LLDB equivalents
+- [Engine Lesson 08 — Debugging Graphics with RenderDoc](../08-renderdoc/) —
+  GPU-side debugging with frame capture and draw call inspection (the GPU
+  equivalent of the CPU debugger techniques taught here)

@@ -180,6 +180,7 @@ C fundamentals, debugging, and project structure:
 | 05 | [Header-Only Libraries](lessons/engine/05-header-only-libraries/) | `static inline`, include guards vs `#pragma once`, one-definition rule, how `forge_math.h` works |
 | 06 | [Reading Error Messages](lessons/engine/06-reading-error-messages/) | Build pipeline phases, compiler errors, linker errors, runtime crashes, warnings, systematic fixing strategy |
 | 07 | [Using a Debugger](lessons/engine/07-using-a-debugger/) | Breakpoints, stepping, inspecting variables, call stack, conditional breakpoints, watchpoints |
+| 08 | [Debugging Graphics with RenderDoc](lessons/engine/08-renderdoc/) | GPU frame capture, debug groups and labels, RenderDoc Event Browser, Pipeline State, Texture/Mesh Viewer, in-application API |
 
 See [lessons/engine/README.md](lessons/engine/README.md) for details and the
 full topic list. See [PLAN.md](PLAN.md) for the roadmap.

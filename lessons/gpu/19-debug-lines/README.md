@@ -174,3 +174,9 @@ debug drawing to any SDL GPU project.
 5. **Per-system toggle** — Add keyboard shortcuts (1-5) that toggle different
    debug categories (grid, axes, boxes, circles).  This mimics how real engines
    let developers toggle debug visualizations per system.
+
+## Further reading
+
+- [Engine Lesson 08 — Debugging Graphics with RenderDoc](../../engine/08-renderdoc/) —
+  Capture and inspect GPU frames offline with RenderDoc (a complementary
+  approach to the in-scene debug drawing taught here)
