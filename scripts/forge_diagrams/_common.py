@@ -43,7 +43,7 @@ FORGE_CMAP = LinearSegmentedColormap.from_list(
 )
 
 
-def setup_axes(ax, xlim=None, ylim=None, grid=True, aspect="equal"):
+def setup_axes(ax, xlim=None, ylim=None, grid=True, aspect: str | None = "equal"):
     """Apply consistent forge-gpu dark styling to axes."""
     ax.set_facecolor(STYLE["bg"])
     if xlim:

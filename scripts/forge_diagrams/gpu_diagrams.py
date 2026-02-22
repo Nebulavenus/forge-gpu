@@ -3,7 +3,7 @@
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.patches import Circle, Polygon, Rectangle
 
 from ._common import FORGE_CMAP, STYLE, draw_vector, save, setup_axes
 
@@ -171,7 +171,7 @@ def diagram_filtering_comparison():
         nearest_up,
         cmap=FORGE_CMAP,
         interpolation="nearest",
-        extent=[0, 4, 0, 4],
+        extent=(0, 4, 0, 4),
         origin="lower",
     )
     for i in range(5):
@@ -208,7 +208,7 @@ def diagram_filtering_comparison():
         texture,
         cmap=FORGE_CMAP,
         interpolation="bilinear",
-        extent=[0, 4, 0, 4],
+        extent=(0, 4, 0, 4),
         origin="lower",
     )
     for i in range(5):
@@ -2433,7 +2433,7 @@ def diagram_pcf_kernel():
         y=0.98,
     )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
     save(fig, "gpu/15-cascaded-shadow-maps", "pcf_kernel.png")
 
 
@@ -3685,8 +3685,8 @@ def diagram_tangent_space():
     ax1.add_patch(surface)
 
     # Surface label
-    cx = np.mean([p[0] for p in quad_2d])
-    cy = np.mean([p[1] for p in quad_2d]) - 0.3
+    cx = float(np.mean([p[0] for p in quad_2d]))
+    cy = float(np.mean([p[1] for p in quad_2d])) - 0.3
     ax1.text(
         cx,
         cy,
@@ -4434,7 +4434,7 @@ def diagram_fog_scene_layout():
     for r_i in range(50):
         radius = 10.0 - r_i * 0.2
         alpha = 0.02 + 0.15 * (r_i / 50.0)
-        circle = plt.Circle(
+        circle = Circle(
             (0, 0), radius, color=STYLE["text"], alpha=alpha, fill=True, zorder=0
         )
         ax.add_patch(circle)
@@ -4453,9 +4453,7 @@ def diagram_fog_scene_layout():
     )
 
     # Truck at origin
-    truck_rect = plt.Rectangle(
-        (-1.2, -0.6), 2.4, 1.2, color="#cc6633", alpha=0.9, zorder=4
-    )
+    truck_rect = Rectangle((-1.2, -0.6), 2.4, 1.2, color="#cc6633", alpha=0.9, zorder=4)
     ax.add_patch(truck_rect)
     ax.text(
         0,
@@ -4476,14 +4474,14 @@ def diagram_fog_scene_layout():
         angle = i * (2.0 * np.pi / 8.0)
         bx = np.cos(angle) * box_radius
         bz = np.sin(angle) * box_radius
-        box = plt.Rectangle(
+        box = Rectangle(
             (bx - 0.5, bz - 0.5), 1.0, 1.0, color=box_color, alpha=0.8, zorder=4
         )
         ax.add_patch(box)
 
         # Mark stacked boxes (every other)
         if i % 2 == 0:
-            stack = plt.Rectangle(
+            stack = Rectangle(
                 (bx - 0.4, bz - 0.4),
                 0.8,
                 0.8,
@@ -5545,7 +5543,7 @@ def diagram_tent_filter():
     )
 
     # --- Right: 3D surface showing the "tent" shape ---
-    ax2 = fig.add_subplot(122, projection="3d")
+    ax2: Axes3D = fig.add_subplot(122, projection="3d")  # type: ignore[assignment]
     ax2.set_facecolor(STYLE["bg"])
 
     # Higher-res tent for smooth surface
@@ -5583,7 +5581,7 @@ def diagram_tent_filter():
         ax2.scatter(
             [sx],
             [sy],
-            [sz + 0.02],
+            [sz + 0.02],  # type: ignore[arg-type]  # zs typed as int in stubs
             color=STYLE["text"],
             s=30,
             zorder=10,
@@ -5603,11 +5601,11 @@ def diagram_tent_filter():
     )
     ax2.view_init(elev=30, azim=-50)
     # Style the 3D axes panes
-    ax2.xaxis.pane.set_facecolor(STYLE["surface"])
-    ax2.yaxis.pane.set_facecolor(STYLE["surface"])
+    ax2.xaxis.pane.set_facecolor(STYLE["surface"])  # type: ignore[attr-defined]
+    ax2.yaxis.pane.set_facecolor(STYLE["surface"])  # type: ignore[attr-defined]
     ax2.zaxis.pane.set_facecolor(STYLE["surface"])
-    ax2.xaxis.pane.set_edgecolor(STYLE["grid"])
-    ax2.yaxis.pane.set_edgecolor(STYLE["grid"])
+    ax2.xaxis.pane.set_edgecolor(STYLE["grid"])  # type: ignore[attr-defined]
+    ax2.yaxis.pane.set_edgecolor(STYLE["grid"])  # type: ignore[attr-defined]
     ax2.zaxis.pane.set_edgecolor(STYLE["grid"])
 
     fig.suptitle(

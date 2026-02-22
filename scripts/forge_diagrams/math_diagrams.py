@@ -2222,7 +2222,14 @@ def diagram_tone_mapping_curves():
     )
 
     # Highlight area
-    ax.fill_between(x, 0, 1, where=(x <= 1), alpha=0.06, color=STYLE["accent1"])
+    ax.fill_between(
+        x,
+        0,
+        1,
+        where=(x <= 1),  # type: ignore[arg-type]
+        alpha=0.06,
+        color=STYLE["accent1"],
+    )
 
     ax.set_xlabel("HDR input intensity", color=STYLE["axis"], fontsize=11)
     ax.set_ylabel("Display output (0-1)", color=STYLE["axis"], fontsize=11)
@@ -2390,7 +2397,7 @@ def diagram_avalanche_matrix():
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label("Flip probability (ideal = 0.50)", color=STYLE["axis"], fontsize=10)
     cbar.ax.tick_params(colors=STYLE["axis"], labelsize=8)
-    cbar.outline.set_edgecolor(STYLE["grid"])
+    cbar.outline.set_edgecolor(STYLE["grid"])  # type: ignore[reportCallIssue]
 
     # Annotate the ideal line
     avg = np.mean(matrix)
