@@ -33,6 +33,7 @@ from .engine_diagrams import (
 from .gpu_diagrams import (
     diagram_aabb_sorting,
     diagram_arvo_method,
+    diagram_atmosphere_layers,
     diagram_blend_modes,
     diagram_blinn_phong_vectors,
     diagram_bloom_pipeline,
@@ -40,6 +41,7 @@ from .gpu_diagrams import (
     diagram_cascade_ortho_projections,
     diagram_cascaded_shadow_maps,
     diagram_cube_face_layout,
+    diagram_density_profiles,
     diagram_downsample_13tap,
     diagram_exposure_effect,
     diagram_filtering_comparison,
@@ -56,11 +58,19 @@ from .gpu_diagrams import (
     diagram_normal_transformation,
     diagram_pcf_kernel,
     diagram_peter_panning,
+    diagram_phase_functions,
+    diagram_ray_march,
+    diagram_ray_sphere_intersection,
     diagram_reflection_mapping,
+    diagram_scattering_geometry,
     diagram_shadow_lookup,
+    diagram_sky_render_pipeline,
     diagram_specular_comparison,
+    diagram_sun_limb_darkening,
+    diagram_sun_transmittance,
     diagram_tangent_space,
     diagram_tent_filter,
+    diagram_time_of_day_colors,
     diagram_tone_map_comparison,
     diagram_undersampling,
     diagram_uv_mapping,
@@ -224,6 +234,18 @@ DIAGRAMS = {
         ("linear_vs_hardware_depth.png", diagram_linear_vs_hardware_depth),
         ("shadow_lookup.png", diagram_shadow_lookup),
     ],
+    "gpu/26": [
+        ("atmosphere_layers.png", diagram_atmosphere_layers),
+        ("density_profiles.png", diagram_density_profiles),
+        ("ray_sphere_intersection.png", diagram_ray_sphere_intersection),
+        ("scattering_geometry.png", diagram_scattering_geometry),
+        ("ray_march_diagram.png", diagram_ray_march),
+        ("phase_functions.png", diagram_phase_functions),
+        ("sun_transmittance.png", diagram_sun_transmittance),
+        ("sun_limb_darkening.png", diagram_sun_limb_darkening),
+        ("time_of_day_colors.png", diagram_time_of_day_colors),
+        ("render_pipeline.png", diagram_sky_render_pipeline),
+    ],
 }
 
 # Full lesson directory names for display
@@ -253,6 +275,7 @@ LESSON_NAMES = {
     "gpu/21": "gpu/21-hdr-tone-mapping",
     "gpu/22": "gpu/22-bloom",
     "gpu/23": "gpu/23-point-light-shadows",
+    "gpu/26": "gpu/26-procedural-sky",
 }
 
 

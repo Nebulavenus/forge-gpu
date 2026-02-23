@@ -159,3 +159,8 @@ add_custom_command(TARGET my-app POST_BUILD
 - Omitting `SDL_GPU_STOREOP_STORE` — your render results get discarded.
 - Building without `WIN32` on Windows — creates an unwanted console window.
 - Skipping `SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR` — colours look washed out and interpolation is wrong.
+- Returning `SDL_APP_SUCCESS` from `SDL_AppInit` — the app exits immediately
+  with code 0 and no window visible. In SDL's callback architecture,
+  `SDL_APP_SUCCESS` means "quit successfully" (clean exit), not "init
+  succeeded." Only `SDL_APP_CONTINUE` keeps the event loop running.
+  Both `SDL_APP_SUCCESS` and `SDL_APP_FAILURE` terminate the app.
