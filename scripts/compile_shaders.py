@@ -130,6 +130,8 @@ def compile_shader(dxc_path, shader_path, verbose=False):
     spirv_cmd = [
         dxc_path,
         "-spirv",
+        "-I",
+        shader_dir,
         "-T",
         profile,
         "-E",
@@ -155,7 +157,18 @@ def compile_shader(dxc_path, shader_path, verbose=False):
             print(f"  SPIRV: {size} bytes -> compiled/{array_name}.h")
 
     # Compile DXIL (plain dxc, no -spirv)
-    dxil_cmd = [dxc_path, "-T", profile, "-E", "main", shader_path, "-Fo", dxil_out]
+    dxil_cmd = [
+        dxc_path,
+        "-I",
+        shader_dir,
+        "-T",
+        profile,
+        "-E",
+        "main",
+        shader_path,
+        "-Fo",
+        dxil_out,
+    ]
     if verbose:
         print(f"  $ {' '.join(dxil_cmd)}")
     result = subprocess.run(dxil_cmd, capture_output=True, text=True)

@@ -125,7 +125,7 @@
 #define SUN_AZIMUTH_DEFAULT   0.0f   /* radians from east               */
 #define SUN_ELEVATION_SPEED   0.5f   /* radians/sec for arrow keys      */
 #define SUN_AZIMUTH_SPEED     0.5f   /* radians/sec for arrow keys      */
-#define SUN_AUTO_SPEED        0.1f   /* radians/sec for orbit rotation   */
+#define SUN_AUTO_SPEED        0.01f  /* radians/sec for orbit rotation   */
 #define SUN_ORBIT_TILT        1.2f   /* max elevation (~69 deg), full day/night cycle */
 #define SUN_INTENSITY         20.0f  /* radiance multiplier             */
 
@@ -167,8 +167,8 @@
 #define SUN_ORBIT_START       3.08f  /* near π — sun ~4° above horizon, setting     */
 
 /* Capture mode — fixed sun angle for consistent screenshots.
- * Low elevation shows warm scattering, bloom halo, and orange horizon. */
-#define CAPTURE_SUN_ELEVATION  0.07f /* ~4 degrees — sunset shows warm scattering   */
+ * Matches the default orbit start for a warm sunset view. */
+#define CAPTURE_SUN_ELEVATION  0.04f /* ~2 degrees — deep sunset, max warm scattering */
 #define CAPTURE_SUN_AZIMUTH   SUN_ORBIT_START /* match orbit start angle            */
 #define CAPTURE_CAM_YAW       CAM_START_YAW   /* face the sun at orbit start        */
 

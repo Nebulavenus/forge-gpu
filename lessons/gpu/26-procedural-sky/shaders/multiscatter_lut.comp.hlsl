@@ -70,10 +70,8 @@ static const int SQRT_SAMPLE_COUNT = 8;
 /* Integration steps per direction.  Generous for one-time computation. */
 static const int MULTISCATTER_STEPS = 20;
 
-/* Horizon fade parameters for earth shadow smoothing.
- * Must match the values in sky.frag.hlsl for consistent results. */
-static const float HORIZON_FADE_SCALE = 10.0;
-static const float HORIZON_FADE_BIAS  = 0.5;
+/* Shared atmosphere tuning — single definition for all shaders. */
+#include "atmosphere_params.hlsli"
 
 /* ---- Ray-sphere intersection -------------------------------------------- */
 

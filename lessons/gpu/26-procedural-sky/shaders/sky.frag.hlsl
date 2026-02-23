@@ -85,8 +85,9 @@ static const float3 OZONE_ABSORB = float3(0.650e-3, 1.881e-3, 0.085e-3);
 static const float  OZONE_CENTER = 25.0;
 static const float  OZONE_WIDTH  = 15.0;
 
-/* Sun angular radius -- half the ~0.53 degree diameter (0.00465 radians). */
-static const float SUN_ANGULAR_RADIUS = 0.00465;
+/* Sun angular radius — enlarged ~3x from the physical value (0.00465 rad)
+ * so the disc is clearly visible at low sun angles. */
+static const float SUN_ANGULAR_RADIUS = 0.014;
 
 /* Sun disc rendering parameters. */
 static const float SUN_DISC_MULTIPLIER = 10.0;
@@ -97,11 +98,8 @@ static const float SUN_EDGE_INNER      = 0.9;
 /* PI constant. */
 static const float PI = 3.14159265358979323846;
 
-/* Horizon fade parameters for earth shadow smoothing.
- * Smooths the terminator (shadow boundary) over ~2.9 degrees around
- * each sample point's local horizon: saturate(cos_zenith * SCALE + BIAS). */
-static const float HORIZON_FADE_SCALE = 10.0;
-static const float HORIZON_FADE_BIAS  = 0.5;
+/* Shared atmosphere tuning — single definition for all shaders. */
+#include "atmosphere_params.hlsli"
 
 /* Transmittance LUT dimensions (must match C-side constants). */
 static const float TRANSMITTANCE_LUT_W = 256.0;

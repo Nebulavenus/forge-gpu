@@ -63,4 +63,7 @@ build/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local editor config
+.clang-format
 __pycache__
