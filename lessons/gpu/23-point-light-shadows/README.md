@@ -192,6 +192,22 @@ This lesson uses:
 - `mat4_perspective`, `mat4_look_at`, `mat4_multiply` from
   [`common/math/forge_math.h`](../../../common/math/README.md)
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices to clip and world space for point light rendering |
+| `scene.frag.hlsl` | Blinn-Phong with multiple point lights and omnidirectional shadow mapping via cube maps |
+| `shadow.vert.hlsl` | Transforms vertices into light space for cube map shadow generation |
+| `shadow.frag.hlsl` | Writes linear depth for omnidirectional shadow comparison |
+| `emissive.frag.hlsl` | Constant bright HDR emission for light source visualization |
+| `bloom_downsample.frag.hlsl` | 13-tap weighted downsample with Karis averaging |
+| `bloom_upsample.frag.hlsl` | 9-tap tent filter upsample with additive blending |
+| `fullscreen.vert.hlsl` | Fullscreen triangle via `SV_VertexID` for post-processing passes |
+| `tonemap.frag.hlsl` | Tone mapping with bloom compositing |
+| `grid.vert.hlsl` | Grid vertex shader for the point light scene |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with point light shadows and HDR output |
+
 ## Building
 
 ```bash

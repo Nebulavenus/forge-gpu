@@ -197,6 +197,15 @@ Total:  128 bytes
 The grid shader has an analogous 128-byte layout with grid-specific fields in
 the first 96 bytes and the same fog fields in the last 32 bytes.
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `fog.vert.hlsl` | Transforms vertices to clip space and world space for fog distance calculation with normal transformation |
+| `fog.frag.hlsl` | Blinn-Phong lighting with distance fog in three modes: linear, exponential, and exponential-squared |
+| `grid_fog.vert.hlsl` | Transforms grid vertices to clip space and passes world position for procedural grid with fog |
+| `grid_fog.frag.hlsl` | Anti-aliased procedural grid with Blinn-Phong lighting and distance fog |
+
 ## Building
 
 ```bash

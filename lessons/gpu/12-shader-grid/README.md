@@ -215,6 +215,15 @@ a future lesson.
 | Click | Recapture mouse |
 | Escape | Release mouse (press again to quit) |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `grid.vert.hlsl` | Transforms a world-space grid quad to clip space and passes world position for procedural grid generation |
+| `grid.frag.hlsl` | Generates an anti-aliased procedural grid using `fwidth()` and `smoothstep()` with distance fade |
+| `lighting.vert.hlsl` | Transforms vertices to clip and world space for Blinn-Phong lighting |
+| `lighting.frag.hlsl` | Blinn-Phong lighting with ambient, diffuse, and specular components |
+
 ## Building
 
 ```bash

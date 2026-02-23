@@ -254,6 +254,16 @@ This lesson uses:
 - **View matrix** — [Math Lesson 09](../../math/09-view-matrix/) for the
   first-person fly camera
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices to clip and world space for Blinn-Phong lighting |
+| `scene.frag.hlsl` | Blinn-Phong lighting compatible with opaque, alpha-blend, and additive blend modes |
+| `alpha_test.frag.hlsl` | Fragment shader with alpha cutoff that discards fragments below a threshold (glTF MASK mode) |
+| `grid.vert.hlsl` | Transforms the procedural floor grid quad to clip space |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with Blinn-Phong lighting |
+
 ## Building
 
 ```bash

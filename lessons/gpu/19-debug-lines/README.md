@@ -136,6 +136,13 @@ All math comes from `common/math/forge_math.h`:
 - `quat_from_euler`, `quat_forward`, `quat_right` — camera orientation
   (see [Lesson 08 — Orientation](../../math/08-orientation/))
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `debug.vert.hlsl` | Transforms world-space line vertices to clip space and passes per-vertex color for interpolation |
+| `debug.frag.hlsl` | Outputs the interpolated vertex color directly as the fragment color |
+
 ## Building
 
 ```bash

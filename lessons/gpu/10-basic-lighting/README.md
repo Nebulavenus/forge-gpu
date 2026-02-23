@@ -494,6 +494,13 @@ SDL3 GPU project — the skill includes uniform layouts, shader templates,
 and common mistakes to avoid. You can copy the skill file into your own
 project's `.claude/skills/` directory.
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `lighting.vert.hlsl` | Transforms vertices to clip space and world space, computing world-space normals via adjugate transpose for per-pixel lighting |
+| `lighting.frag.hlsl` | Three-component Blinn-Phong lighting: ambient, diffuse (Lambert), and specular (Blinn half-vector) |
+
 ## Building
 
 ```bash

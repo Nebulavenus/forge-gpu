@@ -550,6 +550,19 @@ downsample, upsample, tonemap
 3. 4× bloom upsample (bloom\_mips[4] → bloom\_mips[0], additive ONE+ONE)
 4. Tonemap pass (HDR + bloom\_mips[0] → swapchain)
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `transmittance_lut.comp.hlsl` | Compute shader generating the transmittance lookup table for atmospheric scattering |
+| `multiscatter_lut.comp.hlsl` | Compute shader precomputing the multi-scattering lookup table |
+| `sky.vert.hlsl` | Fullscreen quad with ray matrix reconstruction for atmospheric ray marching |
+| `sky.frag.hlsl` | Per-pixel atmospheric scattering with Rayleigh, Mie, and ozone using LUT-accelerated transmittance |
+| `fullscreen.vert.hlsl` | Fullscreen triangle via `SV_VertexID` for post-processing passes |
+| `tonemap.frag.hlsl` | Tone mapping with bloom compositing |
+| `bloom_downsample.frag.hlsl` | 13-tap weighted downsample with Karis averaging |
+| `bloom_upsample.frag.hlsl` | 9-tap tent filter upsample with additive blending |
+
 ## Build and run
 
 ```bash

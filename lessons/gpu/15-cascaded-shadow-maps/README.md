@@ -317,6 +317,19 @@ the cascade split distances and light VP matrices — everything the fragment
 shader needs to determine which cascade covers each fragment and whether it
 is in shadow.
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `shadow.vert.hlsl` | Depth-only vertex shader transforming vertices into light-space clip coordinates for shadow map generation |
+| `shadow.frag.hlsl` | Empty fragment shader for the shadow pass (depth is written automatically by the GPU) |
+| `scene.vert.hlsl` | Transforms scene vertices and computes light-space positions for all three cascades |
+| `scene.frag.hlsl` | Blinn-Phong lighting with cascaded shadow mapping and 3x3 PCF filtering |
+| `grid.vert.hlsl` | Grid vertex shader that also computes light-space positions for cascaded shadow sampling |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with shadow receiving via cascade selection and PCF |
+| `debug_quad.vert.hlsl` | Generates a screen-space quad via `SV_VertexID` for shadow map debug visualization |
+| `debug_quad.frag.hlsl` | Samples the first cascade's shadow map and displays it as grayscale depth |
+
 ## Building
 
 ```bash

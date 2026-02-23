@@ -62,6 +62,9 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] Has "Result" section with a screenshot (`![...](assets/screenshot.png)`)
   — **not** just a placeholder
 - [ ] Has "Key concepts" section explaining new APIs
+- [ ] **GPU lessons only:** If the lesson has shader files, has a "Shaders"
+  section immediately before "Building" that lists each shader file with a
+  brief description of what it does
 - [ ] Has "Building" section
 - [ ] Has "AI skill" section linking to `.claude/skills/<topic>/SKILL.md`
 - [ ] Has "Exercises" section (3-4 exercises)

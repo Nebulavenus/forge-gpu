@@ -277,6 +277,9 @@ sections.
 - [ ] Starts with `# Lesson NN — Title`
 - [ ] Has "What you'll learn" section near the top
 - [ ] Has screenshot in a "Result" section (not a placeholder)
+- [ ] **GPU lessons only:** If the lesson has shader files, has a "Shaders"
+  section immediately before "Building" that lists each shader file with a
+  brief description of what it does
 - [ ] Has "Building" section with build commands
 - [ ] Has "AI skill" section linking to the skill
 - [ ] Ends with "Exercises" section (3-4 exercises)

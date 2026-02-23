@@ -224,6 +224,15 @@ baked instance matrices may contain non-trivial scaling from the glTF hierarchy.
 | Click | Recapture mouse |
 | Escape | Release mouse (press again to quit) |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `instanced.vert.hlsl` | Reconstructs a per-instance model matrix from four `float4` vertex attributes and transforms normals via adjugate transpose |
+| `instanced.frag.hlsl` | Blinn-Phong lighting using world-space data from the instanced vertex shader |
+| `grid.vert.hlsl` | Transforms the procedural floor grid quad to clip space |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with `fwidth()`/`smoothstep()` and distance fade |
+
 ## Building
 
 ```bash

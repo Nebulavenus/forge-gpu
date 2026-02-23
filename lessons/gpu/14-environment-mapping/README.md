@@ -164,6 +164,15 @@ redundant render pass setup:
 Render order matters: draw the skybox first (writes no depth), then the shuttle
 (writes depth, always passes since its depth < 1.0).
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `shuttle.vert.hlsl` | Transforms shuttle vertices to clip and world space, computing world normals for environment reflection |
+| `shuttle.frag.hlsl` | Blinn-Phong lighting with cube map reflection blended by a reflectivity parameter |
+| `skybox.vert.hlsl` | Renders a skybox cube using rotation-only view matrix with depth forced to 1.0 |
+| `skybox.frag.hlsl` | Samples the cube map texture using interpolated 3D direction vectors |
+
 ## Building
 
 ```bash

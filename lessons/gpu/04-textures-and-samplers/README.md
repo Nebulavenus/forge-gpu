@@ -188,6 +188,13 @@ dxc -T vs_6_0 -E main shaders/quad.vert.hlsl -Fo shaders/compiled/quad.vert.dxil
 dxc -T ps_6_0 -E main shaders/quad.frag.hlsl -Fo shaders/compiled/quad.frag.dxil
 ```
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `quad.vert.hlsl` | Applies rotation animation to a quad and passes UV coordinates to the fragment stage |
+| `quad.frag.hlsl` | Samples a 2D texture at interpolated UV coordinates |
+
 ## Building
 
 ```bash

@@ -127,6 +127,13 @@ python ../../scripts/bin_to_header.py shaders/compiled/triangle.vert.dxil triang
 python ../../scripts/bin_to_header.py shaders/compiled/triangle.frag.dxil triangle_frag_dxil shaders/compiled/triangle_frag_dxil.h
 ```
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `triangle.vert.hlsl` | Reads elapsed time from a uniform buffer and applies a 2D rotation to spin the triangle |
+| `triangle.frag.hlsl` | Outputs the interpolated vertex color (animation is handled entirely in the vertex shader) |
+
 ## Building
 
 ```bash

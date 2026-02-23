@@ -217,6 +217,14 @@ And the draw call just asks for 3 vertices:
 SDL_DrawGPUPrimitives(render_pass, 3, 1, 0, 0);
 ```
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `plasma.comp.hlsl` | Compute shader generating an animated procedural plasma texture by summing sine waves with a palette lookup |
+| `fullscreen.vert.hlsl` | Generates a fullscreen triangle from `SV_VertexID` with no vertex buffer |
+| `fullscreen.frag.hlsl` | Samples the compute-generated plasma texture and outputs it to the screen |
+
 ## Building
 
 ```bash

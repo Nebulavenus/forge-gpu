@@ -212,6 +212,13 @@ For each primitive, we push the material's base color and a flag indicating
 whether it has a texture. A 1x1 white placeholder texture is always bound so
 the sampler never reads undefined memory.
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices via the MVP matrix and passes UVs and world-space normals to the fragment stage |
+| `scene.frag.hlsl` | Conditionally samples or skips the diffuse texture based on a material flag, multiplied by the base color |
+
 ## Building and running
 
 ```bash

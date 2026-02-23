@@ -597,6 +597,21 @@ lessons/gpu/27-ssao/
 - `composite.frag.hlsl` reads `color_tex` (scene color) and `ao_tex`
   (blurred AO) and writes to the swapchain.
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices to clip, world, and view space with view-space normal output |
+| `scene.frag.hlsl` | Blinn-Phong with shadow mapping, outputs lit color and view-space normals via MRT |
+| `shadow.vert.hlsl` | Depth-only vertex shader for shadow map generation |
+| `shadow.frag.hlsl` | Empty fragment shader for the shadow pass (depth written automatically) |
+| `grid.vert.hlsl` | Grid vertex shader with view-space normal output for SSAO |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with shadow receiving and MRT output |
+| `fullscreen.vert.hlsl` | Fullscreen triangle via `SV_VertexID` for screen-space passes |
+| `ssao.frag.hlsl` | Hemisphere kernel sampling in view space with depth reconstruction for ambient occlusion |
+| `blur.frag.hlsl` | 4x4 box blur for smoothing the raw SSAO output |
+| `composite.frag.hlsl` | Combines scene color with blurred SSAO factor, supports display mode switching |
+
 ## Building
 
 ```bash

@@ -167,6 +167,19 @@ output.clip_pos = float4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, 0.0, 1.0);
 This technique avoids creating a vertex buffer for a trivial quad and is
 the standard approach for post-processing passes (bloom, blur, SSAO, etc.).
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices to clip and world space, computes light-space positions for three cascaded shadow maps |
+| `scene.frag.hlsl` | Blinn-Phong lighting with cascaded shadow mapping and 3x3 PCF, outputs to HDR floating-point target |
+| `shadow.vert.hlsl` | Depth-only vertex shader for shadow map generation |
+| `shadow.frag.hlsl` | Empty fragment shader for the shadow pass (depth written automatically) |
+| `grid.vert.hlsl` | Grid vertex shader with light-space positions for cascaded shadow sampling |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with cascaded shadow mapping and HDR output |
+| `tonemap.vert.hlsl` | Fullscreen quad via `SV_VertexID` for the tone mapping pass |
+| `tonemap.frag.hlsl` | Reads the HDR render target and compresses to LDR using Reinhard or ACES tone mapping |
+
 ## Building
 
 ```bash

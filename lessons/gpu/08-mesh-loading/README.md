@@ -225,6 +225,13 @@ SDL_DrawGPUPrimitives(pass, state->mesh_vertex_count, 1, 0, 0);
 
 One draw call renders the entire shuttle — all 6,708 vertices (2,236 triangles).
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `mesh.vert.hlsl` | Transforms mesh vertices via the MVP matrix and passes UV coordinates for texture sampling |
+| `mesh.frag.hlsl` | Samples the diffuse texture at interpolated UVs for flat (unlit) texture mapping |
+
 ## Building and running
 
 ```bash

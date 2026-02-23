@@ -102,6 +102,13 @@ Then regenerate the C headers (Python):
 python scripts/spirv_to_header.py shaders/compiled/triangle.vert.spv triangle_vert_spirv shaders/compiled/triangle_vert_spirv.h
 ```
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `triangle.vert.hlsl` | Passes 2D position and per-vertex RGB color through to the rasterizer |
+| `triangle.frag.hlsl` | Outputs the interpolated vertex color as the final pixel color |
+
 ## Building
 
 ```bash

@@ -197,6 +197,13 @@ This lesson uses:
 | Space | Pause/resume animation |
 | Escape | Quit |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `noise.vert.hlsl` | Fullscreen quad via `SV_VertexID` for noise visualization |
+| `noise.frag.hlsl` | GPU noise functions: white noise, value noise, gradient (Perlin) noise, fBm, domain warping, and procedural terrain coloring |
+
 ## Building
 
 ```bash

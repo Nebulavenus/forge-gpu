@@ -177,6 +177,13 @@ Key math library functions:
 | `mat4_rotate_y(angle)` | Y-axis rotation matrix |
 | `mat4_scale(v)` | Scale matrix |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices via the MVP matrix with a view matrix rebuilt each frame from camera position and quaternion |
+| `scene.frag.hlsl` | Outputs interpolated vertex color without texturing or lighting |
+
 ## Building
 
 ```bash

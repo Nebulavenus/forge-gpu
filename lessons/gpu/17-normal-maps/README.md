@@ -230,6 +230,15 @@ This lesson uses:
 - **Coordinate Spaces** — [Math Lesson 02](../../math/02-coordinate-spaces/)
   for understanding tangent space as a local coordinate system
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Constructs a TBN matrix in world space using Gram-Schmidt re-orthogonalization and tangent handedness |
+| `scene.frag.hlsl` | Normal mapping with selectable shading modes (flat, per-vertex, normal-mapped) and Blinn-Phong lighting |
+| `grid.vert.hlsl` | Transforms the procedural floor grid quad to clip space |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with Blinn-Phong lighting |
+
 ## Building
 
 ```bash

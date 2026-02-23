@@ -119,6 +119,13 @@ emphasizes aliasing artifacts.
 | Animation | Rotation | Scale pulsing (sine wave) |
 | Interaction | None | SPACE to cycle samplers |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `quad.vert.hlsl` | Scales UVs to tile the texture and pulses the quad size with a sine wave to show mipmap transitions |
+| `quad.frag.hlsl` | Samples the texture — the GPU automatically selects the mip level based on screen-space derivatives |
+
 ## Building and running
 
 ```bash

@@ -136,6 +136,15 @@ This lesson uses:
 - **View matrix** — [Math Lesson 09](../../math/09-view-matrix/) for the
   first-person camera
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `material.vert.hlsl` | Transforms vertices to clip and world space with normal transformation via adjugate transpose |
+| `material.frag.hlsl` | Per-material Blinn-Phong lighting with full RGB ambient, diffuse, and specular colors |
+| `grid.vert.hlsl` | Transforms the procedural floor grid quad to clip space |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with Blinn-Phong lighting |
+
 ## Building
 
 ```bash

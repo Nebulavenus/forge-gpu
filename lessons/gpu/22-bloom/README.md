@@ -233,6 +233,20 @@ This lesson uses:
 | Up / Down | Bloom intensity +/- |
 | Left / Right | Bloom threshold +/- |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms scene vertices to clip and world space for point light lighting |
+| `scene.frag.hlsl` | Blinn-Phong lighting with point light attenuation, outputs HDR color |
+| `emissive.frag.hlsl` | Outputs a constant bright HDR emission color for emissive objects |
+| `bloom_downsample.frag.hlsl` | 13-tap weighted downsample with Karis averaging and brightness threshold |
+| `bloom_upsample.frag.hlsl` | 9-tap tent filter upsample with additive blending |
+| `fullscreen.vert.hlsl` | Fullscreen triangle via `SV_VertexID` for post-processing passes |
+| `tonemap.frag.hlsl` | Tone mapping with bloom compositing before LDR compression |
+| `grid.vert.hlsl` | Grid vertex shader for the point light scene |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with point light attenuation and HDR output |
+
 ## Building
 
 ```bash

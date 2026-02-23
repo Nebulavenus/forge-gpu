@@ -194,6 +194,21 @@ This lesson uses:
 - `mat4_perspective`, `mat4_look_at`, `mat4_multiply`, `vec3_normalize` from
   [`common/math/forge_math.h`](../../../common/math/README.md)
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `scene.vert.hlsl` | Transforms vertices with spotlight projection coordinates for gobo pattern sampling |
+| `scene.frag.hlsl` | Blinn-Phong with spotlight cone falloff, gobo texture projection, and shadow mapping |
+| `shadow.vert.hlsl` | Transforms vertices for spotlight shadow map generation |
+| `shadow.frag.hlsl` | Empty fragment shader for depth-only shadow pass |
+| `grid.vert.hlsl` | Grid vertex shader with spotlight projection coordinates |
+| `grid.frag.hlsl` | Anti-aliased procedural grid with spotlight, gobo projection, and shadow receiving |
+| `tonemap.vert.hlsl` | Fullscreen quad via `SV_VertexID` for the tone mapping pass |
+| `tonemap.frag.hlsl` | Tone mapping with bloom compositing |
+| `bloom_downsample.frag.hlsl` | 13-tap weighted downsample with Karis averaging |
+| `bloom_upsample.frag.hlsl` | 9-tap tent filter upsample with additive blending |
+
 ## Building
 
 ```bash

@@ -174,6 +174,13 @@ output.position = mul(mvp, float4(input.position, 1.0));
 | Interaction | SPACE to cycle samplers | None (auto-rotation) |
 | Window | Fixed size | Resizable (depth texture recreated) |
 
+## Shaders
+
+| File | Purpose |
+|------|---------|
+| `cube.vert.hlsl` | Transforms 3D vertices from object space to clip space using the Model-View-Projection matrix |
+| `cube.frag.hlsl` | Outputs the interpolated per-vertex color with no texturing or lighting |
+
 ## Building and running
 
 ```bash
