@@ -41,6 +41,7 @@ source code into a working program.
 | 06 | [Reading Error Messages](06-reading-error-messages/) | Build pipeline phases, compiler errors, linker errors, runtime crashes, warnings, systematic fixing strategy |
 | 07 | [Using a Debugger](07-using-a-debugger/) | Breakpoints, stepping, inspecting variables, call stack, conditional breakpoints, watchpoints |
 | 08 | [Debugging Graphics with RenderDoc](08-renderdoc/) | GPU frame capture, debug groups and labels, Event Browser, Pipeline State, Texture/Mesh Viewer, in-application API |
+| 09 | [HLSL Shared Headers](09-hlsl-shared-headers/) | `#include` in HLSL, `.hlsli` files, include guards, `-I` search paths, comparison to C headers |
 
 <!-- Add lessons here as they are created -->
 

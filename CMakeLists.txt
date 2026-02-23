@@ -74,6 +74,7 @@ add_subdirectory(lessons/engine/05-header-only-libraries)
 add_subdirectory(lessons/engine/06-reading-error-messages)
 add_subdirectory(lessons/engine/07-using-a-debugger)
 add_subdirectory(lessons/engine/08-renderdoc)
+add_subdirectory(lessons/engine/09-hlsl-shared-headers)
 
 # ── GPU Lessons (require real SDL3) ─────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)

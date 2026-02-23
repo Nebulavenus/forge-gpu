@@ -867,3 +867,6 @@ for an entire region of parameter space.
   Perspective matrix and inverse projection
 - [Lesson 11 — Compute Shaders](../11-compute-shaders/README.md) —
   Compute pipeline and storage texture fundamentals
+- [Engine Lesson 09 — HLSL Shared Headers](../../engine/09-hlsl-shared-headers/README.md) —
+  How `atmosphere_params.hlsli` works: `#include` in HLSL, `.hlsli` files,
+  include guards, and `-I` search paths
