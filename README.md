@@ -153,7 +153,10 @@ Learn the SDL GPU API and modern rendering techniques:
 <a href="lessons/gpu/26-procedural-sky/"><img src="lessons/gpu/26-procedural-sky/assets/screenshot.png" width="200" alt="Procedural Sky" /></a><br />
 <b>26</b> — Procedural Sky
 </td>
-<td></td>
+<td align="center">
+<a href="lessons/gpu/27-ssao/"><img src="lessons/gpu/27-ssao/assets/screenshot.png" width="200" alt="SSAO" /></a><br />
+<b>27</b> — SSAO
+</td>
 </tr>
 </table>
 
@@ -465,6 +468,7 @@ project to enable Claude to build games and tools with you.
 | [point-light-shadows](.claude/skills/point-light-shadows/SKILL.md) | `/point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
 | [gobo-spotlight](.claude/skills/gobo-spotlight/SKILL.md) | `/gobo-spotlight` | Projected-texture spotlight, cone falloff, gobo pattern projection, single 2D shadow map |
 | [shader-noise](.claude/skills/shader-noise/SKILL.md) | `/shader-noise` | GPU noise functions (hash, value, Perlin, fBm, domain warping), procedural textures, dithering |
+| [ssao](.claude/skills/ssao/SKILL.md) | `/ssao` | Screen-space ambient occlusion, hemisphere kernel sampling, depth reconstruction, noise rotation, blur pass, AO compositing |
 
 ### Development skills (used within this repo)
 

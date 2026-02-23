@@ -104,6 +104,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/24-gobo-spotlight)
     add_subdirectory(lessons/gpu/25-shader-noise)
     add_subdirectory(lessons/gpu/26-procedural-sky)
+    add_subdirectory(lessons/gpu/27-ssao)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

@@ -59,7 +59,7 @@ Infrastructure that supports all lessons:
 
 ### Screen-Space Effects
 
-- [ ] **Lesson 27 — SSAO** — Screen-space ambient occlusion; sampling hemisphere kernel in view space; depth buffer reconstruction; random rotation via noise texture; blur pass for smooth results; combining AO factor with lighting (depends on Lesson 21 for render-to-texture pattern)
+- [x] **Lesson 27 — SSAO** — Screen-space ambient occlusion; sampling hemisphere kernel in view space; depth buffer reconstruction; random rotation via noise texture; blur pass for smooth results; combining AO factor with lighting (depends on Lesson 21 for render-to-texture pattern)
 - [ ] **Lesson 28 — Screen-Space Reflections (SSR)** — Ray marching against the depth buffer in screen space; hierarchical tracing for performance; handling misses and fallback to environment map; combining SSR with existing reflections from Lesson 14
 
 ### Reflections
