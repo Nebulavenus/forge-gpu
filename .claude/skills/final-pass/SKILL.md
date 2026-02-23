@@ -289,7 +289,60 @@ sections.
 
 ---
 
-## 10. Markdown linting
+## 10. Concept introduction for new readers
+
+**Lessons are written for readers who know nothing unless a previous lesson
+taught it.** Every concept, API, tool, or term that appears for the first time
+must be briefly defined in the README — or the README must link to the specific
+earlier lesson or engine/math lesson that introduced it.
+
+Do not assume the reader knows what SDL is, what a GPU is, what a window is,
+what callbacks are, what a shader is, or what any graphics API term means —
+unless the lesson's prerequisites explicitly list a prior lesson that covered
+it.
+
+**What to check:**
+
+- [ ] Every SDL API function used for the first time in the lesson series is
+  briefly explained (what it does, why it is needed) — not just named
+- [ ] Every graphics or GPU concept introduced for the first time (e.g.
+  swapchain, render pass, command buffer, pipeline, vertex buffer, shader,
+  depth buffer) has a plain-language definition before or alongside its first
+  use
+- [ ] Domain-specific terms (e.g. "sRGB", "linear color space", "NDC",
+  "back-face culling") are defined when first used, or explicitly deferred
+  with a note pointing to the future lesson that will cover them
+- [ ] If the lesson is early in the sequence (especially GPU lesson 01), it
+  explains foundational context: what SDL is, what a GPU is and why we use
+  one, what a "window" means in this context, and what Vulkan / Direct3D 12
+  / Metal are
+- [ ] The callback architecture (`SDL_AppInit`, `SDL_AppEvent`,
+  `SDL_AppIterate`, `SDL_AppQuit`) is explained if this is the first lesson
+  to use it — readers may not know what "SDL drives the main loop" means
+- [ ] Links to **engine lessons** are provided where they offer deeper
+  background on foundational topics:
+  - [Engine 01 — Intro to C](../../engine/01-intro-to-c/) for C language
+    constructs (types, structs, pointers, memory)
+  - [Engine 02 — CMake Fundamentals](../../engine/02-cmake-fundamentals/)
+    for build system questions
+  - [Engine 03 — FetchContent](../../engine/03-fetchcontent-dependencies/)
+    for how SDL3 arrives in the project
+  - [Engine 06 — Reading Error Messages](../../engine/06-reading-error-messages/)
+    for troubleshooting build or runtime failures
+- [ ] Links to **math lessons** are provided when the lesson uses math
+  concepts (vectors, matrices, coordinate spaces) for the first time
+- [ ] No concept is used in the README or code comments with the implicit
+  assumption that "everyone knows what this is" — if in doubt, add a
+  one-sentence definition
+
+**How to check:** Read the README from the perspective of someone who has
+never programmed a GPU application. For each technical term or API call, ask:
+"Was this explained in this lesson or a linked prior lesson?" If the answer is
+no, it needs a definition or a link.
+
+---
+
+## 11. Markdown linting
 
 Run the linter and resolve all issues.
 
@@ -306,7 +359,7 @@ npx markdownlint-cli2 "lessons/gpu/NN-name/**/*.md" "lessons/math/NN-name/**/*.m
 
 ---
 
-## 11. Python linting (if scripts were modified)
+## 12. Python linting (if scripts were modified)
 
 If any Python scripts in `scripts/` were added or modified:
 
@@ -321,7 +374,7 @@ ruff format --check scripts/
 
 ---
 
-## 12. Build and shader compilation
+## 13. Build and shader compilation
 
 Verify the lesson compiles and shaders are up to date.
 
@@ -353,9 +406,10 @@ Final Pass Results — Lesson NN: Name
  7. Spec accuracy         ✅ PASS
  8. Skill completeness    ✅ PASS
  9. README structure      ✅ PASS
-10. Markdown lint         ✅ PASS
-11. Python lint           ⏭️  SKIP  (no scripts modified)
-12. Build & shaders       ✅ PASS
+10. Concept introduction  ✅ PASS
+11. Markdown lint         ✅ PASS
+12. Python lint           ⏭️  SKIP  (no scripts modified)
+13. Build & shaders       ✅ PASS
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

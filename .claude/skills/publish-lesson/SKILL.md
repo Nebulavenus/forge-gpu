@@ -69,6 +69,26 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] Has "AI skill" section linking to `.claude/skills/<topic>/SKILL.md`
 - [ ] Has "Exercises" section (3-4 exercises)
 
+### Concept introduction for new readers
+
+Lessons assume readers know nothing unless a previous lesson taught it.
+Every concept, API, tool, or term that appears for the first time must be
+briefly defined in the README — or the README must link to the specific
+earlier lesson (GPU, engine, or math) that introduced it.
+
+- [ ] Every new SDL API function is briefly explained (what it does, why it
+  is needed) — not just named
+- [ ] Every new graphics or GPU concept (e.g. swapchain, render pass, command
+  buffer, pipeline, vertex buffer) has a plain-language definition
+- [ ] Domain-specific terms are defined when first used, or explicitly
+  deferred with a note pointing to the lesson that will cover them
+- [ ] For early lessons: foundational context is provided (what SDL is, what
+  a GPU is, what a window is, what the graphics backends are)
+- [ ] Links to engine lessons are provided where they offer background on
+  C language, build system, or debugging topics
+- [ ] Links to math lessons are provided when math concepts appear for the
+  first time
+
 ### Skill file structure
 
 - [ ] YAML frontmatter with `name`, `description`, and appropriate flags
