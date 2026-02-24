@@ -4138,6 +4138,88 @@ def _coord_pipeline():
     return world_verts, view_verts, clip4, ndc_verts, screen_x, screen_y
 
 
+def _scenery_world_verts():
+    """Return (ground, road) quad arrays in GPU world-space coordinates.
+
+    Matches the yard and road drawn in the world-space / view-space diagrams
+    so the same scenery appears consistently across all pipeline stages.
+    """
+    world_verts, _, _, _, _, _ = _coord_pipeline()
+    hc = world_verts.mean(axis=0)
+
+    gnd_size = 7.0
+    ghs = gnd_size / 2.0
+    ground = np.array(
+        [
+            [hc[0] - ghs, 0.0, hc[2] - ghs],
+            [hc[0] + ghs, 0.0, hc[2] - ghs],
+            [hc[0] + ghs, 0.0, hc[2] + ghs],
+            [hc[0] - ghs, 0.0, hc[2] + ghs],
+        ]
+    )
+
+    road_x0, road_x1 = -2.0, 10.0
+    road_z = hc[2] + 5.0
+    road_hw = 1.5 / 2.0
+    road = np.array(
+        [
+            [road_x0, 0.0, road_z - road_hw],
+            [road_x1, 0.0, road_z - road_hw],
+            [road_x1, 0.0, road_z + road_hw],
+            [road_x0, 0.0, road_z + road_hw],
+        ]
+    )
+    return ground, road
+
+
+def _scenery_through_pipeline():
+    """Push ground/road through view → clip → NDC → screen.
+
+    Returns a dict with keys 'ground' and 'road', each containing
+    sub-dicts with 'clip4', 'ndc', 'screen_x', 'screen_y' arrays.
+    """
+    ground_w, road_w = _scenery_world_verts()
+
+    result = {}
+    for name, world_quad in [("ground", ground_w), ("road", road_w)]:
+        view = _xf3(world_quad, _VIEW_MAT)
+        clip4 = _xf4(view, _PROJ_MAT)
+        ndc = clip4[:, :3] / clip4[:, 3:4]
+        sx = (ndc[:, 0] + 1.0) * 0.5 * _SCR_W
+        sy = (1.0 - ndc[:, 1]) * 0.5 * _SCR_H
+        result[name] = {"clip4": clip4, "ndc": ndc, "screen_x": sx, "screen_y": sy}
+    return result
+
+
+def _add_scenery_2d(ax, ground_xy, road_xy):
+    """Draw ground and road as 2-D polygons on *ax* (for clip / NDC / screen).
+
+    *ground_xy* and *road_xy* are Nx2 arrays of (x, y) for each quad.
+    """
+    ax.add_patch(
+        Polygon(
+            ground_xy,
+            closed=True,
+            facecolor=STYLE["accent3"],
+            edgecolor=STYLE["grid"],
+            linewidth=0.5,
+            alpha=0.30,
+            zorder=2,
+        )
+    )
+    ax.add_patch(
+        Polygon(
+            road_xy,
+            closed=True,
+            facecolor=STYLE["grid"],
+            edgecolor=STYLE["text_dim"],
+            linewidth=0.5,
+            alpha=0.35,
+            zorder=2,
+        )
+    )
+
+
 # ── Coordinate-system adapter ─────────────────────────────────────────────
 #
 # GPU convention: Y-up (x right, y up, z toward viewer).
@@ -4560,37 +4642,100 @@ def diagram_coord_view_space():
 
 
 def diagram_coord_clip_space():
-    """House in clip space with w component encoding depth."""
-    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    """House shown from the camera's perspective in clip-space coordinates.
 
-    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
-    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+    Uses a 2D view (clip x vs clip y) with scenery.  The w annotation
+    highlights that the homogeneous w component is no longer 1 after
+    projection — the key property that distinguishes clip space from
+    the earlier spaces.
+    """
+    fig = plt.figure(figsize=(9, 5.5), facecolor=STYLE["bg"])
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(STYLE["bg"])
 
     _, _, clip4, _, _, _ = _coord_pipeline()
-    clip_xyz = clip4[:, :3]
     clip_w = clip4[:, 3]
 
-    mpl_clip = _gpu_to_mpl(clip_xyz)
-    _add_house_3d(ax, mpl_clip)
+    # --- Scenery (ground + road) projected into clip space ---
+    scenery = _scenery_through_pipeline()
+    ground_clip4 = scenery["ground"]["clip4"]
+    road_clip4 = scenery["road"]["clip4"]
+    _add_scenery_2d(
+        ax,
+        np.column_stack([ground_clip4[:, 0], ground_clip4[:, 1]]),
+        np.column_stack([road_clip4[:, 0], road_clip4[:, 1]]),
+    )
 
-    # Annotate the roof peak (highest mpl-z = highest GPU y) with its w value
-    peak_idx = np.argmax(mpl_clip[:, 2])
-    px, py, pz = mpl_clip[peak_idx]
+    # --- House faces (painter's algorithm using clip z / w for depth) ---
+    clip_depth = clip4[:, 2] / clip_w
+    face_depths = []
+    for face_idx, idx_list in enumerate(_HOUSE_FACES):
+        avg_z = np.mean(clip_depth[idx_list])
+        face_depths.append((avg_z, face_idx, idx_list))
+    face_depths.sort(key=lambda t: t[0], reverse=True)
+
+    for draw_order, (_, face_idx, idx_list) in enumerate(face_depths):
+        fx = clip4[idx_list, 0]
+        fy = clip4[idx_list, 1]
+        poly = np.column_stack([fx, fy])
+        ax.add_patch(
+            Polygon(
+                poly,
+                closed=True,
+                facecolor=_HOUSE_COLORS[face_idx],
+                edgecolor=STYLE["text_dim"],
+                linewidth=0.6,
+                alpha=0.85,
+                zorder=3 + draw_order,
+            )
+        )
+
+    # Annotate w at the roof peak (highest clip y)
+    peak_idx = int(np.argmax(clip4[:, 1]))
     w_val = clip_w[peak_idx]
-    ax.text(
-        px + 0.3,
-        py,
-        pz + 0.5,
+    ax.annotate(
         f"w = {w_val:.1f}",
+        xy=(clip4[peak_idx, 0], clip4[peak_idx, 1]),
+        xytext=(clip4[peak_idx, 0] + 1.2, clip4[peak_idx, 1] + 1.0),
         color=STYLE["warn"],
         fontsize=11,
         fontweight="bold",
+        arrowprops={"arrowstyle": "->", "color": STYLE["warn"], "lw": 1.2},
         path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
     )
 
-    _set_equal_3d(ax, mpl_clip, pad=1.5)
-    ax.view_init(elev=25, azim=-55)
-    _style_3d(ax, "4. Clip Space", xlabel="clip x", ylabel="clip z", zlabel="clip y")
+    # Note about clip-space boundaries
+    ax.text(
+        0.02,
+        0.02,
+        "visible when  |x|, |y| \u2264 w",
+        color=STYLE["text_dim"],
+        fontsize=8,
+        transform=ax.transAxes,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    # Auto-scale with some padding around the house
+    all_x = np.concatenate([clip4[:, 0], ground_clip4[:, 0]])
+    all_y = np.concatenate([clip4[:, 1], ground_clip4[:, 1]])
+    pad = 2.0
+    ax.set_xlim(all_x.min() - pad, all_x.max() + pad)
+    ax.set_ylim(all_y.min() - pad, all_y.max() + pad)
+    ax.set_aspect("equal")
+    ax.tick_params(colors=STYLE["axis"], labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_color(STYLE["grid"])
+        spine.set_linewidth(0.5)
+    ax.grid(True, color=STYLE["grid"], linewidth=0.5, alpha=0.3)
+    ax.set_xlabel("clip x", color=STYLE["axis"], fontsize=10)
+    ax.set_ylabel("clip y", color=STYLE["axis"], fontsize=10)
+    ax.set_title(
+        "4. Clip Space",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        pad=14,
+    )
 
     fig.tight_layout()
     save(fig, _COORD_LESSON, "coord_clip_space.png")
@@ -4600,60 +4745,107 @@ def diagram_coord_clip_space():
 
 
 def diagram_coord_ndc():
-    """House normalised inside the visible volume after perspective divide."""
-    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    """House shown from the camera's perspective in NDC x-y space.
 
-    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
-    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+    Uses a 2D front-facing view so learners see what the camera sees,
+    with coordinates normalised to [-1, 1].  The NDC boundary rectangle
+    makes the visible region obvious and bridges naturally into the
+    screen-space diagram that follows.
+    """
+    fig = plt.figure(figsize=(9, 5.5), facecolor=STYLE["bg"])
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(STYLE["bg"])
 
     _, _, _, ndc_verts, _, _ = _coord_pipeline()
 
-    mpl_ndc = _gpu_to_mpl(ndc_verts)
-    _add_house_3d(ax, mpl_ndc)
+    # NDC boundary rectangle: x ∈ [-1, 1], y ∈ [-1, 1]
+    ax.add_patch(
+        Rectangle(
+            (-1, -1),
+            2,
+            2,
+            linewidth=2,
+            edgecolor=STYLE["warn"],
+            facecolor=STYLE["surface"],
+            alpha=0.25,
+            zorder=1,
+        )
+    )
 
-    # Visible-volume wireframe box (GPU: x,y ∈ [-1,1], z ∈ [0,1]).
-    # After Y↔Z swap → mpl: x ∈ [-1,1], y(=gpu_z) ∈ [0,1], z(=gpu_y) ∈ [-1,1].
-    mx = [-1, 1]  # mpl-x range  (gpu x)
-    my = [0, 1]  # mpl-y range  (gpu z)
-    mz = [-1, 1]  # mpl-z range  (gpu y)
-    box_edges = []
-    # Edges along mpl-x
-    for yi in my:
-        for zi in mz:
-            box_edges.append([[mx[0], yi, zi], [mx[1], yi, zi]])
-    # Edges along mpl-y
-    for xi in mx:
-        for zi in mz:
-            box_edges.append([[xi, my[0], zi], [xi, my[1], zi]])
-    # Edges along mpl-z
-    for xi in mx:
-        for yi in my:
-            box_edges.append([[xi, yi, mz[0]], [xi, yi, mz[1]]])
+    # --- Scenery (ground + road) projected into NDC ---
+    scenery = _scenery_through_pipeline()
+    ground_ndc = scenery["ground"]["ndc"]
+    road_ndc = scenery["road"]["ndc"]
+    _add_scenery_2d(
+        ax,
+        np.column_stack([ground_ndc[:, 0], ground_ndc[:, 1]]),
+        np.column_stack([road_ndc[:, 0], road_ndc[:, 1]]),
+    )
 
-    for seg in box_edges:
-        xs, ys, zs = zip(*seg)
-        ax.plot(xs, ys, zs, color=STYLE["warn"], lw=0.8, alpha=0.5)
+    # Depth for painter's algorithm (NDC z — higher = farther)
+    ndc_z = ndc_verts[:, 2]
 
+    # Sort faces back-to-front so nearer faces draw on top
+    face_depths = []
+    for face_idx, idx_list in enumerate(_HOUSE_FACES):
+        avg_z = np.mean(ndc_z[idx_list])
+        face_depths.append((avg_z, face_idx, idx_list))
+    face_depths.sort(key=lambda t: t[0], reverse=True)  # farthest first
+
+    for draw_order, (_, face_idx, idx_list) in enumerate(face_depths):
+        fx = ndc_verts[idx_list, 0]
+        fy = ndc_verts[idx_list, 1]
+        poly = np.column_stack([fx, fy])
+        ax.add_patch(
+            Polygon(
+                poly,
+                closed=True,
+                facecolor=_HOUSE_COLORS[face_idx],
+                edgecolor=STYLE["text_dim"],
+                linewidth=0.6,
+                alpha=0.85,
+                zorder=3 + draw_order,
+            )
+        )
+
+    # Boundary label
     ax.text(
-        -1.0,
-        -0.15,
-        -1.0,
-        "visible volume",
+        0.0,
+        -1.0 - 0.08,
+        "visible region  [-1, 1] \u00d7 [-1, 1]",
         color=STYLE["warn"],
-        fontsize=8,
+        fontsize=9,
+        ha="center",
         path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
     )
 
-    ax.set_xlim(-1.5, 1.5)
-    ax.set_ylim(-0.3, 1.3)
-    ax.set_zlim(-1.5, 1.5)
-    ax.view_init(elev=25, azim=-55)
-    _style_3d(
-        ax,
+    # Z-range annotation
+    ax.text(
+        1.0,
+        1.0 + 0.06,
+        "z \u2208 [0, 1]  (depth)",
+        color=STYLE["text_dim"],
+        fontsize=8,
+        ha="right",
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    ax.set_xlim(-1.35, 1.35)
+    ax.set_ylim(-1.35, 1.35)
+    ax.set_aspect("equal")
+    ax.tick_params(colors=STYLE["axis"], labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_color(STYLE["grid"])
+        spine.set_linewidth(0.5)
+    ax.grid(True, color=STYLE["grid"], linewidth=0.5, alpha=0.3)
+    ax.set_xlabel("ndc x", color=STYLE["axis"], fontsize=10)
+    ax.set_ylabel("ndc y", color=STYLE["axis"], fontsize=10)
+    ax.set_title(
         "5. Normalized Device Coordinates",
-        xlabel="ndc x",
-        ylabel="ndc z",
-        zlabel="ndc y",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        pad=14,
     )
 
     fig.tight_layout()
@@ -4674,7 +4866,7 @@ def diagram_coord_screen_space():
     # Per-vertex depth in view space (GPU z) for painter's algorithm
     screen_z = ndc_verts[:, 2]
 
-    # Screen boundary
+    # Screen boundary (drawn before scenery so it sits behind everything)
     ax.add_patch(
         Rectangle(
             (0, 0),
@@ -4686,6 +4878,14 @@ def diagram_coord_screen_space():
             alpha=0.25,
             zorder=1,
         )
+    )
+
+    # --- Scenery (ground + road) projected into screen space ---
+    scenery = _scenery_through_pipeline()
+    _add_scenery_2d(
+        ax,
+        np.column_stack([scenery["ground"]["screen_x"], scenery["ground"]["screen_y"]]),
+        np.column_stack([scenery["road"]["screen_x"], scenery["road"]["screen_y"]]),
     )
 
     # Sort faces back-to-front (painter's algorithm) so nearer faces
