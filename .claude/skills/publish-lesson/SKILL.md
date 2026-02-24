@@ -59,8 +59,10 @@ Before committing, verify the lesson has all required pieces from the
 
 - [ ] Has `# Lesson NN — Title` header
 - [ ] Has "What you'll learn" section
-- [ ] Has "Result" section with a screenshot (`![...](assets/screenshot.png)`)
-  — **not** just a placeholder
+- [ ] **GPU lessons:** Has "Result" section near the top with a screenshot
+  (`![...](assets/screenshot.png)`) — **not** just a placeholder
+- [ ] **Math lessons:** Has "Result" section **after** "Building" (not near the
+  top) — math results are text output that readers should see after the lesson
 - [ ] Has "Key concepts" section explaining new APIs
 - [ ] **GPU lessons only:** If the lesson has shader files, has a "Shaders"
   section immediately before "Building" that lists each shader file with a

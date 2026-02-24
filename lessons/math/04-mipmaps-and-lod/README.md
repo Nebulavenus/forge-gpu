@@ -8,13 +8,6 @@
 - LOD selection (how the GPU picks the right mip level)
 - How `forge_log2f`, `forge_clampf`, and `forge_trilerpf` connect to the GPU
 
-## Result
-
-After running this lesson you will understand how mip chains are computed (level
-count, memory cost), how the GPU selects a mip level via LOD, and how trilinear
-interpolation blends between two mip levels for smooth transitions. The console
-output walks through each concept with concrete numbers.
-
 ## Key concepts
 
 - **Mip chain** — a series of progressively-halved textures, from full size down to 1x1
@@ -29,6 +22,13 @@ python scripts/run.py math/04
 ```
 
 Requires SDL3 and a C99 compiler (see project root README for full setup).
+
+## Result
+
+After running this lesson you will understand how mip chains are computed (level
+count, memory cost), how the GPU selects a mip level via LOD, and how trilinear
+interpolation blends between two mip levels for smooth transitions. The console
+output walks through each concept with concrete numbers.
 
 ## The problem: aliasing
 

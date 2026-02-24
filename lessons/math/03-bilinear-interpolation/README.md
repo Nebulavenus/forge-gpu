@@ -11,44 +11,6 @@ the 4 nearest texels into a smooth result.
 - The difference between **LINEAR** and **NEAREST** filtering
 - How **UV coordinates** map to texel coordinates and fractional blend weights
 
-## Result
-
-A console program that walks through bilinear interpolation step by step,
-from the 1D lerp building block to a full texture sampling example with
-color blending.
-
-**Example output:**
-
-```text
-==============================================================
-  Bilinear Interpolation
-==============================================================
-
-Bilinear interpolation blends four values on a 2D grid based
-on a fractional position. It's what the GPU does when a texture
-sampler uses LINEAR filtering.
-
-1. LINEAR INTERPOLATION (LERP) REFRESHER
---------------------------------------------------------------
-  lerp(a, b, t) = a + t * (b - a)
-  Blends between two values based on t in [0, 1].
-
-  a = 10.0,  b = 30.0
-
-  t = 0.00  ->  lerp = 10.0   (100% a)
-  t = 0.25  ->  lerp = 15.0   ( 75% a + 25% b)
-  t = 0.50  ->  lerp = 20.0   ( 50% a + 50% b)
-  t = 0.75  ->  lerp = 25.0   ( 25% a + 75% b)
-  t = 1.00  ->  lerp = 30.0   (100% b)
-
-  Lerp is the 1D building block. Bilinear interpolation
-  extends it to 2D by doing three lerps.
-```
-
-**Important:** Copy output directly from running the program — don't manually
-type it. The full output includes sections on step-by-step bilerp, special
-cases, texture sampling, color blending, and nearest vs linear comparison.
-
 ## Key concepts
 
 - **Lerp (linear interpolation)** — Blends two values: `lerp(a, b, t) = a + t * (b - a)`. When t=0 you get a, when t=1 you get b, when t=0.5 you get the midpoint
@@ -158,6 +120,44 @@ python scripts/run.py math/03
 
 The demo walks through lerp, bilinear interpolation step-by-step, texture
 sampling, color blending, and a nearest vs linear comparison.
+
+## Result
+
+A console program that walks through bilinear interpolation step by step,
+from the 1D lerp building block to a full texture sampling example with
+color blending.
+
+**Example output:**
+
+```text
+==============================================================
+  Bilinear Interpolation
+==============================================================
+
+Bilinear interpolation blends four values on a 2D grid based
+on a fractional position. It's what the GPU does when a texture
+sampler uses LINEAR filtering.
+
+1. LINEAR INTERPOLATION (LERP) REFRESHER
+--------------------------------------------------------------
+  lerp(a, b, t) = a + t * (b - a)
+  Blends between two values based on t in [0, 1].
+
+  a = 10.0,  b = 30.0
+
+  t = 0.00  ->  lerp = 10.0   (100% a)
+  t = 0.25  ->  lerp = 15.0   ( 75% a + 25% b)
+  t = 0.50  ->  lerp = 20.0   ( 50% a + 50% b)
+  t = 0.75  ->  lerp = 25.0   ( 25% a + 75% b)
+  t = 1.00  ->  lerp = 30.0   (100% b)
+
+  Lerp is the 1D building block. Bilinear interpolation
+  extends it to 2D by doing three lerps.
+```
+
+**Important:** Copy output directly from running the program — don't manually
+type it. The full output includes sections on step-by-step bilerp, special
+cases, texture sampling, color blending, and nearest vs linear comparison.
 
 ## Exercises
 

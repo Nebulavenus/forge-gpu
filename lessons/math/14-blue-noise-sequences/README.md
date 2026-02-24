@@ -18,16 +18,6 @@ sequences and blue noise solve this for rendering.
 - Applications: **dithering** (replacing banding with imperceptible noise),
   **sampling** (anti-aliasing, AO kernels), and **stippling**
 
-## Result
-
-The demo program runs in the console and shows:
-
-1. Side-by-side ASCII plots of random vs low-discrepancy point distributions
-2. Halton, R2, and Sobol sequence values with explanations
-3. Blue noise vs random point placement
-4. Discrepancy measurements comparing all sequences
-5. Dithering, sampling, and stippling applications
-
 ## Key concepts
 
 - **Discrepancy** — A measure of how uniformly a point set fills a region.
@@ -413,6 +403,16 @@ build\lessons\math\14-blue-noise-sequences\Debug\14-blue-noise-sequences.exe
 ```
 
 The program outputs text to the console — no window is created.
+
+## Result
+
+The demo program runs in the console and shows:
+
+1. Side-by-side ASCII plots of random vs low-discrepancy point distributions
+2. Halton, R2, and Sobol sequence values with explanations
+3. Blue noise vs random point placement
+4. Discrepancy measurements comparing all sequences
+5. Dithering, sampling, and stippling applications
 
 ## Exercises
 

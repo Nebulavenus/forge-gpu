@@ -13,32 +13,6 @@ How 3D scenes map to 2D screens.
 - Asymmetric perspective for VR and multi-monitor setups
 - How to compare projections side by side
 
-## Result
-
-Running the program prints a guided walkthrough of the full projection pipeline:
-
-```text
-=============================================================
-  Math Lesson 06 — Projections
-  How 3D scenes map to 2D screens
-=============================================================
-
-── 1. Perspective without a matrix ────────────────────────
-  ...projecting points at increasing depth...
-
-── 2. The perspective projection matrix ───────────────────
-  ...90° FOV, 16:9 perspective matrix and clip-space output...
-
-── 3. Clip space to NDC (perspective divide) ──────────────
-  ...near plane → NDC z ≈ 0, far plane → NDC z ≈ 1...
-
-── 8. Comparing projections ───────────────────────────────
-  ...perspective shrinks with depth, orthographic stays constant...
-```
-
-Each section demonstrates one concept with concrete numbers so you can see
-exactly how the math transforms coordinates.
-
 ## Prerequisites
 
 - [Math Lesson 05 — Matrices](../05-matrices/) — matrix multiplication, identity,
@@ -251,6 +225,32 @@ build\lessons\math\06-projections\Debug\06-projections.exe
 # Linux / macOS
 ./build/lessons/math/06-projections/06-projections
 ```
+
+## Result
+
+Running the program prints a guided walkthrough of the full projection pipeline:
+
+```text
+=============================================================
+  Math Lesson 06 — Projections
+  How 3D scenes map to 2D screens
+=============================================================
+
+── 1. Perspective without a matrix ────────────────────────
+  ...projecting points at increasing depth...
+
+── 2. The perspective projection matrix ───────────────────
+  ...90° FOV, 16:9 perspective matrix and clip-space output...
+
+── 3. Clip space to NDC (perspective divide) ──────────────
+  ...near plane → NDC z ≈ 0, far plane → NDC z ≈ 1...
+
+── 8. Comparing projections ───────────────────────────────
+  ...perspective shrinks with depth, orthographic stays constant...
+```
+
+Each section demonstrates one concept with concrete numbers so you can see
+exactly how the math transforms coordinates.
 
 ## Exercises
 

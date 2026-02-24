@@ -13,134 +13,6 @@ work in every 3D engine.
 - Equivalence between look-at and quaternion-based view matrices
 - Camera movement using extracted basis vectors
 
-## Result
-
-Running the program prints a guided walkthrough of view matrix construction:
-
-```text
-=============================================================
-  Math Lesson 09 - View Matrix & Virtual Camera
-  Building view matrices from scratch
-=============================================================
-
--- 1. The camera as an inverse transform -------------------
-
-  Camera world transform:
-    |   1.0000   0.0000   0.0000   0.0000 |
-    |   0.0000   1.0000   0.0000   0.0000 |
-    |   0.0000   0.0000   1.0000   5.0000 |
-    |   0.0000   0.0000   0.0000   1.0000 |
-
-  View matrix (inverse):
-    |   1.0000   0.0000   0.0000  -0.0000 |
-    |   0.0000   1.0000   0.0000  -0.0000 |
-    |   0.0000   0.0000   1.0000  -5.0000 |
-    |   0.0000   0.0000   0.0000   1.0000 |
-
-  World * View = Identity? YES -- view is the inverse
-  World point = (1.0000, 2.0000, 3.0000)
-  In view space = (1.0000, 2.0000, -2.0000, 1.0000)
-  Camera is at Z=5, point is at Z=3
-  -> In view space, point is at Z=-2.0 (in front of camera)
-
--- 2. Extracting basis vectors from a quaternion -----------
-
-  Identity quaternion (no rotation):
-  Forward = (-0.0000, -0.0000, -1.0000)
-  Right   = (1.0000, 0.0000, 0.0000)
-  Up      = (0.0000, 1.0000, 0.0000)
-
-  After yaw=45, pitch=30 degrees:
-  Forward = (-0.6124, 0.5000, -0.6124)
-  Right   = (0.7071, 0.0000, -0.7071)
-  Up      = (0.3536, 0.8660, 0.3536)
-
-  Orthonormal basis check:
-    dot(forward, right) = 0.000000 (should be ~0)
-    dot(forward, up)    = 0.000000 (should be ~0)
-    dot(right, up)      = 0.000000 (should be ~0)
-    |forward| = 1.0000, |right| = 1.0000, |up| = 1.0000 (all ~1)
-    Orthonormal? YES
-  Optimized matches quat_rotate_vec3?
-    Forward: YES  Right: YES  Up: YES
-
--- 3. View matrix from position + quaternion ---------------
-
-  Camera position: (3.0, 2.0, 5.0)
-  Camera orientation: yaw=30, pitch=-15 degrees
-  Forward (where camera looks) = (-0.4830, -0.2588, -0.8365)
-  Right   (camera's right side) = (0.8660, 0.0000, -0.5000)
-  Up      (above camera's head) = (-0.1294, 0.9659, -0.2241)
-
-  View matrix:
-    |   0.8660   0.0000  -0.5000  -0.0981 |
-    |  -0.1294   0.9659  -0.2241  -0.4229 |
-    |   0.4830   0.2588   0.8365  -6.1491 |
-    |   0.0000   0.0000   0.0000   1.0000 |
-
-  Camera pos in view space = (0.0000, 0.0000, 0.0000, 1.0000)
-  At origin? YES (camera maps to (0,0,0) in view space)
-  Point 3 units ahead of camera:
-  World space = (1.5511, 1.2235, 2.4905)
-  View space = (-0.0000, 0.0000, -3.0000, 1.0000)
-  View-space Z is negative? YES (objects ahead have Z < 0)
-
--- 4. Look-at as a special case ----------------------------
-
-  Eye:    (0.0, 2.0, 5.0)
-  Target: (0.0, 0.0, 0.0)
-
-  View matrix (look-at):
-    |   1.0000  -0.0000   0.0000  -0.0000 |
-    |   0.0000   0.9285  -0.3714  -0.0000 |
-    |  -0.0000   0.3714   0.9285  -5.3852 |
-    |   0.0000   0.0000   0.0000   1.0000 |
-
-  Implied forward = (0.0000, -0.3714, -0.9285)
-  Implied right   = (1.0000, -0.0000, 0.0000)
-  Implied up      = (0.0000, 0.9285, -0.3714)
-  Eye in view space = (0.0000, 0.0000, 0.0000, 1.0000)
-  At origin? YES
-  Target in view space = (0.0000, -0.0000, -5.3852, 1.0000)
-  Target at -Z? YES (on the camera's -Z axis)
-
--- 5. View matrix in the MVP pipeline ----------------------
-
-  Pipeline: Model -> View -> Projection -> NDC
-  World vertex      = (1.0000, 0.0000, 0.0000)
-  After View        = (1.0000, -0.1693, -5.3825, 1.0000)
-  After Projection  = (1.1547, -0.2932, 5.2878, 5.3825)
-  After /w (NDC)  = (0.2145, -0.0545, 0.9824)
-  Combined MVP gives same NDC? YES
-  NDC range: X,Y in [-1,1], Z in [0,1]
-  Vertex in valid NDC range? YES (visible on screen)
-
--- 6. Equivalence: look-at vs quaternion -------------------
-
-  Eye: (3.0, 4.0, 10.0), Target: (0.0, 0.0, 0.0)
-  Look-at result  = (2.7777, 1.7562, -12.9692, 1.0000)
-  Quaternion result = (2.7777, 1.7562, -12.9692, 1.0000)
-  Matrices match? YES -- both methods produce the same view
-
--- 7. Camera movement demo ---------------------------------
-
-  Simulating camera movement (4 steps):
-  Step | Action        | Position                  | Yaw
-  -----|---------------|---------------------------|-----
-     1 | Walk forward  | (  0.00,  1.60,  -0.03) | 0 deg
-     2 | Turn right    | (  0.00,  1.60,  -0.03) | -15 deg
-     3 | Walk forward  | (  0.01,  1.60,  -0.07) | -15 deg
-     4 | Turn right    | (  0.01,  1.60,  -0.07) | -30 deg
-
-  The view matrix is rebuilt every frame from:
-    position    (updated by movement input)
-    orientation (updated by mouse/stick input)
-  This is how first-person cameras work in every 3D game.
-```
-
-Each section demonstrates one concept with concrete numbers and verification.
-The summary (section 8) prints a reference card of all new functions.
-
 ## Prerequisites
 
 - [Math Lesson 02 — Coordinate Spaces](../02-coordinate-spaces/) — the
@@ -467,6 +339,134 @@ build\lessons\math\09-view-matrix\Debug\09-view-matrix.exe
 ```
 
 The program prints a walkthrough of every concept with numerical verification.
+
+## Result
+
+Running the program prints a guided walkthrough of view matrix construction:
+
+```text
+=============================================================
+  Math Lesson 09 - View Matrix & Virtual Camera
+  Building view matrices from scratch
+=============================================================
+
+-- 1. The camera as an inverse transform -------------------
+
+  Camera world transform:
+    |   1.0000   0.0000   0.0000   0.0000 |
+    |   0.0000   1.0000   0.0000   0.0000 |
+    |   0.0000   0.0000   1.0000   5.0000 |
+    |   0.0000   0.0000   0.0000   1.0000 |
+
+  View matrix (inverse):
+    |   1.0000   0.0000   0.0000  -0.0000 |
+    |   0.0000   1.0000   0.0000  -0.0000 |
+    |   0.0000   0.0000   1.0000  -5.0000 |
+    |   0.0000   0.0000   0.0000   1.0000 |
+
+  World * View = Identity? YES -- view is the inverse
+  World point = (1.0000, 2.0000, 3.0000)
+  In view space = (1.0000, 2.0000, -2.0000, 1.0000)
+  Camera is at Z=5, point is at Z=3
+  -> In view space, point is at Z=-2.0 (in front of camera)
+
+-- 2. Extracting basis vectors from a quaternion -----------
+
+  Identity quaternion (no rotation):
+  Forward = (-0.0000, -0.0000, -1.0000)
+  Right   = (1.0000, 0.0000, 0.0000)
+  Up      = (0.0000, 1.0000, 0.0000)
+
+  After yaw=45, pitch=30 degrees:
+  Forward = (-0.6124, 0.5000, -0.6124)
+  Right   = (0.7071, 0.0000, -0.7071)
+  Up      = (0.3536, 0.8660, 0.3536)
+
+  Orthonormal basis check:
+    dot(forward, right) = 0.000000 (should be ~0)
+    dot(forward, up)    = 0.000000 (should be ~0)
+    dot(right, up)      = 0.000000 (should be ~0)
+    |forward| = 1.0000, |right| = 1.0000, |up| = 1.0000 (all ~1)
+    Orthonormal? YES
+  Optimized matches quat_rotate_vec3?
+    Forward: YES  Right: YES  Up: YES
+
+-- 3. View matrix from position + quaternion ---------------
+
+  Camera position: (3.0, 2.0, 5.0)
+  Camera orientation: yaw=30, pitch=-15 degrees
+  Forward (where camera looks) = (-0.4830, -0.2588, -0.8365)
+  Right   (camera's right side) = (0.8660, 0.0000, -0.5000)
+  Up      (above camera's head) = (-0.1294, 0.9659, -0.2241)
+
+  View matrix:
+    |   0.8660   0.0000  -0.5000  -0.0981 |
+    |  -0.1294   0.9659  -0.2241  -0.4229 |
+    |   0.4830   0.2588   0.8365  -6.1491 |
+    |   0.0000   0.0000   0.0000   1.0000 |
+
+  Camera pos in view space = (0.0000, 0.0000, 0.0000, 1.0000)
+  At origin? YES (camera maps to (0,0,0) in view space)
+  Point 3 units ahead of camera:
+  World space = (1.5511, 1.2235, 2.4905)
+  View space = (-0.0000, 0.0000, -3.0000, 1.0000)
+  View-space Z is negative? YES (objects ahead have Z < 0)
+
+-- 4. Look-at as a special case ----------------------------
+
+  Eye:    (0.0, 2.0, 5.0)
+  Target: (0.0, 0.0, 0.0)
+
+  View matrix (look-at):
+    |   1.0000  -0.0000   0.0000  -0.0000 |
+    |   0.0000   0.9285  -0.3714  -0.0000 |
+    |  -0.0000   0.3714   0.9285  -5.3852 |
+    |   0.0000   0.0000   0.0000   1.0000 |
+
+  Implied forward = (0.0000, -0.3714, -0.9285)
+  Implied right   = (1.0000, -0.0000, 0.0000)
+  Implied up      = (0.0000, 0.9285, -0.3714)
+  Eye in view space = (0.0000, 0.0000, 0.0000, 1.0000)
+  At origin? YES
+  Target in view space = (0.0000, -0.0000, -5.3852, 1.0000)
+  Target at -Z? YES (on the camera's -Z axis)
+
+-- 5. View matrix in the MVP pipeline ----------------------
+
+  Pipeline: Model -> View -> Projection -> NDC
+  World vertex      = (1.0000, 0.0000, 0.0000)
+  After View        = (1.0000, -0.1693, -5.3825, 1.0000)
+  After Projection  = (1.1547, -0.2932, 5.2878, 5.3825)
+  After /w (NDC)  = (0.2145, -0.0545, 0.9824)
+  Combined MVP gives same NDC? YES
+  NDC range: X,Y in [-1,1], Z in [0,1]
+  Vertex in valid NDC range? YES (visible on screen)
+
+-- 6. Equivalence: look-at vs quaternion -------------------
+
+  Eye: (3.0, 4.0, 10.0), Target: (0.0, 0.0, 0.0)
+  Look-at result  = (2.7777, 1.7562, -12.9692, 1.0000)
+  Quaternion result = (2.7777, 1.7562, -12.9692, 1.0000)
+  Matrices match? YES -- both methods produce the same view
+
+-- 7. Camera movement demo ---------------------------------
+
+  Simulating camera movement (4 steps):
+  Step | Action        | Position                  | Yaw
+  -----|---------------|---------------------------|-----
+     1 | Walk forward  | (  0.00,  1.60,  -0.03) | 0 deg
+     2 | Turn right    | (  0.00,  1.60,  -0.03) | -15 deg
+     3 | Walk forward  | (  0.01,  1.60,  -0.07) | -15 deg
+     4 | Turn right    | (  0.01,  1.60,  -0.07) | -30 deg
+
+  The view matrix is rebuilt every frame from:
+    position    (updated by movement input)
+    orientation (updated by mouse/stick input)
+  This is how first-person cameras work in every 3D game.
+```
+
+Each section demonstrates one concept with concrete numbers and verification.
+The summary (section 8) prints a reference card of all new functions.
 
 ## Exercises
 

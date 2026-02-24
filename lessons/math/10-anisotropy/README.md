@@ -14,44 +14,6 @@ to sample textures sharply at steep viewing angles.
 - **Anisotropic noise** — creating directional patterns (wood grain, brushed metal)
 - **Anisotropic friction** — direction-dependent resistance in physics
 
-## Result
-
-A console program that walks through 8 parts, from the basic concept (circle vs
-ellipse) through the Jacobian and singular values to practical applications in
-texture filtering, noise, and physics.
-
-**Example output (abbreviated):**
-
-```text
-==============================================================
-  Anisotropy vs Isotropy
-==============================================================
-
-  Isotropic  = same in all directions     (iso = equal)
-  Anisotropic = different in some directions (an = not)
-
-Part 4: Singular values = pixel footprint axes
---------------------------------------------------------------
-
-  Tilt     sigma_1  sigma_2  Ratio   Description
-  ------   -------  -------  ------  ----------------------
-      0     1.0000   1.0000    1.00  isotropic
-     30     1.1547   1.0000    1.15  mild anisotropy
-     60     2.0000   1.0000    2.00  moderate
-     80     5.7588   1.0000    5.76  highly anisotropic
-     85    11.4737   1.0000   11.47  highly anisotropic
-
-Part 5: Isotropic vs anisotropic texture filtering
---------------------------------------------------------------
-
-  Tilt   | Isotropic              | Anisotropic
-  -------|------------------------|------------------------------
-      0  | mip  0.00 (1 sample)   | mip  0.00 (1 samples)
-     60  | mip  1.00 (1 sample)   | mip  0.00 (3 samples)
-     80  | mip  2.53 (1 sample)   | mip  0.00 (6 samples)
-     85  | mip  3.52 (1 sample)   | mip  0.00 (12 samples)
-```
-
 ## Key concepts
 
 - **Isotropic** — Same in all directions. A circle is isotropic. Trilinear
@@ -309,6 +271,44 @@ build\lessons\math\10-anisotropy\Debug\10-anisotropy.exe
 
 The demo prints 8 sections covering the core concept, Jacobian matrices, singular
 values, filtering comparisons, noise, and friction. No GPU required.
+
+## Result
+
+A console program that walks through 8 parts, from the basic concept (circle vs
+ellipse) through the Jacobian and singular values to practical applications in
+texture filtering, noise, and physics.
+
+**Example output (abbreviated):**
+
+```text
+==============================================================
+  Anisotropy vs Isotropy
+==============================================================
+
+  Isotropic  = same in all directions     (iso = equal)
+  Anisotropic = different in some directions (an = not)
+
+Part 4: Singular values = pixel footprint axes
+--------------------------------------------------------------
+
+  Tilt     sigma_1  sigma_2  Ratio   Description
+  ------   -------  -------  ------  ----------------------
+      0     1.0000   1.0000    1.00  isotropic
+     30     1.1547   1.0000    1.15  mild anisotropy
+     60     2.0000   1.0000    2.00  moderate
+     80     5.7588   1.0000    5.76  highly anisotropic
+     85    11.4737   1.0000   11.47  highly anisotropic
+
+Part 5: Isotropic vs anisotropic texture filtering
+--------------------------------------------------------------
+
+  Tilt   | Isotropic              | Anisotropic
+  -------|------------------------|------------------------------
+      0  | mip  0.00 (1 sample)   | mip  0.00 (1 samples)
+     60  | mip  1.00 (1 sample)   | mip  0.00 (3 samples)
+     80  | mip  2.53 (1 sample)   | mip  0.00 (6 samples)
+     85  | mip  3.52 (1 sample)   | mip  0.00 (12 samples)
+```
 
 ## Exercises
 

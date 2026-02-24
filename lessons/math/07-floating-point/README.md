@@ -11,70 +11,6 @@ How computers represent real numbers, and why it matters for graphics.
 - Depth buffer precision: z-fighting and why it's non-linear
 - 32-bit float vs 64-bit double: trade-offs and when each is appropriate
 
-## Result
-
-The demo walks through seven sections, showing bit patterns, precision
-measurements, and practical graphics pitfalls with concrete numbers.
-
-**Example output (abbreviated):**
-
-```text
-=============================================================
-  Math Lesson 07 — Floating Point
-  How computers represent real numbers (and where they fail)
-=============================================================
-
--- 1. Fixed-point as motivation --------------------------------
-
-  8.8 fixed-point (scale = 256):
-    pi    = 3.14159 -> stored as   804 -> back = 3.14062 (error = 0.00097)
-    small = 0.01    -> stored as     2 -> back = 0.00781 (error = 0.00219)
-    big   = 100.5   -> stored as 25728 -> back = 100.50000 (error = 0.00000)
-
--- 2. IEEE 754 representation ----------------------------------
-
-  1.0 = 1
-    bits: 0 01111111 00000000000000000000000
-    sign=0  exponent=0 (biased 127)  mantissa=0x000000
-  0.1 = 0.1
-    bits: 0 01111011 10011001100110011001101
-    sign=0  exponent=-4 (biased 123)  mantissa=0x4CCCCD
-
--- 3. How precision varies across the number line --------------
-
-       value      |   spacing (eps at value)   | digits of precision
-  ----------------|---------------------------|--------------------
-             1.0  |          0.000000119209290  |  ~6.9
-          1000.0  |          0.000061035156250  |  ~7.2
-      16777216.0  |          2.000000000000000  |  ~6.9
-
-  Key insight: 16,777,216 + 1 = ?
-    16777216.0f + 1.0f = 16777216.0
-    They're equal! At this magnitude, 1.0 is below the
-    spacing between consecutive floats.
-
--- 4. Epsilon and equality testing ------------------------------
-
-  sqrt(2) * sqrt(2) == 2?
-    sqrtf(2) * sqrtf(2) = 1.99999988079071044922
-    2.0f                = 2.00000000000000000000
-    Equal (==): NO
-    Difference: -0.00000011920928955078
-
--- 5. Depth buffer precision (z-fighting) ----------------------
-
-   view-space z  |  NDC z     |  depth buffer bits used
-    z =    -0.1  |  0.000000  |  0.0% of depth range (near plane)
-    z =    -1.0  |  0.900901  |  10.0% of depth range
-    z =  -100.0  |  1.000000  |  0.1% of depth range
-
--- 6. float vs double (32-bit vs 64-bit) -----------------------
-
-  Adding 0.1 ten million times:
-    float  result:  1087937.000000  (error: 87937.000000)
-    double result:   999999.999839  (error: -0.000161)
-```
-
 ## Key concepts
 
 - **IEEE 754** — The standard representation: sign bit, 8-bit exponent,
@@ -256,6 +192,70 @@ build\lessons\math\07-floating-point\Debug\07-floating-point.exe
 ```
 
 The demo prints all sections to the console — no window required.
+
+## Result
+
+The demo walks through seven sections, showing bit patterns, precision
+measurements, and practical graphics pitfalls with concrete numbers.
+
+**Example output (abbreviated):**
+
+```text
+=============================================================
+  Math Lesson 07 — Floating Point
+  How computers represent real numbers (and where they fail)
+=============================================================
+
+-- 1. Fixed-point as motivation --------------------------------
+
+  8.8 fixed-point (scale = 256):
+    pi    = 3.14159 -> stored as   804 -> back = 3.14062 (error = 0.00097)
+    small = 0.01    -> stored as     2 -> back = 0.00781 (error = 0.00219)
+    big   = 100.5   -> stored as 25728 -> back = 100.50000 (error = 0.00000)
+
+-- 2. IEEE 754 representation ----------------------------------
+
+  1.0 = 1
+    bits: 0 01111111 00000000000000000000000
+    sign=0  exponent=0 (biased 127)  mantissa=0x000000
+  0.1 = 0.1
+    bits: 0 01111011 10011001100110011001101
+    sign=0  exponent=-4 (biased 123)  mantissa=0x4CCCCD
+
+-- 3. How precision varies across the number line --------------
+
+       value      |   spacing (eps at value)   | digits of precision
+  ----------------|---------------------------|--------------------
+             1.0  |          0.000000119209290  |  ~6.9
+          1000.0  |          0.000061035156250  |  ~7.2
+      16777216.0  |          2.000000000000000  |  ~6.9
+
+  Key insight: 16,777,216 + 1 = ?
+    16777216.0f + 1.0f = 16777216.0
+    They're equal! At this magnitude, 1.0 is below the
+    spacing between consecutive floats.
+
+-- 4. Epsilon and equality testing ------------------------------
+
+  sqrt(2) * sqrt(2) == 2?
+    sqrtf(2) * sqrtf(2) = 1.99999988079071044922
+    2.0f                = 2.00000000000000000000
+    Equal (==): NO
+    Difference: -0.00000011920928955078
+
+-- 5. Depth buffer precision (z-fighting) ----------------------
+
+   view-space z  |  NDC z     |  depth buffer bits used
+    z =    -0.1  |  0.000000  |  0.0% of depth range (near plane)
+    z =    -1.0  |  0.900901  |  10.0% of depth range
+    z =  -100.0  |  1.000000  |  0.1% of depth range
+
+-- 6. float vs double (32-bit vs 64-bit) -----------------------
+
+  Adding 0.1 ten million times:
+    float  result:  1087937.000000  (error: 87937.000000)
+    double result:   999999.999839  (error: -0.000161)
+```
 
 ## Exercises
 

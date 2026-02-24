@@ -122,17 +122,6 @@ Structure:
 
 [Bullet list of math concepts covered]
 
-## Result
-
-[Brief description of expected demo output or what the program demonstrates]
-
-**Example output:**
-```text
-[Copy actual program output here]
-```
-
-**Important:** Copy output directly from running the program—don't manually type it.
-
 ## Key concepts
 
 [Bullet list of core takeaways:]
@@ -176,6 +165,17 @@ build\lessons\math\NN-concept-name\Debug\NN-concept-name.exe
 ```
 
 [Brief note on what the demo shows]
+
+## Result
+
+[Brief description of expected demo output or what the program demonstrates]
+
+**Example output:**
+```text
+[Copy actual program output here]
+```
+
+**Important:** Copy output directly from running the program—don't manually type it.
 
 ## Exercises
 

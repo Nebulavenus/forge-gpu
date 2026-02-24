@@ -15,12 +15,6 @@
 - Inverse (undoing a transform)
 - Special matrices: diagonal, orthogonal, symmetric
 
-## Result
-
-After running this lesson you will understand how matrices work as mathematical
-objects — multiplication, transpose, determinant, inverse — before using them as
-transforms. This is the foundation for everything in 3D graphics.
-
 ## The math
 
 ### 1. What is a matrix?
@@ -387,6 +381,12 @@ python scripts/run.py math/05
 ```
 
 Requires SDL3 and a C99 compiler (see project root README for full setup).
+
+## Result
+
+After running this lesson you will understand how matrices work as mathematical
+objects — multiplication, transpose, determinant, inverse — before using them as
+transforms. This is the foundation for everything in 3D graphics.
 
 ## Exercises
 

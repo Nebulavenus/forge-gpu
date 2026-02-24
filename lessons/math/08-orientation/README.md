@@ -14,32 +14,6 @@ Four representations of 3D rotation and how to convert between them.
 - Converting between all four representations (round-trips)
 - SLERP and NLERP: smooth interpolation between orientations
 
-## Result
-
-Running the program prints a guided walkthrough of every rotation
-representation:
-
-```text
-=============================================================
-  Math Lesson 08 — Orientation
-  Four representations of 3D rotation
-=============================================================
-
--- 1. Euler angles -- pitch, yaw, and roll ----------------
-  ...45° yaw, 30° pitch applied to forward vector...
-
--- 2. Gimbal lock -- why Euler angles break ---------------
-  ...different Euler triplets producing the same rotation...
-
--- 6. Quaternion basics -----------------------------------
-  ...identity, conjugate, inverse, double cover...
-
--- 10. SLERP -- smooth rotation interpolation -------------
-  ...constant-speed vs variable-speed interpolation table...
-```
-
-Each section demonstrates one concept with concrete numbers.
-
 ## Prerequisites
 
 - [Math Lesson 01 — Vectors](../01-vectors/) — dot product, cross product,
@@ -273,6 +247,32 @@ build\lessons\math\08-orientation\Debug\08-orientation.exe
 # Linux / macOS
 ./build/lessons/math/08-orientation/08-orientation
 ```
+
+## Result
+
+Running the program prints a guided walkthrough of every rotation
+representation:
+
+```text
+=============================================================
+  Math Lesson 08 — Orientation
+  Four representations of 3D rotation
+=============================================================
+
+-- 1. Euler angles -- pitch, yaw, and roll ----------------
+  ...45° yaw, 30° pitch applied to forward vector...
+
+-- 2. Gimbal lock -- why Euler angles break ---------------
+  ...different Euler triplets producing the same rotation...
+
+-- 6. Quaternion basics -----------------------------------
+  ...identity, conjugate, inverse, double cover...
+
+-- 10. SLERP -- smooth rotation interpolation -------------
+  ...constant-speed vs variable-speed interpolation table...
+```
+
+Each section demonstrates one concept with concrete numbers.
 
 ## Exercises
 

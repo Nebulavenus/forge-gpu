@@ -276,7 +276,9 @@ sections.
 
 - [ ] Starts with `# Lesson NN — Title`
 - [ ] Has "What you'll learn" section near the top
-- [ ] Has screenshot in a "Result" section (not a placeholder)
+- [ ] **GPU lessons:** Has screenshot in a "Result" section near the top (not a placeholder)
+- [ ] **Math lessons:** "Result" section comes **after** "Building" (not near the top) —
+  math results are text output that would be intimidating before the lesson content
 - [ ] **GPU lessons only:** If the lesson has shader files, has a "Shaders"
   section immediately before "Building" that lists each shader file with a
   brief description of what it does

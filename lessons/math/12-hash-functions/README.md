@@ -13,58 +13,6 @@ Integer hashing for deterministic, reproducible randomness in GPU shaders.
   noise
 - What white noise is and how hashing generates it
 
-## Result
-
-The demo program walks through 10 sections covering hash function behavior,
-quality analysis, and practical application patterns.
-
-**Example output (abbreviated):**
-
-```text
-=============================================================
-  Math Lesson 12 -- Hash Functions & White Noise
-=============================================================
-
-1. WHY HASHING: Deterministic Randomness for GPUs
---------------------------------------------------------------
-
-  rand() uses shared mutable state — not usable on GPUs.
-  Hash functions take an input and return a fixed output:
-    hash(0) = 0xd86b048b  (same every time)
-    hash(1) = 0xb1fd0798
-    hash(2) = 0x3bfb0e68
-  No state. No dependencies. Every thread computes independently.
-
-5. AVALANCHE: One-Bit Input Change Flips ~16 Output Bits
---------------------------------------------------------------
-
-  Wang hash avalanche analysis (4096 samples):
-    Average bits changed: 15.98 / 32  (ideal = 16.00)
-
-8. DISTRIBUTION: Uniformity of Hash-to-Float Conversion
---------------------------------------------------------------
-
-  Bucket       Expected   Wang       PCG        xxHash32
-  ------       --------   ----       ---        --------
-  [0.0, 0.1)   10000      10015      9932       9935
-  [0.1, 0.2)   10000      9963       10094      10045
-  ...
-
-10. WHITE NOISE: 2D Hash Visualization
---------------------------------------------------------------
-
-  .,:;=+*#%@   (dark -> bright)
-
-  Hashing every (x, y) coordinate with forge_hash2d produces
-  a 60x30 ASCII "image" of white noise — the building block
-  for structured noise like Perlin, blue noise, and dithering.
-```
-
-![White noise comparison](assets/white_noise_comparison.png)
-
-Each section builds on the previous, from basic determinism through avalanche
-quality to practical multi-dimensional seeding and visualization.
-
 ## Key concepts
 
 - **Deterministic hashing** — Same input always produces the same output, with
@@ -388,6 +336,58 @@ build\lessons\math\12-hash-functions\Debug\12-hash-functions.exe
 The demo prints 10 sections covering all the concepts above: hash function
 outputs, avalanche analysis, distribution tests, multi-dimensional seeding,
 and an ASCII white noise visualization.
+
+## Result
+
+The demo program walks through 10 sections covering hash function behavior,
+quality analysis, and practical application patterns.
+
+**Example output (abbreviated):**
+
+```text
+=============================================================
+  Math Lesson 12 -- Hash Functions & White Noise
+=============================================================
+
+1. WHY HASHING: Deterministic Randomness for GPUs
+--------------------------------------------------------------
+
+  rand() uses shared mutable state — not usable on GPUs.
+  Hash functions take an input and return a fixed output:
+    hash(0) = 0xd86b048b  (same every time)
+    hash(1) = 0xb1fd0798
+    hash(2) = 0x3bfb0e68
+  No state. No dependencies. Every thread computes independently.
+
+5. AVALANCHE: One-Bit Input Change Flips ~16 Output Bits
+--------------------------------------------------------------
+
+  Wang hash avalanche analysis (4096 samples):
+    Average bits changed: 15.98 / 32  (ideal = 16.00)
+
+8. DISTRIBUTION: Uniformity of Hash-to-Float Conversion
+--------------------------------------------------------------
+
+  Bucket       Expected   Wang       PCG        xxHash32
+  ------       --------   ----       ---        --------
+  [0.0, 0.1)   10000      10015      9932       9935
+  [0.1, 0.2)   10000      9963       10094      10045
+  ...
+
+10. WHITE NOISE: 2D Hash Visualization
+--------------------------------------------------------------
+
+  .,:;=+*#%@   (dark -> bright)
+
+  Hashing every (x, y) coordinate with forge_hash2d produces
+  a 60x30 ASCII "image" of white noise — the building block
+  for structured noise like Perlin, blue noise, and dithering.
+```
+
+![White noise comparison](assets/white_noise_comparison.png)
+
+Each section builds on the previous, from basic determinism through avalanche
+quality to practical multi-dimensional seeding and visualization.
 
 ## Exercises
 

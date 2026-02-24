@@ -15,46 +15,6 @@ patterns — the foundation of procedural generation in games and graphics.
 - Lacunarity and persistence: how they control the character of fBm
 - Domain warping: distorting coordinates for organic, fluid-like patterns
 
-## Result
-
-The demo program prints visualizations of each noise type as ASCII art,
-showing the progression from white noise to gradient noise, fBm, and domain
-warping.
-
-**Example output (abbreviated):**
-
-```text
-=============================================================
-  Math Lesson 13 -- Gradient Noise (Perlin & Simplex)
-=============================================================
-
-1. WHITE NOISE vs GRADIENT NOISE
---------------------------------------------------------------
-
-  White noise (hash-based) has no spatial correlation:
-  each sample is independent of its neighbors.
-
-  Gradient noise (Perlin) produces smooth, continuous values:
-  nearby inputs give nearby outputs.
-
-3. FADE CURVES: Linear vs Cubic vs Quintic
---------------------------------------------------------------
-
-  t       Linear      Cubic       Quintic
-  ------  ----------  ----------  ----------
-   0.00    0.000000    0.000000    0.000000
-   0.10    0.100000    0.028000    0.028520
-   0.20    0.200000    0.104000    0.115200
-   0.30    0.300000    0.216000    0.262710
-   0.50    0.500000    0.500000    0.500000
-   0.70    0.700000    0.784000    0.737290
-   0.80    0.800000    0.896000    0.884800
-   0.90    0.900000    0.972000    0.971480
-   1.00    1.000000    1.000000    1.000000
-```
-
-![Noise Comparison](assets/noise_comparison.png)
-
 ## Key concepts
 
 - **Gradient noise** — Assigns random gradient vectors at integer lattice
@@ -417,6 +377,46 @@ build\lessons\math\13-gradient-noise\Debug\13-gradient-noise.exe
 
 The demo prints ASCII visualizations of all noise types, showing the
 progression from white noise to gradient noise, fBm, and domain warping.
+
+## Result
+
+The demo program prints visualizations of each noise type as ASCII art,
+showing the progression from white noise to gradient noise, fBm, and domain
+warping.
+
+**Example output (abbreviated):**
+
+```text
+=============================================================
+  Math Lesson 13 -- Gradient Noise (Perlin & Simplex)
+=============================================================
+
+1. WHITE NOISE vs GRADIENT NOISE
+--------------------------------------------------------------
+
+  White noise (hash-based) has no spatial correlation:
+  each sample is independent of its neighbors.
+
+  Gradient noise (Perlin) produces smooth, continuous values:
+  nearby inputs give nearby outputs.
+
+3. FADE CURVES: Linear vs Cubic vs Quintic
+--------------------------------------------------------------
+
+  t       Linear      Cubic       Quintic
+  ------  ----------  ----------  ----------
+   0.00    0.000000    0.000000    0.000000
+   0.10    0.100000    0.028000    0.028520
+   0.20    0.200000    0.104000    0.115200
+   0.30    0.300000    0.216000    0.262710
+   0.50    0.500000    0.500000    0.500000
+   0.70    0.700000    0.784000    0.737290
+   0.80    0.800000    0.896000    0.884800
+   0.90    0.900000    0.972000    0.971480
+   1.00    1.000000    1.000000    1.000000
+```
+
+![Noise Comparison](assets/noise_comparison.png)
 
 ## Exercises
 

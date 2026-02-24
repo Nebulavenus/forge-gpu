@@ -23,68 +23,6 @@ wrong makes your renderer look bad.
   ACES)
 - **Exposure** — photographic stops (EV) and the HDR rendering pipeline
 
-## Result
-
-The demo program walks through each concept with computed values, round-trip
-accuracy tests, and practical comparisons.
-
-**Example output (abbreviated):**
-
-```text
-=============================================================
-  Math Lesson 11 -- Color Spaces
-=============================================================
-
-1. GAMMA CORRECTION: sRGB Transfer Function
---------------------------------------------------------------
-
-  The sRGB standard uses a PIECEWISE transfer function:
-    Near black (<=0.04045): linear segment (s / 12.92)
-    Rest:                   power curve ((s+0.055)/1.055)^2.4
-
-  sRGB value   sRGB->linear pow(x,2.2)   Difference
-  ----------   -----------  ---------    ----------
-  0.0000       0.0000       0.0000       +0.0000
-  0.0100       0.0008       0.0000       +0.0007
-  0.0404       0.0031       0.0009       +0.0023
-  0.1000       0.0100       0.0063       +0.0037
-  0.2000       0.0331       0.0290       +0.0041
-  0.5000       0.2140       0.2176       -0.0036
-  0.7350       0.4995       0.5080       -0.0085
-  0.9000       0.7874       0.7931       -0.0057
-  1.0000       1.0000       1.0000       +0.0000
-
-3. LUMINANCE: How Bright Does Each Color Look?
---------------------------------------------------------------
-
-  Color                     Luminance  Relative
-  -----                     ---------  --------
-  Pure red   (1,0,0)        0.2126     21.3      %
-  Pure green (0,1,0)        0.7152     71.5      %
-  Pure blue  (0,0,1)        0.0722     7.2       %
-  Yellow     (1,1,0)        0.9278     92.8      %
-  White      (1,1,1)        1.0000     100.0     %
-
-7. CIE xyY: Chromaticity Coordinates
---------------------------------------------------------------
-
-  Color            Computed (x,y)  Expected (x,y)  Match?
-  Red primary      (0.6400,0.3300)  (0.6400,0.3300)  [OK]
-  Green primary    (0.3000,0.6000)  (0.3000,0.6000)  [OK]
-  Blue primary     (0.1500,0.0600)  (0.1500,0.0600)  [OK]
-  D65 white        (0.3127,0.3290)  (0.3127,0.3290)  [OK]
-
-9. TONE MAPPING: HDR to Display Range
---------------------------------------------------------------
-
-  Input       Reinhard      ACES          Linear clamp
-  0.1         0.0909        0.1258        0.1000
-  0.5         0.3333        0.6163        0.5000
-  1.0         0.5000        0.8038        1.0000
-  4.0         0.8000        0.9734        1.0000
-  16.0        0.9412        1.0000        1.0000
-```
-
 ## Key concepts
 
 - **Linear light** — Physical light intensity where doubling the value means
@@ -407,6 +345,68 @@ build\lessons\math\11-color-spaces\Debug\11-color-spaces.exe
 
 The demo runs in the console and prints tables comparing color space
 conversions, round-trip accuracy, and tone mapping curves.
+
+## Result
+
+The demo program walks through each concept with computed values, round-trip
+accuracy tests, and practical comparisons.
+
+**Example output (abbreviated):**
+
+```text
+=============================================================
+  Math Lesson 11 -- Color Spaces
+=============================================================
+
+1. GAMMA CORRECTION: sRGB Transfer Function
+--------------------------------------------------------------
+
+  The sRGB standard uses a PIECEWISE transfer function:
+    Near black (<=0.04045): linear segment (s / 12.92)
+    Rest:                   power curve ((s+0.055)/1.055)^2.4
+
+  sRGB value   sRGB->linear pow(x,2.2)   Difference
+  ----------   -----------  ---------    ----------
+  0.0000       0.0000       0.0000       +0.0000
+  0.0100       0.0008       0.0000       +0.0007
+  0.0404       0.0031       0.0009       +0.0023
+  0.1000       0.0100       0.0063       +0.0037
+  0.2000       0.0331       0.0290       +0.0041
+  0.5000       0.2140       0.2176       -0.0036
+  0.7350       0.4995       0.5080       -0.0085
+  0.9000       0.7874       0.7931       -0.0057
+  1.0000       1.0000       1.0000       +0.0000
+
+3. LUMINANCE: How Bright Does Each Color Look?
+--------------------------------------------------------------
+
+  Color                     Luminance  Relative
+  -----                     ---------  --------
+  Pure red   (1,0,0)        0.2126     21.3      %
+  Pure green (0,1,0)        0.7152     71.5      %
+  Pure blue  (0,0,1)        0.0722     7.2       %
+  Yellow     (1,1,0)        0.9278     92.8      %
+  White      (1,1,1)        1.0000     100.0     %
+
+7. CIE xyY: Chromaticity Coordinates
+--------------------------------------------------------------
+
+  Color            Computed (x,y)  Expected (x,y)  Match?
+  Red primary      (0.6400,0.3300)  (0.6400,0.3300)  [OK]
+  Green primary    (0.3000,0.6000)  (0.3000,0.6000)  [OK]
+  Blue primary     (0.1500,0.0600)  (0.1500,0.0600)  [OK]
+  D65 white        (0.3127,0.3290)  (0.3127,0.3290)  [OK]
+
+9. TONE MAPPING: HDR to Display Range
+--------------------------------------------------------------
+
+  Input       Reinhard      ACES          Linear clamp
+  0.1         0.0909        0.1258        0.1000
+  0.5         0.3333        0.6163        0.5000
+  1.0         0.5000        0.8038        1.0000
+  4.0         0.8000        0.9734        1.0000
+  16.0        0.9412        1.0000        1.0000
+```
 
 ## Exercises
 
