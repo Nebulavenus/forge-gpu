@@ -72,6 +72,17 @@ When you're building a 3D game or renderer, you work with many different coordin
 
 **Purpose:** Makes modeling easier — a cube centered at (0,0,0) is simpler to work with than one offset at (57, 103, -42).
 
+Think of local space the way you think about building with LEGO. When you
+design a spaceship out of bricks, you build it right in front of you on the
+table — you don't worry about where it will end up on the shelf later. The
+bricks have positions relative to the spaceship itself: the cockpit is at the
+front, the engines are at the back. That self-contained coordinate system is
+local space. Every 3D model — a character, a tree, a sword — is built the same
+way, with its own origin and its own axes. This means an artist can model a
+chair once and a game can place thousands of copies of that chair throughout a
+scene, each at a different position and rotation, without ever changing the
+original vertex data.
+
 **Example:**
 
 ```c
@@ -96,6 +107,18 @@ Each mesh/model has its own local space. You define it once, then reuse it every
 **Purpose:** Position multiple objects relative to each other. The player is at (10, 0, 5), the enemy is at (20, 0, 3), etc.
 
 **Transformation:** `Model Matrix` (combines translation, rotation, scale)
+
+World space is the shared coordinate system that every object in your scene
+agrees on. If local space is like building a LEGO spaceship on your desk, world
+space is the shelf where you place the finished model alongside all your other
+models. It gives every object a common frame of reference so you can answer
+questions like "how far is the player from the enemy?" or "is the light above
+the table?" Without a shared space, each object would only know about its own
+coordinates and would have no way to relate to anything else. The
+transformation from local space to world space is called the **model matrix**,
+and it encodes three properties: where the object is (translation), which way
+it faces (rotation), and how large it is (scale). Each object in the scene has
+its own model matrix, but they all land in the same world space.
 
 **Example:**
 
@@ -131,6 +154,22 @@ The **model matrix** encodes "where is this object in the world?"
 
 **Transformation:** `View Matrix` (inverse of the camera's model matrix)
 
+View space re-expresses the entire scene from the camera's point of view.
+Imagine you are standing in a room and you turn your head to look at a painting
+on the wall. From the room's perspective (world space), neither you nor the
+painting moved — but from *your* perspective, the painting is now directly in
+front of you. That shift in perspective is exactly what the view matrix does:
+it takes every object's world-space position and recalculates it relative to
+where the camera is and which direction it faces. The reason GPUs want this is
+practical — all the projection and clipping math that comes next is much
+simpler when the camera is fixed at the origin looking down a known axis. The
+view matrix is technically the *inverse* of the camera's own model matrix: if
+the camera's model matrix says "the camera is at position (0, 2, 10) facing
+the origin," the view matrix says "shift the whole world so that point ends up
+at the origin, looking down -Z." For a deep dive into how view matrices are
+built — including both look-at and quaternion-based approaches — see
+[Math Lesson 09 — View Matrix & Virtual Camera](../09-view-matrix/).
+
 **Example:**
 
 ```c
@@ -165,6 +204,21 @@ In view space, objects in front of the camera have **negative Z** values.
 
 **Key property:** The **w component is no longer 1** — it encodes depth for perspective division.
 
+Clip space is where the rendering pipeline applies perspective — the property
+that makes railroad tracks appear to converge in the distance. Up to this
+point every transformation has been a rigid rearrangement of geometry: moving
+it, rotating it, scaling it. The projection matrix does something
+fundamentally different. It reshapes the camera's pyramid-shaped viewing volume
+(called the **frustum**) into a box, and in doing so it encodes each vertex's
+distance from the camera into the **w component** of its coordinates. Before
+projection, w is always 1. After projection, w holds a value proportional to
+depth, which is why this space uses four-component **homogeneous coordinates**.
+The name "clip space" comes from what happens next: the GPU uses these
+coordinates to **clip** — discard — any geometry that falls outside the
+viewing volume. Triangles that are partly inside and partly outside get cut
+along the frustum boundaries, so only the visible portion continues down the
+pipeline.
+
 **Example:**
 
 ```c
@@ -196,6 +250,20 @@ After applying the projection matrix, vertices are in **homogeneous coordinates*
 **Purpose:** Normalize coordinates to a standard cube regardless of screen size or aspect ratio.
 
 **Transformation:** Automatic perspective divide (GPU does this)
+
+NDC exists to decouple the rendering math from any particular screen resolution
+or aspect ratio. After the perspective divide (dividing x, y, and z by w), every
+visible point lands inside a small standardized cube — x and y between -1 and 1,
+z between 0 and 1. It does not matter whether the final window is 640×480 or
+3840×2160; in NDC, the left edge of the screen is always -1 and the right edge
+is always +1. This is what makes the same scene renderable at any resolution
+without changing any of the vertex math. The perspective divide itself is the
+step that actually produces the perspective effect: objects with a larger w
+(farther from the camera) get divided by a bigger number, so they shrink toward
+the center of the screen — exactly how real-world perspective works. The GPU
+performs this division automatically after clipping, so you rarely compute it
+yourself, but understanding it is essential for debugging cases where geometry
+appears at the wrong size or in the wrong place.
 
 **Example:**
 
@@ -229,6 +297,21 @@ vec3 ndc_point = vec3_create(
 **Purpose:** The actual pixels the GPU will color.
 
 **Transformation:** `Viewport Transform` (GPU does this automatically)
+
+Screen space is the end of the line — it is where abstract math becomes colored
+pixels on your monitor. The viewport transform takes the normalized -1 to +1
+range of NDC and stretches it to match the actual pixel dimensions of your
+window. If your window is 1920×1080, then NDC x = -1 maps to pixel 0 (left
+edge) and NDC x = +1 maps to pixel 1920 (right edge). One subtlety that trips
+up beginners: most graphics APIs put the screen-space origin at the **top-left**
+corner with +Y pointing downward, which is the opposite of NDC where +Y points
+up. The viewport transform handles this Y-flip automatically, but it matters
+when you do your own screen-space math — for example, converting a mouse click
+position back into a 3D ray (a process called **unprojection** or
+**ray casting**). You almost never compute the viewport transform yourself; the
+GPU does it as the final step before rasterization. But knowing the mapping
+helps you debug issues like upside-down rendering or off-by-half-pixel
+alignment.
 
 **Example:**
 
