@@ -4415,17 +4415,106 @@ def diagram_coord_world_space():
 
 
 def diagram_coord_view_space():
-    """House re-expressed relative to the camera at the origin."""
+    """Whole scene re-expressed relative to the camera at the origin."""
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
+    fig = plt.figure(figsize=(8, 7), facecolor=STYLE["bg"])
     ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
 
-    _, view_verts, _, _, _, _ = _coord_pipeline()
-    mpl_verts = _gpu_to_mpl(view_verts)
-    _add_house_3d(ax, mpl_verts)
+    # --- Transform house into view space ---
+    world_verts, view_verts, _, _, _, _ = _coord_pipeline()
+    mpl_house = _gpu_to_mpl(view_verts)
+    _add_house_3d(ax, mpl_house)
 
-    # Camera at origin (mpl coords)
+    # --- Reconstruct the same ground plane used in the world-space diagram,
+    #     then transform it into view space ---
+    hc = world_verts.mean(axis=0)  # house centre in GPU world coords
+    gnd_size = 7.0
+    ghs = gnd_size / 2.0
+    # Ground quad corners in GPU world space (y = 0 is the ground)
+    ground_world = np.array(
+        [
+            [hc[0] - ghs, 0.0, hc[2] - ghs],
+            [hc[0] + ghs, 0.0, hc[2] - ghs],
+            [hc[0] + ghs, 0.0, hc[2] + ghs],
+            [hc[0] - ghs, 0.0, hc[2] + ghs],
+        ]
+    )
+    ground_view = _xf3(ground_world, _VIEW_MAT)
+    ground_mpl = _gpu_to_mpl(ground_view)
+    col_gnd = Poly3DCollection(
+        [ground_mpl.tolist()],
+        facecolors=[STYLE["accent3"]],
+        edgecolors=[STYLE["grid"]],
+        alpha=0.40,
+    )
+    ax.add_collection3d(col_gnd)
+
+    # --- Road (same as world-space diagram, transformed to view space) ---
+    road_x0, road_x1 = -2.0, 10.0
+    road_z = hc[2] + 5.0  # GPU z centre of road
+    road_hw = 1.5 / 2.0
+    road_world = np.array(
+        [
+            [road_x0, 0.0, road_z - road_hw],
+            [road_x1, 0.0, road_z - road_hw],
+            [road_x1, 0.0, road_z + road_hw],
+            [road_x0, 0.0, road_z + road_hw],
+        ]
+    )
+    road_view = _xf3(road_world, _VIEW_MAT)
+    road_mpl = _gpu_to_mpl(road_view)
+    col_road = Poly3DCollection(
+        [road_mpl.tolist()],
+        facecolors=[STYLE["grid"]],
+        edgecolors=[STYLE["text_dim"]],
+        linewidths=0.5,
+        alpha=0.45,
+    )
+    ax.add_collection3d(col_road)
+
+    # Road centre dashes
+    n_dash = 6
+    dash_xs_world = np.linspace(road_x0 + 0.3, road_x1 - 0.3, n_dash)
+    for xd in dash_xs_world:
+        seg_world = np.array([[xd, 0.001, road_z], [xd + 0.25, 0.001, road_z]])
+        seg_view = _xf3(seg_world, _VIEW_MAT)
+        seg_mpl = _gpu_to_mpl(seg_view)
+        ax.plot(
+            seg_mpl[:, 0],
+            seg_mpl[:, 1],
+            seg_mpl[:, 2],
+            color=STYLE["warn"],
+            lw=1.2,
+            alpha=0.7,
+        )
+
+    # --- World origin transformed into view space ---
+    origin_view = _xf3(np.array([[0.0, 0.0, 0.0]]), _VIEW_MAT)
+    origin_mpl = _gpu_to_mpl(origin_view).flatten()
+    ax.scatter(
+        [origin_mpl[0]],
+        [origin_mpl[1]],
+        [origin_mpl[2]],  # type: ignore[arg-type]
+        color=STYLE["accent2"],
+        s=60,
+        marker="+",
+        linewidths=2,
+        zorder=10,
+        depthshade=False,
+    )
+    ax.text(
+        origin_mpl[0] + 0.3,
+        origin_mpl[1] + 0.6,
+        origin_mpl[2],
+        "world origin",
+        color=STYLE["accent2"],
+        fontsize=8,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    # --- Camera at origin (this IS view space, so camera sits at [0,0,0]) ---
     ax.scatter(
         [0],
         [0],
@@ -4441,14 +4530,20 @@ def diagram_coord_view_space():
         0.3,
         0.0,
         0.3,
-        "camera",
+        "camera\n(origin)",
         color=STYLE["warn"],
         fontsize=9,
         path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
     )
 
-    _set_equal_3d(ax, mpl_verts, pad=2.0)
-    ax.view_init(elev=30, azim=-60)
+    # --- Frame the whole scene (house + ground + road + camera + origin) ---
+    all_pts = np.vstack(
+        [mpl_house, ground_mpl, road_mpl, origin_mpl.reshape(1, 3), [[0, 0, 0]]]
+    )
+    _set_equal_3d(ax, all_pts, pad=3.0)
+    # Position the viewpoint roughly behind and above the camera origin,
+    # looking toward the scene (camera looks down -Z → mpl -Y).
+    ax.view_init(elev=25, azim=80)
     _style_3d(
         ax,
         "3. View / Camera Space",
