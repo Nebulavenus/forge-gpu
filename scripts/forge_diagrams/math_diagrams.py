@@ -4139,10 +4139,11 @@ def _coord_pipeline():
 
 
 def _scenery_world_verts():
-    """Return (ground, road) quad arrays in GPU world-space coordinates.
+    """Return (ground, road, dashes) arrays in GPU world-space coordinates.
 
     Matches the yard and road drawn in the world-space / view-space diagrams
     so the same scenery appears consistently across all pipeline stages.
+    *dashes* is an (N, 2, 3) array of lane-divider line segments.
     """
     world_verts, _, _, _, _, _ = _coord_pipeline()
     hc = world_verts.mean(axis=0)
@@ -4169,16 +4170,25 @@ def _scenery_world_verts():
             [road_x0, 0.0, road_z + road_hw],
         ]
     )
-    return ground, road
+
+    # Lane-divider dashes (same as _add_road / view-space diagram)
+    n_dash = 6
+    dash_xs = np.linspace(road_x0 + 0.3, road_x1 - 0.3, n_dash)
+    dashes = np.array(
+        [[[xd, 0.001, road_z], [xd + 0.25, 0.001, road_z]] for xd in dash_xs]
+    )
+
+    return ground, road, dashes
 
 
 def _scenery_through_pipeline():
-    """Push ground/road through view → clip → NDC → screen.
+    """Push ground/road/dashes through view → clip → NDC → screen.
 
-    Returns a dict with keys 'ground' and 'road', each containing
-    sub-dicts with 'clip4', 'ndc', 'screen_x', 'screen_y' arrays.
+    Returns a dict with keys 'ground', 'road', and 'dashes'.  Ground and
+    road contain sub-dicts with 'clip4', 'ndc', 'screen_x', 'screen_y'.
+    Dashes contains lists of 2-point arrays in each coordinate space.
     """
-    ground_w, road_w = _scenery_world_verts()
+    ground_w, road_w, dashes_w = _scenery_world_verts()
 
     result = {}
     for name, world_quad in [("ground", ground_w), ("road", road_w)]:
@@ -4188,13 +4198,32 @@ def _scenery_through_pipeline():
         sx = (ndc[:, 0] + 1.0) * 0.5 * _SCR_W
         sy = (1.0 - ndc[:, 1]) * 0.5 * _SCR_H
         result[name] = {"clip4": clip4, "ndc": ndc, "screen_x": sx, "screen_y": sy}
+
+    # Project lane-divider dashes through the same pipeline.
+    # dashes_w has shape (n_dash, 2, 3) — flatten to (n_dash*2, 3), transform,
+    # then reshape back.
+    n_dash = dashes_w.shape[0]
+    flat_w = dashes_w.reshape(-1, 3)
+    flat_view = _xf3(flat_w, _VIEW_MAT)
+    flat_clip4 = _xf4(flat_view, _PROJ_MAT)
+    flat_ndc = flat_clip4[:, :3] / flat_clip4[:, 3:4]
+    flat_sx = (flat_ndc[:, 0] + 1.0) * 0.5 * _SCR_W
+    flat_sy = (1.0 - flat_ndc[:, 1]) * 0.5 * _SCR_H
+    result["dashes"] = {
+        "clip4": flat_clip4.reshape(n_dash, 2, 4),
+        "ndc": flat_ndc.reshape(n_dash, 2, 3),
+        "screen_x": flat_sx.reshape(n_dash, 2),
+        "screen_y": flat_sy.reshape(n_dash, 2),
+    }
     return result
 
 
-def _add_scenery_2d(ax, ground_xy, road_xy):
-    """Draw ground and road as 2-D polygons on *ax* (for clip / NDC / screen).
+def _add_scenery_2d(ax, ground_xy, road_xy, dash_segments=None):
+    """Draw ground, road, and lane dashes as 2-D elements on *ax*.
 
     *ground_xy* and *road_xy* are Nx2 arrays of (x, y) for each quad.
+    *dash_segments* is an optional list of (start_xy, end_xy) pairs for
+    lane-divider stripes drawn in yellow on top of the road.
     """
     ax.add_patch(
         Polygon(
@@ -4218,6 +4247,17 @@ def _add_scenery_2d(ax, ground_xy, road_xy):
             zorder=2,
         )
     )
+    # Lane-divider dashes (yellow centre stripes)
+    if dash_segments is not None:
+        for seg in dash_segments:
+            ax.plot(
+                [seg[0, 0], seg[1, 0]],
+                [seg[0, 1], seg[1, 1]],
+                color=STYLE["warn"],
+                lw=1.2,
+                alpha=0.7,
+                zorder=2,
+            )
 
 
 # ── Coordinate-system adapter ─────────────────────────────────────────────
@@ -4656,14 +4696,17 @@ def diagram_coord_clip_space():
     _, _, clip4, _, _, _ = _coord_pipeline()
     clip_w = clip4[:, 3]
 
-    # --- Scenery (ground + road) projected into clip space ---
+    # --- Scenery (ground + road + lane dashes) projected into clip space ---
     scenery = _scenery_through_pipeline()
     ground_clip4 = scenery["ground"]["clip4"]
     road_clip4 = scenery["road"]["clip4"]
+    dash_clip4 = scenery["dashes"]["clip4"]  # (n_dash, 2, 4)
+    dash_segs_clip = [np.column_stack([seg[:, 0], seg[:, 1]]) for seg in dash_clip4]
     _add_scenery_2d(
         ax,
         np.column_stack([ground_clip4[:, 0], ground_clip4[:, 1]]),
         np.column_stack([road_clip4[:, 0], road_clip4[:, 1]]),
+        dash_segments=dash_segs_clip,
     )
 
     # --- House faces (painter's algorithm using clip z / w for depth) ---
@@ -4772,14 +4815,17 @@ def diagram_coord_ndc():
         )
     )
 
-    # --- Scenery (ground + road) projected into NDC ---
+    # --- Scenery (ground + road + lane dashes) projected into NDC ---
     scenery = _scenery_through_pipeline()
     ground_ndc = scenery["ground"]["ndc"]
     road_ndc = scenery["road"]["ndc"]
+    dash_ndc = scenery["dashes"]["ndc"]  # (n_dash, 2, 3)
+    dash_segs_ndc = [np.column_stack([seg[:, 0], seg[:, 1]]) for seg in dash_ndc]
     _add_scenery_2d(
         ax,
         np.column_stack([ground_ndc[:, 0], ground_ndc[:, 1]]),
         np.column_stack([road_ndc[:, 0], road_ndc[:, 1]]),
+        dash_segments=dash_segs_ndc,
     )
 
     # Depth for painter's algorithm (NDC z — higher = farther)
@@ -4880,12 +4926,18 @@ def diagram_coord_screen_space():
         )
     )
 
-    # --- Scenery (ground + road) projected into screen space ---
+    # --- Scenery (ground + road + lane dashes) projected into screen space ---
     scenery = _scenery_through_pipeline()
+    dash_sx = scenery["dashes"]["screen_x"]  # (n_dash, 2)
+    dash_sy = scenery["dashes"]["screen_y"]  # (n_dash, 2)
+    dash_segs_scr = [
+        np.column_stack([dash_sx[i], dash_sy[i]]) for i in range(dash_sx.shape[0])
+    ]
     _add_scenery_2d(
         ax,
         np.column_stack([scenery["ground"]["screen_x"], scenery["ground"]["screen_y"]]),
         np.column_stack([scenery["road"]["screen_x"], scenery["road"]["screen_y"]]),
+        dash_segments=dash_segs_scr,
     )
 
     # Sort faces back-to-front (painter's algorithm) so nearer faces
