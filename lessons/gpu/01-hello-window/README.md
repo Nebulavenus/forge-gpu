@@ -5,7 +5,7 @@
 - What **SDL** is and why we use it for graphics programming
 - What a **GPU** is and why rendering uses it instead of the CPU
 - How to create a **window** — the rectangle on screen where your program draws
-- How to initialise SDL3 and create a **GPU device**
+- How to initialize SDL3 and create a **GPU device**
 - What a **swapchain** is and how it connects the GPU to your window
 - The **callback architecture** — how SDL runs your program
 - The per-frame rhythm: **command buffer → render pass → submit**
@@ -102,11 +102,32 @@ provides one internally.
 
 ## Key concepts
 
+### Initializing SDL
+
+Before using any SDL function, you initialize the library by calling
+`SDL_Init` with flags for the subsystems you need. For rendering, that means
+video:
+
+```c
+if (!SDL_Init(SDL_INIT_VIDEO)) {
+    SDL_Log("SDL_Init failed: %s", SDL_GetError());
+    return SDL_APP_FAILURE;
+}
+```
+
+SDL3 changed the return convention from SDL2: functions that can fail return
+`true` on success and `false` on failure. When something goes wrong,
+`SDL_GetError()` returns a human-readable description of the problem. This
+pattern — check the return value, log the error, handle the failure — appears
+in every lesson from here on.
+
 ### GPU device
 
 A **GPU device** is a handle that represents your connection to the GPU
 hardware. All GPU operations — creating resources, recording commands,
-submitting work — go through this device.
+submitting work — go through this device. Think of it as opening a
+communication channel: until you have a device, you cannot ask the GPU to do
+anything.
 
 `SDL_CreateGPUDevice` creates the device. You tell it which **shader
 formats** your program can provide (SPIRV for Vulkan, DXIL for Direct3D 12,
@@ -122,62 +143,321 @@ SDL_GPUDevice *device = SDL_CreateGPUDevice(
 );
 ```
 
+The shader format flags deserve explanation. Vulkan, Direct3D 12, and Metal
+each require shaders in a different compiled format. By listing all three, your
+program can run on any platform — SDL selects whichever backend the current
+system supports. This lesson has no shaders yet, but later lessons compile
+HLSL source into SPIRV and DXIL bytecode that gets embedded in the program.
+
 The `true` parameter enables **debug validation**, which makes the graphics
 driver check for mistakes in your API usage. Always enable this during
 development — the error messages it produces help catch problems early.
 
-### Command buffers
+### Creating a window and claiming it for the GPU
 
-The CPU and GPU are separate processors that run at the same time. To avoid
-the overhead of sending instructions one at a time, you record all the GPU
-work for a frame into a **command buffer** and then submit the entire batch at
-once.
+A window and a GPU device start out unrelated — the window is managed by the
+operating system, while the device talks to the graphics hardware. You connect
+them with `SDL_ClaimWindowForGPUDevice`:
 
-The sequence each frame is:
+```c
+SDL_Window *window = SDL_CreateWindow("Title", 1280, 720, 0);
 
-1. **Acquire** a command buffer from the device
-2. **Record** operations into it (render passes, draws, clears)
-3. **Submit** the completed command buffer — the GPU executes everything
+/* Bind the window to the GPU device — this creates the swapchain */
+SDL_ClaimWindowForGPUDevice(device, window);
+```
 
-### Swapchain
+This single call creates the **swapchain** — a set of textures that act as a
+bridge between the GPU and the display. The GPU renders into one swapchain
+texture while the operating system displays a previously completed one. This
+double (or triple) buffering prevents **tearing**, where the display shows a
+half-finished frame because the GPU was still writing to it.
 
-The **swapchain** is a set of textures managed by the operating system's
-windowing system. Each frame, your program *acquires* one of these textures,
-renders into it, and then *presents* it — at which point the OS displays it in
-your window.
+After claiming, you can also configure the swapchain's color format. The code
+in `main.c` requests `SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR`, which gives
+us an sRGB-aware swapchain (more on this below in [sRGB and linear
+color](#srgb-and-linear-color)).
 
-The swapchain typically contains two or three textures and rotates between
-them. While the GPU renders into one texture, the OS displays a previously
-completed one. This avoids visual tearing (where the display shows a
-partially rendered frame).
+### Application state
 
-`SDL_ClaimWindowForGPUDevice` creates the swapchain by binding a window to
-your GPU device. `SDL_AcquireGPUSwapchainTexture` grabs the next available
-texture each frame.
+SDL's callback architecture means your code is split across four separate
+functions. Those functions need to share data — the GPU device created in
+`SDL_AppInit` must be available in `SDL_AppIterate` to record commands, and
+in `SDL_AppQuit` to be destroyed. SDL solves this with a shared state pointer.
 
-### Render pass
+You define a struct holding everything your application needs:
 
-A **render pass** defines *what* you are rendering into (a colour target, and
-optionally a depth buffer) and *how* it starts:
+```c
+typedef struct app_state {
+    SDL_Window    *window;
+    SDL_GPUDevice *device;
+} app_state;
+```
 
-- **Clear** — fill the target with a solid colour before drawing
-- **Load** — keep the previous contents
-- **Don't care** — the contents are undefined (used when you know you will
-  overwrite every pixel)
+In `SDL_AppInit`, you allocate this struct and assign it to the `appstate`
+output parameter. SDL then passes that pointer into every subsequent callback.
+This is the mechanism by which your init, event, iterate, and quit functions
+communicate — they all receive the same `app_state`.
 
-Even a simple screen clear needs a render pass — there is no standalone "clear
-screen" call in modern GPU APIs. This design exists because GPUs are optimised
-to work within the render pass structure, which lets the driver manage memory
-and scheduling efficiently.
+As lessons add more resources (pipelines, textures, buffers), they all go into
+this struct. The pattern stays the same: create in init, use in iterate,
+destroy in quit.
 
-### sRGB swapchain
+### The frame loop
+
+This is the most important concept in this lesson. Every GPU program — from
+this simple color clear through complex 3D scenes with shadows, reflections,
+and post-processing — runs the same fundamental loop every frame. The steps
+grow more elaborate, but the structure never changes.
+
+Here is what happens each time `SDL_AppIterate` is called:
+
+#### 1. Acquire a command buffer
+
+```c
+SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
+```
+
+The CPU and GPU are separate processors running simultaneously. You cannot
+call the GPU directly the way you call a C function — the GPU is busy
+executing the *previous* frame's work while you are preparing the next one.
+Instead, you record everything you want the GPU to do into a **command
+buffer**, which is a list of instructions that the GPU will execute later as a
+batch.
+
+Acquiring a command buffer gives you an empty recording to fill. You will add
+render passes, draw calls, and resource operations to it, then submit the
+whole thing at once.
+
+#### 2. Acquire the swapchain texture
+
+```c
+SDL_GPUTexture *swapchain = NULL;
+SDL_AcquireGPUSwapchainTexture(cmd, window, &swapchain, NULL, NULL);
+```
+
+Before you can render anything to the screen, you need a texture to render
+*into*. The swapchain provides this — each frame, you ask for the next
+available texture, render into it, and when you submit the command buffer the
+operating system displays it in your window.
+
+The swapchain texture can be `NULL`. This happens when the window is minimized
+or otherwise not visible — there is no surface to render to. When this occurs,
+you skip the render pass and submit an empty command buffer. This is not an
+error; it is normal operation that every SDL_GPU program must handle.
+
+#### 3. Set up a color target
+
+```c
+SDL_GPUColorTargetInfo color_target = { 0 };
+color_target.texture     = swapchain;
+color_target.load_op     = SDL_GPU_LOADOP_CLEAR;
+color_target.store_op    = SDL_GPU_STOREOP_STORE;
+color_target.clear_color = (SDL_FColor){ 0.02f, 0.02f, 0.03f, 1.0f };
+```
+
+A **color target** describes what the GPU will render into during a render pass
+and how the GPU should initialize and finalize it. The fields:
+
+- **`texture`** — the texture to render into (the swapchain texture we just
+  acquired).
+- **`load_op`** — what happens to the texture at the *start* of the render
+  pass. `CLEAR` fills it with a solid color. `LOAD` preserves whatever was
+  already there. `DONT_CARE` means the contents are undefined (used when you
+  know every pixel will be overwritten, which lets the driver skip a memory
+  read).
+- **`store_op`** — what happens at the *end* of the render pass. `STORE`
+  writes the results back to the texture. `DONT_CARE` discards them (used for
+  temporary render targets that will not be read again).
+- **`clear_color`** — the RGBA color to fill when `load_op` is `CLEAR`.
+
+This structure appears in every lesson that renders anything. In later lessons
+you will add depth targets, use `LOAD` to preserve previous passes, and render
+into off-screen textures for post-processing — but the concept stays the same:
+you always tell the GPU *what* to render into and *how* to begin and end.
+
+#### 4. Begin and end a render pass
+
+```c
+SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(
+    cmd,
+    &color_target, 1,   /* one color target */
+    NULL                /* no depth/stencil target */
+);
+
+/* Draw commands would go here — we have none yet */
+
+SDL_EndGPURenderPass(pass);
+```
+
+A **render pass** is a scope within a command buffer where drawing happens. All
+draw commands, and even simple clears, must occur inside a render pass — there
+is no standalone "clear screen" function in modern GPU APIs.
+
+Why? The GPU hardware is designed around render passes. When you begin one, the
+GPU configures its internal memory (called tile memory on mobile GPUs) for the
+target you specified. Draws execute against that memory. When you end the
+pass, the results are written out. This structure lets the driver schedule
+memory and execution efficiently. It also means the driver knows the full scope
+of your rendering up front, which enables important optimizations.
+
+`SDL_BeginGPURenderPass` takes the command buffer, an array of color targets
+(we have one), the count, and an optional depth/stencil target (NULL for now —
+we add depth in Lesson 06). Between begin and end, you issue draw calls. In
+this lesson we have no draw calls, so the only work the render pass does is the
+clear — but the machinery is identical to what a complex scene uses.
+
+#### 5. Submit the command buffer
+
+```c
+SDL_SubmitGPUCommandBuffer(cmd);
+```
+
+Submission hands the completed command buffer to the GPU for execution. The GPU
+processes the recorded commands — in our case, clearing the swapchain texture
+to a dark color — and presents the result to the window.
+
+After submission, you must not touch that command buffer again. The GPU owns it
+now and will release it when execution finishes. Next frame,
+`SDL_AppIterate` is called again and the entire loop repeats: acquire a new
+command buffer, acquire the next swapchain texture, set up targets, render,
+submit.
+
+#### Putting it together
+
+Here is the complete frame loop as it appears in `main.c`. Every lesson from
+here through Lesson 27 builds on this same structure — the only difference is
+what happens between `SDL_BeginGPURenderPass` and `SDL_EndGPURenderPass`:
+
+```c
+/* 1. Acquire command buffer */
+SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
+
+/* 2. Acquire swapchain texture */
+SDL_GPUTexture *swapchain = NULL;
+SDL_AcquireGPUSwapchainTexture(cmd, window, &swapchain, NULL, NULL);
+
+if (swapchain) {
+    /* 3. Set up color target */
+    SDL_GPUColorTargetInfo color_target = { 0 };
+    color_target.texture     = swapchain;
+    color_target.load_op     = SDL_GPU_LOADOP_CLEAR;
+    color_target.store_op    = SDL_GPU_STOREOP_STORE;
+    color_target.clear_color = (SDL_FColor){ 0.02f, 0.02f, 0.03f, 1.0f };
+
+    /* 4. Render pass */
+    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &color_target, 1, NULL);
+    SDL_EndGPURenderPass(pass);
+}
+
+/* 5. Submit */
+SDL_SubmitGPUCommandBuffer(cmd);
+```
+
+Notice the `if (swapchain)` guard. When the window is minimized, the
+swapchain texture is `NULL` and there is nothing to render into. The command
+buffer is still submitted — it simply contains no render pass.
+
+### Handling events
+
+`SDL_AppEvent` is called once for each input event — key presses, mouse
+movement, window resize, and quit requests. For now, the only event we handle
+is quit:
+
+```c
+SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
+{
+    if (event->type == SDL_EVENT_QUIT) {
+        return SDL_APP_SUCCESS;   /* signal SDL to shut down */
+    }
+    return SDL_APP_CONTINUE;      /* keep running */
+}
+```
+
+The return value controls program flow. `SDL_APP_CONTINUE` keeps the loop
+running. `SDL_APP_SUCCESS` tells SDL to stop and call `SDL_AppQuit` for
+cleanup. `SDL_APP_FAILURE` does the same but indicates an error occurred.
+Later lessons add keyboard and mouse handling here for camera control and
+interaction.
+
+### Resource cleanup
+
+When the program exits, `SDL_AppQuit` releases everything that was created
+during init. Resources are released in **reverse order** — the last thing
+created is the first thing destroyed:
+
+```c
+void SDL_AppQuit(void *appstate, SDL_AppResult result)
+{
+    app_state *state = (app_state *)appstate;
+    if (state) {
+        SDL_ReleaseWindowFromGPUDevice(state->device, state->window);
+        SDL_DestroyWindow(state->window);
+        SDL_DestroyGPUDevice(state->device);
+        SDL_free(state);
+    }
+}
+```
+
+Reverse order matters because resources depend on each other. The swapchain
+(created by `SDL_ClaimWindowForGPUDevice`) depends on both the window and the
+device, so you release it first. The window depends on the device, so it is
+destroyed next. The device goes last. Destroying in the wrong order can cause
+crashes or validation errors.
+
+As lessons add more resources — pipelines, textures, buffers, samplers — they
+all follow this same pattern: create in `SDL_AppInit`, use in
+`SDL_AppIterate`, destroy in `SDL_AppQuit` in reverse order.
+
+SDL calls `SDL_Quit()` automatically after `SDL_AppQuit` returns, so you do
+not need to call it yourself.
+
+### Error handling
+
+Every SDL_GPU call that can fail is checked, and failures are handled
+immediately. This is not optional — ignoring return values from GPU functions
+leads to crashes, corrupted rendering, or silent failures that are difficult
+to diagnose.
+
+The pattern is consistent throughout every lesson:
+
+```c
+if (!SDL_SomeGPUFunction(...)) {
+    SDL_Log("SDL_SomeGPUFunction failed: %s", SDL_GetError());
+    /* clean up any resources already created */
+    return SDL_APP_FAILURE;
+}
+```
+
+Three elements: check the return value, log a descriptive message with
+`SDL_GetError()`, and clean up before returning. In `SDL_AppInit`, cleanup
+means destroying resources in reverse creation order. In `SDL_AppIterate`,
+returning `SDL_APP_FAILURE` triggers `SDL_AppQuit`, which handles full
+cleanup.
+
+### sRGB and linear color
 
 The code requests an **sRGB** swapchain using
-`SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR`. This tells the GPU to automatically
-convert the linear colour values you provide into the sRGB colour space that
-monitors expect. Without this conversion, colours appear washed out or too
-dark. We will explain sRGB and gamma correction in detail in a later lesson —
-for now, this is the correct default to use.
+`SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR`. This is a single line of setup, but
+the concept behind it matters for understanding why colors look the way they
+do.
+
+Monitors do not display light linearly. If you send a pixel value of 0.5 to a
+monitor, it does not produce half the brightness of 1.0 — it produces
+something closer to a quarter. This nonlinear response is called **gamma**.
+The **sRGB** color space compensates for this by encoding colors in a curve
+that matches what monitors expect.
+
+When you request `SDR_LINEAR`, the GPU automatically converts the linear color
+values you provide into sRGB when writing to the swapchain. This means you can
+work with physically correct linear values in your shaders and rendering code,
+and the final image looks correct on screen.
+
+That is why the clear color values (0.02, 0.02, 0.03) appear as a reasonable
+dark grey rather than near-black — in linear space, low values are
+perceptually darker than you might expect because the sRGB conversion
+redistributes the range. We cover sRGB and gamma correction in full detail in
+a later lesson. For now, the important point is: always request an sRGB
+swapchain and work in linear color values.
 
 ## Math connections
 
