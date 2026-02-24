@@ -3964,3 +3964,686 @@ def diagram_radical_inverse():
     )
     fig.tight_layout()
     save(fig, "math/14-blue-noise-sequences", "radical_inverse.png")
+
+
+# ---------------------------------------------------------------------------
+# math/02-coordinate-spaces — 3-D coordinate space visualizations
+# ---------------------------------------------------------------------------
+#
+# A simple 3-D house (box body + triangular-prism roof) is transformed
+# through the six-stage rendering pipeline.  Each diagram renders the
+# house with flat-shaded faces so learners can follow it from local
+# space all the way to screen pixels.  World-space diagrams include a
+# yard (ground plane) and road for spatial context.
+
+_COORD_LESSON = "math/02-coordinate-spaces"
+
+# ── 3-D house geometry (local space) ──────────────────────────────────────
+#
+# Y is up.  The house body is a 1×0.7×0.6 box sitting on the XZ ground
+# plane (y = 0).  The roof is a triangular prism peaking at y = 1.0.
+#
+#   Vertices (x, y, z):
+#
+#        8─────9          roof peak   (y = 1.0)
+#       /|\   /|\
+#      / | \ / | \
+#     2──+──3  |  |       wall top    (y = 0.7)
+#     |  4──|──5  |       (back wall top, same y)
+#     | /   | /  /
+#     |/    |/  /
+#     0─────1  /          ground      (y = 0)
+#      \       /
+#       6─────7           back ground (y = 0)
+#
+# Faces reference these indices.
+
+_HOUSE_VERTS = np.array(
+    [
+        [-0.5, 0.0, -0.3],  # 0  front-left-bottom
+        [0.5, 0.0, -0.3],  # 1  front-right-bottom
+        [-0.5, 0.7, -0.3],  # 2  front-left-top
+        [0.5, 0.7, -0.3],  # 3  front-right-top
+        [-0.5, 0.7, 0.3],  # 4  back-left-top
+        [0.5, 0.7, 0.3],  # 5  back-right-top
+        [-0.5, 0.0, 0.3],  # 6  back-left-bottom
+        [0.5, 0.0, 0.3],  # 7  back-right-bottom
+        [0.0, 1.0, -0.3],  # 8  front-roof-peak
+        [0.0, 1.0, 0.3],  # 9  back-roof-peak
+    ],
+    dtype=float,
+)
+
+# Each face is a list of vertex indices forming a polygon.
+# Winding is outward-facing for shading orientation.
+_HOUSE_FACES = [
+    # Body walls
+    [0, 1, 3, 2],  # front
+    [6, 4, 5, 7],  # back
+    [0, 6, 7, 1],  # bottom
+    [0, 2, 4, 6],  # left
+    [1, 7, 5, 3],  # right
+    # Roof
+    [2, 3, 8],  # front gable
+    [4, 9, 5],  # back gable
+    [2, 8, 9, 4],  # left slope
+    [3, 5, 9, 8],  # right slope
+]
+
+# Flat-shade colours — index matches _HOUSE_FACES.
+# Front wall is accent1, sides darker, roof accent3.
+_HOUSE_COLORS = [
+    "#5dc8f0",  # front wall  (bright cyan)
+    "#3a8daa",  # back wall   (darker)
+    "#2a6a80",  # bottom      (darkest, rarely seen)
+    "#3596b8",  # left wall
+    "#3596b8",  # right wall
+    "#78d080",  # front gable (green)
+    "#4ea85a",  # back gable
+    "#5cb868",  # left slope
+    "#5cb868",  # right slope
+]
+
+
+def _house_polys(verts):
+    """Return a list of Nx3 arrays — one polygon per house face."""
+    return [verts[idx] for idx in _HOUSE_FACES]
+
+
+# ── Transformation helpers ────────────────────────────────────────────────
+
+
+def _mat4_rot_y(deg):
+    a = np.radians(deg)
+    c, s = np.cos(a), np.sin(a)
+    m = np.eye(4)
+    m[0, 0], m[0, 2] = c, s
+    m[2, 0], m[2, 2] = -s, c
+    return m
+
+
+def _mat4_translate(tx, ty, tz):
+    m = np.eye(4)
+    m[0, 3], m[1, 3], m[2, 3] = tx, ty, tz
+    return m
+
+
+def _mat4_scale(s):
+    return np.diag([s, s, s, 1.0])
+
+
+def _mat4_look_at(eye, target, up):
+    f = target - eye
+    f = f / np.linalg.norm(f)
+    r = np.cross(f, up)
+    r = r / np.linalg.norm(r)
+    u = np.cross(r, f)
+    m = np.eye(4)
+    m[0, :3], m[1, :3], m[2, :3] = r, u, -f
+    m[0, 3] = -r.dot(eye)
+    m[1, 3] = -u.dot(eye)
+    m[2, 3] = f.dot(eye)
+    return m
+
+
+def _mat4_perspective(fov_deg, aspect, near, far):
+    fv = 1.0 / np.tan(np.radians(fov_deg) / 2.0)
+    m = np.zeros((4, 4))
+    m[0, 0] = fv / aspect
+    m[1, 1] = fv
+    m[2, 2] = far / (near - far)
+    m[2, 3] = (near * far) / (near - far)
+    m[3, 2] = -1.0
+    return m
+
+
+def _xf3(verts3, mat4):
+    """Transform Nx3 vertices by a 4x4 matrix, return Nx3."""
+    n = verts3.shape[0]
+    h = np.hstack([verts3, np.ones((n, 1))])
+    out = (mat4 @ h.T).T
+    return out[:, :3]
+
+
+def _xf4(verts3, mat4):
+    """Transform Nx3 vertices by a 4x4 matrix, return Nx4 (keep w)."""
+    n = verts3.shape[0]
+    h = np.hstack([verts3, np.ones((n, 1))])
+    return (mat4 @ h.T).T
+
+
+# ── Shared pipeline parameters ────────────────────────────────────────────
+
+_MODEL_MAT = _mat4_translate(3.0, 0.0, -2.0) @ _mat4_rot_y(35.0) @ _mat4_scale(2.0)
+_CAM_EYE = np.array([8.0, 5.0, 10.0])
+_CAM_TARGET = np.array([3.0, 1.0, -2.0])
+_CAM_UP = np.array([0.0, 1.0, 0.0])
+_VIEW_MAT = _mat4_look_at(_CAM_EYE, _CAM_TARGET, _CAM_UP)
+_PROJ_MAT = _mat4_perspective(60.0, 16.0 / 9.0, 0.1, 100.0)
+_SCR_W, _SCR_H = 1920.0, 1080.0
+
+
+def _coord_pipeline():
+    """Push house vertices through the full transform pipeline.
+
+    Returns (world_verts, view_verts, clip4, ndc_verts, screen_x, screen_y).
+    All arrays use GPU Y-up convention (apply _gpu_to_mpl before plotting).
+    """
+    world_verts = _xf3(_HOUSE_VERTS, _MODEL_MAT)
+    view_verts = _xf3(world_verts, _VIEW_MAT)
+    clip4 = _xf4(view_verts, _PROJ_MAT)
+    ndc_verts = clip4[:, :3] / clip4[:, 3:4]
+    screen_x = (ndc_verts[:, 0] + 1.0) * 0.5 * _SCR_W
+    screen_y = (1.0 - ndc_verts[:, 1]) * 0.5 * _SCR_H
+    return world_verts, view_verts, clip4, ndc_verts, screen_x, screen_y
+
+
+# ── Coordinate-system adapter ─────────────────────────────────────────────
+#
+# GPU convention: Y-up (x right, y up, z toward viewer).
+# Matplotlib Axes3D: Z-up (x right, y depth, z up).
+# _gpu_to_mpl swaps the Y and Z columns so our Y-up data renders upright.
+
+
+def _gpu_to_mpl(verts):
+    """Swap Y↔Z so GPU Y-up data plots correctly in matplotlib Z-up axes."""
+    return verts[:, [0, 2, 1]]
+
+
+# ── 3-D axis styling helper ───────────────────────────────────────────────
+
+
+def _style_3d(ax, title, xlabel="x", ylabel="z", zlabel="y (up)"):
+    """Apply the forge dark theme to a 3-D axes."""
+    ax.set_facecolor(STYLE["bg"])
+    ax.xaxis.pane.set_facecolor(STYLE["surface"])  # type: ignore[attr-defined]
+    ax.yaxis.pane.set_facecolor(STYLE["surface"])  # type: ignore[attr-defined]
+    ax.zaxis.pane.set_facecolor(STYLE["surface"])
+    ax.xaxis.pane.set_edgecolor(STYLE["grid"])  # type: ignore[attr-defined]
+    ax.yaxis.pane.set_edgecolor(STYLE["grid"])  # type: ignore[attr-defined]
+    ax.zaxis.pane.set_edgecolor(STYLE["grid"])
+    ax.tick_params(colors=STYLE["axis"], labelsize=7)
+    ax.set_xlabel(xlabel, color=STYLE["axis"], fontsize=9, labelpad=2)
+    ax.set_ylabel(ylabel, color=STYLE["axis"], fontsize=9, labelpad=2)
+    ax.set_zlabel(zlabel, color=STYLE["axis"], fontsize=9, labelpad=2)
+    ax.set_title(
+        title,
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        pad=14,
+    )
+
+
+def _add_house_3d(ax, verts):
+    """Add the shaded 3-D house to *ax* using Poly3DCollection."""
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    polys = _house_polys(verts)
+    col = Poly3DCollection(
+        polys,
+        facecolors=_HOUSE_COLORS,
+        edgecolors=STYLE["text_dim"],
+        linewidths=0.5,
+        alpha=0.85,
+    )
+    ax.add_collection3d(col)
+
+
+def _add_ground_plane(ax, center_xz, size, color=STYLE["accent3"]):
+    """Draw a flat ground-plane quad at mpl-z = 0 (GPU y = 0)."""
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    cx, cz = center_xz
+    hs = size / 2.0
+    # mpl axes: (x, y=depth, z=up).  Ground is flat at z = 0.
+    quad = [
+        [cx - hs, cz - hs, 0],
+        [cx + hs, cz - hs, 0],
+        [cx + hs, cz + hs, 0],
+        [cx - hs, cz + hs, 0],
+    ]
+    col = Poly3DCollection(
+        [quad],
+        facecolors=[color],
+        edgecolors=[STYLE["grid"]],
+        alpha=0.40,
+    )
+    ax.add_collection3d(col)
+
+
+def _add_road(ax, x_range, z_center, width):
+    """Draw a road strip at mpl-z = 0.001 (sits just above the ground)."""
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    x0, x1 = x_range
+    hw = width / 2.0
+    mpl_z = 0.001  # tiny offset above ground
+    # mpl axes: (x, y=depth, z=up)
+    quad = [
+        [x0, z_center - hw, mpl_z],
+        [x1, z_center - hw, mpl_z],
+        [x1, z_center + hw, mpl_z],
+        [x0, z_center + hw, mpl_z],
+    ]
+    col = Poly3DCollection(
+        [quad],
+        facecolors=[STYLE["grid"]],
+        edgecolors=[STYLE["text_dim"]],
+        linewidths=0.5,
+        alpha=0.45,
+    )
+    ax.add_collection3d(col)
+    # Centre dashes
+    n_dash = 6
+    xs = np.linspace(x0 + 0.3, x1 - 0.3, n_dash)
+    for xd in xs:
+        ax.plot(
+            [xd, xd + 0.25],
+            [z_center] * 2,
+            [mpl_z + 0.002] * 2,
+            color=STYLE["warn"],
+            lw=1.2,
+            alpha=0.7,
+        )
+
+
+def _set_equal_3d(ax, verts, pad=0.5):
+    """Force equal aspect on a 3-D axes based on vertex extents."""
+    mins = verts.min(axis=0)
+    maxs = verts.max(axis=0)
+    center = (mins + maxs) / 2.0
+    half = (maxs - mins).max() / 2.0 + pad
+    ax.set_xlim(center[0] - half, center[0] + half)
+    ax.set_ylim(center[1] - half, center[1] + half)
+    ax.set_zlim(center[2] - half, center[2] + half)
+
+
+# ── Diagram 1: Local Space ────────────────────────────────────────────────
+
+
+def diagram_coord_local_space():
+    """3-D house centred at the origin in its own local coordinate system."""
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
+    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+
+    mpl_verts = _gpu_to_mpl(_HOUSE_VERTS)
+    _add_house_3d(ax, mpl_verts)
+
+    # Origin marker (mpl coords: x, z, y)
+    ax.scatter(
+        [0],
+        [0],
+        [0],  # type: ignore[arg-type]
+        color=STYLE["warn"],
+        s=60,
+        marker="+",
+        linewidths=2,
+        zorder=10,
+        depthshade=False,
+    )
+    ax.text(
+        0.15,
+        -0.15,
+        -0.15,
+        "origin",
+        color=STYLE["warn"],
+        fontsize=9,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    _set_equal_3d(ax, mpl_verts, pad=0.6)
+    ax.view_init(elev=25, azim=-45)
+    _style_3d(ax, "1. Local Space")
+
+    fig.tight_layout()
+    save(fig, _COORD_LESSON, "coord_local_space.png")
+
+
+# ── Diagram 2: World Space ────────────────────────────────────────────────
+
+
+def _add_camera_icon(ax, eye_mpl, target_mpl, size=0.6):
+    """Draw a small wireframe camera pyramid in mpl coordinates."""
+    fwd = target_mpl - eye_mpl
+    fwd = fwd / np.linalg.norm(fwd)
+    # Pick a temporary up that isn't parallel to fwd
+    tmp_up = np.array([0.0, 0.0, 1.0])
+    if abs(np.dot(fwd, tmp_up)) > 0.99:
+        tmp_up = np.array([0.0, 1.0, 0.0])
+    right = np.cross(fwd, tmp_up)
+    right = right / np.linalg.norm(right) * size * 0.5
+    up = np.cross(right, fwd)
+    up = up / np.linalg.norm(up) * size * 0.5
+    tip = eye_mpl
+    base_center = eye_mpl + fwd * size
+    corners = [
+        base_center + right + up,
+        base_center - right + up,
+        base_center - right - up,
+        base_center + right - up,
+    ]
+    for c in corners:
+        ax.plot(
+            [tip[0], c[0]],
+            [tip[1], c[1]],
+            [tip[2], c[2]],
+            color=STYLE["warn"],
+            lw=1.2,
+            alpha=0.9,
+        )
+    # Base rectangle
+    for i in range(4):
+        j = (i + 1) % 4
+        ax.plot(
+            [corners[i][0], corners[j][0]],
+            [corners[i][1], corners[j][1]],
+            [corners[i][2], corners[j][2]],
+            color=STYLE["warn"],
+            lw=1.2,
+            alpha=0.9,
+        )
+
+
+def diagram_coord_world_space():
+    """House placed in the world scene with yard and road for context."""
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(8, 7), facecolor=STYLE["bg"])
+    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+
+    world_verts, _, _, _, _, _ = _coord_pipeline()
+    mpl_verts = _gpu_to_mpl(world_verts)
+    _add_house_3d(ax, mpl_verts)
+
+    # Yard (green ground around the house)
+    hc = world_verts.mean(axis=0)  # GPU coords for centre
+    _add_ground_plane(ax, (hc[0], hc[2]), 7.0)
+
+    # Road running along X in front of the house
+    _add_road(ax, (-2, 10), hc[2] + 5.0, 1.5)
+
+    # World origin (mpl: x, z, y)
+    ax.scatter(
+        [0],
+        [0],
+        [0],  # type: ignore[arg-type]
+        color=STYLE["warn"],
+        s=60,
+        marker="+",
+        linewidths=2,
+        zorder=10,
+        depthshade=False,
+    )
+    ax.text(
+        0.3,
+        0.6,
+        0.0,
+        "world origin",
+        color=STYLE["warn"],
+        fontsize=8,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    # Camera icon at _CAM_EYE, pointing at _CAM_TARGET
+    eye_mpl = _gpu_to_mpl(_CAM_EYE.reshape(1, 3)).flatten()
+    tgt_mpl = _gpu_to_mpl(_CAM_TARGET.reshape(1, 3)).flatten()
+    _add_camera_icon(ax, eye_mpl, tgt_mpl, size=1.0)
+    ax.text(
+        eye_mpl[0] + 0.4,
+        eye_mpl[1] + 0.4,
+        eye_mpl[2] + 0.4,
+        "camera",
+        color=STYLE["warn"],
+        fontsize=9,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    # Include camera position in the bounds calculation
+    all_pts = np.vstack([mpl_verts, eye_mpl.reshape(1, 3)])
+    _set_equal_3d(ax, all_pts, pad=3.0)
+    ax.view_init(elev=45, azim=-50)
+    _style_3d(ax, "2. World Space")
+
+    fig.tight_layout()
+    save(fig, _COORD_LESSON, "coord_world_space.png")
+
+
+# ── Diagram 3: View / Camera Space ───────────────────────────────────────
+
+
+def diagram_coord_view_space():
+    """House re-expressed relative to the camera at the origin."""
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
+    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+
+    _, view_verts, _, _, _, _ = _coord_pipeline()
+    mpl_verts = _gpu_to_mpl(view_verts)
+    _add_house_3d(ax, mpl_verts)
+
+    # Camera at origin (mpl coords)
+    ax.scatter(
+        [0],
+        [0],
+        [0],  # type: ignore[arg-type]
+        color=STYLE["warn"],
+        s=80,
+        marker="^",
+        linewidths=1.5,
+        zorder=10,
+        depthshade=False,
+    )
+    ax.text(
+        0.3,
+        0.0,
+        0.3,
+        "camera",
+        color=STYLE["warn"],
+        fontsize=9,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    _set_equal_3d(ax, mpl_verts, pad=2.0)
+    ax.view_init(elev=30, azim=-60)
+    _style_3d(
+        ax,
+        "3. View / Camera Space",
+        xlabel="x (right)",
+        ylabel="z (depth)",
+        zlabel="y (up)",
+    )
+
+    fig.tight_layout()
+    save(fig, _COORD_LESSON, "coord_view_space.png")
+
+
+# ── Diagram 4: Clip Space ────────────────────────────────────────────────
+
+
+def diagram_coord_clip_space():
+    """House in clip space with w component encoding depth."""
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
+    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+
+    _, _, clip4, _, _, _ = _coord_pipeline()
+    clip_xyz = clip4[:, :3]
+    clip_w = clip4[:, 3]
+
+    mpl_clip = _gpu_to_mpl(clip_xyz)
+    _add_house_3d(ax, mpl_clip)
+
+    # Annotate the roof peak (highest mpl-z = highest GPU y) with its w value
+    peak_idx = np.argmax(mpl_clip[:, 2])
+    px, py, pz = mpl_clip[peak_idx]
+    w_val = clip_w[peak_idx]
+    ax.text(
+        px + 0.3,
+        py,
+        pz + 0.5,
+        f"w = {w_val:.1f}",
+        color=STYLE["warn"],
+        fontsize=11,
+        fontweight="bold",
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    _set_equal_3d(ax, mpl_clip, pad=1.5)
+    ax.view_init(elev=25, azim=-55)
+    _style_3d(ax, "4. Clip Space", xlabel="clip x", ylabel="clip z", zlabel="clip y")
+
+    fig.tight_layout()
+    save(fig, _COORD_LESSON, "coord_clip_space.png")
+
+
+# ── Diagram 5: NDC ───────────────────────────────────────────────────────
+
+
+def diagram_coord_ndc():
+    """House normalised inside the visible volume after perspective divide."""
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(7, 7), facecolor=STYLE["bg"])
+    ax: Axes3D = fig.add_subplot(111, projection="3d")  # type: ignore[assignment]
+
+    _, _, _, ndc_verts, _, _ = _coord_pipeline()
+
+    mpl_ndc = _gpu_to_mpl(ndc_verts)
+    _add_house_3d(ax, mpl_ndc)
+
+    # Visible-volume wireframe box (GPU: x,y ∈ [-1,1], z ∈ [0,1]).
+    # After Y↔Z swap → mpl: x ∈ [-1,1], y(=gpu_z) ∈ [0,1], z(=gpu_y) ∈ [-1,1].
+    mx = [-1, 1]  # mpl-x range  (gpu x)
+    my = [0, 1]  # mpl-y range  (gpu z)
+    mz = [-1, 1]  # mpl-z range  (gpu y)
+    box_edges = []
+    # Edges along mpl-x
+    for yi in my:
+        for zi in mz:
+            box_edges.append([[mx[0], yi, zi], [mx[1], yi, zi]])
+    # Edges along mpl-y
+    for xi in mx:
+        for zi in mz:
+            box_edges.append([[xi, my[0], zi], [xi, my[1], zi]])
+    # Edges along mpl-z
+    for xi in mx:
+        for yi in my:
+            box_edges.append([[xi, yi, mz[0]], [xi, yi, mz[1]]])
+
+    for seg in box_edges:
+        xs, ys, zs = zip(*seg)
+        ax.plot(xs, ys, zs, color=STYLE["warn"], lw=0.8, alpha=0.5)
+
+    ax.text(
+        -1.0,
+        -0.15,
+        -1.0,
+        "visible volume",
+        color=STYLE["warn"],
+        fontsize=8,
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    ax.set_xlim(-1.5, 1.5)
+    ax.set_ylim(-0.3, 1.3)
+    ax.set_zlim(-1.5, 1.5)
+    ax.view_init(elev=25, azim=-55)
+    _style_3d(
+        ax,
+        "5. Normalized Device Coordinates",
+        xlabel="ndc x",
+        ylabel="ndc z",
+        zlabel="ndc y",
+    )
+
+    fig.tight_layout()
+    save(fig, _COORD_LESSON, "coord_ndc.png")
+
+
+# ── Diagram 6: Screen Space ──────────────────────────────────────────────
+
+
+def diagram_coord_screen_space():
+    """House mapped to final pixel coordinates on a 1920 × 1080 screen."""
+    fig = plt.figure(figsize=(9, 5.5), facecolor=STYLE["bg"])
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(STYLE["bg"])
+
+    _, _, clip4, ndc_verts, screen_x, screen_y = _coord_pipeline()
+
+    # Per-vertex depth in view space (GPU z) for painter's algorithm
+    screen_z = ndc_verts[:, 2]
+
+    # Screen boundary
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            _SCR_W,
+            _SCR_H,
+            linewidth=2,
+            edgecolor=STYLE["text_dim"],
+            facecolor=STYLE["surface"],
+            alpha=0.25,
+            zorder=1,
+        )
+    )
+
+    # Sort faces back-to-front (painter's algorithm) so nearer faces
+    # draw on top of farther ones.
+    face_depths = []
+    for face_idx, idx_list in enumerate(_HOUSE_FACES):
+        avg_z = np.mean(screen_z[idx_list])
+        face_depths.append((avg_z, face_idx, idx_list))
+    face_depths.sort(key=lambda t: t[0], reverse=True)  # farthest first
+
+    for draw_order, (_, face_idx, idx_list) in enumerate(face_depths):
+        fx = screen_x[idx_list]
+        fy = screen_y[idx_list]
+        poly = np.column_stack([fx, fy])
+        ax.add_patch(
+            Polygon(
+                poly,
+                closed=True,
+                facecolor=_HOUSE_COLORS[face_idx],
+                edgecolor=STYLE["text_dim"],
+                linewidth=0.6,
+                alpha=0.85,
+                zorder=3 + draw_order,
+            )
+        )
+
+    ax.text(
+        _SCR_W / 2,
+        _SCR_H + 40,
+        "1920 \u00d7 1080",
+        color=STYLE["text_dim"],
+        fontsize=10,
+        ha="center",
+        path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
+    )
+
+    ax.set_xlim(-80, 2000)
+    ax.set_ylim(_SCR_H + 80, -60)
+    ax.set_aspect("equal")
+    ax.tick_params(colors=STYLE["axis"], labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_color(STYLE["grid"])
+        spine.set_linewidth(0.5)
+    ax.grid(True, color=STYLE["grid"], linewidth=0.5, alpha=0.3)
+    ax.set_xlabel("pixel x", color=STYLE["axis"], fontsize=10)
+    ax.set_ylabel("pixel y  (0 = top)", color=STYLE["axis"], fontsize=10)
+    ax.set_title(
+        "6. Screen Space",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        pad=14,
+    )
+
+    fig.tight_layout()
+    save(fig, _COORD_LESSON, "coord_screen_space.png")

@@ -66,6 +66,8 @@ When you're building a 3D game or renderer, you work with many different coordin
 
 ### 1. Local / Model Space
 
+![The house shape centered at the origin in its own local coordinate system](assets/coord_local_space.png)
+
 **What it is:** The coordinate system used to define a 3D model.
 
 **Origin:** The model's center (or wherever the artist placed it)
@@ -99,6 +101,8 @@ Each mesh/model has its own local space. You define it once, then reuse it every
 ---
 
 ### 2. World Space
+
+![The house placed in the world, offset and rotated from the origin](assets/coord_world_space.png)
 
 **What it is:** The coordinate system for your entire scene.
 
@@ -138,6 +142,8 @@ The **model matrix** encodes "where is this object in the world?"
 ---
 
 ### 3. View / Camera Space
+
+![The house re-expressed relative to the camera at the origin](assets/coord_view_space.png)
 
 **What it is:** Coordinates relative to the camera's position and orientation.
 
@@ -196,6 +202,8 @@ In view space, objects in front of the camera have **negative Z** values.
 
 ### 4. Clip Space
 
+![The house in clip space with w encoding depth for perspective](assets/coord_clip_space.png)
+
 **What it is:** Coordinates after applying perspective projection.
 
 **Purpose:** Apply perspective foreshortening (distant objects appear smaller) and prepare for clipping.
@@ -237,6 +245,8 @@ After applying the projection matrix, vertices are in **homogeneous coordinates*
 ---
 
 ### 5. NDC (Normalized Device Coordinates)
+
+![The house normalized inside the visible region from -1 to 1](assets/coord_ndc.png)
 
 **What it is:** Coordinates after **perspective division** (dividing x, y, z by w).
 
@@ -284,6 +294,8 @@ vec3 ndc_point = vec3_create(
 ---
 
 ### 6. Screen / Pixel Space
+
+![The house mapped to pixel coordinates on a 1920 by 1080 screen](assets/coord_screen_space.png)
 
 **What it is:** Final pixel coordinates on your screen.
 
