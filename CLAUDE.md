@@ -117,6 +117,10 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Introduce API calls one at a time with context
 - **Use the math library** — no bespoke math in GPU code
 - Link to relevant math lessons for theory
+- **Use diagrams** — use **/create-diagram** to generate matplotlib visuals
+  for geometric, mathematical, or data-flow concepts. Never use ASCII art
+  diagrams in lesson READMEs; proper diagrams are more readable and match the
+  project's visual identity.
 - End with exercises that extend the lesson
 - Write a matching skill in `.claude/skills/<name>/SKILL.md`
 

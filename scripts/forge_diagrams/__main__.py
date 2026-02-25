@@ -33,6 +33,7 @@ from .engine_diagrams import (
 from .gpu_diagrams import (
     diagram_aabb_sorting,
     diagram_arvo_method,
+    diagram_aspect_ratio,
     diagram_atmosphere_layers,
     diagram_blend_modes,
     diagram_blinn_phong_vectors,
@@ -83,6 +84,7 @@ from .gpu_diagrams import (
     diagram_time_of_day_colors,
     diagram_tone_map_comparison,
     diagram_undersampling,
+    diagram_unit_circle,
     diagram_uv_mapping,
 )
 from .math_diagrams import (
@@ -201,6 +203,10 @@ DIAGRAMS = {
         ("discrepancy_convergence.png", diagram_discrepancy_convergence),
         ("radical_inverse.png", diagram_radical_inverse),
     ],
+    "gpu/03": [
+        ("unit_circle.png", diagram_unit_circle),
+        ("aspect_ratio.png", diagram_aspect_ratio),
+    ],
     "gpu/04": [
         ("uv_mapping.png", diagram_uv_mapping),
         ("filtering_comparison.png", diagram_filtering_comparison),
@@ -300,6 +306,7 @@ LESSON_NAMES = {
     "math/12": "math/12-hash-functions",
     "math/13": "math/13-gradient-noise",
     "math/14": "math/14-blue-noise-sequences",
+    "gpu/03": "gpu/03-uniforms-and-motion",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",
     "gpu/11": "gpu/11-compute-shaders",
