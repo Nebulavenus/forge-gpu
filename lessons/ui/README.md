@@ -45,8 +45,7 @@ earlier ones. Reusable code moves into the shared UI library at
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
-
-*Lessons coming soon. Use `/ui-lesson` to scaffold the first one.*
+| 01 | [TTF Parsing](01-ttf-parsing/) | TrueType binary format, table directory, font metrics, cmap character mapping, glyph outlines |
 
 ## Building
 

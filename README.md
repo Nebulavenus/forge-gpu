@@ -213,9 +213,10 @@ the output.
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
+| 01 | [TTF Parsing](lessons/ui/01-ttf-parsing/) | TrueType binary format, table directory, font metrics, cmap character mapping, glyph outlines |
 
-*Lessons coming soon. See [lessons/ui/README.md](lessons/ui/README.md) for
-details and [PLAN.md](PLAN.md) for the roadmap.*
+See [lessons/ui/README.md](lessons/ui/README.md) for details and
+[PLAN.md](PLAN.md) for the roadmap.
 
 ## Shared Libraries (`common/`)
 
@@ -269,7 +270,24 @@ if (forge_gltf_load("scene.gltf", &scene)) {
 }
 ```
 
-All three libraries are header-only — just include and use. No build
+### UI Library (`common/ui/`)
+
+Parse TrueType font files and extract glyph outlines, font metrics, and
+character-to-glyph mappings. See [`common/ui/README.md`](common/ui/README.md)
+for details.
+
+```c
+#include "ui/forge_ui.h"
+
+ForgeUiFont font;
+if (forge_ui_ttf_load("font.ttf", &font)) {
+    Uint16 idx = forge_ui_ttf_glyph_index(&font, 'A');
+    // idx is the glyph index for 'A' — use for outline loading
+    forge_ui_ttf_free(&font);
+}
+```
+
+All four libraries are header-only — just include and use. No build
 configuration needed.
 
 ## Getting Started

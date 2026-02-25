@@ -98,7 +98,7 @@ vertices, indices, UVs) with no GPU dependency.
 
 ### Font Fundamentals
 
-- [ ] **UI Lesson 01 — TTF Parsing** — TrueType file structure; table directory; extracting glyph outlines, advance widths, and bounding boxes; font units vs pixel coordinates; units-per-em scaling
+- [x] **UI Lesson 01 — TTF Parsing** — TrueType file structure; table directory; extracting glyph outlines, advance widths, and bounding boxes; font units vs pixel coordinates; units-per-em scaling
 - [ ] **UI Lesson 02 — Glyph Rasterization** — Converting quadratic Bezier outlines to bitmaps; scanline rasterization; anti-aliasing with coverage; signed distance fields as an alternative; single-channel alpha output
 - [ ] **UI Lesson 03 — Font Atlas** — Rectangle packing algorithms; arranging glyphs into a power-of-two texture atlas; computing UV coordinates per glyph; padding to prevent bleed; atlas as a single-channel texture
 

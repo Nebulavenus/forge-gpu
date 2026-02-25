@@ -107,8 +107,12 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/27-ssao)
 endif()
 
+# ── UI Lessons ─────────────────────────────────────────────────────────────
+add_subdirectory(lessons/ui/01-ttf-parsing)
+
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
+add_subdirectory(tests/ui)
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(tests/obj)
     add_subdirectory(tests/gltf)

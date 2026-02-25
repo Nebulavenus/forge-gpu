@@ -126,9 +126,11 @@ from .math_diagrams import (
     diagram_white_noise_comparison,
 )
 
-# UI diagram imports — uncomment as diagram functions are added:
-# from .ui_diagrams import (
-# )
+from .ui_diagrams import (
+    diagram_endianness,
+    diagram_glyph_anatomy,
+    diagram_ttf_file_structure,
+)
 
 # ---------------------------------------------------------------------------
 # Diagram registry
@@ -292,6 +294,11 @@ DIAGRAMS = {
         ("noise_and_blur.png", diagram_noise_and_blur),
         ("composite_modes.png", diagram_composite_modes),
     ],
+    "ui/01": [
+        ("ttf_file_structure.png", diagram_ttf_file_structure),
+        ("glyph_anatomy.png", diagram_glyph_anatomy),
+        ("endianness.png", diagram_endianness),
+    ],
 }
 
 # Full lesson directory names for display
@@ -325,6 +332,7 @@ LESSON_NAMES = {
     "gpu/23": "gpu/23-point-light-shadows",
     "gpu/26": "gpu/26-procedural-sky",
     "gpu/27": "gpu/27-ssao",
+    "ui/01": "ui/01-ttf-parsing",
 }
 
 
