@@ -90,6 +90,39 @@ Infrastructure that supports all lessons:
 - [ ] **Lesson 40 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 35)
 - [ ] **Lesson 41 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
+## UI Lessons
+
+Build an immediate-mode UI system from scratch — font parsing, text rendering,
+layout, and interactive controls. UI lessons produce CPU-side data (textures,
+vertices, indices, UVs) with no GPU dependency.
+
+### Font Fundamentals
+
+- [ ] **UI Lesson 01 — TTF Parsing** — TrueType file structure; table directory; extracting glyph outlines, advance widths, and bounding boxes; font units vs pixel coordinates; units-per-em scaling
+- [ ] **UI Lesson 02 — Glyph Rasterization** — Converting quadratic Bezier outlines to bitmaps; scanline rasterization; anti-aliasing with coverage; signed distance fields as an alternative; single-channel alpha output
+- [ ] **UI Lesson 03 — Font Atlas** — Rectangle packing algorithms; arranging glyphs into a power-of-two texture atlas; computing UV coordinates per glyph; padding to prevent bleed; atlas as a single-channel texture
+
+### Text Layout
+
+- [ ] **UI Lesson 04 — Text Shaping** — Mapping character sequences to glyph indices; horizontal advance and kerning pairs; generating positioned quads (position + UV + color) for a string of text
+- [ ] **UI Lesson 05 — Text Layout** — Line breaking and word wrapping; alignment (left, center, right); vertical line spacing and baseline; multi-line text block as vertex/index output
+
+### Immediate-Mode UI
+
+- [ ] **UI Lesson 06 — Immediate-Mode Basics** — Retained vs immediate-mode UI; frame-based widget declaration; widget identity (ID generation); hot/active state tracking; input routing (mouse position, clicks)
+- [ ] **UI Lesson 07 — Buttons and Checkboxes** — Clickable button with hover/press states; checkbox toggle; generating quads with background color and text label; hit testing with bounding rects
+- [ ] **UI Lesson 08 — Sliders and Text Input** — Draggable slider with value range; text input field with cursor and selection; character insertion and deletion; generating draw data for interactive controls
+
+### Layout and Containers
+
+- [ ] **UI Lesson 09 — Layout System** — Automatic horizontal and vertical stacking; padding and margins; size constraints (min/max); layout pass that computes widget positions before generating draw data
+- [ ] **UI Lesson 10 — Panels and Scrolling** — Scrollable container with clipping rects; scroll offset and content bounds; nested panels; scissor rect output for the renderer
+
+### Application Patterns
+
+- [ ] **UI Lesson 11 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
+- [ ] **UI Lesson 12 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
+
 ## Engine Lessons
 
 Practical engineering lessons covering the toolchain and infrastructure behind

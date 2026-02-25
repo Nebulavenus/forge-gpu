@@ -1,0 +1,91 @@
+# UI Lessons
+
+Build an immediate-mode UI system from scratch — font parsing, text rendering,
+layout, and interactive controls — all in pure C with no GPU dependency.
+
+## Purpose
+
+UI lessons teach how to build the **data layer** for a game or tool UI:
+
+- Parse TrueType fonts and extract glyph outlines
+- Rasterize glyphs into bitmap atlases
+- Lay out text with proper metrics, kerning, and line breaking
+- Build immediate-mode controls (buttons, sliders, text input, panels)
+- Generate vertex, index, and texture data ready for any renderer
+
+The UI library produces **textures, vertices, indices, and UVs** — it contains
+no GPU code. A separate GPU lesson renders the output using SDL's GPU API.
+
+## Philosophy
+
+- **Data-first** — Define what the GPU needs (vertices, UVs, textures) before
+  writing any code. The data contract is the bridge between CPU and GPU.
+- **Immediate-mode** — UI state lives in the application, not the library.
+  Each frame, the application describes what it wants; the library generates
+  draw data.
+- **One concept per lesson** — Font parsing, rasterization, atlas packing,
+  text layout, and controls are each separate lessons that build on each other.
+- **Visual results** — Every lesson outputs images or diagrams showing what
+  it produced, even without a GPU renderer.
+
+## How lessons work
+
+Each UI lesson is a standalone C program that demonstrates one concept:
+
+- **`main.c`** — Demo program producing data (images, vertex arrays, metrics)
+- **`README.md`** — Explanation of the concept, data formats, and exercises
+- **`CMakeLists.txt`** — Build configuration
+- **`assets/`** — Diagrams and example output images
+
+Lessons build progressively — later lessons use types and functions from
+earlier ones. Reusable code moves into the shared UI library at
+`common/ui/` as the track grows.
+
+## Lessons
+
+| # | Topic | What you'll learn |
+|---|-------|-------------------|
+
+*Lessons coming soon. Use `/ui-lesson` to scaffold the first one.*
+
+## Building
+
+```bash
+cmake -B build
+cmake --build build --config Debug
+```
+
+Individual lessons:
+
+```bash
+# Windows
+build\lessons\ui\NN-topic-name\Debug\NN-topic-name.exe
+
+# Linux / macOS
+./build/lessons/ui/NN-topic-name/NN-topic-name
+```
+
+## Data contract
+
+UI lessons produce data that a GPU renderer consumes. Every lesson documents
+its output format in a **Data output** section:
+
+- **Vertices** — position (vec2), UV (vec2), color (vec4)
+- **Indices** — uint16 or uint32 triangle list, CCW winding
+- **Textures** — single-channel alpha (fonts) or RGBA (colored UI elements)
+- **Metadata** — glyph metrics, widget bounds, layout rects
+
+This separation keeps the UI logic testable and renderer-agnostic.
+
+## Related lessons
+
+- **[Math lessons](../math/)** — Vectors (vec2 for positions and UVs),
+  rectangles, interpolation
+- **[Engine lessons](../engine/)** — Memory layout (structs, offsets), C
+  fundamentals, header-only libraries
+- **GPU lessons** — A future GPU lesson will render UI data using the
+  techniques from the GPU track
+
+## Adding new lessons
+
+Use the `/ui-lesson` skill to scaffold a new UI lesson with all required files.

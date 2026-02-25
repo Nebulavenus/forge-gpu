@@ -126,6 +126,10 @@ from .math_diagrams import (
     diagram_white_noise_comparison,
 )
 
+# UI diagram imports — uncomment as diagram functions are added:
+# from .ui_diagrams import (
+# )
+
 # ---------------------------------------------------------------------------
 # Diagram registry
 # ---------------------------------------------------------------------------

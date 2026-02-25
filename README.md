@@ -12,7 +12,7 @@ A learning platform and building tool for real-time graphics with
 1. **Learn** — Follow guided lessons teaching GPU programming, math, and game techniques
    - Each lesson is a standalone program introducing one concept
    - Progressive curriculum from "Hello Window" to advanced rendering
-   - Covers SDL GPU API, math fundamentals, engine/toolchain skills, and more
+   - Covers SDL GPU API, math fundamentals, UI systems, engine/toolchain skills, and more
    - Every line commented to explain *why*, not just *what*
 
 2. **Forge** — Use skills and libraries to build games and tools with AI
@@ -204,6 +204,19 @@ C fundamentals, debugging, and project structure:
 See [lessons/engine/README.md](lessons/engine/README.md) for details and the
 full topic list. See [PLAN.md](PLAN.md) for the roadmap.
 
+### UI Lessons (lessons/ui/)
+
+Build an immediate-mode UI system from scratch — font parsing, text rendering,
+layout, and interactive controls. UI lessons produce CPU-side data (textures,
+vertices, indices, UVs) with no GPU dependency. A separate GPU lesson renders
+the output.
+
+| # | Topic | What you'll learn |
+|---|-------|-------------------|
+
+*Lessons coming soon. See [lessons/ui/README.md](lessons/ui/README.md) for
+details and [PLAN.md](PLAN.md) for the roadmap.*
+
 ## Shared Libraries (`common/`)
 
 GPU lessons use shared, header-only libraries in `common/` instead of writing
@@ -388,6 +401,9 @@ forge-gpu/
 │   ├── engine/            Engine lessons — build systems, C, debugging
 │   │   ├── README.md      Overview and navigation
 │   │   └── NN-topic/      Each topic: example project, README, common errors
+│   ├── ui/                UI lessons — fonts, text, immediate-mode controls
+│   │   ├── README.md      Overview and navigation
+│   │   └── NN-topic/      Each topic: program, README, data output
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
@@ -433,7 +449,8 @@ forge-gpu/
 
 - **Math lessons** teach concepts and add to `common/math/`
 - **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
-- **GPU lessons** use the shared libraries and link to math lessons for theory
+- **UI lessons** build an immediate-mode UI system (fonts, text, controls) as CPU-side data
+- **GPU lessons** use the shared libraries, render UI data, and link to math lessons for theory
 - **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
 - **Skills** automate lesson creation and teach AI agents the patterns
 - **Shared libraries** are reusable in lessons and your own projects
@@ -477,6 +494,7 @@ project to enable Claude to build games and tools with you.
 | [math-lesson](.claude/skills/math-lesson/SKILL.md) | `/math-lesson` | Add math concept: lesson + program + update library |
 | [engine-lesson](.claude/skills/engine-lesson/SKILL.md) | `/engine-lesson` | Add engine lesson: build systems, C, debugging, project structure |
 | [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson` | Scaffold a new GPU lesson with all required files |
+| [ui-lesson](.claude/skills/ui-lesson/SKILL.md) | `/ui-lesson` | Add UI lesson: fonts, text, immediate-mode controls |
 | [publish-lesson](.claude/skills/publish-lesson/SKILL.md) | `/publish-lesson` | Validate, commit, and PR a completed lesson |
 
 **How to use:**

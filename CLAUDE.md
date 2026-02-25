@@ -73,6 +73,7 @@ forge-gpu/
 ├── lessons/
 │   ├── math/              # Math fundamentals (vectors, matrices, etc.)
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
+│   ├── ui/                # UI fundamentals (fonts, text, controls)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
@@ -137,6 +138,16 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Small, focused program demonstrating one concept
 - Add implementation to `common/math/` with extensive inline docs
 - Cross-reference GPU lessons that use this math
+
+### UI lessons (lessons/ui/)
+
+- Use **/ui-lesson** skill to scaffold
+- Build an immediate-mode UI system — fonts, text, layout, controls
+- **No GPU code** — lessons produce textures, vertices, indices, and UVs
+- A separate GPU lesson will render the UI data
+- Add reusable types and functions to `common/ui/` as the track grows
+- Cross-reference math lessons (vectors, rects) and engine lessons (memory,
+  structs) where relevant
 
 ### Math library usage
 
