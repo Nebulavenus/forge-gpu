@@ -6894,7 +6894,7 @@ def diagram_shadow_lookup():
     ax.add_patch(occluder)
     ax.text(
         occ_x + occ_w / 2,
-        occ_y + occ_h / 2,
+        occ_y + occ_h - 0.4,
         "Occluder",
         color=STYLE["text"],
         fontsize=9,
@@ -6933,8 +6933,8 @@ def diagram_shadow_lookup():
         },
         zorder=4,
     )
-    mid_x = light_x + dir_dx * 0.35
-    mid_y = light_y + dir_dy * 0.35 + 0.6
+    mid_x = light_x + dir_dx * 0.18
+    mid_y = light_y + dir_dy * 0.18 + 1.4
     ax.text(
         mid_x,
         mid_y,
@@ -6954,15 +6954,24 @@ def diagram_shadow_lookup():
 
     ax.plot(hit_x, hit_y, "D", color=STYLE["warn"], markersize=8, zorder=10)
     ax.text(
-        hit_x - 0.3,
-        hit_y + 0.5,
+        hit_x - 1.2,
+        hit_y - 0.6,
         "stored\ndepth",
         color=STYLE["warn"],
         fontsize=9,
         fontweight="bold",
         ha="center",
-        va="bottom",
+        va="top",
         path_effects=stroke,
+    )
+    # Leader line from label to diamond marker
+    ax.plot(
+        [hit_x - 1.2, hit_x],
+        [hit_y - 0.5, hit_y],
+        color=STYLE["warn"],
+        lw=0.8,
+        ls=":",
+        zorder=5,
     )
 
     # --- Depth comparison annotations ---
