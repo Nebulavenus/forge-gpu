@@ -35,6 +35,7 @@ implementations for your projects.
 | 12 | [Hash Functions & White Noise](12-hash-functions/) | Integer hash functions (Wang, PCG, xxHash32), avalanche effect, hash-to-float, seeding, white noise |
 | 13 | [Gradient Noise (Perlin & Simplex)](13-gradient-noise/) | Gradient noise algorithm, Perlin improved noise, simplex noise, fBm, lacunarity, persistence, domain warping |
 | 14 | [Blue Noise & Low-Discrepancy Sequences](14-blue-noise-sequences/) | Halton, R2, Sobol sequences; blue noise (Mitchell's best candidate); discrepancy; dithering, sampling, stippling |
+| 15 | [Bézier Curves](15-bezier-curves/) | Quadratic and cubic Bézier curves, De Casteljau's algorithm, tangent vectors, arc length, curve splitting, degree elevation, adaptive flattening |
 
 ## How Math Lessons Work
 

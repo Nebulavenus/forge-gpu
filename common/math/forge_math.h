@@ -245,6 +245,22 @@ static inline float forge_trilerpf(float c000, float c100,
  */
 #define FORGE_EPSILON 1.1920928955078125e-7f
 
+/* Threshold for detecting degenerate Bézier curves.
+ *
+ * When the squared length of the baseline (endpoint-to-endpoint vector) falls
+ * below this value, the curve is treated as degenerate — the endpoints
+ * effectively coincide and the perpendicular-distance flatness test would
+ * divide by near-zero.  The flatness functions fall back to a simple
+ * point-distance check instead.
+ *
+ * Value: 1e-12 ≈ (1e-6)², so curves shorter than ~1 micron (in whatever
+ * coordinate system) are considered degenerate.
+ *
+ * See: vec2_bezier_quadratic_is_flat, vec2_bezier_cubic_is_flat
+ * See: lessons/math/15-bezier-curves
+ */
+#define FORGE_BEZIER_DEGENERATE_EPSILON 1e-12f
+
 /* ── Floating-Point Comparison ───────────────────────────────────────────── */
 
 /* Test if two floats are approximately equal using absolute tolerance.
@@ -4542,6 +4558,670 @@ static inline float forge_star_discrepancy_2d(const float *xs, const float *ys,
     }
 
     return max_disc;
+}
+
+/* ── Bézier Curves ───────────────────────────────────────────────────────── */
+
+/* Evaluate a quadratic Bézier curve at parameter t (2D).
+ *
+ * A quadratic Bézier curve is defined by three control points: a start point
+ * (p0), a guide point (p1), and an end point (p2). The curve starts at p0
+ * when t=0 and ends at p2 when t=1. The guide point p1 "pulls" the curve
+ * toward itself without the curve actually passing through it (in general).
+ *
+ * The evaluation uses De Casteljau's algorithm: two rounds of linear
+ * interpolation. First lerp between adjacent control points, then lerp the
+ * results together:
+ *
+ *   q0 = lerp(p0, p1, t)
+ *   q1 = lerp(p1, p2, t)
+ *   result = lerp(q0, q1, t)
+ *
+ * This is equivalent to the explicit formula:
+ *   B(t) = (1-t)^2 * p0  +  2(1-t)t * p1  +  t^2 * p2
+ *
+ * Parameters:
+ *   p0 — start point (curve passes through this at t=0)
+ *   p1 — guide point (influences curvature; curve does not pass through it)
+ *   p2 — end point (curve passes through this at t=1)
+ *   t  — parameter in [0, 1]
+ *
+ * Returns: the point on the curve at parameter t
+ *
+ * Usage:
+ *   vec2 start = vec2_create(0.0f, 0.0f);
+ *   vec2 guide = vec2_create(0.5f, 1.0f);
+ *   vec2 end   = vec2_create(1.0f, 0.0f);
+ *   vec2 mid   = vec2_bezier_quadratic(start, guide, end, 0.5f);
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec2 vec2_bezier_quadratic(vec2 p0, vec2 p1, vec2 p2, float t)
+{
+    /* De Casteljau: two rounds of lerp */
+    vec2 q0 = vec2_lerp(p0, p1, t);
+    vec2 q1 = vec2_lerp(p1, p2, t);
+    return vec2_lerp(q0, q1, t);
+}
+
+/* Evaluate a cubic Bézier curve at parameter t (2D).
+ *
+ * A cubic Bézier curve is defined by four control points: a start point (p0),
+ * two guide points (p1, p2), and an end point (p3). The curve starts at p0
+ * when t=0 and ends at p3 when t=1. The two guide points shape the curve —
+ * p1 controls the departure direction from p0, and p2 controls the arrival
+ * direction into p3.
+ *
+ * De Casteljau's algorithm evaluates this with three rounds of lerp:
+ *
+ *   Round 1 (3 lerps):  q0 = lerp(p0, p1, t)
+ *                        q1 = lerp(p1, p2, t)
+ *                        q2 = lerp(p2, p3, t)
+ *
+ *   Round 2 (2 lerps):  r0 = lerp(q0, q1, t)
+ *                        r1 = lerp(q1, q2, t)
+ *
+ *   Round 3 (1 lerp):   result = lerp(r0, r1, t)
+ *
+ * Equivalent to the explicit formula:
+ *   B(t) = (1-t)^3 * p0  +  3(1-t)^2 t * p1  +  3(1-t) t^2 * p2  +  t^3 * p3
+ *
+ * Parameters:
+ *   p0 — start point (curve passes through this at t=0)
+ *   p1 — first guide point (controls departure direction from p0)
+ *   p2 — second guide point (controls arrival direction into p3)
+ *   p3 — end point (curve passes through this at t=1)
+ *   t  — parameter in [0, 1]
+ *
+ * Returns: the point on the curve at parameter t
+ *
+ * Usage:
+ *   vec2 p0 = vec2_create(0.0f, 0.0f);
+ *   vec2 p1 = vec2_create(0.33f, 1.0f);
+ *   vec2 p2 = vec2_create(0.66f, 1.0f);
+ *   vec2 p3 = vec2_create(1.0f, 0.0f);
+ *   vec2 mid = vec2_bezier_cubic(p0, p1, p2, p3, 0.5f);
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec2 vec2_bezier_cubic(vec2 p0, vec2 p1, vec2 p2, vec2 p3,
+                                     float t)
+{
+    /* De Casteljau: three rounds of lerp */
+    vec2 q0 = vec2_lerp(p0, p1, t);
+    vec2 q1 = vec2_lerp(p1, p2, t);
+    vec2 q2 = vec2_lerp(p2, p3, t);
+
+    vec2 r0 = vec2_lerp(q0, q1, t);
+    vec2 r1 = vec2_lerp(q1, q2, t);
+
+    return vec2_lerp(r0, r1, t);
+}
+
+/* Evaluate a quadratic Bézier curve at parameter t (3D).
+ *
+ * Same as vec2_bezier_quadratic but for 3D points. Useful for 3D paths,
+ * camera trajectories, and particle motion.
+ *
+ * Parameters:
+ *   p0 — start point
+ *   p1 — guide point
+ *   p2 — end point
+ *   t  — parameter in [0, 1]
+ *
+ * Returns: the 3D point on the curve at parameter t
+ *
+ * See: vec2_bezier_quadratic for a detailed explanation of the algorithm.
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec3 vec3_bezier_quadratic(vec3 p0, vec3 p1, vec3 p2, float t)
+{
+    vec3 q0 = vec3_lerp(p0, p1, t);
+    vec3 q1 = vec3_lerp(p1, p2, t);
+    return vec3_lerp(q0, q1, t);
+}
+
+/* Evaluate a cubic Bézier curve at parameter t (3D).
+ *
+ * Same as vec2_bezier_cubic but for 3D points. Useful for 3D paths,
+ * camera trajectories, and particle motion.
+ *
+ * Parameters:
+ *   p0 — start point
+ *   p1 — first guide point
+ *   p2 — second guide point
+ *   p3 — end point
+ *   t  — parameter in [0, 1]
+ *
+ * Returns: the 3D point on the curve at parameter t
+ *
+ * See: vec2_bezier_cubic for a detailed explanation of the algorithm.
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec3 vec3_bezier_cubic(vec3 p0, vec3 p1, vec3 p2, vec3 p3,
+                                     float t)
+{
+    vec3 q0 = vec3_lerp(p0, p1, t);
+    vec3 q1 = vec3_lerp(p1, p2, t);
+    vec3 q2 = vec3_lerp(p2, p3, t);
+
+    vec3 r0 = vec3_lerp(q0, q1, t);
+    vec3 r1 = vec3_lerp(q1, q2, t);
+
+    return vec3_lerp(r0, r1, t);
+}
+
+/* Compute the tangent (first derivative) of a quadratic Bézier curve (2D).
+ *
+ * The tangent tells you the direction and speed of travel along the curve
+ * at parameter t. This is the first derivative dB/dt of the quadratic curve.
+ *
+ * For a quadratic Bézier with control points p0, p1, p2:
+ *   B'(t) = 2(1-t)(p1 - p0) + 2t(p2 - p1)
+ *
+ * The tangent is NOT unit-length — its magnitude reflects how fast a point
+ * moves along the curve at that parameter value. To get just the direction,
+ * normalize the result.
+ *
+ * Parameters:
+ *   p0 — start point
+ *   p1 — guide point
+ *   p2 — end point
+ *   t  — parameter in [0, 1]
+ *
+ * Returns: the tangent vector at parameter t (not normalized)
+ *
+ * Usage:
+ *   vec2 tangent = vec2_bezier_quadratic_tangent(p0, p1, p2, 0.5f);
+ *   vec2 direction = vec2_normalize(tangent);  // unit direction
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec2 vec2_bezier_quadratic_tangent(vec2 p0, vec2 p1, vec2 p2,
+                                                 float t)
+{
+    /* B'(t) = 2(1-t)(p1 - p0) + 2t(p2 - p1) */
+    vec2 d0 = vec2_sub(p1, p0);
+    vec2 d1 = vec2_sub(p2, p1);
+    float u = 1.0f - t;
+    return vec2_add(vec2_scale(d0, 2.0f * u), vec2_scale(d1, 2.0f * t));
+}
+
+/* Compute the tangent (first derivative) of a cubic Bézier curve (2D).
+ *
+ * The tangent of a cubic Bézier is itself a quadratic Bézier in the
+ * differences of control points:
+ *   B'(t) = 3(1-t)^2 (p1 - p0) + 6(1-t)t (p2 - p1) + 3t^2 (p3 - p2)
+ *
+ * At t=0 the tangent points from p0 toward p1; at t=1 it points from p2
+ * toward p3. This is why the first and last control-point pairs determine
+ * the curve's departure and arrival directions.
+ *
+ * The result is NOT unit-length. Normalize if you need just the direction.
+ *
+ * Parameters:
+ *   p0 — start point
+ *   p1 — first guide point
+ *   p2 — second guide point
+ *   p3 — end point
+ *   t  — parameter in [0, 1]
+ *
+ * Returns: the tangent vector at parameter t (not normalized)
+ *
+ * Usage:
+ *   vec2 tangent = vec2_bezier_cubic_tangent(p0, p1, p2, p3, 0.0f);
+ *   // tangent = 3 * (p1 - p0), pointing from start toward first guide
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec2 vec2_bezier_cubic_tangent(vec2 p0, vec2 p1, vec2 p2,
+                                             vec2 p3, float t)
+{
+    /* B'(t) = 3(1-t)^2 (p1-p0) + 6(1-t)t (p2-p1) + 3t^2 (p3-p2) */
+    vec2 d0 = vec2_sub(p1, p0);
+    vec2 d1 = vec2_sub(p2, p1);
+    vec2 d2 = vec2_sub(p3, p2);
+    float u = 1.0f - t;
+    return vec2_add(
+        vec2_add(vec2_scale(d0, 3.0f * u * u),
+                 vec2_scale(d1, 6.0f * u * t)),
+        vec2_scale(d2, 3.0f * t * t));
+}
+
+/* Compute the tangent of a quadratic Bézier curve (3D).
+ *
+ * See vec2_bezier_quadratic_tangent for details.
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec3 vec3_bezier_quadratic_tangent(vec3 p0, vec3 p1, vec3 p2,
+                                                 float t)
+{
+    vec3 d0 = vec3_sub(p1, p0);
+    vec3 d1 = vec3_sub(p2, p1);
+    float u = 1.0f - t;
+    return vec3_add(vec3_scale(d0, 2.0f * u), vec3_scale(d1, 2.0f * t));
+}
+
+/* Compute the tangent of a cubic Bézier curve (3D).
+ *
+ * See vec2_bezier_cubic_tangent for details.
+ * See: lessons/math/15-bezier-curves
+ */
+static inline vec3 vec3_bezier_cubic_tangent(vec3 p0, vec3 p1, vec3 p2,
+                                             vec3 p3, float t)
+{
+    vec3 d0 = vec3_sub(p1, p0);
+    vec3 d1 = vec3_sub(p2, p1);
+    vec3 d2 = vec3_sub(p3, p2);
+    float u = 1.0f - t;
+    return vec3_add(
+        vec3_add(vec3_scale(d0, 3.0f * u * u),
+                 vec3_scale(d1, 6.0f * u * t)),
+        vec3_scale(d2, 3.0f * t * t));
+}
+
+/* Approximate the arc length of a cubic Bézier curve (2D).
+ *
+ * Bézier curves have no closed-form arc-length expression, so this function
+ * approximates the length by subdividing the curve into small straight-line
+ * segments and summing their lengths.
+ *
+ * Parameters:
+ *   p0, p1, p2, p3 — control points
+ *   segments        — number of straight-line segments (higher = more accurate)
+ *
+ * Returns: approximate arc length of the curve
+ *
+ * Usage:
+ *   float len = vec2_bezier_cubic_length(p0, p1, p2, p3, 64);
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline float vec2_bezier_cubic_length(vec2 p0, vec2 p1, vec2 p2,
+                                             vec2 p3, int segments)
+{
+    if (segments < 1) segments = 1;
+    float length = 0.0f;
+    vec2 prev = p0;
+    for (int i = 1; i <= segments; i++) {
+        float t = (float)i / (float)segments;
+        vec2 curr = vec2_bezier_cubic(p0, p1, p2, p3, t);
+        vec2 diff = vec2_sub(curr, prev);
+        length += vec2_length(diff);
+        prev = curr;
+    }
+    return length;
+}
+
+/* Approximate the arc length of a quadratic Bézier curve (2D).
+ *
+ * Same approach as vec2_bezier_cubic_length — subdivide into line segments
+ * and sum their lengths.
+ *
+ * Parameters:
+ *   p0, p1, p2 — control points
+ *   segments   — number of straight-line segments (higher = more accurate)
+ *
+ * Returns: approximate arc length of the curve
+ *
+ * Usage:
+ *   float len = vec2_bezier_quadratic_length(p0, p1, p2, 64);
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline float vec2_bezier_quadratic_length(vec2 p0, vec2 p1, vec2 p2,
+                                                 int segments)
+{
+    if (segments < 1) segments = 1;
+    float length = 0.0f;
+    vec2 prev = p0;
+    for (int i = 1; i <= segments; i++) {
+        float t = (float)i / (float)segments;
+        vec2 curr = vec2_bezier_quadratic(p0, p1, p2, t);
+        vec2 diff = vec2_sub(curr, prev);
+        length += vec2_length(diff);
+        prev = curr;
+    }
+    return length;
+}
+
+/* ── Bézier Curve Splitting (De Casteljau Subdivision) ───────────────── */
+
+/* Split a quadratic Bézier curve at parameter t into two sub-curves (2D).
+ *
+ * De Casteljau's algorithm naturally produces the control points for both
+ * halves as a byproduct of evaluation. The "left" curve covers the original
+ * parameter range [0, t] and the "right" curve covers [t, 1].
+ *
+ * This is the core operation for adaptive subdivision in font rasterizers
+ * and vector graphics renderers: recursively split curves until each piece
+ * is flat enough to approximate with a straight line.
+ *
+ * Left sub-curve control points:  { p0, q0, B(t) }
+ * Right sub-curve control points: { B(t), q1, p2 }
+ *
+ * where q0 = lerp(p0, p1, t), q1 = lerp(p1, p2, t), B(t) = lerp(q0, q1, t).
+ *
+ * Parameters:
+ *   p0, p1, p2 — original control points
+ *   t          — split parameter in [0, 1]
+ *   left_out   — receives 3 control points for the left sub-curve
+ *   right_out  — receives 3 control points for the right sub-curve
+ *
+ * Usage:
+ *   vec2 left[3], right[3];
+ *   vec2_bezier_quadratic_split(p0, p1, p2, 0.5f, left, right);
+ *   // left[0..2]  = first half,  right[0..2] = second half
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline void vec2_bezier_quadratic_split(vec2 p0, vec2 p1, vec2 p2,
+                                               float t,
+                                               vec2 *left_out,
+                                               vec2 *right_out)
+{
+    vec2 q0 = vec2_lerp(p0, p1, t);
+    vec2 q1 = vec2_lerp(p1, p2, t);
+    vec2 r  = vec2_lerp(q0, q1, t);
+
+    left_out[0]  = p0;
+    left_out[1]  = q0;
+    left_out[2]  = r;
+
+    right_out[0] = r;
+    right_out[1] = q1;
+    right_out[2] = p2;
+}
+
+/* Split a cubic Bézier curve at parameter t into two sub-curves (2D).
+ *
+ * The cubic version of De Casteljau subdivision. Three rounds of lerp
+ * produce all the intermediate points needed for both sub-curves.
+ *
+ * Left sub-curve control points:  { p0, q0, r0, B(t) }
+ * Right sub-curve control points: { B(t), r1, q2, p3 }
+ *
+ * This is essential for:
+ * - Font rendering: adaptively flatten glyph outlines to line segments
+ * - Collision detection: narrow-phase testing via recursive subdivision
+ * - Clipping curves to a bounding rectangle
+ *
+ * Parameters:
+ *   p0, p1, p2, p3 — original control points
+ *   t               — split parameter in [0, 1]
+ *   left_out        — receives 4 control points for the left sub-curve
+ *   right_out       — receives 4 control points for the right sub-curve
+ *
+ * Usage:
+ *   vec2 left[4], right[4];
+ *   vec2_bezier_cubic_split(p0, p1, p2, p3, 0.5f, left, right);
+ *   // left[0..3]  = first half,  right[0..3] = second half
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline void vec2_bezier_cubic_split(vec2 p0, vec2 p1, vec2 p2, vec2 p3,
+                                           float t,
+                                           vec2 *left_out, vec2 *right_out)
+{
+    /* Round 1 */
+    vec2 q0 = vec2_lerp(p0, p1, t);
+    vec2 q1 = vec2_lerp(p1, p2, t);
+    vec2 q2 = vec2_lerp(p2, p3, t);
+
+    /* Round 2 */
+    vec2 r0 = vec2_lerp(q0, q1, t);
+    vec2 r1 = vec2_lerp(q1, q2, t);
+
+    /* Round 3 — the curve point */
+    vec2 s = vec2_lerp(r0, r1, t);
+
+    left_out[0]  = p0;
+    left_out[1]  = q0;
+    left_out[2]  = r0;
+    left_out[3]  = s;
+
+    right_out[0] = s;
+    right_out[1] = r1;
+    right_out[2] = q2;
+    right_out[3] = p3;
+}
+
+/* ── Degree Elevation (Quadratic → Cubic) ────────────────────────────── */
+
+/* Convert a quadratic Bézier curve to an equivalent cubic Bézier (2D).
+ *
+ * Every quadratic Bézier can be represented exactly as a cubic. This is
+ * called "degree elevation." The resulting cubic traces the exact same
+ * path as the original quadratic.
+ *
+ * TrueType fonts store glyph outlines as quadratic Bézier curves, while
+ * OpenType CFF fonts use cubic curves. Degree elevation lets you convert
+ * TrueType outlines to cubic form so you can process all curves uniformly.
+ *
+ * The conversion formulas:
+ *   c0 = p0
+ *   c1 = p0 + (2/3)(p1 - p0)  = (1/3)p0 + (2/3)p1
+ *   c2 = p2 + (2/3)(p1 - p2)  = (2/3)p1 + (1/3)p2
+ *   c3 = p2
+ *
+ * Parameters:
+ *   p0, p1, p2 — quadratic control points
+ *   cubic_out  — receives 4 cubic control points
+ *
+ * Usage:
+ *   vec2 cubic[4];
+ *   vec2_bezier_quadratic_to_cubic(p0, p1, p2, cubic);
+ *   // cubic[0..3] traces the same path as the quadratic
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline void vec2_bezier_quadratic_to_cubic(vec2 p0, vec2 p1, vec2 p2,
+                                                  vec2 *cubic_out)
+{
+    /* c0 = p0 */
+    cubic_out[0] = p0;
+
+    /* c1 = (1/3)p0 + (2/3)p1 */
+    cubic_out[1] = vec2_add(vec2_scale(p0, 1.0f / 3.0f),
+                            vec2_scale(p1, 2.0f / 3.0f));
+
+    /* c2 = (2/3)p1 + (1/3)p2 */
+    cubic_out[2] = vec2_add(vec2_scale(p1, 2.0f / 3.0f),
+                            vec2_scale(p2, 1.0f / 3.0f));
+
+    /* c3 = p2 */
+    cubic_out[3] = p2;
+}
+
+/* ── Adaptive Flattening ─────────────────────────────────────────────── */
+
+/* Check if a quadratic Bézier is flat enough to approximate as a line.
+ *
+ * Measures the maximum deviation of the control point from the straight
+ * line connecting the endpoints. If this distance is below the tolerance,
+ * the curve is "flat enough" and can be represented by a single line
+ * segment without visible error.
+ *
+ * The deviation is the perpendicular distance from p1 to the line p0→p2.
+ * For a degenerate case where p0 == p2, it falls back to the distance
+ * from p1 to p0.
+ *
+ * Parameters:
+ *   p0, p1, p2 — control points
+ *   tolerance  — maximum allowed deviation (in the same units as the points)
+ *
+ * Returns: 1 if the curve is flat within tolerance, 0 otherwise
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline int vec2_bezier_quadratic_is_flat(vec2 p0, vec2 p1, vec2 p2,
+                                                float tolerance)
+{
+    /* Vector from p0 to p2 */
+    vec2 d = vec2_sub(p2, p0);
+    float len_sq = d.x * d.x + d.y * d.y;
+
+    if (len_sq < FORGE_BEZIER_DEGENERATE_EPSILON) {
+        /* Degenerate: endpoints coincide, measure distance to p1 */
+        vec2 dp = vec2_sub(p1, p0);
+        return (dp.x * dp.x + dp.y * dp.y) <= tolerance * tolerance;
+    }
+
+    /* Perpendicular distance from p1 to line p0→p2:
+     * |cross(d, p1-p0)| / |d| */
+    vec2 v = vec2_sub(p1, p0);
+    float cross = d.x * v.y - d.y * v.x;
+    float dist_sq = (cross * cross) / len_sq;
+
+    return dist_sq <= tolerance * tolerance;
+}
+
+/* Check if a cubic Bézier is flat enough to approximate as a line.
+ *
+ * Measures the maximum deviation of the two interior control points (p1, p2)
+ * from the straight line connecting the endpoints (p0→p3). If both
+ * deviations are below the tolerance, the curve is flat enough.
+ *
+ * Parameters:
+ *   p0, p1, p2, p3 — control points
+ *   tolerance       — maximum allowed deviation
+ *
+ * Returns: 1 if the curve is flat within tolerance, 0 otherwise
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline int vec2_bezier_cubic_is_flat(vec2 p0, vec2 p1, vec2 p2,
+                                            vec2 p3, float tolerance)
+{
+    /* Vector from p0 to p3 */
+    vec2 d = vec2_sub(p3, p0);
+    float len_sq = d.x * d.x + d.y * d.y;
+    float tol_sq = tolerance * tolerance;
+
+    if (len_sq < FORGE_BEZIER_DEGENERATE_EPSILON) {
+        /* Degenerate: check if all points are within tolerance of p0 */
+        vec2 dp1 = vec2_sub(p1, p0);
+        vec2 dp2 = vec2_sub(p2, p0);
+        return (dp1.x * dp1.x + dp1.y * dp1.y) <= tol_sq &&
+               (dp2.x * dp2.x + dp2.y * dp2.y) <= tol_sq;
+    }
+
+    /* Check perpendicular distances of both interior control points */
+    vec2 v1 = vec2_sub(p1, p0);
+    float cross1 = d.x * v1.y - d.y * v1.x;
+    if ((cross1 * cross1) / len_sq > tol_sq) return 0;
+
+    vec2 v2 = vec2_sub(p2, p0);
+    float cross2 = d.x * v2.y - d.y * v2.x;
+    if ((cross2 * cross2) / len_sq > tol_sq) return 0;
+
+    return 1;
+}
+
+/* Adaptively flatten a quadratic Bézier into line segments (2D).
+ *
+ * Recursively subdivides the curve at the midpoint until each piece is
+ * flat within the given tolerance, then appends the endpoint of each
+ * flat segment to the output buffer. The first point (p0) is NOT written —
+ * the caller is responsible for that, since multiple curves may be chained.
+ *
+ * This is the standard method for rasterizing Bézier curves in font
+ * renderers and vector-graphics engines: flatten to polylines, then render
+ * the line segments.
+ *
+ * Parameters:
+ *   p0, p1, p2 — control points
+ *   tolerance  — maximum allowed deviation from the true curve (pixels)
+ *   out        — output buffer for line-segment endpoints
+ *   max_out    — capacity of the output buffer
+ *   count      — pointer to current count (updated as points are added)
+ *
+ * Usage:
+ *   vec2 points[256];
+ *   int count = 0;
+ *   points[count++] = p0;  // caller writes the first point
+ *   vec2_bezier_quadratic_flatten(p0, p1, p2, 0.5f, points, 256, &count);
+ *   // points[0..count-1] is the flattened polyline
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline void vec2_bezier_quadratic_flatten(vec2 p0, vec2 p1, vec2 p2,
+                                                 float tolerance,
+                                                 vec2 *out, int max_out,
+                                                 int *count)
+{
+    if (*count >= max_out) return;
+
+    /* Guard against non-positive, NaN, or Inf tolerance which would never
+     * satisfy the flatness test, causing infinite recursion.  Fall back to
+     * the curve endpoint. */
+    if (!isfinite(tolerance) || tolerance <= 0.0f) {
+        out[(*count)++] = p2;
+        return;
+    }
+
+    if (vec2_bezier_quadratic_is_flat(p0, p1, p2, tolerance)) {
+        out[(*count)++] = p2;
+        return;
+    }
+
+    /* Split at midpoint and recurse */
+    vec2 left[3], right[3];
+    vec2_bezier_quadratic_split(p0, p1, p2, 0.5f, left, right);
+    vec2_bezier_quadratic_flatten(left[0], left[1], left[2],
+                                 tolerance, out, max_out, count);
+    vec2_bezier_quadratic_flatten(right[0], right[1], right[2],
+                                 tolerance, out, max_out, count);
+}
+
+/* Adaptively flatten a cubic Bézier into line segments (2D).
+ *
+ * Same approach as vec2_bezier_quadratic_flatten but for cubic curves.
+ * The first point (p0) is NOT written — the caller must write it.
+ *
+ * Parameters:
+ *   p0, p1, p2, p3 — control points
+ *   tolerance       — maximum allowed deviation from the true curve (pixels)
+ *   out             — output buffer for line-segment endpoints
+ *   max_out         — capacity of the output buffer
+ *   count           — pointer to current count (updated as points are added)
+ *
+ * Usage:
+ *   vec2 points[512];
+ *   int count = 0;
+ *   points[count++] = p0;  // caller writes the first point
+ *   vec2_bezier_cubic_flatten(p0, p1, p2, p3, 0.5f, points, 512, &count);
+ *   // points[0..count-1] is the flattened polyline
+ *
+ * See: lessons/math/15-bezier-curves
+ */
+static inline void vec2_bezier_cubic_flatten(vec2 p0, vec2 p1, vec2 p2,
+                                             vec2 p3, float tolerance,
+                                             vec2 *out, int max_out,
+                                             int *count)
+{
+    if (*count >= max_out) return;
+
+    /* Guard against non-positive, NaN, or Inf tolerance which would never
+     * satisfy the flatness test, causing infinite recursion.  Fall back to
+     * the curve endpoint. */
+    if (!isfinite(tolerance) || tolerance <= 0.0f) {
+        out[(*count)++] = p3;
+        return;
+    }
+
+    if (vec2_bezier_cubic_is_flat(p0, p1, p2, p3, tolerance)) {
+        out[(*count)++] = p3;
+        return;
+    }
+
+    /* Split at midpoint and recurse */
+    vec2 left[4], right[4];
+    vec2_bezier_cubic_split(p0, p1, p2, p3, 0.5f, left, right);
+    vec2_bezier_cubic_flatten(left[0], left[1], left[2], left[3],
+                              tolerance, out, max_out, count);
+    vec2_bezier_cubic_flatten(right[0], right[1], right[2], right[3],
+                              tolerance, out, max_out, count);
 }
 
 #endif /* FORGE_MATH_H */

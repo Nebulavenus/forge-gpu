@@ -144,7 +144,7 @@ static bool mat4_eq(mat4 a, mat4 b)
 
 #define ASSERT_FLOAT_EQ(a, b) \
     if (!float_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+        SDL_Log(\
                      "    FAIL: Expected %.6f, got %.6f", b, a); \
         fail_count++; \
         return; \
@@ -152,7 +152,7 @@ static bool mat4_eq(mat4 a, mat4 b)
 
 #define ASSERT_VEC2_EQ(a, b) \
     if (!vec2_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+        SDL_Log(\
                      "    FAIL: Expected (%.3f, %.3f), got (%.3f, %.3f)", \
                      b.x, b.y, a.x, a.y); \
         fail_count++; \
@@ -161,7 +161,7 @@ static bool mat4_eq(mat4 a, mat4 b)
 
 #define ASSERT_VEC3_EQ(a, b) \
     if (!vec3_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+        SDL_Log(\
                      "    FAIL: Expected (%.3f, %.3f, %.3f), got (%.3f, %.3f, %.3f)", \
                      b.x, b.y, b.z, a.x, a.y, a.z); \
         fail_count++; \
@@ -170,7 +170,7 @@ static bool mat4_eq(mat4 a, mat4 b)
 
 #define ASSERT_VEC4_EQ(a, b) \
     if (!vec4_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+        SDL_Log(\
                      "    FAIL: Expected (%.3f, %.3f, %.3f, %.3f), got (%.3f, %.3f, %.3f, %.3f)", \
                      b.x, b.y, b.z, b.w, a.x, a.y, a.z, a.w); \
         fail_count++; \
@@ -179,21 +179,21 @@ static bool mat4_eq(mat4 a, mat4 b)
 
 #define ASSERT_MAT2_EQ(a, b) \
     if (!mat2_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: mat2 mismatch"); \
+        SDL_Log("    FAIL: mat2 mismatch"); \
         fail_count++; \
         return; \
     }
 
 #define ASSERT_MAT3_EQ(a, b) \
     if (!mat3_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: mat3 mismatch"); \
+        SDL_Log("    FAIL: mat3 mismatch"); \
         fail_count++; \
         return; \
     }
 
 #define ASSERT_MAT4_EQ(a, b) \
     if (!mat4_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: mat4 mismatch"); \
+        SDL_Log("    FAIL: mat4 mismatch"); \
         fail_count++; \
         return; \
     }
@@ -1329,7 +1329,7 @@ static bool quat_eq(quat a, quat b)
 
 #define ASSERT_QUAT_EQ(a, b) \
     if (!quat_eq(a, b)) { \
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+        SDL_Log(\
                      "    FAIL: quat (%.4f,%.4f,%.4f,%.4f) != (%.4f,%.4f,%.4f,%.4f)", \
                      a.w, a.x, a.y, a.z, b.w, b.x, b.y, b.z); \
         fail_count++; \
@@ -1950,7 +1950,7 @@ static void test_color_tonemap_aces(void)
     /* High value should approach but not exceed ~1.0 */
     vec3 bright = color_tonemap_aces(vec3_create(100.0f, 100.0f, 100.0f));
     if (bright.x < 0.0f || bright.x > 1.1f) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: ACES output %.4f out of expected range", bright.x);
         fail_count++;
         return;
@@ -1994,7 +1994,7 @@ static void test_hash_wang_deterministic(void)
     uint32_t a = forge_hash_wang(42);
     uint32_t b = forge_hash_wang(42);
     if (a != b) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected same output for same input");
         fail_count++;
         return;
@@ -2008,7 +2008,7 @@ static void test_hash_wang_avalanche(void)
     uint32_t h0 = forge_hash_wang(0);
     uint32_t h1 = forge_hash_wang(1);
     if (h0 == h1) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Adjacent inputs produced same hash");
         fail_count++;
         return;
@@ -2022,7 +2022,7 @@ static void test_hash_wang_avalanche(void)
     }
     /* Accept 8-24 bits changed (generous range for single-pair test) */
     if (bits_changed < 8 || bits_changed > 24) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected ~16 bits changed, got %d",
                      bits_changed);
         fail_count++;
@@ -2039,7 +2039,7 @@ static void test_hash_pcg_deterministic(void)
     uint32_t a = forge_hash_pcg(42);
     uint32_t b = forge_hash_pcg(42);
     if (a != b) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected same output for same input");
         fail_count++;
         return;
@@ -2053,7 +2053,7 @@ static void test_hash_pcg_avalanche(void)
     uint32_t h0 = forge_hash_pcg(0);
     uint32_t h1 = forge_hash_pcg(1);
     if (h0 == h1) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Adjacent inputs produced same hash");
         fail_count++;
         return;
@@ -2065,7 +2065,7 @@ static void test_hash_pcg_avalanche(void)
         diff >>= 1;
     }
     if (bits_changed < 8 || bits_changed > 24) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected ~16 bits changed, got %d",
                      bits_changed);
         fail_count++;
@@ -2082,7 +2082,7 @@ static void test_hash_xxhash32_deterministic(void)
     uint32_t a = forge_hash_xxhash32(42);
     uint32_t b = forge_hash_xxhash32(42);
     if (a != b) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected same output for same input");
         fail_count++;
         return;
@@ -2096,7 +2096,7 @@ static void test_hash_xxhash32_avalanche(void)
     uint32_t h0 = forge_hash_xxhash32(0);
     uint32_t h1 = forge_hash_xxhash32(1);
     if (h0 == h1) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Adjacent inputs produced same hash");
         fail_count++;
         return;
@@ -2108,7 +2108,7 @@ static void test_hash_xxhash32_avalanche(void)
         diff >>= 1;
     }
     if (bits_changed < 8 || bits_changed > 24) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected ~16 bits changed, got %d",
                      bits_changed);
         fail_count++;
@@ -2126,7 +2126,7 @@ static void test_hash_functions_differ(void)
     uint32_t p = forge_hash_pcg(12345);
     uint32_t x = forge_hash_xxhash32(12345);
     if (w == p || w == x || p == x) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Different hash functions produced same output");
         fail_count++;
         return;
@@ -2142,7 +2142,7 @@ static void test_hash_to_float_range(void)
     for (uint32_t i = 0; i < HASH_SAMPLE_COUNT; i++) {
         float f = forge_hash_to_float(forge_hash_wang(i));
         if (f < 0.0f || f >= 1.0f) {
-            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+            SDL_Log(
                          "    FAIL: hash_to_float(wang(%u)) = %.6f outside [0, 1)",
                          i, (double)f);
             fail_count++;
@@ -2165,14 +2165,14 @@ static void test_hash_to_float_max(void)
     TEST("forge_hash_to_float(0xFFFFFFFF) < 1.0");
     float f = forge_hash_to_float(0xFFFFFFFFu);
     if (f >= 1.0f) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: hash_to_float(MAX) = %.6f >= 1.0", (double)f);
         fail_count++;
         return;
     }
     /* 0xFFFFFF / 16777216 = 16777215/16777216 ~ 0.99999994 */
     if (f < 0.999f) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: hash_to_float(MAX) = %.6f unexpectedly small",
                      (double)f);
         fail_count++;
@@ -2187,7 +2187,7 @@ static void test_hash_to_sfloat_range(void)
     for (uint32_t i = 0; i < HASH_SAMPLE_COUNT; i++) {
         float f = forge_hash_to_sfloat(forge_hash_wang(i));
         if (f < -1.0f || f >= 1.0f) {
-            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+            SDL_Log(
                          "    FAIL: hash_to_sfloat(wang(%u)) = %.6f outside [-1, 1)",
                          i, (double)f);
             fail_count++;
@@ -2213,7 +2213,7 @@ static void test_hash_combine_non_commutative(void)
     uint32_t ab = forge_hash_combine(forge_hash_combine(0, 1), 2);
     uint32_t ba = forge_hash_combine(forge_hash_combine(0, 2), 1);
     if (ab == ba) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: combine(0,1,2) == combine(0,2,1)");
         fail_count++;
         return;
@@ -2229,7 +2229,7 @@ static void test_hash2d_asymmetric(void)
     uint32_t h12 = forge_hash2d(1, 2);
     uint32_t h21 = forge_hash2d(2, 1);
     if (h12 == h21) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: hash2d is symmetric");
         fail_count++;
         return;
@@ -2243,7 +2243,7 @@ static void test_hash2d_deterministic(void)
     uint32_t a = forge_hash2d(10, 20);
     uint32_t b = forge_hash2d(10, 20);
     if (a != b) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected same output for same input");
         fail_count++;
         return;
@@ -2257,7 +2257,7 @@ static void test_hash3d_asymmetric(void)
     uint32_t h123 = forge_hash3d(1, 2, 3);
     uint32_t h321 = forge_hash3d(3, 2, 1);
     if (h123 == h321) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: hash3d is symmetric");
         fail_count++;
         return;
@@ -2271,7 +2271,7 @@ static void test_hash3d_deterministic(void)
     uint32_t a = forge_hash3d(5, 10, 15);
     uint32_t b = forge_hash3d(5, 10, 15);
     if (a != b) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Expected same output for same input");
         fail_count++;
         return;
@@ -2290,7 +2290,7 @@ static void test_hash_distribution_mean(void)
     }
     float mean = (float)(sum / (double)HASH_SAMPLE_COUNT);
     if (SDL_fabsf(mean - 0.5f) > HASH_STAT_EPSILON) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Mean = %.4f, expected ~0.5 (tolerance %.3f)",
                      (double)mean, (double)HASH_STAT_EPSILON);
         fail_count++;
@@ -2322,7 +2322,7 @@ static void test_noise_fade_monotonic(void)
         float t = (float)i / 100.0f;
         float val = forge_noise_fade(t);
         if (val < prev - EPSILON) {
-            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+            SDL_Log(
                          "    FAIL: fade(%.2f) = %.6f < fade(%.2f) = %.6f",
                          (double)t, (double)val,
                          (double)((float)(i - 1) / 100.0f), (double)prev);
@@ -2441,7 +2441,7 @@ static void test_noise_perlin2d_range(void)
     }
     if (min_val < -1.0f - NOISE_RANGE_EPSILON ||
         max_val >  1.0f + NOISE_RANGE_EPSILON) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Range [%.4f, %.4f] exceeds [-1, 1]",
                      (double)min_val, (double)max_val);
         fail_count++;
@@ -2464,7 +2464,7 @@ static void test_noise_perlin3d_range(void)
     }
     if (min_val < -1.0f - NOISE_RANGE_EPSILON ||
         max_val >  1.0f + NOISE_RANGE_EPSILON) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Range [%.4f, %.4f] exceeds [-1, 1]",
                      (double)min_val, (double)max_val);
         fail_count++;
@@ -2483,7 +2483,7 @@ static void test_noise_perlin2d_seed_independence(void)
     float v2 = forge_noise_perlin2d(3.7f, 2.1f, TEST_NOISE_SEED);
     /* At least two of these should differ */
     if (float_eq(v0, v1) && float_eq(v1, v2)) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: All seeds gave same value: %.6f",
                      (double)v0);
         fail_count++;
@@ -2503,7 +2503,7 @@ static void test_noise_perlin2d_continuity(void)
     float diff = SDL_fabsf(nudged - base);
     /* With step=0.001, the difference should be very small */
     if (diff > 0.05f) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: |delta| = %.6f for step=%.3f (expected < 0.05)",
                      (double)diff, (double)step);
         fail_count++;
@@ -2536,7 +2536,7 @@ static void test_noise_simplex2d_range(void)
     }
     if (min_val < -1.0f - NOISE_RANGE_EPSILON ||
         max_val >  1.0f + NOISE_RANGE_EPSILON) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Range [%.4f, %.4f] exceeds [-1, 1]",
                      (double)min_val, (double)max_val);
         fail_count++;
@@ -2552,7 +2552,7 @@ static void test_noise_simplex2d_seed_independence(void)
     float v1 = forge_noise_simplex2d(3.7f, 2.1f, 1u);
     float v2 = forge_noise_simplex2d(3.7f, 2.1f, TEST_NOISE_SEED);
     if (float_eq(v0, v1) && float_eq(v1, v2)) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: All seeds gave same value: %.6f",
                      (double)v0);
         fail_count++;
@@ -2605,7 +2605,7 @@ static void test_noise_fbm2d_more_octaves_not_identical(void)
     float oct1 = forge_noise_fbm2d(3.7f, 2.1f, TEST_NOISE_SEED, 1, 2.0f, 0.5f);
     float oct4 = forge_noise_fbm2d(3.7f, 2.1f, TEST_NOISE_SEED, 4, 2.0f, 0.5f);
     if (float_eq(oct1, oct4)) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: 1 octave = 4 octaves (%.6f)",
                      (double)oct1);
         fail_count++;
@@ -2658,7 +2658,7 @@ static void test_noise_domain_warp2d_differs_from_plain(void)
     float warped = forge_noise_domain_warp2d(3.7f, 2.1f, TEST_NOISE_SEED, TEST_WARP_STRENGTH);
     float plain  = forge_noise_fbm2d(3.7f, 2.1f, TEST_NOISE_SEED, 4, 2.0f, 0.5f);
     if (float_eq(warped, plain)) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Warped = plain fbm (%.6f)",
                      (double)warped);
         fail_count++;
@@ -2683,7 +2683,7 @@ static void test_noise_perlin2d_mean_near_zero(void)
     }
     float mean = (float)(sum / (double)NOISE_STAT_SAMPLES);
     if (SDL_fabsf(mean) > NOISE_STAT_EPSILON) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Mean = %.4f, expected ~0.0 (tolerance %.3f)",
                      (double)mean, (double)NOISE_STAT_EPSILON);
         fail_count++;
@@ -2703,12 +2703,430 @@ static void test_noise_simplex2d_mean_near_zero(void)
     }
     float mean = (float)(sum / (double)NOISE_STAT_SAMPLES);
     if (SDL_fabsf(mean) > NOISE_STAT_EPSILON) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+        SDL_Log(
                      "    FAIL: Mean = %.4f, expected ~0.0 (tolerance %.3f)",
                      (double)mean, (double)NOISE_STAT_EPSILON);
         fail_count++;
         return;
     }
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Bezier Curve Tests (Lesson 15)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define BEZIER_SEGMENTS_SMALL   64     /* Segment count for basic length tests */
+#define BEZIER_SEGMENTS_LARGE   128    /* Segment count for convergence tests */
+#define BEZIER_FLAT_TOL         0.001f /* Tolerance for flatness checks */
+#define BEZIER_FLATTEN_OUT_MAX  64     /* Output buffer size for flatten tests */
+#define BEZIER_TEST_TS_COUNT    5      /* Number of t-values for sampling tests */
+
+/* ── Quadratic Bezier evaluation ─────────────────────────────────────── */
+
+static void test_bezier_quadratic_endpoints(void)
+{
+    TEST("bezier_quadratic: endpoints");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 4.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    /* Curve passes through start at t=0 and end at t=1 */
+    ASSERT_VEC2_EQ(vec2_bezier_quadratic(p0, p1, p2, 0.0f), p0);
+    ASSERT_VEC2_EQ(vec2_bezier_quadratic(p0, p1, p2, 1.0f), p2);
+    END_TEST();
+}
+
+static void test_bezier_quadratic_midpoint(void)
+{
+    TEST("bezier_quadratic: midpoint");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 4.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    /* At t=0.5: B = 0.25*p0 + 0.5*p1 + 0.25*p2 = (2, 2) */
+    vec2 mid = vec2_bezier_quadratic(p0, p1, p2, 0.5f);
+    ASSERT_VEC2_EQ(mid, vec2_create(2.0f, 2.0f));
+    END_TEST();
+}
+
+/* ── Cubic Bezier evaluation ─────────────────────────────────────────── */
+
+static void test_bezier_cubic_endpoints(void)
+{
+    TEST("bezier_cubic: endpoints");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 3.0f);
+    vec2 p2 = vec2_create(3.0f, 3.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    ASSERT_VEC2_EQ(vec2_bezier_cubic(p0, p1, p2, p3, 0.0f), p0);
+    ASSERT_VEC2_EQ(vec2_bezier_cubic(p0, p1, p2, p3, 1.0f), p3);
+    END_TEST();
+}
+
+static void test_bezier_cubic_midpoint(void)
+{
+    TEST("bezier_cubic: midpoint");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 3.0f);
+    vec2 p2 = vec2_create(3.0f, 3.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    /* At t=0.5: B = 0.125*p0 + 0.375*p1 + 0.375*p2 + 0.125*p3 */
+    /* = (0, 0) + (0.375, 1.125) + (1.125, 1.125) + (0.5, 0) = (2, 2.25) */
+    vec2 mid = vec2_bezier_cubic(p0, p1, p2, p3, 0.5f);
+    ASSERT_VEC2_EQ(mid, vec2_create(2.0f, 2.25f));
+    END_TEST();
+}
+
+static void test_bezier_cubic_symmetric(void)
+{
+    TEST("bezier_cubic: symmetric control points");
+    /* Symmetric S-curve: midpoint should be average of endpoints */
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 1.0f);
+    vec2 p2 = vec2_create(3.0f, -1.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    vec2 mid = vec2_bezier_cubic(p0, p1, p2, p3, 0.5f);
+    /* Midpoint x should be 2.0 by symmetry */
+    ASSERT_FLOAT_EQ(mid.x, 2.0f);
+    /* Midpoint y should be average of p0.y and p3.y (both 0) by symmetry */
+    ASSERT_FLOAT_EQ(mid.y, 0.0f);
+    END_TEST();
+}
+
+/* ── Tangent tests ───────────────────────────────────────────────────── */
+
+static void test_bezier_quadratic_tangent_endpoints(void)
+{
+    TEST("bezier_quadratic_tangent: endpoints");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 4.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    /* At t=0, tangent = 2*(p1 - p0) = (4, 8) */
+    vec2 t0 = vec2_bezier_quadratic_tangent(p0, p1, p2, 0.0f);
+    ASSERT_VEC2_EQ(t0, vec2_create(4.0f, 8.0f));
+
+    /* At t=1, tangent = 2*(p2 - p1) = (4, -8) */
+    vec2 t1 = vec2_bezier_quadratic_tangent(p0, p1, p2, 1.0f);
+    ASSERT_VEC2_EQ(t1, vec2_create(4.0f, -8.0f));
+    END_TEST();
+}
+
+static void test_bezier_cubic_tangent_endpoints(void)
+{
+    TEST("bezier_cubic_tangent: endpoints");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 3.0f);
+    vec2 p2 = vec2_create(3.0f, 3.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    /* At t=0, tangent = 3*(p1 - p0) = (3, 9) */
+    vec2 t0 = vec2_bezier_cubic_tangent(p0, p1, p2, p3, 0.0f);
+    ASSERT_VEC2_EQ(t0, vec2_create(3.0f, 9.0f));
+
+    /* At t=1, tangent = 3*(p3 - p2) = (3, -9) */
+    vec2 t1 = vec2_bezier_cubic_tangent(p0, p1, p2, p3, 1.0f);
+    ASSERT_VEC2_EQ(t1, vec2_create(3.0f, -9.0f));
+    END_TEST();
+}
+
+/* ── Arc-length tests ────────────────────────────────────────────────── */
+
+static void test_bezier_quadratic_length_straight_line(void)
+{
+    TEST("bezier_quadratic_length: straight line");
+    /* Collinear control points = straight line of known length */
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 0.0f);  /* On the line */
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    float len = vec2_bezier_quadratic_length(p0, p1, p2, BEZIER_SEGMENTS_SMALL);
+    ASSERT_FLOAT_EQ(len, 4.0f);
+    END_TEST();
+}
+
+static void test_bezier_cubic_length_straight_line(void)
+{
+    TEST("bezier_cubic_length: straight line");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 0.0f);
+    vec2 p2 = vec2_create(2.0f, 0.0f);
+    vec2 p3 = vec2_create(3.0f, 0.0f);
+
+    float len = vec2_bezier_cubic_length(p0, p1, p2, p3, BEZIER_SEGMENTS_SMALL);
+    ASSERT_FLOAT_EQ(len, 3.0f);
+    END_TEST();
+}
+
+static void test_bezier_cubic_length_convergence(void)
+{
+    TEST("bezier_cubic_length: convergence");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 3.0f);
+    vec2 p2 = vec2_create(3.0f, 3.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    /* More segments should converge; large count should be close to small */
+    float len64  = vec2_bezier_cubic_length(p0, p1, p2, p3, BEZIER_SEGMENTS_SMALL);
+    float len128 = vec2_bezier_cubic_length(p0, p1, p2, p3, BEZIER_SEGMENTS_LARGE);
+
+    /* Difference should be very small (converging) */
+    float diff = SDL_fabsf(len128 - len64);
+    if (diff > 0.01f) {
+        SDL_Log(
+                     "    FAIL: Expected convergence, diff=%.6f", diff);
+        fail_count++;
+        return;
+    }
+
+    /* Arc length must be longer than straight-line distance */
+    float straight = vec2_length(vec2_sub(p3, p0));
+    if (len128 <= straight) {
+        SDL_Log(
+                     "    FAIL: Arc length %.4f should exceed straight %.4f",
+                     len128, straight);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* ── Splitting tests ─────────────────────────────────────────────────── */
+
+static void test_bezier_quadratic_split_midpoint(void)
+{
+    TEST("bezier_quadratic_split: midpoint produces valid halves");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 4.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    vec2 left[3], right[3];
+    vec2_bezier_quadratic_split(p0, p1, p2, 0.5f, left, right);
+
+    /* Left starts at p0, right ends at p2 */
+    ASSERT_VEC2_EQ(left[0], p0);
+    ASSERT_VEC2_EQ(right[2], p2);
+
+    /* Both halves share the midpoint */
+    ASSERT_VEC2_EQ(left[2], right[0]);
+
+    /* Midpoint should equal direct evaluation */
+    vec2 expected = vec2_bezier_quadratic(p0, p1, p2, 0.5f);
+    ASSERT_VEC2_EQ(left[2], expected);
+    END_TEST();
+}
+
+static void test_bezier_cubic_split_midpoint(void)
+{
+    TEST("bezier_cubic_split: midpoint produces valid halves");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 3.0f);
+    vec2 p2 = vec2_create(3.0f, 3.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    vec2 left[4], right[4];
+    vec2_bezier_cubic_split(p0, p1, p2, p3, 0.5f, left, right);
+
+    /* Left starts at p0, right ends at p3 */
+    ASSERT_VEC2_EQ(left[0], p0);
+    ASSERT_VEC2_EQ(right[3], p3);
+
+    /* Both halves share the split point */
+    ASSERT_VEC2_EQ(left[3], right[0]);
+
+    /* Split point should equal direct evaluation */
+    vec2 expected = vec2_bezier_cubic(p0, p1, p2, p3, 0.5f);
+    ASSERT_VEC2_EQ(left[3], expected);
+    END_TEST();
+}
+
+static void test_bezier_split_reproduces_curve(void)
+{
+    TEST("bezier_cubic_split: sub-curves reproduce original");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 3.0f);
+    vec2 p2 = vec2_create(3.0f, 3.0f);
+    vec2 p3 = vec2_create(4.0f, 0.0f);
+
+    vec2 left[4], right[4];
+    vec2_bezier_cubic_split(p0, p1, p2, p3, 0.5f, left, right);
+
+    /* Evaluate left half at t=0.5 should equal original at t=0.25 */
+    vec2 left_mid = vec2_bezier_cubic(left[0], left[1], left[2], left[3], 0.5f);
+    vec2 orig_quarter = vec2_bezier_cubic(p0, p1, p2, p3, 0.25f);
+    ASSERT_VEC2_EQ(left_mid, orig_quarter);
+
+    /* Evaluate right half at t=0.5 should equal original at t=0.75 */
+    vec2 right_mid = vec2_bezier_cubic(right[0], right[1], right[2], right[3],
+                                       0.5f);
+    vec2 orig_three_quarter = vec2_bezier_cubic(p0, p1, p2, p3, 0.75f);
+    ASSERT_VEC2_EQ(right_mid, orig_three_quarter);
+    END_TEST();
+}
+
+/* ── Degree elevation tests ──────────────────────────────────────────── */
+
+static void test_bezier_quadratic_to_cubic(void)
+{
+    TEST("bezier_quadratic_to_cubic: elevated curve matches original");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 4.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    vec2 cubic[4];
+    vec2_bezier_quadratic_to_cubic(p0, p1, p2, cubic);
+
+    /* Endpoints must match */
+    ASSERT_VEC2_EQ(cubic[0], p0);
+    ASSERT_VEC2_EQ(cubic[3], p2);
+
+    /* Evaluate both at several t values — they should match */
+    float test_ts[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    for (int i = 0; i < BEZIER_TEST_TS_COUNT; i++) {
+        float t = test_ts[i];
+        vec2 quad_pt = vec2_bezier_quadratic(p0, p1, p2, t);
+        vec2 cubic_pt = vec2_bezier_cubic(cubic[0], cubic[1], cubic[2],
+                                          cubic[3], t);
+        ASSERT_VEC2_EQ(quad_pt, cubic_pt);
+    }
+    END_TEST();
+}
+
+/* ── Flatness and flattening tests ───────────────────────────────────── */
+
+static void test_bezier_quadratic_is_flat_line(void)
+{
+    TEST("bezier_quadratic_is_flat: collinear points are flat");
+    /* Collinear points = perfectly flat curve */
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 0.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    if (!vec2_bezier_quadratic_is_flat(p0, p1, p2, BEZIER_FLAT_TOL)) {
+        SDL_Log(
+                     "    FAIL: Collinear quadratic should be flat");
+        fail_count++;
+        return;
+    }
+
+    /* Non-flat curve should not be flat with tiny tolerance */
+    vec2 p1_high = vec2_create(2.0f, 4.0f);
+    if (vec2_bezier_quadratic_is_flat(p0, p1_high, p2, BEZIER_FLAT_TOL)) {
+        SDL_Log(
+                     "    FAIL: Curved quadratic should not be flat");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_bezier_cubic_is_flat_line(void)
+{
+    TEST("bezier_cubic_is_flat: collinear points are flat");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 0.0f);
+    vec2 p2 = vec2_create(2.0f, 0.0f);
+    vec2 p3 = vec2_create(3.0f, 0.0f);
+
+    if (!vec2_bezier_cubic_is_flat(p0, p1, p2, p3, BEZIER_FLAT_TOL)) {
+        SDL_Log(
+                     "    FAIL: Collinear cubic should be flat");
+        fail_count++;
+        return;
+    }
+
+    /* Non-flat */
+    vec2 p1_high = vec2_create(1.0f, 3.0f);
+    vec2 p2_high = vec2_create(2.0f, 3.0f);
+    if (vec2_bezier_cubic_is_flat(p0, p1_high, p2_high, p3, BEZIER_FLAT_TOL)) {
+        SDL_Log(
+                     "    FAIL: Curved cubic should not be flat");
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_bezier_quadratic_flatten_line(void)
+{
+    TEST("bezier_quadratic_flatten: straight line produces 2 points");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(2.0f, 0.0f);
+    vec2 p2 = vec2_create(4.0f, 0.0f);
+
+    vec2 out[BEZIER_FLATTEN_OUT_MAX];
+    int count = 0;
+    out[count++] = p0;  /* Caller writes first point */
+    vec2_bezier_quadratic_flatten(p0, p1, p2, 0.5f, out, BEZIER_FLATTEN_OUT_MAX, &count);
+
+    /* Straight line = only needs start + end = 2 points */
+    if (count != 2) {
+        SDL_Log(
+                     "    FAIL: Expected 2 points, got %d", count);
+        fail_count++;
+        return;
+    }
+    ASSERT_VEC2_EQ(out[0], p0);
+    ASSERT_VEC2_EQ(out[1], p2);
+    END_TEST();
+}
+
+static void test_bezier_cubic_flatten_line(void)
+{
+    TEST("bezier_cubic_flatten: straight line produces 2 points");
+    vec2 p0 = vec2_create(0.0f, 0.0f);
+    vec2 p1 = vec2_create(1.0f, 0.0f);
+    vec2 p2 = vec2_create(2.0f, 0.0f);
+    vec2 p3 = vec2_create(3.0f, 0.0f);
+
+    vec2 out[BEZIER_FLATTEN_OUT_MAX];
+    int count = 0;
+    out[count++] = p0;
+    vec2_bezier_cubic_flatten(p0, p1, p2, p3, 0.5f, out, BEZIER_FLATTEN_OUT_MAX, &count);
+
+    if (count != 2) {
+        SDL_Log(
+                     "    FAIL: Expected 2 points, got %d", count);
+        fail_count++;
+        return;
+    }
+    ASSERT_VEC2_EQ(out[0], p0);
+    ASSERT_VEC2_EQ(out[1], p3);
+    END_TEST();
+}
+
+/* ── 3D Bezier tests ─────────────────────────────────────────────────── */
+
+static void test_bezier_vec3_quadratic(void)
+{
+    TEST("bezier_vec3_quadratic: endpoints and midpoint");
+    vec3 p0 = vec3_create(0.0f, 0.0f, 0.0f);
+    vec3 p1 = vec3_create(1.0f, 2.0f, 1.0f);
+    vec3 p2 = vec3_create(2.0f, 0.0f, 2.0f);
+
+    ASSERT_VEC3_EQ(vec3_bezier_quadratic(p0, p1, p2, 0.0f), p0);
+    ASSERT_VEC3_EQ(vec3_bezier_quadratic(p0, p1, p2, 1.0f), p2);
+
+    /* Midpoint: 0.25*p0 + 0.5*p1 + 0.25*p2 = (1, 1, 1) */
+    vec3 mid = vec3_bezier_quadratic(p0, p1, p2, 0.5f);
+    ASSERT_VEC3_EQ(mid, vec3_create(1.0f, 1.0f, 1.0f));
+    END_TEST();
+}
+
+static void test_bezier_vec3_cubic(void)
+{
+    TEST("bezier_vec3_cubic: endpoints");
+    vec3 p0 = vec3_create(0.0f, 0.0f, 0.0f);
+    vec3 p1 = vec3_create(1.0f, 1.0f, 0.0f);
+    vec3 p2 = vec3_create(2.0f, 1.0f, 0.0f);
+    vec3 p3 = vec3_create(3.0f, 0.0f, 0.0f);
+
+    ASSERT_VEC3_EQ(vec3_bezier_cubic(p0, p1, p2, p3, 0.0f), p0);
+    ASSERT_VEC3_EQ(vec3_bezier_cubic(p0, p1, p2, p3, 1.0f), p3);
     END_TEST();
 }
 
@@ -2923,6 +3341,29 @@ int main(int argc, char *argv[])
     test_noise_perlin2d_mean_near_zero();
     test_noise_simplex2d_mean_near_zero();
 
+    /* Bezier curve tests (Lesson 15) */
+    SDL_Log("\nbezier curve tests:");
+    test_bezier_quadratic_endpoints();
+    test_bezier_quadratic_midpoint();
+    test_bezier_cubic_endpoints();
+    test_bezier_cubic_midpoint();
+    test_bezier_cubic_symmetric();
+    test_bezier_quadratic_tangent_endpoints();
+    test_bezier_cubic_tangent_endpoints();
+    test_bezier_quadratic_length_straight_line();
+    test_bezier_cubic_length_straight_line();
+    test_bezier_cubic_length_convergence();
+    test_bezier_quadratic_split_midpoint();
+    test_bezier_cubic_split_midpoint();
+    test_bezier_split_reproduces_curve();
+    test_bezier_quadratic_to_cubic();
+    test_bezier_quadratic_is_flat_line();
+    test_bezier_cubic_is_flat_line();
+    test_bezier_quadratic_flatten_line();
+    test_bezier_cubic_flatten_line();
+    test_bezier_vec3_quadratic();
+    test_bezier_vec3_cubic();
+
     /* Summary */
     SDL_Log("\n=== Test Summary ===");
     SDL_Log("Total:  %d", test_count);
@@ -2930,7 +3371,7 @@ int main(int argc, char *argv[])
     SDL_Log("Failed: %d", fail_count);
 
     if (fail_count > 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_TEST, "\nSome tests FAILED!");
+        SDL_Log("\nSome tests FAILED!");
         SDL_Quit();
         return 1;
     }
