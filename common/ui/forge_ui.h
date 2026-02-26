@@ -49,6 +49,7 @@
 
 #include <SDL3/SDL.h>
 #include <stdio.h>   /* FILE, fopen, fwrite, fclose for BMP writing */
+#include <limits.h>  /* INT_MAX for text layout validation */
 
 /* ── Public Constants ────────────────────────────────────────────────────── */
 
@@ -202,7 +203,11 @@ typedef struct ForgeUiPackedGlyph {
 } ForgeUiPackedGlyph;
 
 /* A font atlas — a single texture containing all requested glyphs plus
- * a white pixel region for solid-colored geometry rendering. */
+ * a white pixel region for solid-colored geometry rendering.
+ *
+ * The atlas stores key font metrics so that text layout can operate without
+ * needing a separate ForgeUiFont reference.  All metric fields are set by
+ * forge_ui_atlas_build() from the font's head and hhea tables. */
 typedef struct ForgeUiFontAtlas {
     Uint8              *pixels;      /* atlas pixel data (single-channel, row-major) */
     int                 width;       /* atlas width in pixels (power of two) */
@@ -210,7 +215,69 @@ typedef struct ForgeUiFontAtlas {
     ForgeUiPackedGlyph *glyphs;      /* per-glyph metadata array */
     int                 glyph_count; /* number of packed glyphs */
     ForgeUiUVRect       white_uv;    /* UV rect for the 2x2 white pixel region */
+
+    /* Font metrics (set by forge_ui_atlas_build for text layout) */
+    float               pixel_height;  /* pixel height used when building the atlas */
+    Uint16              units_per_em;  /* font design units per em square */
+    Sint16              ascender;      /* typographic ascender in font units (positive) */
+    Sint16              descender;     /* typographic descender in font units (negative) */
+    Sint16              line_gap;      /* additional inter-line spacing in font units */
 } ForgeUiFontAtlas;
+
+/* ── Text Layout Types ──────────────────────────────────────────────────── */
+
+/* Universal UI vertex format: position + UV + color.
+ * Position is in screen-space pixel coordinates (origin top-left, x-right,
+ * y-down).  UV indexes into the font atlas texture.  Color is per-vertex
+ * RGBA so different text blocks can have distinct colors without changing
+ * pipeline state. */
+typedef struct ForgeUiVertex {
+    float pos_x;   /* screen-space x position in pixels */
+    float pos_y;   /* screen-space y position in pixels */
+    float uv_u;    /* horizontal atlas texture coordinate [0, 1] */
+    float uv_v;    /* vertical atlas texture coordinate [0, 1] */
+    float r;       /* red color component [0, 1] */
+    float g;       /* green color component [0, 1] */
+    float b;       /* blue color component [0, 1] */
+    float a;       /* alpha color component [0, 1] */
+} ForgeUiVertex;
+
+/* Text alignment modes for multi-line text layout. */
+typedef enum ForgeUiTextAlign {
+    FORGE_UI_TEXT_ALIGN_LEFT   = 0,  /* left edge flush (default) */
+    FORGE_UI_TEXT_ALIGN_CENTER = 1,  /* centered within max_width */
+    FORGE_UI_TEXT_ALIGN_RIGHT  = 2   /* right edge flush at max_width */
+} ForgeUiTextAlign;
+
+/* Options controlling text layout behavior. */
+typedef struct ForgeUiTextOpts {
+    float             max_width;  /* line width limit in pixels (0 = no wrap) */
+    ForgeUiTextAlign  alignment;  /* horizontal text alignment */
+    float             r;          /* default text color: red [0, 1] */
+    float             g;          /* default text color: green [0, 1] */
+    float             b;          /* default text color: blue [0, 1] */
+    float             a;          /* default text color: alpha [0, 1] */
+} ForgeUiTextOpts;
+
+/* Result of text layout — vertex and index arrays ready for GPU upload.
+ * Vertices use ForgeUiVertex format.  Indices are uint32 forming CCW
+ * triangle pairs (six indices per visible character quad). */
+typedef struct ForgeUiTextLayout {
+    ForgeUiVertex *vertices;     /* vertex array (4 per visible character) */
+    int            vertex_count; /* total vertex count */
+    Uint32        *indices;      /* index array (6 per visible character) */
+    int            index_count;  /* total index count */
+    float          total_width;  /* bounding box width in pixels */
+    float          total_height; /* bounding box height in pixels */
+    int            line_count;   /* number of lines produced */
+} ForgeUiTextLayout;
+
+/* Text measurement result — bounding box without generating vertices. */
+typedef struct ForgeUiTextMetrics {
+    float  width;       /* total bounding box width in pixels */
+    float  height;      /* total bounding box height in pixels */
+    int    line_count;  /* number of lines */
+} ForgeUiTextMetrics;
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
@@ -308,6 +375,54 @@ static void forge_ui_atlas_free(ForgeUiFontAtlas *atlas);
  * The returned pointer is valid until the atlas is freed. */
 static const ForgeUiPackedGlyph *forge_ui_atlas_lookup(
     const ForgeUiFontAtlas *atlas, Uint32 codepoint);
+
+/* ── Text Layout API ────────────────────────────────────────────────────── */
+
+/* Lay out a string of text into positioned, textured quads.
+ *
+ * Converts an ASCII string into vertex and index arrays suitable for GPU
+ * rendering.  Each visible character becomes a quad (4 vertices, 6 indices)
+ * with screen-space positions, atlas UV coordinates, and per-vertex color.
+ *
+ * Coordinates use a screen-space convention: origin at top-left, x increases
+ * rightward, y increases downward.  The (x, y) parameter specifies the pen
+ * starting position — x is the left edge of the first character, y is the
+ * baseline of the first line.
+ *
+ * Parameters:
+ *   atlas      — font atlas with glyph metadata and font metrics
+ *   text       — null-terminated ASCII string to lay out
+ *   x, y       — starting pen position (x = left edge, y = baseline)
+ *   opts       — layout options (NULL for defaults: no wrap, left align, white)
+ *   out_layout — receives vertex/index arrays; caller must free with
+ *                forge_ui_text_layout_free()
+ *
+ * Returns true on success, false on error (logged via SDL_Log). */
+static bool forge_ui_text_layout(const ForgeUiFontAtlas *atlas,
+                                  const char *text,
+                                  float x, float y,
+                                  const ForgeUiTextOpts *opts,
+                                  ForgeUiTextLayout *out_layout);
+
+/* Free vertex and index arrays allocated by forge_ui_text_layout(). */
+static void forge_ui_text_layout_free(ForgeUiTextLayout *layout);
+
+/* Measure text dimensions without generating vertices.
+ *
+ * Performs the same layout calculation as forge_ui_text_layout() but only
+ * computes the bounding box and line count.  Useful for centering text,
+ * sizing UI containers, or pre-calculating layout before committing to
+ * vertex generation.
+ *
+ * Parameters:
+ *   atlas — font atlas with glyph metadata and font metrics
+ *   text  — null-terminated ASCII string to measure
+ *   opts  — layout options (max_width, alignment affect wrapping)
+ *
+ * Returns a ForgeUiTextMetrics with width, height, and line count. */
+static ForgeUiTextMetrics forge_ui_text_measure(const ForgeUiFontAtlas *atlas,
+                                                 const char *text,
+                                                 const ForgeUiTextOpts *opts);
 
 /* ── BMP Writing (internal helper) ──────────────────────────────────────── */
 
@@ -2384,6 +2499,13 @@ static bool forge_ui_atlas_build(const ForgeUiFont *font,
     out_atlas->glyphs      = packed;
     out_atlas->glyph_count = valid_count;
 
+    /* Store font metrics so text layout works without a separate font ref */
+    out_atlas->pixel_height = pixel_height;
+    out_atlas->units_per_em = font->head.units_per_em;
+    out_atlas->ascender     = font->hhea.ascender;
+    out_atlas->descender    = font->hhea.descender;
+    out_atlas->line_gap     = font->hhea.line_gap;
+
     /* White pixel UV rect (center of the 2x2 block for safe bilinear sampling) */
     out_atlas->white_uv.u0 = (float)white_x * inv_w;
     out_atlas->white_uv.v0 = (float)white_y * inv_h;
@@ -2419,6 +2541,402 @@ static const ForgeUiPackedGlyph *forge_ui_atlas_lookup(
         }
     }
     return NULL;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Text Layout Implementation ──────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* Default text options: no wrapping, left-aligned, opaque white. */
+static const ForgeUiTextOpts FORGE_UI__DEFAULT_TEXT_OPTS = {
+    0.0f,                       /* max_width: no wrapping */
+    FORGE_UI_TEXT_ALIGN_LEFT,   /* alignment */
+    1.0f, 1.0f, 1.0f, 1.0f     /* color: opaque white */
+};
+
+/* Number of vertices per character quad */
+#define FORGE_UI__VERTS_PER_QUAD  4
+/* Number of indices per character quad (two CCW triangles) */
+#define FORGE_UI__INDICES_PER_QUAD 6
+
+/* Minimum capacity for vertex/index arrays (avoids tiny allocations) */
+#define FORGE_UI__INITIAL_CHAR_CAPACITY 128
+
+/* Tab stop width in multiples of space advance */
+#define FORGE_UI__TAB_STOP_WIDTH 4
+
+/* ── Internal: emit one character quad into vertex/index arrays ──────────── */
+
+static void forge_ui__emit_quad(
+    ForgeUiVertex *verts, int vert_base,
+    Uint32 *indices, int idx_base,
+    float x0, float y0, float x1, float y1,
+    float u0, float v0, float u1, float v1,
+    float r, float g, float b, float a)
+{
+    /* Four vertices: top-left, top-right, bottom-right, bottom-left.
+     *
+     *   0 --- 1       Triangle 0: (0, 1, 2) — CCW
+     *   |   / |       Triangle 1: (2, 3, 0) — CCW
+     *   | /   |
+     *   3 --- 2
+     */
+    ForgeUiVertex *v = &verts[vert_base];
+
+    v[0].pos_x = x0;  v[0].pos_y = y0;  /* top-left */
+    v[0].uv_u  = u0;  v[0].uv_v  = v0;
+    v[0].r = r;  v[0].g = g;  v[0].b = b;  v[0].a = a;
+
+    v[1].pos_x = x1;  v[1].pos_y = y0;  /* top-right */
+    v[1].uv_u  = u1;  v[1].uv_v  = v0;
+    v[1].r = r;  v[1].g = g;  v[1].b = b;  v[1].a = a;
+
+    v[2].pos_x = x1;  v[2].pos_y = y1;  /* bottom-right */
+    v[2].uv_u  = u1;  v[2].uv_v  = v1;
+    v[2].r = r;  v[2].g = g;  v[2].b = b;  v[2].a = a;
+
+    v[3].pos_x = x0;  v[3].pos_y = y1;  /* bottom-left */
+    v[3].uv_u  = u0;  v[3].uv_v  = v1;
+    v[3].r = r;  v[3].g = g;  v[3].b = b;  v[3].a = a;
+
+    /* Two CCW triangles */
+    Uint32 base = (Uint32)vert_base;
+    indices[idx_base + 0] = base + 0;
+    indices[idx_base + 1] = base + 1;
+    indices[idx_base + 2] = base + 2;
+    indices[idx_base + 3] = base + 2;
+    indices[idx_base + 4] = base + 3;
+    indices[idx_base + 5] = base + 0;
+}
+
+/* ── Internal: apply horizontal alignment to vertices on one line ────────── */
+
+static void forge_ui__align_line(
+    ForgeUiVertex *verts, int line_start_vert, int line_end_vert,
+    float line_width, float max_width, ForgeUiTextAlign alignment)
+{
+    float offset = 0.0f;
+
+    if (alignment == FORGE_UI_TEXT_ALIGN_CENTER) {
+        offset = (max_width - line_width) * 0.5f;
+    } else if (alignment == FORGE_UI_TEXT_ALIGN_RIGHT) {
+        offset = max_width - line_width;
+    }
+
+    if (offset == 0.0f) return;
+
+    for (int i = line_start_vert; i < line_end_vert; i++) {
+        verts[i].pos_x += offset;
+    }
+}
+
+/* ── forge_ui_text_layout ────────────────────────────────────────────────── */
+
+static bool forge_ui_text_layout(const ForgeUiFontAtlas *atlas,
+                                  const char *text,
+                                  float x, float y,
+                                  const ForgeUiTextOpts *opts,
+                                  ForgeUiTextLayout *out_layout)
+{
+    if (!atlas || !text || !out_layout) {
+        SDL_Log("forge_ui_text_layout: NULL parameter");
+        return false;
+    }
+
+    SDL_memset(out_layout, 0, sizeof(ForgeUiTextLayout));
+
+    if (atlas->units_per_em == 0) {
+        SDL_Log("forge_ui_text_layout: atlas has units_per_em == 0 (invalid)");
+        return false;
+    }
+
+    const ForgeUiTextOpts *o = opts ? opts : &FORGE_UI__DEFAULT_TEXT_OPTS;
+
+    /* Compute the font scale: converts font units to pixel units.
+     * advance_width is stored in font units in ForgeUiPackedGlyph, so we
+     * multiply by this scale to get pixel-space advance. */
+    float scale = atlas->pixel_height / (float)atlas->units_per_em;
+
+    /* Line height in pixels: (ascender - descender + lineGap) * scale.
+     * ascender is positive, descender is negative, so this is a sum of
+     * three positive-ish values. */
+    float line_height = ((float)atlas->ascender - (float)atlas->descender +
+                          (float)atlas->line_gap) * scale;
+
+    /* Guard against degenerate fonts where line_height is non-positive.
+     * A zero or negative line_height would prevent newline/wrapping from
+     * advancing the pen vertically, producing overlapping lines. */
+    if (line_height <= 0.0f) {
+        line_height = 1.0f;
+    }
+
+    /* Compute space advance for tab stops */
+    const ForgeUiPackedGlyph *space_glyph = forge_ui_atlas_lookup(atlas, ' ');
+    float space_advance = space_glyph
+        ? (float)space_glyph->advance_width * scale
+        : atlas->pixel_height * 0.5f;  /* fallback: half the pixel height */
+
+    /* Count visible characters to pre-allocate arrays.
+     * We allocate for worst case (all characters visible). */
+    size_t raw_len = SDL_strlen(text);
+    if (raw_len > (size_t)INT_MAX) {
+        SDL_Log("forge_ui_text_layout: text too long (%zu bytes)", raw_len);
+        return false;
+    }
+    int text_len = (int)raw_len;
+    if (text_len == 0) {
+        out_layout->line_count = 1;
+        return true;
+    }
+
+    /* Allocate vertex and index arrays */
+    int capacity = text_len;
+    if (capacity < FORGE_UI__INITIAL_CHAR_CAPACITY) {
+        capacity = FORGE_UI__INITIAL_CHAR_CAPACITY;
+    }
+
+    /* Use size_t for allocation arithmetic to avoid overflow on 32-bit.
+     * Check before multiplying: cap * VERTS_PER_QUAD * sizeof(vertex)
+     * could exceed SIZE_MAX when capacity is large. */
+    size_t cap = (size_t)capacity;
+    if (cap > SIZE_MAX / (FORGE_UI__VERTS_PER_QUAD * sizeof(ForgeUiVertex))) {
+        SDL_Log("forge_ui_text_layout: allocation size overflow (vertices)");
+        return false;
+    }
+    if (cap > SIZE_MAX / (FORGE_UI__INDICES_PER_QUAD * sizeof(Uint32))) {
+        SDL_Log("forge_ui_text_layout: allocation size overflow (indices)");
+        return false;
+    }
+    size_t verts_bytes   = cap * FORGE_UI__VERTS_PER_QUAD * sizeof(ForgeUiVertex);
+    size_t indices_bytes = cap * FORGE_UI__INDICES_PER_QUAD * sizeof(Uint32);
+
+    ForgeUiVertex *verts = (ForgeUiVertex *)SDL_malloc(verts_bytes);
+    Uint32 *indices = (Uint32 *)SDL_malloc(indices_bytes);
+
+    if (!verts || !indices) {
+        SDL_Log("forge_ui_text_layout: allocation failed");
+        SDL_free(verts);
+        SDL_free(indices);
+        return false;
+    }
+
+    /* ── Layout loop ─────────────────────────────────────────────────── */
+    float pen_x = x;
+    float pen_y = y;
+    float origin_x = x;            /* left edge for line resets */
+    int quad_count = 0;             /* visible characters emitted */
+    int line_count = 1;
+    int line_start_vert = 0;        /* first vertex index of current line */
+    float line_width = 0.0f;        /* pen advance on current line */
+    float max_line_width = 0.0f;    /* widest line seen so far */
+
+    for (int i = 0; i < text_len; i++) {
+        unsigned char ch = (unsigned char)text[i];
+
+        /* ── Newline: start a new line ────────────────────────────── */
+        if (ch == '\n') {
+            /* Apply alignment to the completed line */
+            if (o->max_width > 0.0f && o->alignment != FORGE_UI_TEXT_ALIGN_LEFT) {
+                forge_ui__align_line(verts, line_start_vert,
+                                      quad_count * FORGE_UI__VERTS_PER_QUAD,
+                                      line_width, o->max_width, o->alignment);
+            }
+
+            if (line_width > max_line_width) max_line_width = line_width;
+
+            pen_x = origin_x;
+            pen_y += line_height;
+            line_width = 0.0f;
+            line_start_vert = quad_count * FORGE_UI__VERTS_PER_QUAD;
+            line_count++;
+            continue;
+        }
+
+        /* ── Tab: advance to next tab stop ────────────────────────── */
+        if (ch == '\t') {
+            float tab_width = space_advance * FORGE_UI__TAB_STOP_WIDTH;
+            if (tab_width > 0.0f) {
+                float rel_x = pen_x - origin_x;
+                float next_stop = tab_width *
+                    (SDL_floorf(rel_x / tab_width) + 1.0f);
+                pen_x = origin_x + next_stop;
+                line_width = pen_x - origin_x;
+            }
+            continue;
+        }
+
+        /* ── Look up glyph in atlas ───────────────────────────────── */
+        const ForgeUiPackedGlyph *glyph = forge_ui_atlas_lookup(atlas, ch);
+        if (!glyph) continue;  /* skip unmapped characters */
+
+        float advance = (float)glyph->advance_width * scale;
+
+        /* ── Line wrapping: check if this character exceeds max_width ── */
+        if (o->max_width > 0.0f && line_width + advance > o->max_width &&
+            line_width > 0.0f) {
+            /* Apply alignment to the completed line */
+            if (o->alignment != FORGE_UI_TEXT_ALIGN_LEFT) {
+                forge_ui__align_line(verts, line_start_vert,
+                                      quad_count * FORGE_UI__VERTS_PER_QUAD,
+                                      line_width, o->max_width, o->alignment);
+            }
+
+            if (line_width > max_line_width) max_line_width = line_width;
+
+            pen_x = origin_x;
+            pen_y += line_height;
+            line_width = 0.0f;
+            line_start_vert = quad_count * FORGE_UI__VERTS_PER_QUAD;
+            line_count++;
+        }
+
+        /* ── Space: advance pen but don't emit a quad ─────────────── */
+        if (ch == ' ') {
+            pen_x += advance;
+            line_width += advance;
+            continue;
+        }
+
+        /* ── Visible character: emit quad ─────────────────────────── */
+        if (glyph->bitmap_w == 0 || glyph->bitmap_h == 0) {
+            /* Glyph has no visible bitmap — just advance the pen */
+            pen_x += advance;
+            line_width += advance;
+            continue;
+        }
+
+        /* Compute screen-space quad position from pen + bearings.
+         * bearing_x is the horizontal offset from pen to bitmap left edge.
+         * bearing_y is the vertical offset from baseline to bitmap top edge.
+         * In y-down screen coordinates: bitmap top = pen_y - bearing_y. */
+        float qx0 = pen_x + (float)glyph->bearing_x;
+        float qy0 = pen_y - (float)glyph->bearing_y;
+        float qx1 = qx0 + (float)glyph->bitmap_w;
+        float qy1 = qy0 + (float)glyph->bitmap_h;
+
+        /* Emit the quad */
+        forge_ui__emit_quad(
+            verts, quad_count * FORGE_UI__VERTS_PER_QUAD,
+            indices, quad_count * FORGE_UI__INDICES_PER_QUAD,
+            qx0, qy0, qx1, qy1,
+            glyph->uv.u0, glyph->uv.v0, glyph->uv.u1, glyph->uv.v1,
+            o->r, o->g, o->b, o->a);
+
+        quad_count++;
+        pen_x += advance;
+        line_width += advance;
+    }
+
+    /* ── Finalize last line ──────────────────────────────────────────── */
+    if (o->max_width > 0.0f && o->alignment != FORGE_UI_TEXT_ALIGN_LEFT) {
+        forge_ui__align_line(verts, line_start_vert,
+                              quad_count * FORGE_UI__VERTS_PER_QUAD,
+                              line_width, o->max_width, o->alignment);
+    }
+
+    if (line_width > max_line_width) max_line_width = line_width;
+
+    /* ── Fill output struct ──────────────────────────────────────────── */
+    out_layout->vertices     = verts;
+    out_layout->vertex_count = quad_count * FORGE_UI__VERTS_PER_QUAD;
+    out_layout->indices      = indices;
+    out_layout->index_count  = quad_count * FORGE_UI__INDICES_PER_QUAD;
+    out_layout->total_width  = max_line_width;
+    out_layout->total_height = (float)line_count * line_height;
+    out_layout->line_count   = line_count;
+
+    return true;
+}
+
+static void forge_ui_text_layout_free(ForgeUiTextLayout *layout)
+{
+    if (!layout) return;
+    SDL_free(layout->vertices);
+    SDL_free(layout->indices);
+    SDL_memset(layout, 0, sizeof(ForgeUiTextLayout));
+}
+
+/* ── forge_ui_text_measure ───────────────────────────────────────────────── */
+
+static ForgeUiTextMetrics forge_ui_text_measure(const ForgeUiFontAtlas *atlas,
+                                                 const char *text,
+                                                 const ForgeUiTextOpts *opts)
+{
+    ForgeUiTextMetrics result = { 0.0f, 0.0f, 0 };
+
+    if (!atlas || !text) return result;
+
+    if (atlas->units_per_em == 0) return result;
+
+    const ForgeUiTextOpts *o = opts ? opts : &FORGE_UI__DEFAULT_TEXT_OPTS;
+
+    float scale = atlas->pixel_height / (float)atlas->units_per_em;
+    float line_height = ((float)atlas->ascender - (float)atlas->descender +
+                          (float)atlas->line_gap) * scale;
+
+    /* Clamp to a safe minimum — same guard as forge_ui_text_layout */
+    if (line_height <= 0.0f) {
+        line_height = 1.0f;
+    }
+
+    const ForgeUiPackedGlyph *space_glyph = forge_ui_atlas_lookup(atlas, ' ');
+    float space_advance = space_glyph
+        ? (float)space_glyph->advance_width * scale
+        : atlas->pixel_height * 0.5f;
+
+    size_t raw_len = SDL_strlen(text);
+    if (raw_len > (size_t)INT_MAX) return result;
+    int text_len = (int)raw_len;
+    if (text_len == 0) {
+        result.line_count = 1;
+        return result;
+    }
+
+    float pen_x = 0.0f;
+    float max_line_width = 0.0f;
+    int line_count = 1;
+
+    for (int i = 0; i < text_len; i++) {
+        unsigned char ch = (unsigned char)text[i];
+
+        if (ch == '\n') {
+            if (pen_x > max_line_width) max_line_width = pen_x;
+            pen_x = 0.0f;
+            line_count++;
+            continue;
+        }
+
+        if (ch == '\t') {
+            float tab_width = space_advance * FORGE_UI__TAB_STOP_WIDTH;
+            if (tab_width > 0.0f) {
+                float next_stop = tab_width *
+                    (SDL_floorf(pen_x / tab_width) + 1.0f);
+                pen_x = next_stop;
+            }
+            continue;
+        }
+
+        const ForgeUiPackedGlyph *glyph = forge_ui_atlas_lookup(atlas, ch);
+        if (!glyph) continue;
+
+        float advance = (float)glyph->advance_width * scale;
+
+        if (o->max_width > 0.0f && pen_x + advance > o->max_width &&
+            pen_x > 0.0f) {
+            if (pen_x > max_line_width) max_line_width = pen_x;
+            pen_x = 0.0f;
+            line_count++;
+        }
+
+        pen_x += advance;
+    }
+
+    if (pen_x > max_line_width) max_line_width = pen_x;
+
+    result.width      = max_line_width;
+    result.height     = (float)line_count * line_height;
+    result.line_count = line_count;
+    return result;
 }
 
 #endif /* FORGE_UI_H */

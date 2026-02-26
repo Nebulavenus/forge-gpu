@@ -137,10 +137,14 @@ from .math_diagrams import (
 )
 from .ui_diagrams import (
     diagram_antialiasing_comparison,
+    diagram_baseline_metrics,
     diagram_contour_reconstruction,
     diagram_endianness,
     diagram_glyph_anatomy,
+    diagram_line_breaking,
     diagram_padding_bleed,
+    diagram_pen_advance,
+    diagram_quad_vertex_layout,
     diagram_scanline_crossings,
     diagram_shelf_packing,
     diagram_ttf_file_structure,
@@ -338,6 +342,12 @@ DIAGRAMS = {
         ("padding_bleed.png", diagram_padding_bleed),
         ("uv_coordinates.png", diagram_uv_coordinates),
     ],
+    "ui/04": [
+        ("pen_advance.png", diagram_pen_advance),
+        ("baseline_metrics.png", diagram_baseline_metrics),
+        ("quad_vertex_layout.png", diagram_quad_vertex_layout),
+        ("line_breaking.png", diagram_line_breaking),
+    ],
 }
 
 # Full lesson directory names for display
@@ -375,6 +385,7 @@ LESSON_NAMES = {
     "ui/01": "ui/01-ttf-parsing",
     "ui/02": "ui/02-glyph-rasterization",
     "ui/03": "ui/03-font-atlas",
+    "ui/04": "ui/04-text-layout",
 }
 
 

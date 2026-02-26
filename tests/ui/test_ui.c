@@ -2,11 +2,13 @@
  * UI Library Tests
  *
  * Automated tests for common/ui/forge_ui.h — TTF parser, rasterizer,
- * hmtx metrics, font atlas building, and BMP writing.
+ * hmtx metrics, font atlas building, text layout, and BMP writing.
  *
  * Verifies correctness of font loading, table directory parsing,
  * metric extraction, cmap lookups, glyph outline parsing, advance
- * width lookups, atlas packing, UV coordinates, and glyph lookup.
+ * width lookups, atlas packing, UV coordinates, glyph lookup,
+ * text layout (pen model, line breaking, alignment, vertex/index
+ * generation), and text measurement.
  *
  * Uses the bundled Liberation Mono Regular font for all tests.
  *
@@ -1082,6 +1084,557 @@ static void test_bmp_write_odd_width(void)
     remove("test_odd.bmp");
 }
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Text Layout Tests ─────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* Shared atlas built once for text layout tests */
+static ForgeUiFontAtlas test_atlas;
+static bool atlas_built = false;
+
+/* ── Test: atlas metrics are populated after build ───────────────────────── */
+
+static void test_atlas_metrics_populated(void)
+{
+    TEST("atlas_build: font metrics fields are set correctly");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    atlas_built = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                        codepoints, ASCII_COUNT,
+                                        ATLAS_PADDING, &test_atlas);
+    ASSERT_TRUE(atlas_built);
+
+    /* Verify font metrics were copied from the font */
+    ASSERT_TRUE(test_atlas.pixel_height == ATLAS_PIXEL_HEIGHT);
+    ASSERT_EQ_U16(test_atlas.units_per_em, 2048);
+    ASSERT_EQ_I16(test_atlas.ascender, 1705);
+    ASSERT_EQ_I16(test_atlas.descender, -615);
+    ASSERT_EQ_I16(test_atlas.line_gap, 0);
+}
+
+/* ── Test: layout single line of text ────────────────────────────────────── */
+
+static void test_layout_single_line(void)
+{
+    TEST("text_layout: single line 'Hello' produces correct vertex/index counts");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "Hello", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+
+    /* "Hello" = 5 visible characters, each producing 4 vertices and 6 indices */
+    ASSERT_EQ_INT(layout.vertex_count, 5 * 4);
+    ASSERT_EQ_INT(layout.index_count, 5 * 6);
+    ASSERT_EQ_INT(layout.line_count, 1);
+    ASSERT_TRUE(layout.total_width > 0.0f);
+    ASSERT_TRUE(layout.total_height > 0.0f);
+    ASSERT_TRUE(layout.vertices != NULL);
+    ASSERT_TRUE(layout.indices != NULL);
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: layout empty string ───────────────────────────────────────────── */
+
+static void test_layout_empty_string(void)
+{
+    TEST("text_layout: empty string returns true with zero counts");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+    ASSERT_EQ_INT(layout.vertex_count, 0);
+    ASSERT_EQ_INT(layout.index_count, 0);
+    ASSERT_EQ_INT(layout.line_count, 1);
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: layout NULL parameters ────────────────────────────────────────── */
+
+static void test_layout_null_params(void)
+{
+    TEST("text_layout: NULL atlas/text/output returns false");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    ASSERT_TRUE(!forge_ui_text_layout(NULL, "test", 0.0f, 0.0f, NULL, &layout));
+    ASSERT_TRUE(!forge_ui_text_layout(&test_atlas, NULL, 0.0f, 0.0f,
+                                       NULL, &layout));
+    ASSERT_TRUE(!forge_ui_text_layout(&test_atlas, "test", 0.0f, 0.0f,
+                                       NULL, NULL));
+}
+
+/* ── Test: space character advances pen but emits no quad ────────────────── */
+
+static void test_layout_space_no_quad(void)
+{
+    TEST("text_layout: space advances pen but emits no quad");
+    ASSERT_TRUE(atlas_built);
+
+    /* "A B" = 2 visible glyphs (A and B), 1 space (no quad) */
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "A B", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+
+    /* Only 2 visible characters → 2 quads */
+    ASSERT_EQ_INT(layout.vertex_count, 2 * 4);
+    ASSERT_EQ_INT(layout.index_count, 2 * 6);
+
+    /* But total width should include the space advance */
+    ForgeUiTextLayout layout_ab;
+    bool result_ab = forge_ui_text_layout(&test_atlas, "AB", 0.0f, 0.0f,
+                                           NULL, &layout_ab);
+    ASSERT_TRUE(result_ab);
+    ASSERT_TRUE(layout.total_width > layout_ab.total_width);
+
+    forge_ui_text_layout_free(&layout);
+    forge_ui_text_layout_free(&layout_ab);
+}
+
+/* ── Test: newline creates multiple lines ─────────────────────────────────── */
+
+static void test_layout_newline(void)
+{
+    TEST("text_layout: newline creates multiple lines");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "A\nB\nC", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+    ASSERT_EQ_INT(layout.line_count, 3);
+
+    /* 3 visible characters → 3 quads */
+    ASSERT_EQ_INT(layout.vertex_count, 3 * 4);
+    ASSERT_EQ_INT(layout.index_count, 3 * 6);
+
+    /* Total height should accommodate 3 lines */
+    ForgeUiTextLayout single;
+    bool result_s = forge_ui_text_layout(&test_atlas, "A", 0.0f, 0.0f,
+                                          NULL, &single);
+    ASSERT_TRUE(result_s);
+    ASSERT_TRUE(layout.total_height > single.total_height);
+
+    forge_ui_text_layout_free(&layout);
+    forge_ui_text_layout_free(&single);
+}
+
+/* ── Test: line wrapping at max_width ────────────────────────────────────── */
+
+static void test_layout_wrapping(void)
+{
+    TEST("text_layout: wraps lines at max_width");
+    ASSERT_TRUE(atlas_built);
+
+    /* Get advance width for one character to set a reasonable max_width */
+    ForgeUiTextMetrics m_one = forge_ui_text_measure(&test_atlas, "A", NULL);
+    ASSERT_TRUE(m_one.width > 0.0f);
+
+    /* Set max_width to fit ~3 characters — "ABCDE" should wrap */
+    ForgeUiTextOpts opts;
+    SDL_memset(&opts, 0, sizeof(opts));
+    opts.max_width = m_one.width * 3.5f;
+    opts.alignment = FORGE_UI_TEXT_ALIGN_LEFT;
+    opts.r = 1.0f; opts.g = 1.0f; opts.b = 1.0f; opts.a = 1.0f;
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "ABCDE", 0.0f, 0.0f,
+                                        &opts, &layout);
+    ASSERT_TRUE(result);
+
+    /* Should wrap to at least 2 lines */
+    ASSERT_TRUE(layout.line_count >= 2);
+
+    /* All 5 characters should still be emitted */
+    ASSERT_EQ_INT(layout.vertex_count, 5 * 4);
+    ASSERT_EQ_INT(layout.index_count, 5 * 6);
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: vertex positions start at the specified origin ─────────────────── */
+
+static void test_layout_origin(void)
+{
+    TEST("text_layout: vertex positions offset by origin (x, y)");
+    ASSERT_TRUE(atlas_built);
+
+    float ox = 100.0f;
+    float oy = 200.0f;
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "A", ox, oy,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(layout.vertex_count >= 4);
+
+    /* All vertex x positions should be near the origin x (pen + bearing) */
+    bool x_near_origin = true;
+    for (int i = 0; i < layout.vertex_count; i++) {
+        /* pos_x should be >= origin (bearing can shift slightly right) */
+        if (layout.vertices[i].pos_x < ox - 1.0f) {
+            x_near_origin = false;
+            break;
+        }
+    }
+    ASSERT_TRUE(x_near_origin);
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: vertex UVs are within atlas range [0, 1] ──────────────────────── */
+
+static void test_layout_uv_range(void)
+{
+    TEST("text_layout: vertex UVs are in [0.0, 1.0] range");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "Test!", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+
+    for (int i = 0; i < layout.vertex_count; i++) {
+        if (layout.vertices[i].uv_u < 0.0f || layout.vertices[i].uv_u > 1.0f ||
+            layout.vertices[i].uv_v < 0.0f || layout.vertices[i].uv_v > 1.0f) {
+            SDL_Log("    FAIL: vertex %d UV (%.4f, %.4f) out of [0,1] (line %d)",
+                    i, (double)layout.vertices[i].uv_u,
+                    (double)layout.vertices[i].uv_v, __LINE__);
+            fail_count++;
+            forge_ui_text_layout_free(&layout);
+            return;
+        }
+    }
+    pass_count++;
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: vertex colors match opts ──────────────────────────────────────── */
+
+static void test_layout_vertex_color(void)
+{
+    TEST("text_layout: vertex colors match opts color");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextOpts opts;
+    SDL_memset(&opts, 0, sizeof(opts));
+    opts.r = 0.5f; opts.g = 0.25f; opts.b = 0.75f; opts.a = 1.0f;
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "A", 0.0f, 0.0f,
+                                        &opts, &layout);
+    ASSERT_TRUE(result);
+
+    for (int i = 0; i < layout.vertex_count; i++) {
+        if (layout.vertices[i].r != 0.5f || layout.vertices[i].g != 0.25f ||
+            layout.vertices[i].b != 0.75f || layout.vertices[i].a != 1.0f) {
+            SDL_Log("    FAIL: vertex %d color mismatch (line %d)", i, __LINE__);
+            fail_count++;
+            forge_ui_text_layout_free(&layout);
+            return;
+        }
+    }
+    pass_count++;
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: index values reference valid vertices ─────────────────────────── */
+
+static void test_layout_index_bounds(void)
+{
+    TEST("text_layout: all indices reference valid vertices");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "Hello!", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+
+    for (int i = 0; i < layout.index_count; i++) {
+        if (layout.indices[i] >= (Uint32)layout.vertex_count) {
+            SDL_Log("    FAIL: index[%d] = %u >= vertex_count %d (line %d)",
+                    i, layout.indices[i], layout.vertex_count, __LINE__);
+            fail_count++;
+            forge_ui_text_layout_free(&layout);
+            return;
+        }
+    }
+    pass_count++;
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: CCW winding order for each quad ───────────────────────────────── */
+
+static void test_layout_ccw_winding(void)
+{
+    TEST("text_layout: index pattern is (0,1,2, 2,3,0) per quad");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "AB", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+
+    /* 2 quads, each with 6 indices following pattern (base+0,1,2, 2,3,0) */
+    ASSERT_EQ_INT(layout.index_count, 12);
+
+    for (int q = 0; q < 2; q++) {
+        Uint32 base = (Uint32)(q * 4);
+        int idx_off = q * 6;
+        ASSERT_EQ_U32(layout.indices[idx_off + 0], base + 0);
+        ASSERT_EQ_U32(layout.indices[idx_off + 1], base + 1);
+        ASSERT_EQ_U32(layout.indices[idx_off + 2], base + 2);
+        ASSERT_EQ_U32(layout.indices[idx_off + 3], base + 2);
+        ASSERT_EQ_U32(layout.indices[idx_off + 4], base + 3);
+        ASSERT_EQ_U32(layout.indices[idx_off + 5], base + 0);
+    }
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: default opts (NULL) uses opaque white ─────────────────────────── */
+
+static void test_layout_default_opts(void)
+{
+    TEST("text_layout: NULL opts uses opaque white color");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&test_atlas, "X", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(layout.vertex_count >= 4);
+
+    /* Default color is opaque white (1, 1, 1, 1) */
+    for (int i = 0; i < layout.vertex_count; i++) {
+        if (layout.vertices[i].r != 1.0f || layout.vertices[i].g != 1.0f ||
+            layout.vertices[i].b != 1.0f || layout.vertices[i].a != 1.0f) {
+            SDL_Log("    FAIL: vertex %d not opaque white with NULL opts "
+                    "(line %d)", i, __LINE__);
+            fail_count++;
+            forge_ui_text_layout_free(&layout);
+            return;
+        }
+    }
+    pass_count++;
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: center alignment shifts vertices ──────────────────────────────── */
+
+static void test_layout_center_alignment(void)
+{
+    TEST("text_layout: center alignment shifts vertices right");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextOpts opts_left;
+    SDL_memset(&opts_left, 0, sizeof(opts_left));
+    opts_left.max_width = 500.0f;
+    opts_left.alignment = FORGE_UI_TEXT_ALIGN_LEFT;
+    opts_left.r = 1.0f; opts_left.g = 1.0f; opts_left.b = 1.0f; opts_left.a = 1.0f;
+
+    ForgeUiTextOpts opts_center = opts_left;
+    opts_center.alignment = FORGE_UI_TEXT_ALIGN_CENTER;
+
+    ForgeUiTextLayout layout_left, layout_center;
+    ASSERT_TRUE(forge_ui_text_layout(&test_atlas, "Hi", 0.0f, 0.0f,
+                                      &opts_left, &layout_left));
+    ASSERT_TRUE(forge_ui_text_layout(&test_atlas, "Hi", 0.0f, 0.0f,
+                                      &opts_center, &layout_center));
+
+    /* Center-aligned vertices should have larger x positions than left */
+    ASSERT_TRUE(layout_center.vertices[0].pos_x >
+                layout_left.vertices[0].pos_x);
+
+    forge_ui_text_layout_free(&layout_left);
+    forge_ui_text_layout_free(&layout_center);
+}
+
+/* ── Test: right alignment shifts vertices ───────────────────────────────── */
+
+static void test_layout_right_alignment(void)
+{
+    TEST("text_layout: right alignment shifts vertices further than center");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextOpts opts;
+    SDL_memset(&opts, 0, sizeof(opts));
+    opts.max_width = 500.0f;
+    opts.r = 1.0f; opts.g = 1.0f; opts.b = 1.0f; opts.a = 1.0f;
+
+    ForgeUiTextLayout layout_center, layout_right;
+
+    opts.alignment = FORGE_UI_TEXT_ALIGN_CENTER;
+    ASSERT_TRUE(forge_ui_text_layout(&test_atlas, "Hi", 0.0f, 0.0f,
+                                      &opts, &layout_center));
+
+    opts.alignment = FORGE_UI_TEXT_ALIGN_RIGHT;
+    ASSERT_TRUE(forge_ui_text_layout(&test_atlas, "Hi", 0.0f, 0.0f,
+                                      &opts, &layout_right));
+
+    /* Right-aligned first vertex x should be greater than center-aligned */
+    ASSERT_TRUE(layout_right.vertices[0].pos_x >
+                layout_center.vertices[0].pos_x);
+
+    forge_ui_text_layout_free(&layout_center);
+    forge_ui_text_layout_free(&layout_right);
+}
+
+/* ── Test: layout_free is safe on zeroed struct ──────────────────────────── */
+
+static void test_layout_free_zeroed(void)
+{
+    TEST("text_layout_free: safe on zero-initialized struct");
+    ForgeUiTextLayout layout;
+    SDL_memset(&layout, 0, sizeof(layout));
+    forge_ui_text_layout_free(&layout); /* must not crash */
+    pass_count++;
+}
+
+/* ── Test: layout_free is safe with NULL ──────────────────────────────────── */
+
+static void test_layout_free_null(void)
+{
+    TEST("text_layout_free: safe with NULL pointer");
+    forge_ui_text_layout_free(NULL); /* must not crash */
+    pass_count++;
+}
+
+/* ── Test: layout rejects atlas with units_per_em == 0 ───────────────────── */
+
+static void test_layout_invalid_atlas(void)
+{
+    TEST("text_layout: returns false for atlas with units_per_em == 0");
+
+    /* Construct a zeroed atlas — simulates a corrupt or uninitialized atlas */
+    ForgeUiFontAtlas bad_atlas;
+    SDL_memset(&bad_atlas, 0, sizeof(bad_atlas));
+
+    ForgeUiTextLayout layout;
+    bool result = forge_ui_text_layout(&bad_atlas, "test", 0.0f, 0.0f,
+                                        NULL, &layout);
+    ASSERT_TRUE(!result);
+}
+
+/* ── Test: measure returns zero for atlas with units_per_em == 0 ─────────── */
+
+static void test_measure_invalid_atlas(void)
+{
+    TEST("text_measure: returns zero metrics for atlas with units_per_em == 0");
+
+    ForgeUiFontAtlas bad_atlas;
+    SDL_memset(&bad_atlas, 0, sizeof(bad_atlas));
+
+    ForgeUiTextMetrics m = forge_ui_text_measure(&bad_atlas, "test", NULL);
+    ASSERT_EQ_INT(m.line_count, 0);
+    ASSERT_TRUE(m.width == 0.0f);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Text Measure Tests ────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: measure single line matches layout dimensions ─────────────────── */
+
+static void test_measure_matches_layout(void)
+{
+    TEST("text_measure: matches layout dimensions for 'Hello'");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextLayout layout;
+    ASSERT_TRUE(forge_ui_text_layout(&test_atlas, "Hello", 0.0f, 0.0f,
+                                      NULL, &layout));
+
+    ForgeUiTextMetrics metrics = forge_ui_text_measure(&test_atlas, "Hello",
+                                                        NULL);
+
+    /* Width and height should match (epsilon for float comparison) */
+    const float eps = 1e-3f;
+    ASSERT_TRUE(SDL_fabsf(metrics.width - layout.total_width) < eps);
+    ASSERT_TRUE(SDL_fabsf(metrics.height - layout.total_height) < eps);
+    ASSERT_EQ_INT(metrics.line_count, layout.line_count);
+
+    forge_ui_text_layout_free(&layout);
+}
+
+/* ── Test: measure empty string ──────────────────────────────────────────── */
+
+static void test_measure_empty_string(void)
+{
+    TEST("text_measure: empty string returns zero size, 1 line");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextMetrics m = forge_ui_text_measure(&test_atlas, "", NULL);
+    ASSERT_TRUE(m.width == 0.0f);
+    ASSERT_TRUE(m.height == 0.0f);
+    ASSERT_EQ_INT(m.line_count, 1);
+}
+
+/* ── Test: measure NULL parameters ───────────────────────────────────────── */
+
+static void test_measure_null_params(void)
+{
+    TEST("text_measure: NULL atlas or text returns zero metrics");
+    ForgeUiTextMetrics m1 = forge_ui_text_measure(NULL, "test", NULL);
+    ASSERT_EQ_INT(m1.line_count, 0);
+    ASSERT_TRUE(m1.width == 0.0f);
+
+    ForgeUiTextMetrics m2 = forge_ui_text_measure(&test_atlas, NULL, NULL);
+    ASSERT_EQ_INT(m2.line_count, 0);
+    ASSERT_TRUE(m2.width == 0.0f);
+}
+
+/* ── Test: measure multi-line ────────────────────────────────────────────── */
+
+static void test_measure_multiline(void)
+{
+    TEST("text_measure: newlines produce correct line count");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextMetrics m = forge_ui_text_measure(&test_atlas, "A\nB\nC", NULL);
+    ASSERT_EQ_INT(m.line_count, 3);
+    ASSERT_TRUE(m.width > 0.0f);
+    ASSERT_TRUE(m.height > 0.0f);
+}
+
+/* ── Test: measure with wrapping ─────────────────────────────────────────── */
+
+static void test_measure_wrapping(void)
+{
+    TEST("text_measure: wrapping increases line count");
+    ASSERT_TRUE(atlas_built);
+
+    ForgeUiTextMetrics m_nowrap = forge_ui_text_measure(&test_atlas,
+                                                         "ABCDEFGH", NULL);
+    ASSERT_EQ_INT(m_nowrap.line_count, 1);
+
+    /* Set max_width to fit ~3 characters */
+    ForgeUiTextOpts opts;
+    SDL_memset(&opts, 0, sizeof(opts));
+    opts.max_width = m_nowrap.width * 0.4f;
+    opts.r = 1.0f; opts.g = 1.0f; opts.b = 1.0f; opts.a = 1.0f;
+
+    ForgeUiTextMetrics m_wrap = forge_ui_text_measure(&test_atlas,
+                                                       "ABCDEFGH", &opts);
+    ASSERT_TRUE(m_wrap.line_count > 1);
+    ASSERT_TRUE(m_wrap.height > m_nowrap.height);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -1168,11 +1721,48 @@ int main(int argc, char *argv[])
     test_bmp_write_basic();
     test_bmp_write_odd_width();
 
+    /* Text layout — atlas metrics */
+    test_atlas_metrics_populated();
+
+    /* Text layout — forge_ui_text_layout */
+    test_layout_single_line();
+    test_layout_empty_string();
+    test_layout_null_params();
+    test_layout_space_no_quad();
+    test_layout_newline();
+    test_layout_wrapping();
+    test_layout_origin();
+    test_layout_uv_range();
+    test_layout_vertex_color();
+    test_layout_index_bounds();
+    test_layout_ccw_winding();
+    test_layout_default_opts();
+    test_layout_center_alignment();
+    test_layout_right_alignment();
+
+    /* Text layout — forge_ui_text_layout_free */
+    test_layout_free_zeroed();
+    test_layout_free_null();
+
+    /* Text layout — invalid atlas (units_per_em == 0) */
+    test_layout_invalid_atlas();
+    test_measure_invalid_atlas();
+
+    /* Text layout — forge_ui_text_measure */
+    test_measure_matches_layout();
+    test_measure_empty_string();
+    test_measure_null_params();
+    test_measure_multiline();
+    test_measure_wrapping();
+
     /* Print summary before tearing down SDL (SDL_Log needs SDL alive) */
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",
             test_count, pass_count, fail_count);
 
     /* Cleanup */
+    if (atlas_built) {
+        forge_ui_atlas_free(&test_atlas);
+    }
     if (font_loaded) {
         forge_ui_ttf_free(&test_font);
     }

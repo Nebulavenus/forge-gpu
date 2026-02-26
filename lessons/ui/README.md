@@ -48,6 +48,7 @@ earlier ones. Reusable code moves into the shared UI library at
 | 01 | [TTF Parsing](01-ttf-parsing/) | TrueType binary format, table directory, font metrics, cmap character mapping, glyph outlines |
 | 02 | [Glyph Rasterization](02-glyph-rasterization/) | Contour reconstruction, scanline rasterization, non-zero winding rule, quadratic Bézier crossings, supersampled anti-aliasing |
 | 03 | [Font Atlas](03-font-atlas/) | Rectangle packing, shelf algorithm, atlas sizing, UV coordinates, per-glyph metadata, padding for texture bleed, white pixel technique |
+| 04 | [Text Layout](04-text-layout/) | Pen/cursor model, advance widths, bearing offsets, baseline positioning, quad generation, index buffers, line breaking, text alignment, ForgeUiVertex format |
 
 ## Building
 
