@@ -338,7 +338,7 @@ static void test_glyph_a_outline(void)
             fail_count++;
         } else { pass_count++; }
 
-        if (!(glyph.flags[0] & FORGE_UI__FLAG_ON_CURVE)) {
+        if (!(glyph.flags[0] & FORGE_UI_FLAG_ON_CURVE)) {
             SDL_Log("    FAIL: points[0] not on-curve (line %d)", __LINE__);
             fail_count++;
         } else { pass_count++; }
@@ -436,6 +436,175 @@ static void test_glyph_reject_out_of_bounds_loca(void)
     ASSERT_TRUE(!result);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Rasterizer Tests ─────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: rasterize 'A' produces valid bitmap ───────────────────────────── */
+
+static void test_raster_basic(void)
+{
+    TEST("rasterize_glyph: 'A' at 64px produces valid bitmap");
+    if (!font_loaded) return;
+
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
+    ForgeUiRasterOpts opts;
+    opts.supersample_level = 4;
+
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(bmp.width > 0);
+    ASSERT_TRUE(bmp.height > 0);
+    ASSERT_TRUE(bmp.pixels != NULL);
+
+    /* At least some pixels should be filled (non-zero) */
+    int filled = 0;
+    for (int i = 0; i < bmp.width * bmp.height; i++) {
+        if (bmp.pixels[i] > 0) filled++;
+    }
+    ASSERT_TRUE(filled > 0);
+
+    forge_ui_glyph_bitmap_free(&bmp);
+}
+
+/* ── Test: 'O' produces a hole (donut shape) ─────────────────────────────── */
+/* The center of 'O' should have pixels with coverage 0 because the inner
+ * contour winds counter-clockwise, cancelling the outer contour's winding. */
+
+static void test_raster_donut(void)
+{
+    TEST("rasterize_glyph: 'O' has empty center (hole from winding rule)");
+    if (!font_loaded) return;
+
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'O');
+    ForgeUiRasterOpts opts;
+    opts.supersample_level = 1; /* binary — easier to verify hole */
+
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(bmp.width > 0 && bmp.height > 0);
+
+    /* Sample the center pixel — should be empty (inside the hole) */
+    int cx = bmp.width / 2;
+    int cy = bmp.height / 2;
+    Uint8 center = bmp.pixels[cy * bmp.width + cx];
+    ASSERT_TRUE(center == 0);
+
+    forge_ui_glyph_bitmap_free(&bmp);
+}
+
+/* ── Test: space glyph returns zero-size bitmap ──────────────────────────── */
+
+static void test_raster_whitespace(void)
+{
+    TEST("rasterize_glyph: space returns success with zero-size bitmap");
+    if (!font_loaded) return;
+
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, ' ');
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, NULL, &bmp);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(bmp.width == 0);
+    ASSERT_TRUE(bmp.height == 0);
+
+    forge_ui_glyph_bitmap_free(&bmp);
+}
+
+/* ── Test: supersampling produces intermediate coverage values ────────────── */
+
+static void test_raster_antialiasing(void)
+{
+    TEST("rasterize_glyph: ss=4 produces intermediate coverage values");
+    if (!font_loaded) return;
+
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
+    ForgeUiRasterOpts opts;
+    opts.supersample_level = 4;
+
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    ASSERT_TRUE(result);
+
+    /* With 4x4 supersampling, edge pixels should have values between 1-254.
+     * Count how many distinct values exist. */
+    bool has_intermediate = false;
+    for (int i = 0; i < bmp.width * bmp.height; i++) {
+        if (bmp.pixels[i] > 0 && bmp.pixels[i] < 255) {
+            has_intermediate = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(has_intermediate);
+
+    forge_ui_glyph_bitmap_free(&bmp);
+}
+
+/* ── Test: binary rasterization has no intermediate values ───────────────── */
+
+static void test_raster_no_aa(void)
+{
+    TEST("rasterize_glyph: ss=1 produces only 0 and 255");
+    if (!font_loaded) return;
+
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
+    ForgeUiRasterOpts opts;
+    opts.supersample_level = 1;
+
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    ASSERT_TRUE(result);
+
+    bool all_binary = true;
+    for (int i = 0; i < bmp.width * bmp.height; i++) {
+        if (bmp.pixels[i] != 0 && bmp.pixels[i] != 255) {
+            all_binary = false;
+            break;
+        }
+    }
+    ASSERT_TRUE(all_binary);
+
+    forge_ui_glyph_bitmap_free(&bmp);
+}
+
+/* ── Test: bitmap_free is safe on zeroed struct ──────────────────────────── */
+
+static void test_raster_bitmap_free_zeroed(void)
+{
+    TEST("glyph_bitmap_free: safe on zero-initialized struct");
+    ForgeUiGlyphBitmap bmp;
+    SDL_memset(&bmp, 0, sizeof(bmp));
+    forge_ui_glyph_bitmap_free(&bmp); /* must not crash */
+    pass_count++;
+}
+
+/* ── Test: default opts (NULL) uses 4x4 supersampling ────────────────────── */
+
+static void test_raster_default_opts(void)
+{
+    TEST("rasterize_glyph: NULL opts uses default (produces AA)");
+    if (!font_loaded) return;
+
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, NULL, &bmp);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(bmp.width > 0);
+
+    /* Default should be 4x4 SS — expect intermediate values */
+    bool has_intermediate = false;
+    for (int i = 0; i < bmp.width * bmp.height; i++) {
+        if (bmp.pixels[i] > 0 && bmp.pixels[i] < 255) {
+            has_intermediate = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(has_intermediate);
+
+    forge_ui_glyph_bitmap_free(&bmp);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -489,6 +658,15 @@ int main(int argc, char *argv[])
     test_head_index_to_loc_valid();
     test_glyph_reject_reversed_loca();
     test_glyph_reject_out_of_bounds_loca();
+
+    /* Rasterizer */
+    test_raster_basic();
+    test_raster_donut();
+    test_raster_whitespace();
+    test_raster_antialiasing();
+    test_raster_no_aa();
+    test_raster_bitmap_free_zeroed();
+    test_raster_default_opts();
 
     /* Print summary before tearing down SDL (SDL_Log needs SDL alive) */
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",

@@ -1,8 +1,10 @@
 /*
- * forge_ui.h -- Header-only TrueType font parser for forge-gpu
+ * forge_ui.h -- Header-only TrueType font parser and rasterizer for forge-gpu
  *
  * Parses a TrueType (.ttf) font file and extracts table metadata, font
- * metrics, character-to-glyph mapping, and simple glyph outlines.
+ * metrics, character-to-glyph mapping, and simple glyph outlines.  Also
+ * rasterizes glyph outlines into single-channel alpha bitmaps using
+ * scanline rasterization with the non-zero winding fill rule.
  *
  * Supports:
  *   - TTF offset table and table directory parsing
@@ -12,13 +14,14 @@
  *   - cmap table with format 4 (BMP Unicode to glyph index mapping)
  *   - loca table (short and long format glyph offsets)
  *   - glyf table (simple glyph outlines with contours, flags, coordinates)
+ *   - Glyph rasterization with configurable supersampled anti-aliasing
  *
  * Limitations (intentional for a learning library):
  *   - No compound glyph parsing (detected and skipped with a log message)
  *   - No hinting or grid-fitting instructions
  *   - No kerning (kern table) or advanced positioning (GPOS)
  *   - No glyph substitution (GSUB)
- *   - No rasterization (outlines only -- rasterization is a future lesson)
+ *   - No sub-pixel rendering (ClearType-style RGB anti-aliasing)
  *   - No per-glyph horizontal metrics (hmtx) -- future lesson
  *   - TrueType outlines only (no CFF/OpenType outlines)
  *
@@ -44,12 +47,18 @@
 
 #include <SDL3/SDL.h>
 
+/* ── Public Constants ────────────────────────────────────────────────────── */
+
+/* Per-point flag: set when the point lies on the contour curve.
+ * Off-curve points are quadratic Bézier control points. */
+#define FORGE_UI_FLAG_ON_CURVE  0x01
+
 /* ── Public Types ────────────────────────────────────────────────────────── */
 
 /* A 2D point in font units (integer coordinates). */
 typedef struct ForgeUiPoint {
-    Sint16 x;
-    Sint16 y;
+    Sint16 x;  /* horizontal position in font units */
+    Sint16 y;  /* vertical position in font units (y-up: ascender positive) */
 } ForgeUiPoint;
 
 /* An entry in the TTF table directory. */
@@ -85,10 +94,10 @@ typedef struct ForgeUiTtfMaxp {
 
 /* A parsed simple glyph from the glyf table. */
 typedef struct ForgeUiTtfGlyph {
-    Sint16       x_min;          /* glyph bounding box */
-    Sint16       y_min;
-    Sint16       x_max;
-    Sint16       y_max;
+    Sint16       x_min;          /* bounding box left edge (font units) */
+    Sint16       y_min;          /* bounding box bottom edge (font units) */
+    Sint16       x_max;          /* bounding box right edge (font units) */
+    Sint16       y_max;          /* bounding box top edge (font units) */
     Uint16       contour_count;  /* number of contours */
     Uint16       point_count;    /* total number of points */
     Uint16      *contour_ends;   /* last point index of each contour */
@@ -126,6 +135,40 @@ typedef struct ForgeUiFont {
     Uint32 glyf_offset;        /* start of glyf table in file */
 } ForgeUiFont;
 
+/* ── Rasterization Types ─────────────────────────────────────────────────── */
+
+/* Options controlling glyph rasterization quality.
+ * supersample_level controls anti-aliasing:
+ *   1 = no anti-aliasing (binary on/off per pixel)
+ *   2 = 2x2 supersampling (4 samples per pixel)
+ *   4 = 4x4 supersampling (16 samples per pixel, recommended)
+ *   8 = 8x8 supersampling (64 samples per pixel, high quality) */
+typedef struct ForgeUiRasterOpts {
+    int supersample_level;  /* samples per pixel axis (1, 2, 4, or 8) */
+} ForgeUiRasterOpts;
+
+/* A rasterized glyph bitmap — single-channel alpha coverage.
+ *
+ * Each pixel is a uint8 coverage value: 0 = empty, 255 = fully covered.
+ * This becomes the alpha channel in a font atlas texture — the actual text
+ * color comes from vertex color or a uniform, not from this bitmap.
+ *
+ * Bearing offsets describe how the bitmap positions relative to the pen
+ * position on the baseline:
+ *   bearing_x: horizontal offset from the pen to the left edge of the bitmap
+ *   bearing_y: vertical offset from the baseline to the top edge of the bitmap
+ *
+ * When rendering text, place the bitmap at:
+ *   screen_x = pen_x + bearing_x
+ *   screen_y = pen_y - bearing_y  (y-down screen coordinates) */
+typedef struct ForgeUiGlyphBitmap {
+    int     width;       /* bitmap width in pixels */
+    int     height;      /* bitmap height in pixels */
+    Uint8  *pixels;      /* width * height coverage values (row-major, top-down) */
+    int     bearing_x;   /* horizontal offset from pen to bitmap left edge */
+    int     bearing_y;   /* vertical offset from baseline to bitmap top edge */
+} ForgeUiGlyphBitmap;
+
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 /* Load a TTF font file and parse its table directory and core tables.
@@ -150,6 +193,31 @@ static bool forge_ui_ttf_load_glyph(const ForgeUiFont *font,
 
 /* Free memory allocated by forge_ui_ttf_load_glyph(). */
 static void forge_ui_ttf_glyph_free(ForgeUiTtfGlyph *glyph);
+
+/* Rasterize a glyph into a single-channel alpha bitmap.
+ *
+ * Converts the glyph's quadratic Bézier outlines into a pixel grid using
+ * scanline rasterization with the non-zero winding fill rule.  The bitmap
+ * is sized from the glyph's bounding box scaled to the target pixel height.
+ *
+ * Parameters:
+ *   font         — loaded font (provides unitsPerEm for scaling)
+ *   glyph_index  — which glyph to rasterize (from forge_ui_ttf_glyph_index)
+ *   pixel_height — desired height in pixels (e.g. 64.0f for 64px text)
+ *   opts         — rasterization options (NULL for defaults: 4x4 supersample)
+ *   out_bitmap   — receives the rasterized bitmap; caller must free with
+ *                  forge_ui_glyph_bitmap_free()
+ *
+ * Returns true on success, false on error (logged via SDL_Log).
+ * Returns true with zero-size bitmap for whitespace glyphs (no contours). */
+static bool forge_ui_rasterize_glyph(const ForgeUiFont *font,
+                                      Uint16 glyph_index,
+                                      float pixel_height,
+                                      const ForgeUiRasterOpts *opts,
+                                      ForgeUiGlyphBitmap *out_bitmap);
+
+/* Free pixel data allocated by forge_ui_rasterize_glyph(). */
+static void forge_ui_glyph_bitmap_free(ForgeUiGlyphBitmap *bitmap);
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* ── Implementation ──────────────────────────────────────────────────────── */
@@ -618,7 +686,7 @@ static bool forge_ui__cache_glyf_offset(ForgeUiFont *font)
  * These control whether the point is on-curve and how its coordinates
  * are encoded. */
 
-#define FORGE_UI__FLAG_ON_CURVE    0x01  /* point is on the curve */
+#define FORGE_UI__FLAG_ON_CURVE    FORGE_UI_FLAG_ON_CURVE
 #define FORGE_UI__FLAG_X_SHORT     0x02  /* x coordinate is 1 byte */
 #define FORGE_UI__FLAG_Y_SHORT     0x04  /* y coordinate is 1 byte */
 #define FORGE_UI__FLAG_REPEAT      0x08  /* next byte is repeat count */
@@ -988,6 +1056,658 @@ static void forge_ui_ttf_glyph_free(ForgeUiTtfGlyph *glyph)
     SDL_free(glyph->contour_ends);
 
     SDL_memset(glyph, 0, sizeof(ForgeUiTtfGlyph));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Glyph Rasterization Implementation ─────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Edge types for scanline rasterization ───────────────────────────────── */
+/* An edge is one segment of a glyph contour — either a line segment or a
+ * quadratic Bézier curve.  During rasterization we iterate all edges for
+ * each scanline and find where they cross that y-coordinate. */
+
+#define FORGE_UI__EDGE_LINE     0
+#define FORGE_UI__EDGE_QUAD     1
+
+/* Maximum edges per glyph.  Most glyphs have far fewer than this.
+ * Each contour segment (line or curve) becomes one edge. */
+#define FORGE_UI__MAX_EDGES     4096
+
+/* Maximum scanline crossings per row.  Even complex glyphs rarely exceed
+ * a few dozen crossings per scanline. */
+#define FORGE_UI__MAX_CROSSINGS 256
+
+/* Bitmap padding in pixels.  A small margin prevents edge pixels from
+ * being clipped at the bitmap boundary. */
+#define FORGE_UI__BITMAP_PAD    1
+
+/* Default supersampling level when no ForgeUiRasterOpts are provided.
+ * 4 means 4x4 = 16 samples per pixel — good balance of quality and speed. */
+#define FORGE_UI__DEFAULT_SS    4
+
+/* Floating-point comparison epsilon for near-zero tests in the quadratic
+ * solver and degenerate edge detection. */
+#define FORGE_UI__EPSILON       1e-6f
+
+typedef struct ForgeUi__Edge {
+    int type;           /* FORGE_UI__EDGE_LINE or FORGE_UI__EDGE_QUAD */
+    float x0, y0;       /* start point (scaled pixels, y-flipped) */
+    float x1, y1;       /* end point for lines; or control point for quads */
+    float x2, y2;       /* end point for quads (unused for lines) */
+    int   winding;      /* +1 or -1 depending on contour direction */
+} ForgeUi__Edge;
+
+/* A scanline crossing: the x position and winding direction where a
+ * contour edge crosses a given y-coordinate. */
+typedef struct ForgeUi__Crossing {
+    float x;       /* x-coordinate where the edge crosses the scanline */
+    int   winding; /* +1 (upward crossing) or -1 (downward crossing) */
+} ForgeUi__Crossing;
+
+/* ── Contour reconstruction helpers ──────────────────────────────────────── */
+/* Walk a contour's points and emit edges (lines and quadratic Béziers).
+ *
+ * TrueType contours encode curves with on-curve and off-curve points:
+ *   on → on:  straight line segment
+ *   on → off → on:  quadratic Bézier curve
+ *   off → off:  implicit on-curve midpoint between them (TrueType compression)
+ *
+ * The implicit midpoint rule halves storage for smooth curves: if two
+ * consecutive off-curve points exist, the midpoint between them is an
+ * implied on-curve point.  This works because most glyph curves join
+ * smoothly, and the midpoint is exactly where the tangent directions
+ * would naturally meet. */
+
+static int forge_ui__build_edges(
+    const ForgeUiTtfGlyph *glyph,
+    float scale,
+    float y_offset,  /* bitmap top edge in font units (y_max * scale + pad) */
+    ForgeUi__Edge *edges,
+    int max_edges)
+{
+    int edge_count = 0;
+    bool overflow_logged = false;
+
+    for (Uint16 c = 0; c < glyph->contour_count; c++) {
+        Uint16 start = (c == 0) ? 0 : (Uint16)(glyph->contour_ends[c - 1] + 1);
+        Uint16 end   = glyph->contour_ends[c];
+        Uint16 count = (Uint16)(end - start + 1);
+
+        if (count < 2) continue;
+
+        /* Walk the contour and emit edges.  We need to handle the three
+         * cases: on→on (line), on→off→on (Bézier), off→off (implicit
+         * midpoint between them). */
+
+        /* Find the first on-curve point to start from.  If the first point
+         * is off-curve, compute the implicit midpoint with the last point. */
+        Uint16 first_idx = start;
+        float first_x, first_y;
+        bool first_on = (glyph->flags[start] & FORGE_UI__FLAG_ON_CURVE) != 0;
+
+        if (first_on) {
+            first_x = (float)glyph->points[start].x * scale;
+            first_y = y_offset - (float)glyph->points[start].y * scale;
+        } else {
+            /* First point is off-curve — check if last point is on-curve */
+            bool last_on = (glyph->flags[end] & FORGE_UI__FLAG_ON_CURVE) != 0;
+            if (last_on) {
+                /* Start from the last on-curve point */
+                first_x = (float)glyph->points[end].x * scale;
+                first_y = y_offset - (float)glyph->points[end].y * scale;
+                /* We'll process from 'start' which is off-curve */
+            } else {
+                /* Both first and last are off-curve — midpoint is start */
+                first_x = ((float)glyph->points[start].x +
+                            (float)glyph->points[end].x) * 0.5f * scale;
+                first_y = y_offset -
+                           ((float)glyph->points[start].y +
+                            (float)glyph->points[end].y) * 0.5f * scale;
+            }
+        }
+
+        float cur_x = first_x;
+        float cur_y = first_y;
+
+        Uint16 i = start;
+        while (i <= end) {
+            bool on_i = (glyph->flags[i] & FORGE_UI__FLAG_ON_CURVE) != 0;
+
+            if (on_i) {
+                /* Current point is on-curve.  Emit a line from cur to this. */
+                float px = (float)glyph->points[i].x * scale;
+                float py = y_offset - (float)glyph->points[i].y * scale;
+
+                /* Skip degenerate zero-length lines */
+                if (px != cur_x || py != cur_y) {
+                    if (edge_count >= max_edges) {
+                        if (!overflow_logged) {
+                            SDL_Log("forge_ui__build_edges: edge limit "
+                                    "(%d) exceeded — glyph may render "
+                                    "incorrectly", max_edges);
+                            overflow_logged = true;
+                        }
+                    } else {
+                        ForgeUi__Edge *e = &edges[edge_count++];
+                        e->type = FORGE_UI__EDGE_LINE;
+                        e->x0 = cur_x; e->y0 = cur_y;
+                        e->x1 = px;    e->y1 = py;
+                        e->winding = (e->y0 < e->y1) ? 1 : -1;
+                    }
+                }
+                cur_x = px;
+                cur_y = py;
+                i++;
+            } else {
+                /* Current point is off-curve — it's a Bézier control point.
+                 * Look ahead to find the next point. */
+                float cx = (float)glyph->points[i].x * scale;
+                float cy = y_offset - (float)glyph->points[i].y * scale;
+
+                /* Find the next point (wrapping around the contour) */
+                Uint16 next_i = (i == end) ? start : (Uint16)(i + 1);
+                bool next_on = (glyph->flags[next_i] & FORGE_UI__FLAG_ON_CURVE) != 0;
+
+                float nx, ny;
+                if (next_on) {
+                    /* off → on: standard quadratic Bézier */
+                    nx = (float)glyph->points[next_i].x * scale;
+                    ny = y_offset - (float)glyph->points[next_i].y * scale;
+                    /* Advance past both the off-curve (i) and the on-curve
+                     * (next_i).  When next_i wrapped to start, the contour
+                     * has closed — override i to end+1 so the while-loop
+                     * exits cleanly (the +2 alone could overshoot end). */
+                    i += 2;
+                    if (next_i == start) {
+                        i = end + 1;
+                    }
+                } else {
+                    /* off → off: implicit midpoint is on-curve */
+                    float nx2 = (float)glyph->points[next_i].x * scale;
+                    float ny2 = y_offset - (float)glyph->points[next_i].y * scale;
+                    nx = (cx + nx2) * 0.5f;
+                    ny = (cy + ny2) * 0.5f;
+                    i++; /* advance past this off-curve; next iteration handles next_i */
+                }
+
+                /* Emit a quadratic Bézier edge: cur → (cx,cy) → (nx,ny) */
+                if (edge_count >= max_edges) {
+                    if (!overflow_logged) {
+                        SDL_Log("forge_ui__build_edges: edge limit "
+                                "(%d) exceeded — glyph may render "
+                                "incorrectly", max_edges);
+                        overflow_logged = true;
+                    }
+                } else {
+                    ForgeUi__Edge *e = &edges[edge_count++];
+                    e->type = FORGE_UI__EDGE_QUAD;
+                    e->x0 = cur_x; e->y0 = cur_y;
+                    e->x1 = cx;    e->y1 = cy;
+                    e->x2 = nx;    e->y2 = ny;
+                    /* Winding: based on the vertical direction from start to end */
+                    e->winding = (e->y0 < e->y2) ? 1 : -1;
+                }
+
+                cur_x = nx;
+                cur_y = ny;
+            }
+        }
+
+        /* Close the contour: emit an edge from current position back to
+         * the first point (if they don't already coincide). */
+        if (cur_x != first_x || cur_y != first_y) {
+            if (edge_count >= max_edges) {
+                if (!overflow_logged) {
+                    SDL_Log("forge_ui__build_edges: edge limit "
+                            "(%d) exceeded — glyph may render "
+                            "incorrectly", max_edges);
+                    overflow_logged = true;
+                }
+            } else {
+                ForgeUi__Edge *e = &edges[edge_count++];
+                e->type = FORGE_UI__EDGE_LINE;
+                e->x0 = cur_x;  e->y0 = cur_y;
+                e->x1 = first_x; e->y1 = first_y;
+                e->winding = (e->y0 < e->y1) ? 1 : -1;
+            }
+        }
+    }
+
+    return edge_count;
+}
+
+/* ── Scanline–line intersection ──────────────────────────────────────────── */
+/* For a line segment from (x0,y0) to (x1,y1), find the x coordinate
+ * where it crosses horizontal scanline y.  Returns true if the crossing
+ * exists (y is within the edge's vertical range). */
+
+static bool forge_ui__line_crossing(
+    float x0, float y0, float x1, float y1,
+    float scan_y, float *out_x)
+{
+    /* Horizontal edges never cross a scanline */
+    if (y0 == y1) return false;
+
+    /* Check if scan_y is within the edge's vertical extent.
+     * Use half-open interval [min_y, max_y) to avoid double-counting
+     * at shared vertices between consecutive edges. */
+    float min_y, max_y;
+    if (y0 < y1) { min_y = y0; max_y = y1; }
+    else          { min_y = y1; max_y = y0; }
+
+    if (scan_y < min_y || scan_y >= max_y) return false;
+
+    /* Linear interpolation: solve for x at scan_y */
+    float t = (scan_y - y0) / (y1 - y0);
+    *out_x = x0 + t * (x1 - x0);
+    return true;
+}
+
+/* ── Scanline–quadratic Bézier intersection ──────────────────────────────── */
+/* For a quadratic Bézier from p0 through control p1 to p2, find all
+ * x coordinates where it crosses horizontal scanline y.
+ *
+ * The curve's y-coordinate as a function of parameter t is:
+ *   Y(t) = (1-t)^2 * y0 + 2(1-t)t * y1 + t^2 * y2
+ *
+ * Setting Y(t) = scan_y and rearranging:
+ *   a*t^2 + b*t + c = 0
+ * where:
+ *   a = y0 - 2*y1 + y2
+ *   b = 2*(y1 - y0)
+ *   c = y0 - scan_y
+ *
+ * This is a standard quadratic equation.  We solve it and evaluate x
+ * at each valid t in [0, 1). */
+
+static int forge_ui__quad_crossings(
+    float x0, float y0,   /* start */
+    float x1, float y1,   /* control */
+    float x2, float y2,   /* end */
+    float scan_y,
+    int   winding,
+    ForgeUi__Crossing *crossings,
+    int max_crossings)
+{
+    int found = 0;
+
+    float a = y0 - 2.0f * y1 + y2;
+    float b = 2.0f * (y1 - y0);
+    float c = y0 - scan_y;
+
+    float t_values[2];
+    int t_count = 0;
+
+    if (SDL_fabsf(a) < FORGE_UI__EPSILON) {
+        /* Near-linear: solve b*t + c = 0 */
+        if (SDL_fabsf(b) > FORGE_UI__EPSILON) {
+            float t = -c / b;
+            if (t >= 0.0f && t < 1.0f) {
+                t_values[t_count++] = t;
+            }
+        }
+    } else {
+        float disc = b * b - 4.0f * a * c;
+        if (disc >= 0.0f) {
+            float sqrt_disc = SDL_sqrtf(disc);
+            float inv_2a = 1.0f / (2.0f * a);
+
+            float t1 = (-b - sqrt_disc) * inv_2a;
+            float t2 = (-b + sqrt_disc) * inv_2a;
+
+            if (t1 >= 0.0f && t1 < 1.0f) t_values[t_count++] = t1;
+            if (t2 >= 0.0f && t2 < 1.0f && SDL_fabsf(t2 - t1) > FORGE_UI__EPSILON) {
+                t_values[t_count++] = t2;
+            }
+        }
+    }
+
+    /* Evaluate x and per-root winding at each valid t.
+     *
+     * The winding direction must be computed per root, not per edge,
+     * because a non-monotonic quadratic can cross a scanline twice
+     * with opposite vertical directions.  We use the derivative:
+     *   dY/dt = 2[(1-t)(y1 - y0) + t(y2 - y1)]
+     * Positive dY/dt means the curve is moving downward in bitmap
+     * coordinates (y increases downward), so winding = +1.  Negative
+     * means upward, so winding = -1. */
+    for (int i = 0; i < t_count && found < max_crossings; i++) {
+        float t = t_values[i];
+        float mt = 1.0f - t;
+        float x = mt * mt * x0 + 2.0f * mt * t * x1 + t * t * x2;
+
+        /* dY/dt at this root determines crossing direction */
+        float dydt = 2.0f * (mt * (y1 - y0) + t * (y2 - y1));
+        int root_winding;
+        if (SDL_fabsf(dydt) < FORGE_UI__EPSILON) {
+            /* Tangent crossing — use the edge's overall direction */
+            root_winding = winding;
+        } else {
+            root_winding = (dydt > 0.0f) ? 1 : -1;
+        }
+
+        crossings[found].x = x;
+        crossings[found].winding = root_winding;
+        found++;
+    }
+
+    return found;
+}
+
+/* ── Comparison function for sorting crossings by x ──────────────────────── */
+
+static int forge_ui__crossing_cmp(const void *a, const void *b)
+{
+    float xa = ((const ForgeUi__Crossing *)a)->x;
+    float xb = ((const ForgeUi__Crossing *)b)->x;
+    if (xa < xb) return -1;
+    if (xa > xb) return  1;
+    return 0;
+}
+
+/* ── Scanline rasterization core ─────────────────────────────────────────── */
+/* Rasterize a single scanline at y-coordinate scan_y into the bitmap row.
+ *
+ * Algorithm:
+ * 1. Find all crossings of contour edges with this scanline
+ * 2. Sort crossings by x
+ * 3. Walk left to right, accumulating the winding number
+ * 4. When winding != 0, the pixel is inside the glyph — fill it */
+
+static void forge_ui__rasterize_scanline(
+    const ForgeUi__Edge *edges, int edge_count,
+    float scan_y,
+    Uint8 *row, int width)
+{
+    ForgeUi__Crossing crossings[FORGE_UI__MAX_CROSSINGS];
+    int num_crossings = 0;
+
+    for (int i = 0; i < edge_count; i++) {
+        const ForgeUi__Edge *e = &edges[i];
+
+        if (e->type == FORGE_UI__EDGE_LINE) {
+            float cx;
+            if (forge_ui__line_crossing(e->x0, e->y0, e->x1, e->y1,
+                                         scan_y, &cx)) {
+                if (num_crossings >= FORGE_UI__MAX_CROSSINGS) {
+                    SDL_Log("forge_ui__rasterize_scanline: crossing limit "
+                            "(%d) exceeded at y=%.1f", FORGE_UI__MAX_CROSSINGS,
+                            (double)scan_y);
+                    break;
+                }
+                crossings[num_crossings].x = cx;
+                crossings[num_crossings].winding = e->winding;
+                num_crossings++;
+            }
+        } else {
+            /* Quadratic Bézier edge */
+            int space = FORGE_UI__MAX_CROSSINGS - num_crossings;
+            if (space <= 0) {
+                SDL_Log("forge_ui__rasterize_scanline: crossing limit "
+                        "(%d) exceeded at y=%.1f", FORGE_UI__MAX_CROSSINGS,
+                        (double)scan_y);
+                break;
+            }
+            int added = forge_ui__quad_crossings(
+                e->x0, e->y0, e->x1, e->y1, e->x2, e->y2,
+                scan_y, e->winding,
+                &crossings[num_crossings], space);
+            num_crossings += added;
+        }
+    }
+
+    if (num_crossings < 2) return;
+
+    /* Sort crossings by x position */
+    SDL_qsort(crossings, (size_t)num_crossings,
+              sizeof(ForgeUi__Crossing), forge_ui__crossing_cmp);
+
+    /* Walk crossings and fill using the non-zero winding rule.
+     * The winding number starts at 0.  Each crossing adds its winding
+     * value.  When winding transitions from 0 to non-zero we record the
+     * entry x-position; when it returns to 0 we fill from that entry
+     * to the current crossing. */
+    int winding = 0;
+    float fill_start_x = 0.0f; /* x where we last entered the glyph */
+    for (int i = 0; i < num_crossings; i++) {
+        int prev_winding = winding;
+        winding += crossings[i].winding;
+
+        if (prev_winding == 0 && winding != 0) {
+            /* Entered the glyph — record start position */
+            fill_start_x = crossings[i].x;
+        } else if (prev_winding != 0 && winding == 0) {
+            /* Exited the glyph — fill from recorded entry to here */
+            float fill_end = crossings[i].x;
+
+            /* Clamp to bitmap bounds */
+            int px_start = (int)fill_start_x;
+            int px_end   = (int)SDL_ceilf(fill_end);
+            if (px_start < 0) px_start = 0;
+            if (px_end > width) px_end = width;
+
+            for (int px = px_start; px < px_end; px++) {
+                row[px] = 255;
+            }
+        }
+        /* When prev_winding != 0 && winding != 0 we are still inside the
+         * glyph — no fill boundary to emit, so no action is needed. */
+    }
+}
+
+/* ── Main rasterization function ─────────────────────────────────────────── */
+
+static bool forge_ui_rasterize_glyph(const ForgeUiFont *font,
+                                      Uint16 glyph_index,
+                                      float pixel_height,
+                                      const ForgeUiRasterOpts *opts,
+                                      ForgeUiGlyphBitmap *out_bitmap)
+{
+    SDL_memset(out_bitmap, 0, sizeof(ForgeUiGlyphBitmap));
+
+    /* Default options: 4x4 supersampling.
+     * Only powers of two up to 8 are allowed — arbitrary values could
+     * cause enormous allocations (hi-res buffer is bmp_w*ss × bmp_h*ss). */
+    int ss = FORGE_UI__DEFAULT_SS;
+    if (opts) {
+        int req = opts->supersample_level;
+        if (req == 1 || req == 2 || req == 4 || req == 8) {
+            ss = req;
+        } else if (req >= 1) {
+            SDL_Log("forge_ui_rasterize_glyph: invalid supersample_level "
+                    "%d — must be 1, 2, 4, or 8; using default %d",
+                    req, FORGE_UI__DEFAULT_SS);
+        }
+    }
+
+    /* Load the glyph outline */
+    ForgeUiTtfGlyph glyph;
+    if (!forge_ui_ttf_load_glyph(font, glyph_index, &glyph)) {
+        SDL_Log("forge_ui_rasterize_glyph: failed to load glyph %u",
+                glyph_index);
+        return false;
+    }
+
+    /* Whitespace glyphs have no contours — return success with zero-size bitmap */
+    if (glyph.contour_count == 0) {
+        forge_ui_ttf_glyph_free(&glyph);
+        return true;
+    }
+
+    /* Compute scale factor: font units → pixels.
+     * scale = pixel_height / unitsPerEm */
+    float scale = pixel_height / (float)font->head.units_per_em;
+
+    /* Compute bitmap dimensions from the glyph's bounding box.
+     * Font coordinates have y-up; bitmaps have y=0 at top.  We flip
+     * y during edge building so the bitmap renders correctly.
+     *
+     * bearing_x: horizontal offset from pen position to glyph left edge
+     * bearing_y: vertical offset from baseline to glyph top edge */
+    float scaled_x_min = (float)glyph.x_min * scale;
+    float scaled_y_min = (float)glyph.y_min * scale;
+    float scaled_x_max = (float)glyph.x_max * scale;
+    float scaled_y_max = (float)glyph.y_max * scale;
+
+    int bmp_w = (int)SDL_ceilf(scaled_x_max - scaled_x_min) + 2 * FORGE_UI__BITMAP_PAD;
+    int bmp_h = (int)SDL_ceilf(scaled_y_max - scaled_y_min) + 2 * FORGE_UI__BITMAP_PAD;
+
+    if (bmp_w <= 0 || bmp_h <= 0) {
+        forge_ui_ttf_glyph_free(&glyph);
+        return true; /* degenerate glyph */
+    }
+
+    /* The y_offset is where y=0 in font units maps to in bitmap coordinates.
+     * Since we flip y (bitmap y=0 is top), y_max maps to the top of the
+     * bitmap, and y_min maps to the bottom. */
+    float y_offset = scaled_y_max + (float)FORGE_UI__BITMAP_PAD;
+    float x_offset = -scaled_x_min + (float)FORGE_UI__BITMAP_PAD;
+
+    /* Build edges from contour data.  The edge builder handles all three
+     * segment types (on→on lines, on→off→on Béziers, off→off implicit
+     * midpoints) and applies scaling and y-flip. */
+    ForgeUi__Edge *edges = (ForgeUi__Edge *)SDL_malloc(
+        sizeof(ForgeUi__Edge) * FORGE_UI__MAX_EDGES);
+    if (!edges) {
+        SDL_Log("forge_ui_rasterize_glyph: allocation failed (edges)");
+        forge_ui_ttf_glyph_free(&glyph);
+        return false;
+    }
+
+    /* Adjust edge coordinates: add x_offset so glyph is centered in bitmap */
+    int edge_count = forge_ui__build_edges(&glyph, scale, y_offset,
+                                            edges, FORGE_UI__MAX_EDGES);
+
+    /* Apply x_offset to all edge x-coordinates */
+    for (int i = 0; i < edge_count; i++) {
+        edges[i].x0 += x_offset;
+        edges[i].x1 += x_offset;
+        if (edges[i].type == FORGE_UI__EDGE_QUAD) {
+            edges[i].x2 += x_offset;
+        }
+    }
+
+    /* Allocate the output bitmap */
+    Uint8 *pixels = (Uint8 *)SDL_calloc((size_t)bmp_w * (size_t)bmp_h, 1);
+    if (!pixels) {
+        SDL_Log("forge_ui_rasterize_glyph: allocation failed (pixels)");
+        SDL_free(edges);
+        forge_ui_ttf_glyph_free(&glyph);
+        return false;
+    }
+
+    if (ss <= 1) {
+        /* No supersampling: one sample per pixel at pixel center */
+        for (int y = 0; y < bmp_h; y++) {
+            float scan_y = (float)y + 0.5f;
+            forge_ui__rasterize_scanline(edges, edge_count, scan_y,
+                                          &pixels[y * bmp_w], bmp_w);
+        }
+    } else {
+        /* Supersampling: sample a ss×ss grid per pixel and average.
+         *
+         * For each pixel, we cast ss horizontal scanlines evenly spaced
+         * within the pixel, and for each scanline we check whether each
+         * sub-pixel column is inside.  The fraction of "inside" samples
+         * becomes the coverage value (0–255).
+         *
+         * We rasterize into a high-resolution buffer (ss× in both axes),
+         * then downsample to the final bitmap. */
+
+        int hi_w = bmp_w * ss;
+        int hi_h = bmp_h * ss;
+
+        /* Guard against integer overflow in the scaled dimensions */
+        if (hi_w / ss != bmp_w || hi_h / ss != bmp_h) {
+            SDL_Log("forge_ui_rasterize_glyph: supersample dimensions "
+                    "overflow (%d × %d × %d)", bmp_w, bmp_h, ss);
+            SDL_free(pixels);
+            SDL_free(edges);
+            forge_ui_ttf_glyph_free(&glyph);
+            return false;
+        }
+
+        /* Use a single row buffer for the high-res scanline, then
+         * accumulate into a per-pixel coverage counter. */
+        Uint8 *hi_row = (Uint8 *)SDL_calloc((size_t)hi_w, 1);
+        /* Coverage accumulator per output pixel row — we need to track
+         * the sum across ss sub-scanlines. */
+        int *coverage = (int *)SDL_calloc((size_t)bmp_w, sizeof(int));
+
+        if (!hi_row || !coverage) {
+            SDL_Log("forge_ui_rasterize_glyph: allocation failed (supersample)");
+            SDL_free(hi_row);
+            SDL_free(coverage);
+            SDL_free(pixels);
+            SDL_free(edges);
+            forge_ui_ttf_glyph_free(&glyph);
+            return false;
+        }
+
+        /* Scale edges to high-resolution grid */
+        float ss_f = (float)ss;
+        for (int i = 0; i < edge_count; i++) {
+            edges[i].x0 *= ss_f;
+            edges[i].y0 *= ss_f;
+            edges[i].x1 *= ss_f;
+            edges[i].y1 *= ss_f;
+            if (edges[i].type == FORGE_UI__EDGE_QUAD) {
+                edges[i].x2 *= ss_f;
+                edges[i].y2 *= ss_f;
+            }
+        }
+
+        for (int y = 0; y < bmp_h; y++) {
+            SDL_memset(coverage, 0, sizeof(int) * (size_t)bmp_w);
+
+            for (int sub_y = 0; sub_y < ss; sub_y++) {
+                float scan_y = (float)(y * ss + sub_y) + 0.5f;
+                SDL_memset(hi_row, 0, (size_t)hi_w);
+                forge_ui__rasterize_scanline(edges, edge_count, scan_y,
+                                              hi_row, hi_w);
+
+                /* Accumulate sub-pixel coverage into output pixels */
+                for (int x = 0; x < bmp_w; x++) {
+                    int sum = 0;
+                    int base = x * ss;
+                    for (int sub_x = 0; sub_x < ss; sub_x++) {
+                        if (hi_row[base + sub_x]) sum++;
+                    }
+                    coverage[x] += sum;
+                }
+            }
+
+            /* Convert coverage counts to 0–255 */
+            int total_samples = ss * ss;
+            for (int x = 0; x < bmp_w; x++) {
+                int val = (coverage[x] * 255 + total_samples / 2) / total_samples;
+                if (val > 255) val = 255;
+                pixels[y * bmp_w + x] = (Uint8)val;
+            }
+        }
+
+        SDL_free(coverage);
+        SDL_free(hi_row);
+    }
+
+    /* Fill output bitmap struct */
+    out_bitmap->width     = bmp_w;
+    out_bitmap->height    = bmp_h;
+    out_bitmap->pixels    = pixels;
+    out_bitmap->bearing_x = (int)SDL_floorf(scaled_x_min) - FORGE_UI__BITMAP_PAD;
+    out_bitmap->bearing_y = (int)SDL_ceilf(scaled_y_max) + FORGE_UI__BITMAP_PAD;
+
+    SDL_free(edges);
+    forge_ui_ttf_glyph_free(&glyph);
+    return true;
+}
+
+static void forge_ui_glyph_bitmap_free(ForgeUiGlyphBitmap *bitmap)
+{
+    if (!bitmap) return;
+    SDL_free(bitmap->pixels);
+    SDL_memset(bitmap, 0, sizeof(ForgeUiGlyphBitmap));
 }
 
 #endif /* FORGE_UI_H */

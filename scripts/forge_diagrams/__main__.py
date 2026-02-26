@@ -136,9 +136,13 @@ from .math_diagrams import (
     diagram_white_noise_comparison,
 )
 from .ui_diagrams import (
+    diagram_antialiasing_comparison,
+    diagram_contour_reconstruction,
     diagram_endianness,
     diagram_glyph_anatomy,
+    diagram_scanline_crossings,
     diagram_ttf_file_structure,
+    diagram_winding_direction,
 )
 
 # ---------------------------------------------------------------------------
@@ -320,6 +324,12 @@ DIAGRAMS = {
         ("glyph_anatomy.png", diagram_glyph_anatomy),
         ("endianness.png", diagram_endianness),
     ],
+    "ui/02": [
+        ("contour_reconstruction.png", diagram_contour_reconstruction),
+        ("scanline_crossings.png", diagram_scanline_crossings),
+        ("winding_direction.png", diagram_winding_direction),
+        ("antialiasing_comparison.png", diagram_antialiasing_comparison),
+    ],
 }
 
 # Full lesson directory names for display
@@ -355,6 +365,7 @@ LESSON_NAMES = {
     "gpu/26": "gpu/26-procedural-sky",
     "gpu/27": "gpu/27-ssao",
     "ui/01": "ui/01-ttf-parsing",
+    "ui/02": "ui/02-glyph-rasterization",
 }
 
 

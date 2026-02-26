@@ -116,6 +116,16 @@ static inline int SDL_snprintf(char *buf, size_t n, const char *fmt, ...)
 static inline float SDL_fabsf(float x)  { return x < 0 ? -x : x; }
 static inline float SDL_sqrtf(float x)  { return (float)sqrt((double)x); }
 static inline float SDL_fmodf(float x, float y) { return (float)fmod((double)x, (double)y); }
+static inline float SDL_ceilf(float x)  { return (float)ceil((double)x); }
+static inline float SDL_floorf(float x) { return (float)floor((double)x); }
+
+/* ── Sorting ───────────────────────────────────────────────────────────── */
+
+static inline void SDL_qsort(void *base, size_t nmemb, size_t size,
+                              int (*compar)(const void *, const void *))
+{
+    qsort(base, nmemb, size, compar);
+}
 
 /* ── File I/O ───────────────────────────────────────────────────────────── */
 

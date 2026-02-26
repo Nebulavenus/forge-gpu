@@ -51,82 +51,13 @@ when reading the byte-level parsing code.
 ## Result
 
 A console program that loads a `.ttf` file and prints its internal structure:
-table directory, font metrics, cmap lookups, and glyph outline data.
+table directory, font metrics, cmap lookups, and parsed glyph outline data.
 
-**Example output** (Liberation Mono Regular):
+The program extracts the raw contour points that define each glyph shape —
+on-curve points that lie on the outline, and off-curve control points that
+define quadratic Bézier curves:
 
-```text
-INFO: Loading font: assets/fonts/liberation_mono/LiberationMono-Regular.ttf
-INFO: ============================================================
-INFO: TABLE DIRECTORY (16 tables)
-INFO: ------------------------------------------------------------
-INFO:   Tag        Offset     Length
-INFO:   ----       ------     ------
-INFO:   FFTM       108140         28
-INFO:   GDEF       108108         30
-INFO:   OS/2          392         96
-INFO:   cmap         1836       1766
-INFO:   cvt          6536        568
-INFO:   fpgm         3604       1797
-INFO:   gasp       108092         16
-INFO:   glyf         8448      92280
-INFO:   head          268         54
-INFO:   hhea          324         36
-INFO:   hmtx          488       1348
-INFO:   loca         7104       1342
-INFO:   maxp          360         32
-INFO:   name       100728       2166
-INFO:   post       102896       5193
-INFO:   prep         5404       1130
-INFO: ============================================================
-INFO: HEAD TABLE
-INFO: ------------------------------------------------------------
-INFO:   unitsPerEm:      2048
-INFO:   bounding box:    (-50, -615) to (1247, 1705)
-INFO:   indexToLocFormat: 0 (short)
-INFO: ============================================================
-INFO: HHEA TABLE
-INFO: ------------------------------------------------------------
-INFO:   ascender:          1705
-INFO:   descender:         -615
-INFO:   lineGap:           0
-INFO:   numberOfHMetrics:  4
-INFO: ============================================================
-INFO: MAXP TABLE
-INFO: ------------------------------------------------------------
-INFO:   numGlyphs: 670
-INFO: ============================================================
-INFO: CMAP LOOKUPS
-INFO: ------------------------------------------------------------
-INFO:   'A'     (U+0041) -> glyph 36
-INFO:   'g'     (U+0067) -> glyph 74
-INFO:   '!'     (U+0021) -> glyph 4
-INFO:   'space' (U+0020) -> glyph 3
-INFO: ============================================================
-INFO: GLYPH DETAIL: 'A'
-INFO: ------------------------------------------------------------
-INFO:   glyph index:   36
-INFO:   bounding box:  (0, 0) to (1228, 1349)
-INFO:   contours:      2
-INFO:   points:        21
-INFO:   contour ends:
-INFO:     contour 0 ends at point 7
-INFO:     contour 1 ends at point 20
-INFO:   first 10 points:
-INFO:     [ 0] ( 1034,     0) on-curve
-INFO:     [ 1] (  896,   382) on-curve
-INFO:     [ 2] (  333,   382) on-curve
-INFO:     [ 3] (  196,     0) on-curve
-INFO:     [ 4] (    0,     0) on-curve
-INFO:     [ 5] (  510,  1349) on-curve
-INFO:     [ 6] (  727,  1349) on-curve
-INFO:     [ 7] ( 1228,     0) on-curve
-INFO:     [ 8] (  701,   954) on-curve
-INFO:     [ 9] (  688,   992) off-curve
-INFO:     ... (11 more points)
-INFO: ============================================================
-INFO: Done.
-```
+![Glyph anatomy showing contours and points](assets/glyph_anatomy.png)
 
 ## Background
 

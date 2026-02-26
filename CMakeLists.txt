@@ -110,6 +110,7 @@ endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/ui/01-ttf-parsing)
+add_subdirectory(lessons/ui/02-glyph-rasterization)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

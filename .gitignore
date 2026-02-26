@@ -58,6 +58,9 @@ dkms.conf
 # debug information files
 *.dwo
 
+# Generated BMP files from running UI lessons (committed copies live in assets/)
+/glyph_*.bmp
+
 # CMake build directory
 build/
 

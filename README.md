@@ -215,6 +215,7 @@ the output.
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
 | 01 | [TTF Parsing](lessons/ui/01-ttf-parsing/) | TrueType binary format, table directory, font metrics, cmap character mapping, glyph outlines |
+| 02 | [Glyph Rasterization](lessons/ui/02-glyph-rasterization/) | Contour reconstruction, scanline rasterization, non-zero winding rule, quadratic Bézier crossings, supersampled anti-aliasing |
 
 See [lessons/ui/README.md](lessons/ui/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
