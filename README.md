@@ -216,6 +216,7 @@ the output.
 |---|-------|-------------------|
 | 01 | [TTF Parsing](lessons/ui/01-ttf-parsing/) | TrueType binary format, table directory, font metrics, cmap character mapping, glyph outlines |
 | 02 | [Glyph Rasterization](lessons/ui/02-glyph-rasterization/) | Contour reconstruction, scanline rasterization, non-zero winding rule, quadratic Bézier crossings, supersampled anti-aliasing |
+| 03 | [Font Atlas](lessons/ui/03-font-atlas/) | Rectangle packing, shelf algorithm, atlas sizing, UV coordinates, per-glyph metadata, padding for texture bleed, white pixel technique |
 
 See [lessons/ui/README.md](lessons/ui/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
@@ -274,17 +275,23 @@ if (forge_gltf_load("scene.gltf", &scene)) {
 
 ### UI Library (`common/ui/`)
 
-Parse TrueType font files and extract glyph outlines, font metrics, and
-character-to-glyph mappings. See [`common/ui/README.md`](common/ui/README.md)
-for details.
+Parse TrueType font files, rasterize glyphs into bitmaps, and pack them into
+a single-channel texture atlas with per-glyph UV coordinates and metadata.
+See [`common/ui/README.md`](common/ui/README.md) for details.
 
 ```c
 #include "ui/forge_ui.h"
 
 ForgeUiFont font;
 if (forge_ui_ttf_load("font.ttf", &font)) {
-    Uint16 idx = forge_ui_ttf_glyph_index(&font, 'A');
-    // idx is the glyph index for 'A' — use for outline loading
+    // Build atlas: rasterize + pack + compute UVs
+    Uint32 codepoints[] = { 'A', 'B', 'C' };
+    ForgeUiFontAtlas atlas;
+    if (forge_ui_atlas_build(&font, 32.0f, codepoints, 3, 1, &atlas)) {
+        // atlas.pixels — single-channel texture to upload to GPU
+        // atlas.glyphs — per-glyph UV rects, bearings, advance widths
+        forge_ui_atlas_free(&atlas);
+    }
     forge_ui_ttf_free(&font);
 }
 ```
@@ -427,14 +434,10 @@ forge-gpu/
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
-│       ├── 09-scene-loading/
-│       ├── 10-basic-lighting/
-│       ├── 11-compute-shaders/
-│       ├── 12-shader-grid/
-│       ├── 13-instanced-rendering/
-│       ├── 14-environment-mapping/
-│       ├── 15-cascaded-shadow-maps/
-│       └── 16-blending/
+│       ├── 24-gobo-spotlight/
+│       ├── 25-shader-noise/
+│       ├── 26-procedural-sky/
+│       └── 27-ssao/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -446,6 +449,9 @@ forge-gpu/
 │   ├── gltf/              glTF parser (glTF 2.0 scenes)
 │   │   ├── forge_gltf.h   Parser implementation (header-only)
 │   │   └── README.md      Usage guide, scene hierarchy, materials
+│   ├── ui/                UI library (font parsing, rasterization, atlas)
+│   │   ├── forge_ui.h     TTF parser, rasterizer, atlas packer (header-only)
+│   │   └── README.md      Usage guide and supported features
 │   ├── capture/           Screenshot/GIF capture utility
 │   │   └── forge_capture.h
 │   └── forge.h            Shared utilities for lessons
@@ -455,6 +461,7 @@ forge-gpu/
 │   └── gltf/              glTF parser tests
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── math-lesson/       Add math concept + lesson + update library
+│   ├── ui-lesson/         Add UI lesson (fonts, text, controls)
 │   ├── new-lesson/        Create new GPU lesson
 │   ├── sdl-gpu-setup/     Scaffold SDL3 GPU application
 │   └── ...

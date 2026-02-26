@@ -32,107 +32,14 @@
 #define SS_LEVEL     4           /* 4x4 supersampling for anti-aliasing */
 
 /* ── BMP file writing ────────────────────────────────────────────────────── */
-/* Write a single-channel grayscale bitmap as a BMP file.
- *
- * BMP format stores pixels bottom-up (row 0 = bottom of image) with each
- * row padded to a 4-byte boundary.  We write an 8-bit indexed BMP with a
- * 256-entry grayscale palette (0=black, 255=white).
- *
- * This is the simplest BMP format that can represent our alpha coverage
- * values as visible grayscale pixels. */
-
-#define BMP_HEADER_SIZE   14     /* BITMAPFILEHEADER size */
-#define BMP_INFO_SIZE     40     /* BITMAPINFOHEADER size */
-#define BMP_PALETTE_SIZE  1024   /* 256 entries * 4 bytes (BGRA) */
+/* Uses the shared BMP writer from forge_ui.h (forge_ui__write_grayscale_bmp).
+ * This local wrapper preserves the original function name for readability. */
 
 static bool write_grayscale_bmp(const char *path,
                                  const Uint8 *pixels,
                                  int width, int height)
 {
-    /* Each row must be padded to a 4-byte boundary */
-    int row_stride = (width + 3) & ~3;
-    Uint32 pixel_data_size = (Uint32)(row_stride * height);
-    Uint32 file_size = BMP_HEADER_SIZE + BMP_INFO_SIZE +
-                       BMP_PALETTE_SIZE + pixel_data_size;
-
-    Uint8 *buf = (Uint8 *)SDL_calloc(file_size, 1);
-    if (!buf) {
-        SDL_Log("write_grayscale_bmp: allocation failed");
-        return false;
-    }
-
-    /* BITMAPFILEHEADER (14 bytes) */
-    buf[0] = 'B'; buf[1] = 'M';                /* signature */
-    buf[2] = (Uint8)(file_size);                /* file size (little-endian) */
-    buf[3] = (Uint8)(file_size >> 8);
-    buf[4] = (Uint8)(file_size >> 16);
-    buf[5] = (Uint8)(file_size >> 24);
-    /* bytes 6-9: reserved (0) */
-    Uint32 data_offset = BMP_HEADER_SIZE + BMP_INFO_SIZE + BMP_PALETTE_SIZE;
-    buf[10] = (Uint8)(data_offset);
-    buf[11] = (Uint8)(data_offset >> 8);
-    buf[12] = (Uint8)(data_offset >> 16);
-    buf[13] = (Uint8)(data_offset >> 24);
-
-    /* BITMAPINFOHEADER (40 bytes) */
-    Uint8 *info = buf + BMP_HEADER_SIZE;
-    info[0] = BMP_INFO_SIZE;                     /* header size */
-    info[4] = (Uint8)(width);                    /* width (little-endian) */
-    info[5] = (Uint8)(width >> 8);
-    info[6] = (Uint8)(width >> 16);
-    info[7] = (Uint8)(width >> 24);
-    info[8]  = (Uint8)(height);                  /* height (little-endian) */
-    info[9]  = (Uint8)(height >> 8);
-    info[10] = (Uint8)(height >> 16);
-    info[11] = (Uint8)(height >> 24);
-    info[12] = 1;                                /* planes = 1 */
-    info[14] = 8;                                /* bits per pixel = 8 */
-    /* bytes 16-19: compression = 0 (BI_RGB) */
-    info[20] = (Uint8)(pixel_data_size);         /* image data size */
-    info[21] = (Uint8)(pixel_data_size >> 8);
-    info[22] = (Uint8)(pixel_data_size >> 16);
-    info[23] = (Uint8)(pixel_data_size >> 24);
-
-    /* Grayscale palette: 256 entries, each (B, G, R, 0) */
-    Uint8 *palette = buf + BMP_HEADER_SIZE + BMP_INFO_SIZE;
-    for (int i = 0; i < 256; i++) {
-        palette[i * 4 + 0] = (Uint8)i;   /* blue */
-        palette[i * 4 + 1] = (Uint8)i;   /* green */
-        palette[i * 4 + 2] = (Uint8)i;   /* red */
-        palette[i * 4 + 3] = 0;          /* reserved */
-    }
-
-    /* Pixel data: BMP stores rows bottom-up, so row 0 in the file is the
-     * bottom of the image.  Our bitmap is stored top-down (row 0 = top),
-     * so we need to flip. */
-    Uint8 *pixel_dst = buf + data_offset;
-    for (int y = 0; y < height; y++) {
-        /* BMP row (height - 1 - y) gets our row y */
-        int bmp_row = height - 1 - y;
-        SDL_memcpy(&pixel_dst[bmp_row * row_stride],
-                   &pixels[y * width],
-                   (size_t)width);
-    }
-
-    /* Write to file using standard C I/O for portability.
-     * SDL_SaveFile is available in real SDL3 but not in the minimal shim
-     * used for console-only builds. */
-    FILE *fp = fopen(path, "wb");
-    if (!fp) {
-        SDL_Log("write_grayscale_bmp: failed to open '%s' for writing", path);
-        SDL_free(buf);
-        return false;
-    }
-    size_t written = fwrite(buf, 1, file_size, fp);
-    fclose(fp);
-    SDL_free(buf);
-
-    if (written != file_size) {
-        SDL_Log("write_grayscale_bmp: incomplete write to '%s' "
-                "(%zu of %u bytes)", path, written, file_size);
-        return false;
-    }
-    return true;
+    return forge_ui__write_grayscale_bmp(path, pixels, width, height);
 }
 
 /* ── Rasterize and report one glyph ─────────────────────────────────────── */

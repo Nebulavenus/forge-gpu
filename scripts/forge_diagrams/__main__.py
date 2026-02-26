@@ -140,8 +140,11 @@ from .ui_diagrams import (
     diagram_contour_reconstruction,
     diagram_endianness,
     diagram_glyph_anatomy,
+    diagram_padding_bleed,
     diagram_scanline_crossings,
+    diagram_shelf_packing,
     diagram_ttf_file_structure,
+    diagram_uv_coordinates,
     diagram_winding_direction,
 )
 
@@ -330,6 +333,11 @@ DIAGRAMS = {
         ("winding_direction.png", diagram_winding_direction),
         ("antialiasing_comparison.png", diagram_antialiasing_comparison),
     ],
+    "ui/03": [
+        ("shelf_packing.png", diagram_shelf_packing),
+        ("padding_bleed.png", diagram_padding_bleed),
+        ("uv_coordinates.png", diagram_uv_coordinates),
+    ],
 }
 
 # Full lesson directory names for display
@@ -366,6 +374,7 @@ LESSON_NAMES = {
     "gpu/27": "gpu/27-ssao",
     "ui/01": "ui/01-ttf-parsing",
     "ui/02": "ui/02-glyph-rasterization",
+    "ui/03": "ui/03-font-atlas",
 }
 
 

@@ -1,9 +1,12 @@
 /*
- * UI Parser Tests
+ * UI Library Tests
  *
- * Automated tests for common/ui/forge_ui.h TTF parser.
+ * Automated tests for common/ui/forge_ui.h — TTF parser, rasterizer,
+ * hmtx metrics, font atlas building, and BMP writing.
+ *
  * Verifies correctness of font loading, table directory parsing,
- * metric extraction, cmap lookups, and glyph outline parsing.
+ * metric extraction, cmap lookups, glyph outline parsing, advance
+ * width lookups, atlas packing, UV coordinates, and glyph lookup.
  *
  * Uses the bundled Liberation Mono Regular font for all tests.
  *
@@ -13,6 +16,7 @@
  */
 
 #include <SDL3/SDL.h>
+#include <stdio.h>   /* remove() for cleaning up test BMP files */
 #include "ui/forge_ui.h"
 
 /* ── Test Framework ──────────────────────────────────────────────────────── */
@@ -72,6 +76,25 @@ static int fail_count = 0;
         }                                                         \
         pass_count++;                                             \
     } while (0)
+
+#define ASSERT_EQ_INT(a, b)                                       \
+    do {                                                          \
+        int _a = (a), _b = (b);                                   \
+        if (_a != _b) {                                           \
+            SDL_Log("    FAIL: %s == %d, expected %d (line %d)",  \
+                    #a, _a, _b, __LINE__);                        \
+            fail_count++;                                         \
+            return;                                               \
+        }                                                         \
+        pass_count++;                                             \
+    } while (0)
+
+/* ── Atlas test parameters ───────────────────────────────────────────────── */
+#define ATLAS_PIXEL_HEIGHT  32.0f  /* render glyphs at 32px for atlas tests */
+#define ATLAS_PADDING       1      /* 1 pixel padding between glyphs */
+#define ASCII_START         32     /* first printable ASCII codepoint */
+#define ASCII_END           126    /* last printable ASCII codepoint */
+#define ASCII_COUNT         (ASCII_END - ASCII_START + 1) /* 95 glyphs */
 
 /* ── Test font path ──────────────────────────────────────────────────────── */
 
@@ -605,6 +628,460 @@ static void test_raster_default_opts(void)
     forge_ui_glyph_bitmap_free(&bmp);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── hmtx / Advance Width Tests ────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: hmtx arrays are populated after load ──────────────────────────── */
+
+static void test_hmtx_loaded(void)
+{
+    TEST("hmtx: arrays are populated after font load");
+    if (!font_loaded) return;
+    ASSERT_TRUE(test_font.hmtx_advance_widths != NULL);
+    ASSERT_TRUE(test_font.hmtx_left_side_bearings != NULL);
+}
+
+/* ── Test: advance width for 'A' ─────────────────────────────────────────── */
+/* Liberation Mono is monospaced — all printable glyphs share the same
+ * advance width (1229 font units at 2048 unitsPerEm). */
+
+static void test_hmtx_advance_width_a(void)
+{
+    TEST("hmtx: advance_width for 'A' is 1229");
+    if (!font_loaded) return;
+    Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
+    ASSERT_EQ_U16(forge_ui_ttf_advance_width(&test_font, idx), 1229);
+}
+
+/* ── Test: advance width for glyph beyond numberOfHMetrics ───────────────── */
+/* Glyphs at or beyond numberOfHMetrics share the last advance width.
+ * Liberation Mono has 4 hmetrics entries but 670 glyphs. */
+
+static void test_hmtx_advance_width_trailing(void)
+{
+    TEST("hmtx: glyphs beyond numberOfHMetrics use last advance");
+    if (!font_loaded) return;
+
+    /* Pick a glyph index well beyond numberOfHMetrics (4) */
+    Uint16 trailing_idx = 100;
+    ASSERT_TRUE(trailing_idx >= test_font.hhea.number_of_h_metrics);
+    ASSERT_EQ_U16(forge_ui_ttf_advance_width(&test_font, trailing_idx),
+                  test_font.hmtx_last_advance);
+}
+
+/* ── Test: last_advance matches final hmtx entry ─────────────────────────── */
+
+static void test_hmtx_last_advance(void)
+{
+    TEST("hmtx: hmtx_last_advance matches last entry in advance_widths");
+    if (!font_loaded) return;
+    Uint16 n = test_font.hhea.number_of_h_metrics;
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ_U16(test_font.hmtx_last_advance,
+                  test_font.hmtx_advance_widths[n - 1]);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Font Atlas Tests ──────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Test: atlas build succeeds with printable ASCII ─────────────────────── */
+
+static void test_atlas_build(void)
+{
+    TEST("atlas_build: succeeds with printable ASCII at 32px");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(atlas.pixels != NULL);
+    ASSERT_TRUE(atlas.glyphs != NULL);
+    ASSERT_EQ_INT(atlas.glyph_count, ASCII_COUNT);
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: atlas dimensions are powers of two ────────────────────────────── */
+
+static bool is_power_of_two(int n)
+{
+    return n > 0 && (n & (n - 1)) == 0;
+}
+
+static void test_atlas_power_of_two(void)
+{
+    TEST("atlas_build: dimensions are powers of two");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(is_power_of_two(atlas.width));
+    ASSERT_TRUE(is_power_of_two(atlas.height));
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: atlas lookup finds 'A' ────────────────────────────────────────── */
+
+static void test_atlas_lookup_found(void)
+{
+    TEST("atlas_lookup: finds 'A' with valid metadata");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    const ForgeUiPackedGlyph *g = forge_ui_atlas_lookup(&atlas, 'A');
+    ASSERT_TRUE(g != NULL);
+    ASSERT_EQ_U32(g->codepoint, 'A');
+    ASSERT_TRUE(g->bitmap_w > 0);
+    ASSERT_TRUE(g->bitmap_h > 0);
+    ASSERT_TRUE(g->advance_width > 0);
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: atlas lookup returns NULL for missing codepoint ───────────────── */
+
+static void test_atlas_lookup_missing(void)
+{
+    TEST("atlas_lookup: returns NULL for codepoint not in atlas");
+    if (!font_loaded) return;
+
+    /* Build a minimal atlas with just one codepoint */
+    Uint32 codepoints[] = { 'A' };
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, 1, ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    const ForgeUiPackedGlyph *g = forge_ui_atlas_lookup(&atlas, 'Z');
+    ASSERT_TRUE(g == NULL);
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: UV coordinates are in [0, 1] range ────────────────────────────── */
+
+static void test_atlas_uv_range(void)
+{
+    TEST("atlas_build: all UV coordinates are in [0.0, 1.0]");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    for (int i = 0; i < atlas.glyph_count; i++) {
+        const ForgeUiPackedGlyph *g = &atlas.glyphs[i];
+        if (g->uv.u0 < 0.0f || g->uv.u0 > 1.0f ||
+            g->uv.v0 < 0.0f || g->uv.v0 > 1.0f ||
+            g->uv.u1 < 0.0f || g->uv.u1 > 1.0f ||
+            g->uv.v1 < 0.0f || g->uv.v1 > 1.0f) {
+            SDL_Log("    FAIL: glyph %d (U+%04X) UV out of [0,1]: "
+                    "(%.4f,%.4f)-(%.4f,%.4f) (line %d)",
+                    i, g->codepoint,
+                    (double)g->uv.u0, (double)g->uv.v0,
+                    (double)g->uv.u1, (double)g->uv.v1, __LINE__);
+            fail_count++;
+            forge_ui_atlas_free(&atlas);
+            return;
+        }
+    }
+    pass_count++;
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: UV ordering (u0 <= u1, v0 <= v1) ──────────────────────────────── */
+
+static void test_atlas_uv_ordering(void)
+{
+    TEST("atlas_build: UVs satisfy u0 <= u1 and v0 <= v1");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    for (int i = 0; i < atlas.glyph_count; i++) {
+        const ForgeUiPackedGlyph *g = &atlas.glyphs[i];
+        if (g->uv.u0 > g->uv.u1 || g->uv.v0 > g->uv.v1) {
+            SDL_Log("    FAIL: glyph %d (U+%04X) UV ordering violated: "
+                    "(%.4f,%.4f)-(%.4f,%.4f) (line %d)",
+                    i, g->codepoint,
+                    (double)g->uv.u0, (double)g->uv.v0,
+                    (double)g->uv.u1, (double)g->uv.v1, __LINE__);
+            fail_count++;
+            forge_ui_atlas_free(&atlas);
+            return;
+        }
+    }
+    pass_count++;
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: white pixel region has valid UVs ──────────────────────────────── */
+
+static void test_atlas_white_pixel(void)
+{
+    TEST("atlas_build: white pixel UVs are in [0,1] and ordered");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    /* White pixel UVs must be in [0, 1] */
+    ASSERT_TRUE(atlas.white_uv.u0 >= 0.0f && atlas.white_uv.u0 <= 1.0f);
+    ASSERT_TRUE(atlas.white_uv.v0 >= 0.0f && atlas.white_uv.v0 <= 1.0f);
+    ASSERT_TRUE(atlas.white_uv.u1 >= 0.0f && atlas.white_uv.u1 <= 1.0f);
+    ASSERT_TRUE(atlas.white_uv.v1 >= 0.0f && atlas.white_uv.v1 <= 1.0f);
+
+    /* Must be ordered */
+    ASSERT_TRUE(atlas.white_uv.u0 < atlas.white_uv.u1);
+    ASSERT_TRUE(atlas.white_uv.v0 < atlas.white_uv.v1);
+
+    /* The white pixel region should actually contain white (255) pixels */
+    int wx = (int)(atlas.white_uv.u0 * (float)atlas.width + 0.5f);
+    int wy = (int)(atlas.white_uv.v0 * (float)atlas.height + 0.5f);
+    ASSERT_TRUE(wx >= 0 && wx < atlas.width);
+    ASSERT_TRUE(wy >= 0 && wy < atlas.height);
+    ASSERT_TRUE(atlas.pixels[wy * atlas.width + wx] == 255);
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: UV round-trip recovers correct pixel positions ────────────────── */
+
+static void test_atlas_uv_roundtrip(void)
+{
+    TEST("atlas_build: UV round-trip for 'A' recovers pixel position");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    const ForgeUiPackedGlyph *g = forge_ui_atlas_lookup(&atlas, 'A');
+    ASSERT_TRUE(g != NULL);
+    ASSERT_TRUE(g->bitmap_w > 0 && g->bitmap_h > 0);
+
+    /* Convert UV back to pixel coordinates */
+    int px = (int)(g->uv.u0 * (float)atlas.width + 0.5f);
+    int py = (int)(g->uv.v0 * (float)atlas.height + 0.5f);
+    int px1 = (int)(g->uv.u1 * (float)atlas.width + 0.5f);
+    int py1 = (int)(g->uv.v1 * (float)atlas.height + 0.5f);
+
+    /* Validate pixel coordinates are within atlas bounds before indexing
+     * into atlas.pixels[] in the loop below. */
+    ASSERT_TRUE(px >= 0 && px < atlas.width);
+    ASSERT_TRUE(py >= 0 && py < atlas.height);
+    ASSERT_TRUE(px1 > 0 && px1 <= atlas.width);
+    ASSERT_TRUE(py1 > 0 && py1 <= atlas.height);
+
+    /* The UV-derived width and height should match bitmap_w and bitmap_h */
+    ASSERT_EQ_INT(px1 - px, g->bitmap_w);
+    ASSERT_EQ_INT(py1 - py, g->bitmap_h);
+
+    /* The pixel region should contain non-zero data (glyph A has ink) */
+    int filled = 0;
+    for (int row = 0; row < g->bitmap_h; row++) {
+        for (int col = 0; col < g->bitmap_w; col++) {
+            if (atlas.pixels[(py + row) * atlas.width + (px + col)] > 0) {
+                filled++;
+            }
+        }
+    }
+    ASSERT_TRUE(filled > 0);
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ── Test: atlas_build rejects zero codepoints ───────────────────────────── */
+
+static void test_atlas_build_empty(void)
+{
+    TEST("atlas_build: returns false with zero codepoints");
+    if (!font_loaded) return;
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       NULL, 0, ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(!result);
+}
+
+/* ── Test: atlas_free is safe on zeroed struct ───────────────────────────── */
+
+static void test_atlas_free_zeroed(void)
+{
+    TEST("atlas_free: safe on zero-initialized struct");
+    ForgeUiFontAtlas atlas;
+    SDL_memset(&atlas, 0, sizeof(atlas));
+    forge_ui_atlas_free(&atlas); /* must not crash */
+    pass_count++;
+}
+
+/* ── Test: space glyph in atlas has zero-size bitmap ─────────────────────── */
+
+static void test_atlas_space_glyph(void)
+{
+    TEST("atlas_build: space glyph has zero-size bitmap but valid advance");
+    if (!font_loaded) return;
+
+    Uint32 codepoints[ASCII_COUNT];
+    for (int i = 0; i < ASCII_COUNT; i++) {
+        codepoints[i] = (Uint32)(ASCII_START + i);
+    }
+
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT,
+                                       codepoints, ASCII_COUNT,
+                                       ATLAS_PADDING, &atlas);
+    ASSERT_TRUE(result);
+
+    const ForgeUiPackedGlyph *g = forge_ui_atlas_lookup(&atlas, ' ');
+    ASSERT_TRUE(g != NULL);
+    ASSERT_EQ_INT(g->bitmap_w, 0);
+    ASSERT_EQ_INT(g->bitmap_h, 0);
+    ASSERT_TRUE(g->advance_width > 0);
+
+    forge_ui_atlas_free(&atlas);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── BMP Writer Tests ──────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* BMP file header constants for validation */
+#define BMP_HEADER_SIZE   14  /* BITMAPFILEHEADER */
+#define BMP_INFO_SIZE     40  /* BITMAPINFOHEADER */
+#define BMP_PALETTE_SIZE  1024 /* 256 * 4 bytes */
+#define BMP_TEST_PATH     "test_output.bmp"
+
+/* ── Test: BMP writer produces a valid file ──────────────────────────────── */
+
+static void test_bmp_write_basic(void)
+{
+    TEST("write_grayscale_bmp: writes a valid BMP file");
+
+    /* Create a small 4x4 test image */
+    Uint8 pixels[16];
+    for (int i = 0; i < 16; i++) {
+        pixels[i] = (Uint8)(i * 16); /* gradient 0-240 */
+    }
+
+    bool result = forge_ui__write_grayscale_bmp(BMP_TEST_PATH, pixels, 4, 4);
+    ASSERT_TRUE(result);
+
+    /* Read back and verify BMP header */
+    size_t file_size = 0;
+    Uint8 *data = (Uint8 *)SDL_LoadFile(BMP_TEST_PATH, &file_size);
+    ASSERT_TRUE(data != NULL);
+
+    /* Check BMP signature */
+    ASSERT_TRUE(data[0] == 'B' && data[1] == 'M');
+
+    /* Check minimum file size: header + info + palette + pixels */
+    int row_stride = (4 + 3) & ~3; /* 4 bytes (already aligned) */
+    Uint32 expected_size = (Uint32)(BMP_HEADER_SIZE + BMP_INFO_SIZE +
+                                     BMP_PALETTE_SIZE + row_stride * 4);
+    ASSERT_EQ_U32((Uint32)file_size, expected_size);
+
+    /* Check bits per pixel is 8.  BMP is always little-endian, so the
+     * biBitCount field at BITMAPINFOHEADER offset 14 is a single byte
+     * for values <= 255.  This byte-index check is intentional and
+     * works correctly regardless of host endianness. */
+    Uint8 *info = data + BMP_HEADER_SIZE;
+    ASSERT_TRUE(info[14] == 8);
+
+    SDL_free(data);
+
+    /* Clean up test file */
+    remove(BMP_TEST_PATH);
+}
+
+/* ── Test: BMP row padding for odd widths ────────────────────────────────── */
+
+static void test_bmp_write_odd_width(void)
+{
+    TEST("write_grayscale_bmp: handles odd width (row padding)");
+
+    /* Width 3 requires padding to 4-byte boundary */
+    Uint8 pixels[9]; /* 3x3 */
+    SDL_memset(pixels, 128, sizeof(pixels));
+
+    bool result = forge_ui__write_grayscale_bmp("test_odd.bmp", pixels, 3, 3);
+    ASSERT_TRUE(result);
+
+    size_t file_size = 0;
+    Uint8 *data = (Uint8 *)SDL_LoadFile("test_odd.bmp", &file_size);
+    ASSERT_TRUE(data != NULL);
+
+    /* Row stride for width 3: (3 + 3) & ~3 = 4 */
+    int row_stride = 4;
+    Uint32 expected_size = (Uint32)(BMP_HEADER_SIZE + BMP_INFO_SIZE +
+                                     BMP_PALETTE_SIZE + row_stride * 3);
+    ASSERT_EQ_U32((Uint32)file_size, expected_size);
+
+    SDL_free(data);
+    remove("test_odd.bmp");
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -617,7 +1094,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    SDL_Log("=== UI Parser Tests ===");
+    SDL_Log("=== UI Library Tests ===");
 
     /* Font loading */
     test_font_load();
@@ -667,6 +1144,29 @@ int main(int argc, char *argv[])
     test_raster_no_aa();
     test_raster_bitmap_free_zeroed();
     test_raster_default_opts();
+
+    /* hmtx / advance width */
+    test_hmtx_loaded();
+    test_hmtx_advance_width_a();
+    test_hmtx_advance_width_trailing();
+    test_hmtx_last_advance();
+
+    /* Font atlas */
+    test_atlas_build();
+    test_atlas_power_of_two();
+    test_atlas_lookup_found();
+    test_atlas_lookup_missing();
+    test_atlas_uv_range();
+    test_atlas_uv_ordering();
+    test_atlas_white_pixel();
+    test_atlas_uv_roundtrip();
+    test_atlas_build_empty();
+    test_atlas_free_zeroed();
+    test_atlas_space_glyph();
+
+    /* BMP writer */
+    test_bmp_write_basic();
+    test_bmp_write_odd_width();
 
     /* Print summary before tearing down SDL (SDL_Log needs SDL alive) */
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",

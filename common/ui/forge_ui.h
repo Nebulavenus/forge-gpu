@@ -14,7 +14,10 @@
  *   - cmap table with format 4 (BMP Unicode to glyph index mapping)
  *   - loca table (short and long format glyph offsets)
  *   - glyf table (simple glyph outlines with contours, flags, coordinates)
+ *   - hmtx table (per-glyph advance widths and left side bearings)
  *   - Glyph rasterization with configurable supersampled anti-aliasing
+ *   - Font atlas building (rectangle packing, UV coordinates, glyph metadata)
+ *   - Grayscale BMP writing for atlas and glyph visualization
  *
  * Limitations (intentional for a learning library):
  *   - No compound glyph parsing (detected and skipped with a log message)
@@ -22,7 +25,6 @@
  *   - No kerning (kern table) or advanced positioning (GPOS)
  *   - No glyph substitution (GSUB)
  *   - No sub-pixel rendering (ClearType-style RGB anti-aliasing)
- *   - No per-glyph horizontal metrics (hmtx) -- future lesson
  *   - TrueType outlines only (no CFF/OpenType outlines)
  *
  * Usage:
@@ -46,6 +48,7 @@
 #define FORGE_UI_H
 
 #include <SDL3/SDL.h>
+#include <stdio.h>   /* FILE, fopen, fwrite, fclose for BMP writing */
 
 /* ── Public Constants ────────────────────────────────────────────────────── */
 
@@ -131,6 +134,11 @@ typedef struct ForgeUiFont {
     /* loca table (glyph offsets into glyf) */
     Uint32 *loca_offsets;       /* numGlyphs + 1 entries, always uint32 */
 
+    /* hmtx table (per-glyph horizontal metrics) */
+    Uint16 *hmtx_advance_widths;    /* numberOfHMetrics entries */
+    Sint16 *hmtx_left_side_bearings; /* numberOfHMetrics entries */
+    Uint16  hmtx_last_advance;      /* advance width shared by trailing glyphs */
+
     /* Offsets to key tables within font data */
     Uint32 glyf_offset;        /* start of glyf table in file */
 } ForgeUiFont;
@@ -168,6 +176,41 @@ typedef struct ForgeUiGlyphBitmap {
     int     bearing_x;   /* horizontal offset from pen to bitmap left edge */
     int     bearing_y;   /* vertical offset from baseline to bitmap top edge */
 } ForgeUiGlyphBitmap;
+
+/* ── Font Atlas Types ────────────────────────────────────────────────────── */
+
+/* UV rectangle within the atlas — normalized coordinates [0.0, 1.0].
+ * (u0, v0) is the top-left corner, (u1, v1) is the bottom-right. */
+typedef struct ForgeUiUVRect {
+    float u0;  /* left edge in normalized atlas coordinates */
+    float v0;  /* top edge in normalized atlas coordinates */
+    float u1;  /* right edge in normalized atlas coordinates */
+    float v1;  /* bottom edge in normalized atlas coordinates */
+} ForgeUiUVRect;
+
+/* Per-glyph metadata stored in the atlas.  Contains everything a renderer
+ * and text layout system need to position and draw each character. */
+typedef struct ForgeUiPackedGlyph {
+    Uint32      codepoint;      /* Unicode codepoint this glyph represents */
+    Uint16      glyph_index;    /* glyph index within the font */
+    ForgeUiUVRect uv;           /* UV rectangle within the atlas texture */
+    int         bitmap_w;       /* glyph bitmap width in pixels */
+    int         bitmap_h;       /* glyph bitmap height in pixels */
+    int         bearing_x;      /* horizontal offset from pen to bitmap left */
+    int         bearing_y;      /* vertical offset from baseline to bitmap top */
+    Uint16      advance_width;  /* horizontal advance in font units */
+} ForgeUiPackedGlyph;
+
+/* A font atlas — a single texture containing all requested glyphs plus
+ * a white pixel region for solid-colored geometry rendering. */
+typedef struct ForgeUiFontAtlas {
+    Uint8              *pixels;      /* atlas pixel data (single-channel, row-major) */
+    int                 width;       /* atlas width in pixels (power of two) */
+    int                 height;      /* atlas height in pixels (power of two) */
+    ForgeUiPackedGlyph *glyphs;      /* per-glyph metadata array */
+    int                 glyph_count; /* number of packed glyphs */
+    ForgeUiUVRect       white_uv;    /* UV rect for the 2x2 white pixel region */
+} ForgeUiFontAtlas;
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
@@ -218,6 +261,69 @@ static bool forge_ui_rasterize_glyph(const ForgeUiFont *font,
 
 /* Free pixel data allocated by forge_ui_rasterize_glyph(). */
 static void forge_ui_glyph_bitmap_free(ForgeUiGlyphBitmap *bitmap);
+
+/* ── hmtx API ───────────────────────────────────────────────────────────── */
+
+/* Look up the advance width (in font units) for a glyph index.
+ * The advance width tells the text layout system how far to move the pen
+ * position after rendering this glyph.
+ *
+ * Glyphs with index < numberOfHMetrics have individual advance widths.
+ * Glyphs at or beyond numberOfHMetrics share the last advance width in
+ * the table (this is common in monospaced fonts where all glyphs share
+ * the same width). */
+static Uint16 forge_ui_ttf_advance_width(const ForgeUiFont *font,
+                                          Uint16 glyph_index);
+
+/* ── Font Atlas API ─────────────────────────────────────────────────────── */
+
+/* Build a font atlas from a set of codepoints.
+ *
+ * Rasterizes every requested glyph at the specified pixel height using
+ * the rasterizer from forge_ui_rasterize_glyph(), then packs all bitmaps
+ * into a single power-of-two texture using shelf (row-based) packing.
+ *
+ * Parameters:
+ *   font            — loaded font
+ *   pixel_height    — glyph rendering height in pixels (e.g. 32.0f)
+ *   codepoints      — array of Unicode codepoints to include
+ *   codepoint_count — number of codepoints in the array
+ *   padding         — pixels of empty space around each glyph (1–2 recommended)
+ *   out_atlas       — receives the built atlas; caller must free with
+ *                     forge_ui_atlas_free()
+ *
+ * Returns true on success, false on error (logged via SDL_Log). */
+static bool forge_ui_atlas_build(const ForgeUiFont *font,
+                                  float pixel_height,
+                                  const Uint32 *codepoints,
+                                  int codepoint_count,
+                                  int padding,
+                                  ForgeUiFontAtlas *out_atlas);
+
+/* Free all memory allocated by forge_ui_atlas_build(). */
+static void forge_ui_atlas_free(ForgeUiFontAtlas *atlas);
+
+/* Look up a packed glyph by codepoint.
+ * Returns a pointer to the ForgeUiPackedGlyph or NULL if not found.
+ * The returned pointer is valid until the atlas is freed. */
+static const ForgeUiPackedGlyph *forge_ui_atlas_lookup(
+    const ForgeUiFontAtlas *atlas, Uint32 codepoint);
+
+/* ── BMP Writing (internal helper) ──────────────────────────────────────── */
+
+/* Write a single-channel grayscale bitmap as a BMP file.
+ *
+ * BMP format stores pixels bottom-up (row 0 = bottom of image) with each
+ * row padded to a 4-byte boundary.  We write an 8-bit indexed BMP with a
+ * 256-entry grayscale palette (0=black, 255=white).
+ *
+ * This is an internal helper (double-underscore prefix) shared across
+ * lessons for writing atlas and glyph visualization images.
+ *
+ * Returns true on success, false on error (logged via SDL_Log). */
+static bool forge_ui__write_grayscale_bmp(const char *path,
+                                           const Uint8 *pixels,
+                                           int width, int height);
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* ── Implementation ──────────────────────────────────────────────────────── */
@@ -668,6 +774,61 @@ static bool forge_ui__parse_loca(ForgeUiFont *font)
     return true;
 }
 
+/* ── hmtx table parsing ──────────────────────────────────────────────────── */
+/* The hmtx table contains per-glyph horizontal metrics: advance width and
+ * left side bearing.  The first numberOfHMetrics entries each have both
+ * fields (4 bytes: uint16 advanceWidth + int16 lsb).  Glyphs beyond
+ * numberOfHMetrics share the last advance width and only store an lsb. */
+
+static bool forge_ui__parse_hmtx(ForgeUiFont *font)
+{
+    const ForgeUiTtfTableEntry *t = forge_ui__find_table(font, "hmtx");
+    if (!t) {
+        SDL_Log("forge_ui__parse_hmtx: 'hmtx' table not found");
+        return false;
+    }
+
+    Uint16 num_h_metrics = font->hhea.number_of_h_metrics;
+    if (num_h_metrics == 0) {
+        SDL_Log("forge_ui__parse_hmtx: numberOfHMetrics is 0 (invalid)");
+        return false;
+    }
+
+    /* Validate table size: need 4 bytes per longHorMetric entry */
+    size_t required = (size_t)num_h_metrics * 4;
+    if (t->length < required) {
+        SDL_Log("forge_ui__parse_hmtx: 'hmtx' table too small (%u bytes) "
+                "for %u entries (need %zu bytes)",
+                t->length, num_h_metrics, required);
+        return false;
+    }
+
+    font->hmtx_advance_widths = (Uint16 *)SDL_malloc(
+        sizeof(Uint16) * num_h_metrics);
+    font->hmtx_left_side_bearings = (Sint16 *)SDL_malloc(
+        sizeof(Sint16) * num_h_metrics);
+
+    if (!font->hmtx_advance_widths || !font->hmtx_left_side_bearings) {
+        SDL_Log("forge_ui__parse_hmtx: allocation failed");
+        SDL_free(font->hmtx_advance_widths);
+        SDL_free(font->hmtx_left_side_bearings);
+        font->hmtx_advance_widths = NULL;
+        font->hmtx_left_side_bearings = NULL;
+        return false;
+    }
+
+    const Uint8 *p = font->data + t->offset;
+    for (Uint16 i = 0; i < num_h_metrics; i++) {
+        font->hmtx_advance_widths[i]     = forge_ui__read_u16(p + (size_t)i * 4);
+        font->hmtx_left_side_bearings[i] = forge_ui__read_i16(p + (size_t)i * 4 + 2);
+    }
+
+    /* Store the last advance width for glyphs beyond numberOfHMetrics */
+    font->hmtx_last_advance = font->hmtx_advance_widths[num_h_metrics - 1];
+
+    return true;
+}
+
 /* ── glyf offset caching ────────────────────────────────────────────────── */
 
 static bool forge_ui__cache_glyf_offset(ForgeUiFont *font)
@@ -717,12 +878,14 @@ static bool forge_ui_ttf_load(const char *path, ForgeUiFont *out_font)
     /* Parse required tables in dependency order:
      * head first (indexToLocFormat needed by loca),
      * maxp next (numGlyphs needed by loca),
-     * then hhea, cmap, loca, and cache glyf offset */
+     * then hhea (numberOfHMetrics needed by hmtx),
+     * then cmap, loca, hmtx, and cache glyf offset */
     if (!forge_ui__parse_head(out_font)  ||
         !forge_ui__parse_maxp(out_font)  ||
         !forge_ui__parse_hhea(out_font)  ||
         !forge_ui__parse_cmap(out_font)  ||
         !forge_ui__parse_loca(out_font)  ||
+        !forge_ui__parse_hmtx(out_font)  ||
         !forge_ui__cache_glyf_offset(out_font)) {
         forge_ui_ttf_free(out_font);
         return false;
@@ -735,6 +898,8 @@ static void forge_ui_ttf_free(ForgeUiFont *font)
 {
     if (!font) return;
 
+    SDL_free(font->hmtx_left_side_bearings);
+    SDL_free(font->hmtx_advance_widths);
     SDL_free(font->loca_offsets);
     SDL_free(font->cmap_id_range_offsets);
     SDL_free(font->cmap_id_deltas);
@@ -1708,6 +1873,552 @@ static void forge_ui_glyph_bitmap_free(ForgeUiGlyphBitmap *bitmap)
     if (!bitmap) return;
     SDL_free(bitmap->pixels);
     SDL_memset(bitmap, 0, sizeof(ForgeUiGlyphBitmap));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── hmtx Advance Width Lookup ──────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+static Uint16 forge_ui_ttf_advance_width(const ForgeUiFont *font,
+                                          Uint16 glyph_index)
+{
+    /* Glyphs with index < numberOfHMetrics have individual advance widths.
+     * Glyphs at or beyond that index share the last advance width. */
+    if (glyph_index < font->hhea.number_of_h_metrics) {
+        return font->hmtx_advance_widths[glyph_index];
+    }
+    return font->hmtx_last_advance;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── BMP Writing Implementation ─────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* BMP file constants */
+#define FORGE_UI__BMP_HEADER_SIZE   14   /* BITMAPFILEHEADER size */
+#define FORGE_UI__BMP_INFO_SIZE     40   /* BITMAPINFOHEADER size */
+#define FORGE_UI__BMP_PALETTE_SIZE  1024 /* 256 entries * 4 bytes (BGRA) */
+
+static bool forge_ui__write_grayscale_bmp(const char *path,
+                                           const Uint8 *pixels,
+                                           int width, int height)
+{
+    /* Validate arguments — prevent negative/zero dimensions from producing
+     * invalid arithmetic for row_stride, pixel_data_size, and file_size. */
+    if (!path) {
+        SDL_Log("forge_ui__write_grayscale_bmp: path is NULL");
+        return false;
+    }
+    if (!pixels) {
+        SDL_Log("forge_ui__write_grayscale_bmp: pixels is NULL");
+        return false;
+    }
+    if (width <= 0 || height <= 0) {
+        SDL_Log("forge_ui__write_grayscale_bmp: invalid dimensions %dx%d",
+                width, height);
+        return false;
+    }
+
+    /* Each row must be padded to a 4-byte boundary */
+    int row_stride = (width + 3) & ~3;
+    Uint32 pixel_data_size = (Uint32)(row_stride * height);
+    Uint32 file_size = FORGE_UI__BMP_HEADER_SIZE + FORGE_UI__BMP_INFO_SIZE +
+                       FORGE_UI__BMP_PALETTE_SIZE + pixel_data_size;
+
+    Uint8 *buf = (Uint8 *)SDL_calloc(file_size, 1);
+    if (!buf) {
+        SDL_Log("forge_ui__write_grayscale_bmp: allocation failed");
+        return false;
+    }
+
+    /* BITMAPFILEHEADER (14 bytes) */
+    buf[0] = 'B'; buf[1] = 'M';                /* signature */
+    buf[2] = (Uint8)(file_size);                /* file size (little-endian) */
+    buf[3] = (Uint8)(file_size >> 8);
+    buf[4] = (Uint8)(file_size >> 16);
+    buf[5] = (Uint8)(file_size >> 24);
+    /* bytes 6-9: reserved (0) */
+    Uint32 data_offset = FORGE_UI__BMP_HEADER_SIZE + FORGE_UI__BMP_INFO_SIZE +
+                         FORGE_UI__BMP_PALETTE_SIZE;
+    buf[10] = (Uint8)(data_offset);
+    buf[11] = (Uint8)(data_offset >> 8);
+    buf[12] = (Uint8)(data_offset >> 16);
+    buf[13] = (Uint8)(data_offset >> 24);
+
+    /* BITMAPINFOHEADER (40 bytes) */
+    Uint8 *info = buf + FORGE_UI__BMP_HEADER_SIZE;
+    info[0] = FORGE_UI__BMP_INFO_SIZE;           /* header size */
+    info[4] = (Uint8)(width);                    /* width (little-endian) */
+    info[5] = (Uint8)(width >> 8);
+    info[6] = (Uint8)(width >> 16);
+    info[7] = (Uint8)(width >> 24);
+    info[8]  = (Uint8)(height);                  /* height (little-endian) */
+    info[9]  = (Uint8)(height >> 8);
+    info[10] = (Uint8)(height >> 16);
+    info[11] = (Uint8)(height >> 24);
+    info[12] = 1;                                /* planes = 1 */
+    info[14] = 8;                                /* bits per pixel = 8 */
+    /* bytes 16-19: compression = 0 (BI_RGB) */
+    info[20] = (Uint8)(pixel_data_size);         /* image data size */
+    info[21] = (Uint8)(pixel_data_size >> 8);
+    info[22] = (Uint8)(pixel_data_size >> 16);
+    info[23] = (Uint8)(pixel_data_size >> 24);
+
+    /* Grayscale palette: 256 entries, each (B, G, R, 0) */
+    Uint8 *palette = buf + FORGE_UI__BMP_HEADER_SIZE + FORGE_UI__BMP_INFO_SIZE;
+    for (int i = 0; i < 256; i++) {
+        palette[i * 4 + 0] = (Uint8)i;   /* blue */
+        palette[i * 4 + 1] = (Uint8)i;   /* green */
+        palette[i * 4 + 2] = (Uint8)i;   /* red */
+        palette[i * 4 + 3] = 0;          /* reserved */
+    }
+
+    /* Pixel data: BMP stores rows bottom-up, so row 0 in the file is the
+     * bottom of the image.  Our bitmap is stored top-down (row 0 = top),
+     * so we need to flip. */
+    Uint8 *pixel_dst = buf + data_offset;
+    for (int y = 0; y < height; y++) {
+        /* BMP row (height - 1 - y) gets our row y */
+        int bmp_row = height - 1 - y;
+        SDL_memcpy(&pixel_dst[bmp_row * row_stride],
+                   &pixels[y * width],
+                   (size_t)width);
+    }
+
+    /* Write to file using standard C I/O */
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        SDL_Log("forge_ui__write_grayscale_bmp: failed to open '%s' for writing",
+                path);
+        SDL_free(buf);
+        return false;
+    }
+    size_t written = fwrite(buf, 1, file_size, fp);
+    fclose(fp);
+    SDL_free(buf);
+
+    if (written != file_size) {
+        SDL_Log("forge_ui__write_grayscale_bmp: incomplete write to '%s' "
+                "(%zu of %u bytes)", path, written, file_size);
+        return false;
+    }
+    return true;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Font Atlas Implementation ──────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* Maximum atlas dimension — 4096 is well within GPU limits for any modern
+ * hardware.  A 4096x4096 single-channel atlas is 16MB. */
+#define FORGE_UI__MAX_ATLAS_DIM  4096
+
+/* Minimum atlas dimension — starting size for the power-of-two search. */
+#define FORGE_UI__MIN_ATLAS_DIM  64
+
+/* White pixel region size — a 2x2 block of fully white (255) pixels
+ * used for drawing solid-colored geometry without switching textures. */
+#define FORGE_UI__WHITE_SIZE     2
+
+/* Safety margin multiplied into the area estimate to account for shelf-packing
+ * inefficiency (row gaps above short glyphs, wasted ends of rows). */
+#define FORGE_UI__PACKING_SAFETY_MARGIN  1.15f
+
+/* ── Internal: temporary glyph data during atlas building ──────────────── */
+
+typedef struct ForgeUi__GlyphEntry {
+    Uint32              codepoint;
+    Uint16              glyph_index;
+    ForgeUiGlyphBitmap  bitmap;       /* rasterized bitmap (freed after copy) */
+    Uint16              advance_width; /* from hmtx, in font units */
+    int                 atlas_x;      /* placement x in atlas (set by packer) */
+    int                 atlas_y;      /* placement y in atlas (set by packer) */
+} ForgeUi__GlyphEntry;
+
+/* ── Internal: comparison function for sorting glyphs by height ────────── */
+/* Sort tallest first so shelf rows are filled efficiently. */
+
+static int forge_ui__glyph_height_cmp(const void *a, const void *b)
+{
+    const ForgeUi__GlyphEntry *ga = (const ForgeUi__GlyphEntry *)a;
+    const ForgeUi__GlyphEntry *gb = (const ForgeUi__GlyphEntry *)b;
+    /* Sort by height descending (tallest first) */
+    int ha = ga->bitmap.height;
+    int hb = gb->bitmap.height;
+    if (ha > hb) return -1;
+    if (ha < hb) return  1;
+    /* Tie-break by width descending for tighter rows */
+    int wa = ga->bitmap.width;
+    int wb = gb->bitmap.width;
+    if (wa > wb) return -1;
+    if (wa < wb) return  1;
+    return 0;
+}
+
+/* ── Internal: shelf packer ────────────────────────────────────────────── */
+/* Pack glyphs into an atlas using row-based (shelf) packing.
+ *
+ * Algorithm:
+ *   1. Start with cursor at top-left (0, 0)
+ *   2. Place each glyph left-to-right in the current row
+ *   3. When a glyph doesn't fit horizontally, start a new row
+ *   4. The row height is the tallest glyph placed in it
+ *   5. If a new row doesn't fit vertically, packing fails
+ *
+ * The padding parameter adds empty space around each glyph to prevent
+ * texture bleed during bilinear filtering. */
+
+static bool forge_ui__shelf_pack(ForgeUi__GlyphEntry *entries,
+                                  int count,
+                                  int atlas_w, int atlas_h,
+                                  int padding)
+{
+    int cursor_x = padding;  /* current x position in current row */
+    int cursor_y = padding;  /* y position of current row's top edge */
+    int row_h = 0;           /* height of tallest glyph in current row */
+
+    for (int i = 0; i < count; i++) {
+        int gw = entries[i].bitmap.width;
+        int gh = entries[i].bitmap.height;
+
+        /* Skip zero-size bitmaps (whitespace glyphs like space) */
+        if (gw == 0 || gh == 0) {
+            entries[i].atlas_x = 0;
+            entries[i].atlas_y = 0;
+            continue;
+        }
+
+        int padded_w = gw + padding;  /* width including right padding */
+        int padded_h = gh + padding;  /* height including bottom padding */
+
+        /* Check if glyph fits in current row */
+        if (cursor_x + padded_w > atlas_w) {
+            /* Start a new row below the current one */
+            cursor_y += row_h + padding;
+            cursor_x = padding;
+            row_h = 0;
+        }
+
+        /* Check if new row fits vertically */
+        if (cursor_y + padded_h > atlas_h) {
+            return false; /* atlas too small */
+        }
+
+        /* Place glyph at current cursor position */
+        entries[i].atlas_x = cursor_x;
+        entries[i].atlas_y = cursor_y;
+
+        /* Advance cursor and update row height */
+        cursor_x += padded_w;
+        if (padded_h > row_h) {
+            row_h = padded_h;
+        }
+    }
+
+    return true;
+}
+
+/* ── Internal: find smallest power-of-two atlas that fits ──────────────── */
+/* Estimates the required area, picks an initial power-of-two size, then
+ * tries packing.  If it fails, doubles the smaller dimension and retries. */
+
+static bool forge_ui__find_atlas_size(ForgeUi__GlyphEntry *entries,
+                                       int count,
+                                       int padding,
+                                       int *out_w, int *out_h)
+{
+    /* Estimate total area needed (sum of padded glyph areas + white pixel).
+     * Use 64-bit arithmetic to avoid overflow when many large glyphs are
+     * present.  Multiply by the packing safety margin to account for shelf
+     * inefficiency (row gaps above short glyphs, wasted row ends). */
+    Uint64 total_area_u = (Uint64)FORGE_UI__WHITE_SIZE * FORGE_UI__WHITE_SIZE;
+    for (int i = 0; i < count; i++) {
+        Uint64 pw = (Uint64)(entries[i].bitmap.width + padding * 2);
+        Uint64 ph = (Uint64)(entries[i].bitmap.height + padding * 2);
+        total_area_u += pw * ph;
+    }
+    total_area_u = (Uint64)((double)total_area_u *
+                            (double)FORGE_UI__PACKING_SAFETY_MARGIN);
+    /* Clamp to maximum atlas area to avoid overflow when cast to int */
+    Uint64 max_area = (Uint64)FORGE_UI__MAX_ATLAS_DIM *
+                      (Uint64)FORGE_UI__MAX_ATLAS_DIM;
+    if (total_area_u > max_area) total_area_u = max_area;
+    int total_area = (int)total_area_u;
+
+    /* Find the smallest power-of-two square that exceeds the total area */
+    int size = FORGE_UI__MIN_ATLAS_DIM;
+    while (size * size < total_area && size < FORGE_UI__MAX_ATLAS_DIM) {
+        size *= 2;
+    }
+
+    /* Try packing with progressively larger dimensions */
+    int w = size;
+    int h = size;
+
+    while (w <= FORGE_UI__MAX_ATLAS_DIM && h <= FORGE_UI__MAX_ATLAS_DIM) {
+        if (forge_ui__shelf_pack(entries, count, w, h, padding)) {
+            *out_w = w;
+            *out_h = h;
+            return true;
+        }
+
+        /* Double the smaller dimension first, then the other */
+        if (w <= h) {
+            w *= 2;
+        } else {
+            h *= 2;
+        }
+    }
+
+    SDL_Log("forge_ui__find_atlas_size: could not fit %d glyphs in a "
+            "%dx%d atlas", count, FORGE_UI__MAX_ATLAS_DIM,
+            FORGE_UI__MAX_ATLAS_DIM);
+    return false;
+}
+
+/* ── Public atlas API ────────────────────────────────────────────────────── */
+
+static bool forge_ui_atlas_build(const ForgeUiFont *font,
+                                  float pixel_height,
+                                  const Uint32 *codepoints,
+                                  int codepoint_count,
+                                  int padding,
+                                  ForgeUiFontAtlas *out_atlas)
+{
+    /* Validate public pointer arguments before any dereference */
+    if (!out_atlas) {
+        SDL_Log("forge_ui_atlas_build: out_atlas is NULL");
+        return false;
+    }
+    SDL_memset(out_atlas, 0, sizeof(ForgeUiFontAtlas));
+
+    if (!font) {
+        SDL_Log("forge_ui_atlas_build: font is NULL");
+        return false;
+    }
+    if (codepoint_count <= 0) {
+        SDL_Log("forge_ui_atlas_build: no codepoints provided");
+        return false;
+    }
+    if (!codepoints) {
+        SDL_Log("forge_ui_atlas_build: codepoints is NULL");
+        return false;
+    }
+    if (padding < 0) padding = 0;
+
+    /* ── Phase 1: Rasterize all requested glyphs ─────────────────────── */
+
+    /* Allocate one extra entry for the white pixel reservation so the shelf
+     * packer assigns it a non-overlapping position alongside real glyphs. */
+    ForgeUi__GlyphEntry *entries = (ForgeUi__GlyphEntry *)SDL_calloc(
+        (size_t)codepoint_count + 1, sizeof(ForgeUi__GlyphEntry));
+    if (!entries) {
+        SDL_Log("forge_ui_atlas_build: allocation failed (entries)");
+        return false;
+    }
+
+    /* Default rasterization options: 4x4 supersampling */
+    ForgeUiRasterOpts opts;
+    opts.supersample_level = 4;
+
+    int valid_count = 0;
+    for (int i = 0; i < codepoint_count; i++) {
+        Uint32 cp = codepoints[i];
+        Uint16 gi = forge_ui_ttf_glyph_index(font, cp);
+
+        ForgeUiGlyphBitmap bitmap;
+        if (!forge_ui_rasterize_glyph(font, gi, pixel_height, &opts, &bitmap)) {
+            SDL_Log("forge_ui_atlas_build: failed to rasterize codepoint %u "
+                    "(glyph %u) -- skipping", cp, gi);
+            continue;
+        }
+
+        entries[valid_count].codepoint     = cp;
+        entries[valid_count].glyph_index   = gi;
+        entries[valid_count].bitmap        = bitmap;
+        entries[valid_count].advance_width = forge_ui_ttf_advance_width(font, gi);
+        entries[valid_count].atlas_x       = 0;
+        entries[valid_count].atlas_y       = 0;
+        valid_count++;
+    }
+
+    if (valid_count == 0) {
+        SDL_Log("forge_ui_atlas_build: no glyphs could be rasterized");
+        SDL_free(entries);
+        return false;
+    }
+
+    /* ── Phase 2: Add white pixel reservation and sort ────────────────── */
+    /* Insert a fake entry for the white pixel block so the shelf packer
+     * reserves a non-overlapping position.  It has no real bitmap pixels
+     * (pixels == NULL), so Phase 4 skips it during the copy step. */
+    int white_entry_idx = valid_count;
+    entries[white_entry_idx].codepoint   = 0;
+    entries[white_entry_idx].glyph_index = 0;
+    entries[white_entry_idx].bitmap.width  = FORGE_UI__WHITE_SIZE;
+    entries[white_entry_idx].bitmap.height = FORGE_UI__WHITE_SIZE;
+    entries[white_entry_idx].bitmap.pixels = NULL;
+    entries[white_entry_idx].atlas_x     = 0;
+    entries[white_entry_idx].atlas_y     = 0;
+    int pack_count = valid_count + 1;
+
+    SDL_qsort(entries, (size_t)pack_count, sizeof(ForgeUi__GlyphEntry),
+              forge_ui__glyph_height_cmp);
+
+    /* ── Phase 3: Find atlas dimensions and pack ─────────────────────── */
+    int atlas_w = 0, atlas_h = 0;
+    if (!forge_ui__find_atlas_size(entries, pack_count, padding,
+                                    &atlas_w, &atlas_h)) {
+        SDL_Log("forge_ui_atlas_build: failed to find suitable atlas dimensions");
+        for (int i = 0; i < pack_count; i++) {
+            forge_ui_glyph_bitmap_free(&entries[i].bitmap);
+        }
+        SDL_free(entries);
+        return false;
+    }
+
+    /* ── Phase 4: Allocate atlas and copy glyph bitmaps ──────────────── */
+    Uint8 *atlas_pixels = (Uint8 *)SDL_calloc(
+        (size_t)atlas_w * (size_t)atlas_h, 1);
+    if (!atlas_pixels) {
+        SDL_Log("forge_ui_atlas_build: allocation failed (atlas pixels)");
+        for (int i = 0; i < pack_count; i++) {
+            forge_ui_glyph_bitmap_free(&entries[i].bitmap);
+        }
+        SDL_free(entries);
+        return false;
+    }
+
+    /* Copy each glyph bitmap into the atlas at its packed position.
+     * Skip entries with NULL pixels (white pixel reservation entry). */
+    for (int i = 0; i < pack_count; i++) {
+        ForgeUi__GlyphEntry *e = &entries[i];
+        if (!e->bitmap.pixels || e->bitmap.width == 0
+            || e->bitmap.height == 0) {
+            continue;
+        }
+
+        for (int row = 0; row < e->bitmap.height; row++) {
+            SDL_memcpy(
+                &atlas_pixels[(e->atlas_y + row) * atlas_w + e->atlas_x],
+                &e->bitmap.pixels[row * e->bitmap.width],
+                (size_t)e->bitmap.width);
+        }
+    }
+
+    /* ── Phase 5: Write white pixel region ───────────────────────────── */
+    /* Find the white pixel reservation entry (sorted position may differ
+     * from white_entry_idx) and write 255 at its packed position. */
+    int white_x = 0, white_y = 0;
+    for (int i = 0; i < pack_count; i++) {
+        if (!entries[i].bitmap.pixels
+            && entries[i].bitmap.width == FORGE_UI__WHITE_SIZE) {
+            white_x = entries[i].atlas_x;
+            white_y = entries[i].atlas_y;
+            break;
+        }
+    }
+
+    for (int wy = 0; wy < FORGE_UI__WHITE_SIZE; wy++) {
+        for (int wx = 0; wx < FORGE_UI__WHITE_SIZE; wx++) {
+            atlas_pixels[(white_y + wy) * atlas_w + (white_x + wx)] = 255;
+        }
+    }
+
+    /* ── Phase 6: Build glyph metadata with UV coordinates ───────────── */
+    ForgeUiPackedGlyph *packed = (ForgeUiPackedGlyph *)SDL_malloc(
+        sizeof(ForgeUiPackedGlyph) * (size_t)valid_count);
+    if (!packed) {
+        SDL_Log("forge_ui_atlas_build: allocation failed (packed glyphs)");
+        for (int i = 0; i < pack_count; i++) {
+            forge_ui_glyph_bitmap_free(&entries[i].bitmap);
+        }
+        SDL_free(atlas_pixels);
+        SDL_free(entries);
+        return false;
+    }
+
+    float inv_w = 1.0f / (float)atlas_w;
+    float inv_h = 1.0f / (float)atlas_h;
+
+    /* Iterate over pack_count (includes white pixel reservation) but only
+     * emit metadata for real glyph entries (skip the reservation). */
+    int packed_idx = 0;
+    for (int i = 0; i < pack_count; i++) {
+        ForgeUi__GlyphEntry *e = &entries[i];
+
+        /* Skip the white pixel reservation entry (NULL pixels, nonzero size) */
+        if (!e->bitmap.pixels && e->bitmap.width > 0) {
+            continue;
+        }
+
+        ForgeUiPackedGlyph *pg = &packed[packed_idx++];
+
+        pg->codepoint     = e->codepoint;
+        pg->glyph_index   = e->glyph_index;
+        pg->bitmap_w      = e->bitmap.width;
+        pg->bitmap_h      = e->bitmap.height;
+        pg->bearing_x     = e->bitmap.bearing_x;
+        pg->bearing_y     = e->bitmap.bearing_y;
+        pg->advance_width = e->advance_width;
+
+        /* Compute UV coordinates: pixel position / atlas dimension */
+        if (e->bitmap.width > 0 && e->bitmap.height > 0) {
+            pg->uv.u0 = (float)e->atlas_x * inv_w;
+            pg->uv.v0 = (float)e->atlas_y * inv_h;
+            pg->uv.u1 = (float)(e->atlas_x + e->bitmap.width) * inv_w;
+            pg->uv.v1 = (float)(e->atlas_y + e->bitmap.height) * inv_h;
+        } else {
+            /* Whitespace glyphs have no bitmap — point UVs at white region */
+            pg->uv.u0 = (float)white_x * inv_w;
+            pg->uv.v0 = (float)white_y * inv_h;
+            pg->uv.u1 = (float)(white_x + 1) * inv_w;
+            pg->uv.v1 = (float)(white_y + 1) * inv_h;
+        }
+    }
+
+    /* ── Phase 7: Fill output atlas struct ───────────────────────────── */
+    out_atlas->pixels      = atlas_pixels;
+    out_atlas->width       = atlas_w;
+    out_atlas->height      = atlas_h;
+    out_atlas->glyphs      = packed;
+    out_atlas->glyph_count = valid_count;
+
+    /* White pixel UV rect (center of the 2x2 block for safe bilinear sampling) */
+    out_atlas->white_uv.u0 = (float)white_x * inv_w;
+    out_atlas->white_uv.v0 = (float)white_y * inv_h;
+    out_atlas->white_uv.u1 = (float)(white_x + FORGE_UI__WHITE_SIZE) * inv_w;
+    out_atlas->white_uv.v1 = (float)(white_y + FORGE_UI__WHITE_SIZE) * inv_h;
+
+    /* ── Cleanup: free individual glyph bitmaps (data is in atlas now) ── */
+    for (int i = 0; i < pack_count; i++) {
+        forge_ui_glyph_bitmap_free(&entries[i].bitmap);
+    }
+    SDL_free(entries);
+
+    return true;
+}
+
+static void forge_ui_atlas_free(ForgeUiFontAtlas *atlas)
+{
+    if (!atlas) return;
+    SDL_free(atlas->glyphs);
+    SDL_free(atlas->pixels);
+    SDL_memset(atlas, 0, sizeof(ForgeUiFontAtlas));
+}
+
+static const ForgeUiPackedGlyph *forge_ui_atlas_lookup(
+    const ForgeUiFontAtlas *atlas, Uint32 codepoint)
+{
+    if (!atlas) return NULL;
+
+    /* Linear search — the glyph count is small (typically < 200) */
+    for (int i = 0; i < atlas->glyph_count; i++) {
+        if (atlas->glyphs[i].codepoint == codepoint) {
+            return &atlas->glyphs[i];
+        }
+    }
+    return NULL;
 }
 
 #endif /* FORGE_UI_H */

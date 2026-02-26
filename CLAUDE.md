@@ -73,11 +73,15 @@ forge-gpu/
 ├── lessons/
 │   ├── math/              # Math fundamentals (vectors, matrices, etc.)
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
-│   ├── ui/                # UI fundamentals (fonts, text, controls)
+│   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
-│   └── ...                # Other shared utilities (capture, parsers)
+│   ├── obj/               # OBJ parser (Wavefront .obj files)
+│   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
+│   ├── ui/                # UI library (TTF parsing, rasterization, atlas)
+│   ├── capture/           # Screenshot/GIF capture utility
+│   └── forge.h            # Shared utilities for lessons
 ├── tests/                 # Tests per module (math, obj, gltf)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)

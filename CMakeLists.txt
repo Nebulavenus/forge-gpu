@@ -111,6 +111,7 @@ endif()
 # ── UI Lessons ─────────────────────────────────────────────────────────────
 add_subdirectory(lessons/ui/01-ttf-parsing)
 add_subdirectory(lessons/ui/02-glyph-rasterization)
+add_subdirectory(lessons/ui/03-font-atlas)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
