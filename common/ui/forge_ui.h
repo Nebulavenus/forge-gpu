@@ -130,7 +130,7 @@ typedef struct ForgeUiFont {
     Uint16 *cmap_start_codes;
     Sint16 *cmap_id_deltas;
     Uint16 *cmap_id_range_offsets;
-    Uint8  *cmap_id_range_base; /* pointer into font data for range calc */
+    const Uint8 *cmap_id_range_base; /* pointer into font data for range calc */
 
     /* loca table (glyph offsets into glyf) */
     Uint32 *loca_offsets;       /* numGlyphs + 1 entries, always uint32 */
@@ -800,6 +800,14 @@ static bool forge_ui__parse_cmap(ForgeUiFont *font)
     if (!font->cmap_end_codes || !font->cmap_start_codes ||
         !font->cmap_id_deltas || !font->cmap_id_range_offsets) {
         SDL_Log("forge_ui__parse_cmap: allocation failed");
+        SDL_free(font->cmap_end_codes);
+        SDL_free(font->cmap_start_codes);
+        SDL_free(font->cmap_id_deltas);
+        SDL_free(font->cmap_id_range_offsets);
+        font->cmap_end_codes       = NULL;
+        font->cmap_start_codes     = NULL;
+        font->cmap_id_deltas       = NULL;
+        font->cmap_id_range_offsets = NULL;
         return false;
     }
 
@@ -824,7 +832,7 @@ static bool forge_ui__parse_cmap(ForgeUiFont *font)
      * The spec defines that when idRangeOffset[i] != 0, the glyph index is
      * at: *(idRangeOffset[i]/2 + (c - startCode[i]) + &idRangeOffset[i])
      * which means we need the actual address within the data. */
-    font->cmap_id_range_base = (Uint8 *)id_ranges;
+    font->cmap_id_range_base = (const Uint8 *)id_ranges;
 
     return true;
 }
@@ -973,7 +981,16 @@ static bool forge_ui__cache_glyf_offset(ForgeUiFont *font)
 
 static bool forge_ui_ttf_load(const char *path, ForgeUiFont *out_font)
 {
+    if (!out_font) {
+        SDL_Log("forge_ui_ttf_load: out_font is NULL");
+        return false;
+    }
     SDL_memset(out_font, 0, sizeof(ForgeUiFont));
+
+    if (!path) {
+        SDL_Log("forge_ui_ttf_load: path is NULL");
+        return false;
+    }
 
     /* Load the entire file into memory.  We keep the data around because
      * glyph parsing happens on demand and reads directly from the buffer. */
@@ -1029,6 +1046,8 @@ static void forge_ui_ttf_free(ForgeUiFont *font)
 static Uint16 forge_ui_ttf_glyph_index(const ForgeUiFont *font,
                                          Uint32 codepoint)
 {
+    if (!font) return 0;
+
     /* cmap format 4 only supports the Basic Multilingual Plane (0-65535) */
     if (codepoint > 0xFFFF) {
         return 0;
@@ -1083,6 +1102,10 @@ static bool forge_ui_ttf_load_glyph(const ForgeUiFont *font,
                                       Uint16 glyph_index,
                                       ForgeUiTtfGlyph *out_glyph)
 {
+    if (!font || !out_glyph) {
+        SDL_Log("forge_ui_ttf_load_glyph: NULL argument");
+        return false;
+    }
     SDL_memset(out_glyph, 0, sizeof(ForgeUiTtfGlyph));
 
     if (glyph_index >= font->maxp.num_glyphs) {
@@ -1167,7 +1190,7 @@ static bool forge_ui_ttf_load_glyph(const ForgeUiFont *font,
     }
 
     out_glyph->contour_ends = (Uint16 *)SDL_malloc(
-        sizeof(Uint16) * (Uint16)num_contours);
+        sizeof(Uint16) * (size_t)num_contours);
     if (!out_glyph->contour_ends) {
         SDL_Log("forge_ui_ttf_load_glyph: allocation failed (contour_ends)");
         return false;
@@ -1409,10 +1432,18 @@ static int forge_ui__build_edges(
     int edge_count = 0;
     bool overflow_logged = false;
 
-    for (Uint16 c = 0; c < glyph->contour_count; c++) {
+    for (int c = 0; c < glyph->contour_count; c++) {
+        Uint16 end = glyph->contour_ends[c];
+
+        /* Validate contour endpoint is within the point array */
+        if (end >= glyph->point_count) continue;
+
         Uint16 start = (c == 0) ? 0 : (Uint16)(glyph->contour_ends[c - 1] + 1);
-        Uint16 end   = glyph->contour_ends[c];
-        Uint16 count = (Uint16)(end - start + 1);
+
+        /* Validate monotonicity: start must not exceed end */
+        if (start > end) continue;
+
+        int count = (int)(end - start + 1);
 
         if (count < 2) continue;
 
@@ -1450,8 +1481,8 @@ static int forge_ui__build_edges(
         float cur_x = first_x;
         float cur_y = first_y;
 
-        Uint16 i = start;
-        while (i <= end) {
+        int i = (int)start;
+        while (i <= (int)end) {
             bool on_i = (glyph->flags[i] & FORGE_UI__FLAG_ON_CURVE) != 0;
 
             if (on_i) {
@@ -1486,7 +1517,7 @@ static int forge_ui__build_edges(
                 float cy = y_offset - (float)glyph->points[i].y * scale;
 
                 /* Find the next point (wrapping around the contour) */
-                Uint16 next_i = (i == end) ? start : (Uint16)(i + 1);
+                int next_i = (i == (int)end) ? (int)start : (i + 1);
                 bool next_on = (glyph->flags[next_i] & FORGE_UI__FLAG_ON_CURVE) != 0;
 
                 float nx, ny;
@@ -1499,8 +1530,8 @@ static int forge_ui__build_edges(
                      * has closed — override i to end+1 so the while-loop
                      * exits cleanly (the +2 alone could overshoot end). */
                     i += 2;
-                    if (next_i == start) {
-                        i = end + 1;
+                    if (next_i == (int)start) {
+                        i = (int)end + 1;
                     }
                 } else {
                     /* off → off: implicit midpoint is on-curve */
@@ -1784,7 +1815,17 @@ static bool forge_ui_rasterize_glyph(const ForgeUiFont *font,
                                       const ForgeUiRasterOpts *opts,
                                       ForgeUiGlyphBitmap *out_bitmap)
 {
+    if (!font || !out_bitmap) {
+        SDL_Log("forge_ui_rasterize_glyph: NULL argument");
+        return false;
+    }
     SDL_memset(out_bitmap, 0, sizeof(ForgeUiGlyphBitmap));
+
+    if (!(pixel_height > 0.0f)) {
+        SDL_Log("forge_ui_rasterize_glyph: pixel_height must be positive "
+                "(got %f)", (double)pixel_height);
+        return false;
+    }
 
     /* Default options: 4x4 supersampling.
      * Only powers of two up to 8 are allowed — arbitrary values could
@@ -1895,11 +1936,9 @@ static bool forge_ui_rasterize_glyph(const ForgeUiFont *font,
          * We rasterize into a high-resolution buffer (ss× in both axes),
          * then downsample to the final bitmap. */
 
-        int hi_w = bmp_w * ss;
-        int hi_h = bmp_h * ss;
-
-        /* Guard against integer overflow in the scaled dimensions */
-        if (hi_w / ss != bmp_w || hi_h / ss != bmp_h) {
+        /* Guard against integer overflow BEFORE the multiplication to
+         * avoid signed overflow undefined behavior (C99 6.5/5). */
+        if (bmp_w > INT_MAX / ss || bmp_h > INT_MAX / ss) {
             SDL_Log("forge_ui_rasterize_glyph: supersample dimensions "
                     "overflow (%d × %d × %d)", bmp_w, bmp_h, ss);
             SDL_free(pixels);
@@ -1907,6 +1946,7 @@ static bool forge_ui_rasterize_glyph(const ForgeUiFont *font,
             forge_ui_ttf_glyph_free(&glyph);
             return false;
         }
+        int hi_w = bmp_w * ss;  /* safe: overflow checked above */
 
         /* Use a single row buffer for the high-res scanline, then
          * accumulate into a per-pixel coverage counter. */
@@ -1997,6 +2037,8 @@ static void forge_ui_glyph_bitmap_free(ForgeUiGlyphBitmap *bitmap)
 static Uint16 forge_ui_ttf_advance_width(const ForgeUiFont *font,
                                           Uint16 glyph_index)
 {
+    if (!font) return 0;
+
     /* Glyphs with index < numberOfHMetrics have individual advance widths.
      * Glyphs at or beyond that index share the last advance width. */
     if (glyph_index < font->hhea.number_of_h_metrics) {
@@ -2036,9 +2078,24 @@ static bool forge_ui__write_grayscale_bmp(const char *path,
 
     /* Each row must be padded to a 4-byte boundary */
     int row_stride = (width + 3) & ~3;
-    Uint32 pixel_data_size = (Uint32)(row_stride * height);
-    Uint32 file_size = FORGE_UI__BMP_HEADER_SIZE + FORGE_UI__BMP_INFO_SIZE +
-                       FORGE_UI__BMP_PALETTE_SIZE + pixel_data_size;
+
+    /* Use 64-bit arithmetic to detect overflow before allocation */
+    Uint64 pixel_data_size_64 = (Uint64)row_stride * (Uint64)height;
+    if (pixel_data_size_64 > UINT32_MAX) {
+        SDL_Log("forge_ui__write_grayscale_bmp: image too large (%dx%d)",
+                width, height);
+        return false;
+    }
+    /* Check that total file size (header + pixel data) fits in Uint32 */
+    Uint64 hdr_overhead = (Uint64)FORGE_UI__BMP_HEADER_SIZE +
+                          FORGE_UI__BMP_INFO_SIZE +
+                          FORGE_UI__BMP_PALETTE_SIZE;
+    if (pixel_data_size_64 > (Uint64)UINT32_MAX - hdr_overhead) {
+        SDL_Log("forge_ui__write_grayscale_bmp: file size overflow (%dx%d)",
+                width, height);
+        return false;
+    }
+    Uint32 file_size = (Uint32)(hdr_overhead + pixel_data_size_64);
 
     Uint8 *buf = (Uint8 *)SDL_calloc(file_size, 1);
     if (!buf) {
@@ -2074,6 +2131,7 @@ static bool forge_ui__write_grayscale_bmp(const char *path,
     info[12] = 1;                                /* planes = 1 */
     info[14] = 8;                                /* bits per pixel = 8 */
     /* bytes 16-19: compression = 0 (BI_RGB) */
+    Uint32 pixel_data_size = (Uint32)pixel_data_size_64;
     info[20] = (Uint8)(pixel_data_size);         /* image data size */
     info[21] = (Uint8)(pixel_data_size >> 8);
     info[22] = (Uint8)(pixel_data_size >> 16);
@@ -2206,6 +2264,11 @@ static bool forge_ui__shelf_pack(ForgeUi__GlyphEntry *entries,
         int padded_w = gw + padding;  /* width including right padding */
         int padded_h = gh + padding;  /* height including bottom padding */
 
+        /* Reject glyphs wider or taller than the atlas can hold */
+        if (padded_w + padding > atlas_w || padded_h + padding > atlas_h) {
+            return false;  /* atlas too small for this glyph */
+        }
+
         /* Check if glyph fits in current row */
         if (cursor_x + padded_w > atlas_w) {
             /* Start a new row below the current one */
@@ -2309,6 +2372,11 @@ static bool forge_ui_atlas_build(const ForgeUiFont *font,
 
     if (!font) {
         SDL_Log("forge_ui_atlas_build: font is NULL");
+        return false;
+    }
+    if (!(pixel_height > 0.0f)) {
+        SDL_Log("forge_ui_atlas_build: pixel_height must be positive (got %f)",
+                (double)pixel_height);
         return false;
     }
     if (codepoint_count <= 0) {
@@ -2532,7 +2600,7 @@ static void forge_ui_atlas_free(ForgeUiFontAtlas *atlas)
 static const ForgeUiPackedGlyph *forge_ui_atlas_lookup(
     const ForgeUiFontAtlas *atlas, Uint32 codepoint)
 {
-    if (!atlas) return NULL;
+    if (!atlas || !atlas->glyphs) return NULL;
 
     /* Linear search — the glyph count is small (typically < 200) */
     for (int i = 0; i < atlas->glyph_count; i++) {

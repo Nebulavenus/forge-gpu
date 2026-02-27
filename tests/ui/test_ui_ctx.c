@@ -1990,6 +1990,1169 @@ static void test_button_null_atlas(void)
     forge_ui_ctx_free(&ctx);
 }
 
+/* ── forge_ui_ctx_set_keyboard tests ─────────────────────────────────────── */
+
+static void test_set_keyboard_basic(void)
+{
+    TEST("ctx_set_keyboard: sets all keyboard fields");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    forge_ui_ctx_set_keyboard(&ctx, "AB", true, true, true, true, true, true, true);
+
+    ASSERT_TRUE(ctx.text_input != NULL);
+    ASSERT_TRUE(ctx.text_input[0] == 'A');
+    ASSERT_TRUE(ctx.key_backspace);
+    ASSERT_TRUE(ctx.key_delete);
+    ASSERT_TRUE(ctx.key_left);
+    ASSERT_TRUE(ctx.key_right);
+    ASSERT_TRUE(ctx.key_home);
+    ASSERT_TRUE(ctx.key_end);
+    ASSERT_TRUE(ctx.key_escape);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_set_keyboard_null_ctx(void)
+{
+    TEST("ctx_set_keyboard: NULL ctx does not crash");
+    forge_ui_ctx_set_keyboard(NULL, "X", false, false, false, false,
+                              false, false, false);
+    ASSERT_TRUE(true);
+}
+
+static void test_begin_resets_keyboard(void)
+{
+    TEST("ctx_begin: resets keyboard state from previous frame");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    /* Set keyboard state */
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    forge_ui_ctx_set_keyboard(&ctx, "Hi", true, true, true, true, true, true, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* Begin a new frame -- keyboard should be reset */
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_TRUE(ctx.text_input == NULL);
+    ASSERT_TRUE(!ctx.key_backspace);
+    ASSERT_TRUE(!ctx.key_delete);
+    ASSERT_TRUE(!ctx.key_left);
+    ASSERT_TRUE(!ctx.key_right);
+    ASSERT_TRUE(!ctx.key_home);
+    ASSERT_TRUE(!ctx.key_end);
+    ASSERT_TRUE(!ctx.key_escape);
+    ASSERT_TRUE(!ctx._ti_press_claimed);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui__emit_border tests ───────────────────────────────────────── */
+
+static void test_emit_border_basic(void)
+{
+    TEST("emit_border: emits 4 edge rects (16 verts, 24 indices)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    ForgeUiRect r = { 10.0f, 10.0f, 100.0f, 60.0f };
+    forge_ui__emit_border(&ctx, r, 2.0f, 1, 0, 0, 1);
+
+    /* 4 rects * 4 verts = 16, 4 rects * 6 indices = 24 */
+    ASSERT_EQ_INT(ctx.vertex_count, 16);
+    ASSERT_EQ_INT(ctx.index_count, 24);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_emit_border_null_ctx(void)
+{
+    TEST("emit_border: NULL ctx does not crash");
+    ForgeUiRect r = { 0, 0, 100, 100 };
+    forge_ui__emit_border(NULL, r, 1.0f, 1, 1, 1, 1);
+    ASSERT_TRUE(true);
+}
+
+static void test_emit_border_zero_width(void)
+{
+    TEST("emit_border: zero border width emits nothing");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    ForgeUiRect r = { 0, 0, 100, 100 };
+    forge_ui__emit_border(&ctx, r, 0.0f, 1, 1, 1, 1);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_emit_border_negative_width(void)
+{
+    TEST("emit_border: negative border width emits nothing");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    ForgeUiRect r = { 0, 0, 100, 100 };
+    forge_ui__emit_border(&ctx, r, -5.0f, 1, 1, 1, 1);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_emit_border_too_wide(void)
+{
+    TEST("emit_border: border wider than half rect emits nothing");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    ForgeUiRect r = { 0, 0, 10.0f, 100.0f };
+    /* border_w = 6 > 10/2 = 5, should be rejected */
+    forge_ui__emit_border(&ctx, r, 6.0f, 1, 1, 1, 1);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- parameter validation tests ─────────────── */
+
+static void test_text_input_null_ctx(void)
+{
+    TEST("ctx_text_input: NULL ctx returns false");
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(NULL, 1, &st, r, true));
+}
+
+static void test_text_input_null_state(void)
+{
+    TEST("ctx_text_input: NULL state returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, NULL, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_null_buffer(void)
+{
+    TEST("ctx_text_input: NULL buffer returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    ForgeUiTextInputState st = { NULL, 32, 0, 0 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_id_zero(void)
+{
+    TEST("ctx_text_input: ID 0 returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, FORGE_UI_ID_NONE, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_zero_capacity(void)
+{
+    TEST("ctx_text_input: capacity=0 returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[1] = "";
+    ForgeUiTextInputState st = { buf, 0, 0, 0 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_negative_capacity(void)
+{
+    TEST("ctx_text_input: negative capacity returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, -1, 0, 0 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_negative_length(void)
+{
+    TEST("ctx_text_input: negative length returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, -1, 0 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_length_exceeds_capacity(void)
+{
+    TEST("ctx_text_input: length >= capacity returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[8] = "1234567";
+    ForgeUiTextInputState st = { buf, 8, 8, 0 };  /* length == capacity */
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_negative_cursor(void)
+{
+    TEST("ctx_text_input: negative cursor returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, -1 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_cursor_exceeds_length(void)
+{
+    TEST("ctx_text_input: cursor > length returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 5 };
+    ForgeUiRect r = { 0, 0, 100, 30 };
+    ASSERT_TRUE(!forge_ui_ctx_text_input(&ctx, 1, &st, r, true));
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- focus acquisition tests ────────────────── */
+
+static void test_text_input_focus_click_sequence(void)
+{
+    TEST("ctx_text_input: click to focus (hover -> press -> release)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 100, 30 };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Frame 0: mouse away -- not focused */
+    forge_ui_ctx_begin(&ctx, 300, 300, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);
+
+    /* Frame 1: hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.hot, 1);
+
+    /* Frame 2: press */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 1);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);  /* not yet */
+
+    /* Frame 3: release -- focus acquired */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, 1);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_focus_release_outside(void)
+{
+    TEST("ctx_text_input: no focus when released outside");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 100, 30 };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 1);
+
+    /* Release OUTSIDE */
+    forge_ui_ctx_begin(&ctx, 300, 300, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_unfocus_click_outside(void)
+{
+    TEST("ctx_text_input: click outside unfocuses");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 100, 30 };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Focus the widget */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, 1);
+
+    /* Press OUTSIDE -- should unfocus */
+    forge_ui_ctx_begin(&ctx, 300, 300, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_unfocus_escape(void)
+{
+    TEST("ctx_text_input: Escape unfocuses");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 100, 30 };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Focus the widget */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, 1);
+
+    /* Escape */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, false, false,
+                              false, false, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_escape_clears_active(void)
+{
+    TEST("ctx_text_input: Escape during press clears active (no re-focus on release)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 100, 30 };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Focus the widget via click */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, 1);
+
+    /* Press on the widget + Escape in same frame */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, false, false,
+                              false, false, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+
+    /* Release on widget -- must NOT re-focus because active was cleared */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- character insertion tests ───────────────── */
+
+/* Helper: focus a text input widget on a context (3-frame sequence) */
+static void focus_text_input(ForgeUiContext *ctx, Uint32 id,
+                             ForgeUiTextInputState *st, ForgeUiRect r)
+{
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+
+    forge_ui_ctx_begin(ctx, cx, cy, false);
+    forge_ui_ctx_text_input(ctx, id, st, r, true);
+    forge_ui_ctx_end(ctx);
+
+    forge_ui_ctx_begin(ctx, cx, cy, true);
+    forge_ui_ctx_text_input(ctx, id, st, r, true);
+    forge_ui_ctx_end(ctx);
+
+    forge_ui_ctx_begin(ctx, cx, cy, false);
+    forge_ui_ctx_text_input(ctx, id, st, r, true);
+    forge_ui_ctx_end(ctx);
+}
+
+static void test_text_input_insert_chars(void)
+{
+    TEST("ctx_text_input: insert characters at cursor");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+    ASSERT_EQ_U32(ctx.focused, 1);
+
+    /* Type "Hi" */
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, "Hi", false, false, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(changed);
+    ASSERT_EQ_INT(st.length, 2);
+    ASSERT_EQ_INT(st.cursor, 2);
+    ASSERT_TRUE(SDL_strcmp(buf, "Hi") == 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_insert_mid_string(void)
+{
+    TEST("ctx_text_input: mid-string insertion shifts tail right");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AC";
+    ForgeUiTextInputState st = { buf, 32, 2, 1 };  /* cursor between A and C */
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, "B", false, false, false, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(SDL_strcmp(buf, "ABC") == 0);
+    ASSERT_EQ_INT(st.cursor, 2);
+    ASSERT_EQ_INT(st.length, 3);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_insert_at_capacity(void)
+{
+    TEST("ctx_text_input: insertion rejected when buffer is full");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[4] = "ABC";  /* capacity=4, length=3, one byte for '\0' */
+    ForgeUiTextInputState st = { buf, 4, 3, 3 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, "D", false, false, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(!changed);
+    ASSERT_TRUE(SDL_strcmp(buf, "ABC") == 0);
+    ASSERT_EQ_INT(st.length, 3);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- backspace/delete tests ─────────────────── */
+
+static void test_text_input_backspace(void)
+{
+    TEST("ctx_text_input: backspace deletes byte before cursor");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "ABC";
+    ForgeUiTextInputState st = { buf, 32, 3, 3 };  /* cursor at end */
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, true, false, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(changed);
+    ASSERT_TRUE(SDL_strcmp(buf, "AB") == 0);
+    ASSERT_EQ_INT(st.length, 2);
+    ASSERT_EQ_INT(st.cursor, 2);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_backspace_at_start(void)
+{
+    TEST("ctx_text_input: backspace at cursor=0 is a no-op");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 0 };  /* cursor at start */
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, true, false, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(!changed);
+    ASSERT_TRUE(SDL_strcmp(buf, "AB") == 0);
+    ASSERT_EQ_INT(st.cursor, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_backspace_empty(void)
+{
+    TEST("ctx_text_input: backspace on empty buffer is a no-op");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, true, false, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(st.length, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_delete_key(void)
+{
+    TEST("ctx_text_input: delete removes byte at cursor");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "ABC";
+    ForgeUiTextInputState st = { buf, 32, 3, 1 };  /* cursor after A */
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, true, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(changed);
+    ASSERT_TRUE(SDL_strcmp(buf, "AC") == 0);
+    ASSERT_EQ_INT(st.cursor, 1);
+    ASSERT_EQ_INT(st.length, 2);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_delete_at_end(void)
+{
+    TEST("ctx_text_input: delete at cursor=length is a no-op");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 2 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, true, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(!changed);
+    ASSERT_TRUE(SDL_strcmp(buf, "AB") == 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- cursor movement tests ──────────────────── */
+
+static void test_text_input_cursor_left_right(void)
+{
+    TEST("ctx_text_input: Left/Right move cursor");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 2 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+
+    /* Left arrow */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, true, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(st.cursor, 1);
+
+    /* Right arrow */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, false, true,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(st.cursor, 2);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_cursor_home_end(void)
+{
+    TEST("ctx_text_input: Home/End jump cursor");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "ABCDE";
+    ForgeUiTextInputState st = { buf, 32, 5, 3 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+
+    /* Home */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, false, false,
+                              true, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(st.cursor, 0);
+
+    /* End */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, false, false,
+                              false, true, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(st.cursor, 5);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_left_at_start(void)
+{
+    TEST("ctx_text_input: Left at cursor=0 stays at 0");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 0 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, true, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(st.cursor, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_right_at_end(void)
+{
+    TEST("ctx_text_input: Right at cursor=length stays at length");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 2 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, false, false, false, true,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(st.cursor, 2);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- mutual exclusion tests ─────────────────── */
+
+static void test_text_input_backspace_beats_insert(void)
+{
+    TEST("ctx_text_input: backspace takes priority over insertion in same frame");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 2 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    /* Both backspace and text input in same frame */
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, "C", true, false, false, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* Backspace should win: "AB" -> "A", not "AB" -> "ABC" -> "AB" */
+    ASSERT_TRUE(SDL_strcmp(buf, "A") == 0);
+    ASSERT_EQ_INT(st.length, 1);
+    ASSERT_EQ_INT(st.cursor, 1);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_delete_beats_insert(void)
+{
+    TEST("ctx_text_input: delete takes priority over insertion in same frame");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 1 };  /* cursor after A */
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    /* Both delete and text input in same frame */
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, "C", false, true, false, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* Delete should win: removes B at cursor 1, result "A" */
+    ASSERT_TRUE(SDL_strcmp(buf, "A") == 0);
+    ASSERT_EQ_INT(st.length, 1);
+    ASSERT_EQ_INT(st.cursor, 1);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_backspace_blocks_cursor_move(void)
+{
+    TEST("ctx_text_input: backspace blocks cursor movement in same frame");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "ABC";
+    ForgeUiTextInputState st = { buf, 32, 3, 2 };  /* cursor after B */
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    /* Backspace + Left in same frame */
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, NULL, true, false, true, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* Backspace: "ABC" -> "AC", cursor 2->1. Left should NOT also fire. */
+    ASSERT_TRUE(SDL_strcmp(buf, "AC") == 0);
+    ASSERT_EQ_INT(st.cursor, 1);  /* not 0 */
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_insert_blocks_cursor_move(void)
+{
+    TEST("ctx_text_input: insertion blocks cursor movement in same frame");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "AB";
+    ForgeUiTextInputState st = { buf, 32, 2, 2 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    /* Insert "C" + Left in same frame */
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_set_keyboard(&ctx, "C", false, false, true, false,
+                              false, false, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* Insert: "AB" -> "ABC", cursor 2->3. Left should NOT also fire. */
+    ASSERT_TRUE(SDL_strcmp(buf, "ABC") == 0);
+    ASSERT_EQ_INT(st.cursor, 3);  /* not 2 */
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- draw data tests ────────────────────────── */
+
+static void test_text_input_emits_draw_data(void)
+{
+    TEST("ctx_text_input: unfocused emits background rect");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    forge_ui_ctx_begin(&ctx, 300, 300, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* At minimum: background rect = 4 verts, 6 indices */
+    ASSERT_TRUE(ctx.vertex_count >= 4);
+    ASSERT_TRUE(ctx.index_count >= 6);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_focused_emits_border(void)
+{
+    TEST("ctx_text_input: focused emits background + border");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    focus_text_input(&ctx, 1, &st, r);
+
+    /* Render a focused frame */
+    float cx = r.x + r.w * 0.5f;
+    float cy = r.y + r.h * 0.5f;
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    /* bg rect (4v) + border (4*4v=16v) + cursor bar (4v) = 24 verts */
+    ASSERT_TRUE(ctx.vertex_count >= 24);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_text_input_not_focused_no_keyboard(void)
+{
+    TEST("ctx_text_input: keyboard input ignored when not focused");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf[32] = "";
+    ForgeUiTextInputState st = { buf, 32, 0, 0 };
+    ForgeUiRect r = { 10, 10, 200, 30 };
+
+    /* NOT focused -- send keyboard input */
+    forge_ui_ctx_begin(&ctx, 300, 300, false);
+    forge_ui_ctx_set_keyboard(&ctx, "Hi", false, false, false, false,
+                              false, false, false);
+    bool changed = forge_ui_ctx_text_input(&ctx, 1, &st, r, true);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(st.length, 0);  /* nothing inserted */
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_text_input -- overlap priority test ──────────────────── */
+
+static void test_text_input_overlap_last_drawn_wins(void)
+{
+    TEST("ctx_text_input: overlapping inputs -- last drawn gets focus");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    char buf1[32] = "";
+    ForgeUiTextInputState st1 = { buf1, 32, 0, 0 };
+    char buf2[32] = "";
+    ForgeUiTextInputState st2 = { buf2, 32, 0, 0 };
+
+    /* Overlapping rects */
+    ForgeUiRect r1 = { 10, 10, 100, 30 };
+    ForgeUiRect r2 = { 50, 10, 100, 30 };
+    float cx = 80.0f, cy = 25.0f;  /* in overlap region */
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st1, r1, true);
+    forge_ui_ctx_text_input(&ctx, 2, &st2, r2, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.hot, 2);  /* last drawn */
+
+    /* Press */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_text_input(&ctx, 1, &st1, r1, true);
+    forge_ui_ctx_text_input(&ctx, 2, &st2, r2, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 2);  /* last drawn wins */
+
+    /* Release */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_text_input(&ctx, 1, &st1, r1, true);
+    forge_ui_ctx_text_input(&ctx, 2, &st2, r2, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.focused, 2);  /* last drawn gets focus */
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── Null-termination validation test (audit fix) ───────────────────────── */
+
+static void test_text_input_bad_null_termination(void)
+{
+    TEST("text input rejects buffer with missing null terminator");
+    if (!atlas_built) return;
+
+    ForgeUiContext ctx;
+    forge_ui_ctx_init(&ctx, &test_atlas);
+
+    char buf[16];
+    SDL_memset(buf, 'A', sizeof(buf));  /* fill with non-zero, no '\0' at length */
+    ForgeUiTextInputState state;
+    state.buffer   = buf;
+    state.capacity = (int)sizeof(buf);
+    state.length   = 3;    /* claims 3 bytes, but buf[3] != '\0' */
+    state.cursor   = 0;
+
+    ForgeUiRect r = { 10, 10, 200, 30 };
+    forge_ui_ctx_begin(&ctx, 0.0f, 0.0f, false);
+    bool result = forge_ui_ctx_text_input(&ctx, 1, &state, r, true);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!result);  /* should reject: buf[length] != '\0' */
+
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -2121,6 +3284,72 @@ int main(int argc, char *argv[])
 
     /* Button NULL atlas (audit fix) */
     test_button_null_atlas();
+
+    /* Keyboard input */
+    test_set_keyboard_basic();
+    test_set_keyboard_null_ctx();
+    test_begin_resets_keyboard();
+
+    /* Border */
+    test_emit_border_basic();
+    test_emit_border_null_ctx();
+    test_emit_border_zero_width();
+    test_emit_border_negative_width();
+    test_emit_border_too_wide();
+
+    /* Text input -- parameter validation */
+    test_text_input_null_ctx();
+    test_text_input_null_state();
+    test_text_input_null_buffer();
+    test_text_input_id_zero();
+    test_text_input_zero_capacity();
+    test_text_input_negative_capacity();
+    test_text_input_negative_length();
+    test_text_input_length_exceeds_capacity();
+    test_text_input_negative_cursor();
+    test_text_input_cursor_exceeds_length();
+
+    /* Text input -- focus */
+    test_text_input_focus_click_sequence();
+    test_text_input_focus_release_outside();
+    test_text_input_unfocus_click_outside();
+    test_text_input_unfocus_escape();
+    test_text_input_escape_clears_active();
+
+    /* Text input -- character insertion */
+    test_text_input_insert_chars();
+    test_text_input_insert_mid_string();
+    test_text_input_insert_at_capacity();
+
+    /* Text input -- backspace/delete */
+    test_text_input_backspace();
+    test_text_input_backspace_at_start();
+    test_text_input_backspace_empty();
+    test_text_input_delete_key();
+    test_text_input_delete_at_end();
+
+    /* Text input -- cursor movement */
+    test_text_input_cursor_left_right();
+    test_text_input_cursor_home_end();
+    test_text_input_left_at_start();
+    test_text_input_right_at_end();
+
+    /* Text input -- mutual exclusion */
+    test_text_input_backspace_beats_insert();
+    test_text_input_delete_beats_insert();
+    test_text_input_backspace_blocks_cursor_move();
+    test_text_input_insert_blocks_cursor_move();
+
+    /* Text input -- draw data */
+    test_text_input_emits_draw_data();
+    test_text_input_focused_emits_border();
+    test_text_input_not_focused_no_keyboard();
+
+    /* Text input -- overlap priority */
+    test_text_input_overlap_last_drawn_wins();
+
+    /* Text input -- null-termination validation (audit fix) */
+    test_text_input_bad_null_termination();
 
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",
             test_count, pass_count, fail_count);

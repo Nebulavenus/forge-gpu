@@ -54,3 +54,25 @@ add_custom_command(TARGET test_ui_ctx POST_BUILD
 )
 
 add_test(NAME ui_ctx COMMAND test_ui_ctx)
+
+# ── Text input fuzz harness ──────────────────────────────────────────────────
+# Builds as part of the test suite but runs separately (not via ctest) because
+# it takes longer than unit tests.  Override iteration count at configure time:
+#   cmake -DFORGE_FUZZ_ITERATIONS=1000000 ...
+add_executable(fuzz_text_input fuzz_text_input.c)
+target_include_directories(fuzz_text_input PRIVATE ${FORGE_COMMON_DIR})
+target_link_libraries(fuzz_text_input PRIVATE SDL3::SDL3)
+target_compile_definitions(fuzz_text_input PRIVATE
+    FORGE_FUZZ_ITERATIONS=${FORGE_FUZZ_ITERATIONS})
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(fuzz_text_input PRIVATE m)
+endif()
+
+if(TARGET SDL3::SDL3-shared)
+    add_custom_command(TARGET fuzz_text_input POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL3::SDL3-shared>
+            $<TARGET_FILE_DIR:fuzz_text_input>
+    )
+endif()

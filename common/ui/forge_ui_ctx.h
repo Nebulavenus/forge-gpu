@@ -150,6 +150,47 @@
 #define FORGE_UI_SL_ACTIVE_B    0.97f
 #define FORGE_UI_SL_ACTIVE_A    1.00f
 
+/* ── Text input style ─────────────────────────────────────────────────── */
+
+/* Text input layout dimensions */
+#define FORGE_UI_TI_PADDING       6.0f   /* left padding in pixels before text starts */
+#define FORGE_UI_TI_CURSOR_WIDTH  2.0f   /* cursor bar width in pixels */
+#define FORGE_UI_TI_BORDER_WIDTH  1.0f   /* focused border edge width in pixels */
+
+/* Background colors by state (RGBA floats in [0, 1]) */
+#define FORGE_UI_TI_NORMAL_R   0.15f   /* unfocused: dark */
+#define FORGE_UI_TI_NORMAL_G   0.15f
+#define FORGE_UI_TI_NORMAL_B   0.18f
+#define FORGE_UI_TI_NORMAL_A   1.00f
+
+#define FORGE_UI_TI_HOT_R      0.20f   /* hovered (unfocused): subtle highlight */
+#define FORGE_UI_TI_HOT_G      0.20f
+#define FORGE_UI_TI_HOT_B      0.24f
+#define FORGE_UI_TI_HOT_A      1.00f
+
+#define FORGE_UI_TI_FOCUSED_R  0.18f   /* focused: medium */
+#define FORGE_UI_TI_FOCUSED_G  0.18f
+#define FORGE_UI_TI_FOCUSED_B  0.22f
+#define FORGE_UI_TI_FOCUSED_A  1.00f
+
+/* Border color when focused (accent cyan, matches check/slider active) */
+#define FORGE_UI_TI_BORDER_R   0.31f
+#define FORGE_UI_TI_BORDER_G   0.76f
+#define FORGE_UI_TI_BORDER_B   0.97f
+#define FORGE_UI_TI_BORDER_A   1.00f
+
+/* Cursor bar color (accent cyan) */
+#define FORGE_UI_TI_CURSOR_R   0.31f
+#define FORGE_UI_TI_CURSOR_G   0.76f
+#define FORGE_UI_TI_CURSOR_B   0.97f
+#define FORGE_UI_TI_CURSOR_A   1.00f
+
+/* Text color (near-white, matches other widget text) */
+#define FORGE_UI_TI_TEXT_R     0.95f
+#define FORGE_UI_TI_TEXT_G     0.95f
+#define FORGE_UI_TI_TEXT_B     0.95f
+#define FORGE_UI_TI_TEXT_A     1.00f
+
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 /* A simple rectangle for widget bounds. */
@@ -159,6 +200,25 @@ typedef struct ForgeUiRect {
     float w;  /* width */
     float h;  /* height */
 } ForgeUiRect;
+
+/* Application-owned text input state.
+ *
+ * Each text input field needs its own ForgeUiTextInputState that persists
+ * across frames.  The application allocates the buffer and sets capacity;
+ * the text input widget modifies buffer, length, and cursor each frame
+ * based on keyboard input.
+ *
+ * buffer:   character array (owned by the application, not freed by the library)
+ * capacity: total size of buffer in bytes (including space for '\0'); must be > 0
+ * length:   current text length in bytes (not counting '\0'); 0 <= length < capacity
+ * cursor:   byte index into buffer where the next character will be inserted;
+ *           0 <= cursor <= length */
+typedef struct ForgeUiTextInputState {
+    char *buffer;    /* text buffer (owned by application, null-terminated) */
+    int   capacity;  /* total buffer size in bytes (including '\0'); must be > 0 */
+    int   length;    /* current text length in bytes; 0 <= length < capacity */
+    int   cursor;    /* byte index for insertion point; 0 <= cursor <= length */
+} ForgeUiTextInputState;
 
 /* Immediate-mode UI context.
  *
@@ -197,6 +257,29 @@ typedef struct ForgeUiContext {
     Uint32 active;        /* widget being pressed (or FORGE_UI_ID_NONE) */
 
     Uint32 next_hot;      /* hot candidate for this frame (resolved in ctx_end) */
+
+    /* Focused widget (receives keyboard input).  Only one widget can be
+     * focused at a time.  Focus is acquired when a text input is clicked
+     * (same press-release-over pattern as button click), and lost by
+     * clicking outside any text input or pressing Escape. */
+    Uint32 focused;       /* widget receiving keyboard input (or FORGE_UI_ID_NONE) */
+
+    /* Keyboard input state (set each frame via forge_ui_ctx_set_keyboard).
+     * These fields are reset to NULL/false at the start of each frame by
+     * forge_ui_ctx_begin, then set by the caller before widget calls. */
+    const char *text_input;   /* UTF-8 characters typed this frame (NULL if none) */
+    bool key_backspace;       /* Backspace pressed this frame */
+    bool key_delete;          /* Delete pressed this frame */
+    bool key_left;            /* Left arrow pressed this frame */
+    bool key_right;           /* Right arrow pressed this frame */
+    bool key_home;            /* Home pressed this frame */
+    bool key_end;             /* End pressed this frame */
+    bool key_escape;          /* Escape pressed this frame */
+
+    /* Internal: tracks whether any text input widget was under the mouse
+     * during a press edge this frame.  Used by ctx_end to detect "click
+     * outside" for focus loss. */
+    bool _ti_press_claimed;
 
     /* Draw data (reset each frame by forge_ui_ctx_begin) */
     ForgeUiVertex *vertices;   /* dynamically growing vertex buffer */
@@ -300,6 +383,57 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
                                         float *value,
                                         float min_val, float max_val,
                                         ForgeUiRect rect);
+
+/* Set keyboard input state for this frame.
+ * Call after forge_ui_ctx_begin and before any widget calls.
+ *
+ * text_input:    UTF-8 string of characters typed this frame (NULL if none)
+ * key_backspace: true if Backspace was pressed
+ * key_delete:    true if Delete was pressed
+ * key_left:      true if Left arrow was pressed
+ * key_right:     true if Right arrow was pressed
+ * key_home:      true if Home was pressed
+ * key_end:       true if End was pressed
+ * key_escape:    true if Escape was pressed */
+static inline void forge_ui_ctx_set_keyboard(ForgeUiContext *ctx,
+                                              const char *text_input,
+                                              bool key_backspace,
+                                              bool key_delete,
+                                              bool key_left,
+                                              bool key_right,
+                                              bool key_home,
+                                              bool key_end,
+                                              bool key_escape);
+
+/* Draw a single-line text input field with keyboard focus and cursor.
+ * Processes keyboard input when this widget has focus (ctx->focused == id).
+ * Returns true on frames where the buffer content changes.
+ *
+ * Focus is acquired by clicking on the text input (press then release
+ * while the cursor is still over the widget).  Focus is lost when the
+ * user clicks outside any text input or presses Escape.
+ *
+ * When focused, the widget processes keyboard input from the context:
+ *   - text_input: characters are inserted at the cursor position
+ *   - Backspace:  deletes the byte before the cursor
+ *   - Delete:     deletes the byte at the cursor
+ *   - Left/Right: moves the cursor one byte
+ *   - Home/End:   jumps to the start/end of the buffer
+ *
+ * Draw elements: a background rectangle (color varies by state), text
+ * quads positioned from the left edge with padding, and a cursor bar
+ * (thin 2px-wide rect) whose x position is computed by measuring the
+ * substring buffer[0..cursor].
+ *
+ * id:             unique non-zero identifier for this widget
+ * state:          pointer to application-owned ForgeUiTextInputState
+ * rect:           bounding rectangle in screen pixels
+ * cursor_visible: false to hide the cursor bar (for blink animation) */
+static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
+                                            Uint32 id,
+                                            ForgeUiTextInputState *state,
+                                            ForgeUiRect rect,
+                                            bool cursor_visible);
 
 /* ── Internal Helpers ───────────────────────────────────────────────────── */
 
@@ -443,6 +577,40 @@ static inline void forge_ui__emit_text_layout(ForgeUiContext *ctx,
     ctx->index_count += layout->index_count;
 }
 
+/* Emit a rectangular border as four thin edge rects drawn INSIDE the
+ * given rectangle.  Used for the focused text input outline. */
+static inline void forge_ui__emit_border(ForgeUiContext *ctx,
+                                          ForgeUiRect rect,
+                                          float border_w,
+                                          float r, float g, float b, float a)
+{
+    if (!ctx) return;
+    /* Reject degenerate borders: width must be positive and must fit
+     * within half the rect dimension to avoid inverted geometry. */
+    if (border_w <= 0.0f) return;
+    if (border_w > rect.w * 0.5f || border_w > rect.h * 0.5f) return;
+
+    /* Top edge — full width so corners are covered by the horizontal edges */
+    forge_ui__emit_rect(ctx,
+        (ForgeUiRect){ rect.x, rect.y, rect.w, border_w },
+        r, g, b, a);
+    /* Bottom edge — full width, same reason */
+    forge_ui__emit_rect(ctx,
+        (ForgeUiRect){ rect.x, rect.y + rect.h - border_w, rect.w, border_w },
+        r, g, b, a);
+    /* Left edge — shortened to avoid double-drawing corner pixels where
+     * it would overlap the top and bottom edges */
+    forge_ui__emit_rect(ctx,
+        (ForgeUiRect){ rect.x, rect.y + border_w,
+                       border_w, rect.h - 2.0f * border_w },
+        r, g, b, a);
+    /* Right edge — shortened for the same corner overlap reason */
+    forge_ui__emit_rect(ctx,
+        (ForgeUiRect){ rect.x + rect.w - border_w, rect.y + border_w,
+                       border_w, rect.h - 2.0f * border_w },
+        r, g, b, a);
+}
+
 /* ── Implementation ─────────────────────────────────────────────────────── */
 
 static inline bool forge_ui_ctx_init(ForgeUiContext *ctx,
@@ -458,6 +626,7 @@ static inline bool forge_ui_ctx_init(ForgeUiContext *ctx,
     ctx->hot = FORGE_UI_ID_NONE;
     ctx->active = FORGE_UI_ID_NONE;
     ctx->next_hot = FORGE_UI_ID_NONE;
+    ctx->focused = FORGE_UI_ID_NONE;
 
     ctx->vertex_capacity = FORGE_UI_CTX_INITIAL_VERTEX_CAPACITY;
     ctx->vertices = (ForgeUiVertex *)SDL_calloc(
@@ -495,6 +664,7 @@ static inline void forge_ui_ctx_free(ForgeUiContext *ctx)
     ctx->hot = FORGE_UI_ID_NONE;
     ctx->active = FORGE_UI_ID_NONE;
     ctx->next_hot = FORGE_UI_ID_NONE;
+    ctx->focused = FORGE_UI_ID_NONE;
 }
 
 static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
@@ -514,6 +684,18 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
     /* Reset hot for this frame -- widgets will claim it during processing */
     ctx->next_hot = FORGE_UI_ID_NONE;
 
+    /* Reset keyboard input state for this frame.  The caller sets these
+     * via forge_ui_ctx_set_keyboard after calling begin. */
+    ctx->text_input = NULL;
+    ctx->key_backspace = false;
+    ctx->key_delete = false;
+    ctx->key_left = false;
+    ctx->key_right = false;
+    ctx->key_home = false;
+    ctx->key_end = false;
+    ctx->key_escape = false;
+    ctx->_ti_press_claimed = false;
+
     /* Reset draw buffers (keep allocated memory) */
     ctx->vertex_count = 0;
     ctx->index_count = 0;
@@ -529,6 +711,27 @@ static inline void forge_ui_ctx_end(ForgeUiContext *ctx)
      * remain stuck forever, blocking all other widgets. */
     if (ctx->active != FORGE_UI_ID_NONE && !ctx->mouse_down) {
         ctx->active = FORGE_UI_ID_NONE;
+    }
+
+    /* Focus management: clear focused widget on click-outside or Escape.
+     *
+     * Click-outside: if the mouse was just pressed (edge) this frame and
+     * no text input widget was under the cursor (_ti_press_claimed is
+     * false), the user clicked outside all text inputs.  This unfocuses
+     * the currently focused widget.
+     *
+     * Escape: always clears focus regardless of mouse state. */
+    {
+        bool pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+        if (pressed && !ctx->_ti_press_claimed) {
+            ctx->focused = FORGE_UI_ID_NONE;
+        }
+        if (ctx->key_escape) {
+            ctx->focused = FORGE_UI_ID_NONE;
+            /* Clear active to prevent a pending click release from
+             * re-acquiring focus on the next frame. */
+            ctx->active = FORGE_UI_ID_NONE;
+        }
     }
 
     /* Finalize hot state: adopt whatever widget claimed hot this frame.
@@ -855,6 +1058,226 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     forge_ui__emit_rect(ctx, thumb_rect, th_r, th_g, th_b, th_a);
 
     return changed;
+}
+
+static inline void forge_ui_ctx_set_keyboard(ForgeUiContext *ctx,
+                                              const char *text_input,
+                                              bool key_backspace,
+                                              bool key_delete,
+                                              bool key_left,
+                                              bool key_right,
+                                              bool key_home,
+                                              bool key_end,
+                                              bool key_escape)
+{
+    if (!ctx) return;
+    ctx->text_input = text_input;
+    ctx->key_backspace = key_backspace;
+    ctx->key_delete = key_delete;
+    ctx->key_left = key_left;
+    ctx->key_right = key_right;
+    ctx->key_home = key_home;
+    ctx->key_end = key_end;
+    ctx->key_escape = key_escape;
+}
+
+static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
+                                            Uint32 id,
+                                            ForgeUiTextInputState *state,
+                                            ForgeUiRect rect,
+                                            bool cursor_visible)
+{
+    if (!ctx || !ctx->atlas || !state || !state->buffer
+        || id == FORGE_UI_ID_NONE) return false;
+
+    /* Validate state invariants to prevent out-of-bounds access.
+     * The application owns these fields; reject if they violate the
+     * contract:  capacity > 0,  0 <= length < capacity,  0 <= cursor <= length. */
+    if (state->capacity <= 0) return false;
+    if (state->length < 0 || state->length >= state->capacity) return false;
+    if (state->cursor < 0 || state->cursor > state->length) return false;
+    if (state->buffer[state->length] != '\0') return false;
+
+    bool content_changed = false;
+    bool is_focused = (ctx->focused == id);
+
+    /* ── Hit testing ──────────────────────────────────────────────────── */
+    bool mouse_over = forge_ui__rect_contains(rect, ctx->mouse_x, ctx->mouse_y);
+    if (mouse_over) {
+        ctx->next_hot = id;
+    }
+
+    /* ── State transitions (press-release-over, same as button) ──────── */
+    /* Use ctx->next_hot == id (not mouse_over) so that overlapping widgets
+     * resolve activation by draw order, matching the button/slider pattern. */
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    if (mouse_pressed && ctx->next_hot == id) {
+        ctx->active = id;
+        /* Mark that a text input claimed this press -- prevents ctx_end
+         * from clearing focused on this frame (click-outside detection). */
+        ctx->_ti_press_claimed = true;
+    }
+
+    /* Click detection: release while active + cursor still over = focus */
+    if (ctx->active == id && !ctx->mouse_down) {
+        if (mouse_over) {
+            ctx->focused = id;
+            is_focused = true;
+        }
+        ctx->active = FORGE_UI_ID_NONE;
+    }
+
+    /* ── Keyboard input processing (only when focused) ────────────────── */
+    if (is_focused) {
+        /* Editing operations are mutually exclusive within a single frame.
+         * When SDL delivers both a text input event and a key event in the
+         * same frame, applying both would operate on inconsistent state
+         * (e.g., backspace would delete the just-inserted character instead
+         * of the pre-existing one).  Deletion keys take priority. */
+        bool did_edit = false;
+
+        /* Backspace: remove the byte before cursor, shift trailing left */
+        if (!did_edit && ctx->key_backspace && state->cursor > 0) {
+            SDL_memmove(state->buffer + state->cursor - 1,
+                        state->buffer + state->cursor,
+                        (size_t)(state->length - state->cursor));
+            state->cursor--;
+            state->length--;
+            state->buffer[state->length] = '\0';
+            content_changed = true;
+            did_edit = true;
+        }
+
+        /* Delete: remove the byte at cursor, shift trailing left */
+        if (!did_edit && ctx->key_delete && state->cursor < state->length) {
+            SDL_memmove(state->buffer + state->cursor,
+                        state->buffer + state->cursor + 1,
+                        (size_t)(state->length - state->cursor - 1));
+            state->length--;
+            state->buffer[state->length] = '\0';
+            content_changed = true;
+            did_edit = true;
+        }
+
+        /* Character insertion: splice typed characters into the buffer
+         * at the cursor position.  Trailing bytes shift right to make
+         * room, then the new bytes are written at cursor. */
+        if (!did_edit && ctx->text_input && ctx->text_input[0] != '\0') {
+            size_t raw_len = SDL_strlen(ctx->text_input);
+            /* Guard: reject input longer than the buffer can ever hold.
+             * Cast is safe because capacity > 0 (validated above). */
+            if (raw_len <= (size_t)(state->capacity - 1)) {
+                int insert_len = (int)raw_len;
+                /* Use subtraction form to avoid signed overflow:
+                 * insert_len < capacity - length  (both sides positive). */
+                if (insert_len < state->capacity - state->length) {
+                    SDL_memmove(state->buffer + state->cursor + insert_len,
+                                state->buffer + state->cursor,
+                                (size_t)(state->length - state->cursor));
+                    SDL_memcpy(state->buffer + state->cursor,
+                               ctx->text_input, (size_t)insert_len);
+                    state->cursor += insert_len;
+                    state->length += insert_len;
+                    state->buffer[state->length] = '\0';
+                    content_changed = true;
+                    did_edit = true;
+                }
+            }
+        }
+
+        /* Cursor movement -- also mutually exclusive with edits.
+         * If an edit (backspace/delete/insert) already ran this frame,
+         * skip cursor movement to avoid double-shifting the cursor. */
+        if (!did_edit) {
+            if (ctx->key_left && state->cursor > 0) {
+                state->cursor--;
+            }
+            if (ctx->key_right && state->cursor < state->length) {
+                state->cursor++;
+            }
+            if (ctx->key_home) {
+                state->cursor = 0;
+            }
+            if (ctx->key_end) {
+                state->cursor = state->length;
+            }
+        }
+    }
+
+    /* ── Choose background color based on state ──────────────────────── */
+    float bg_r, bg_g, bg_b, bg_a;
+    if (is_focused) {
+        bg_r = FORGE_UI_TI_FOCUSED_R;  bg_g = FORGE_UI_TI_FOCUSED_G;
+        bg_b = FORGE_UI_TI_FOCUSED_B;  bg_a = FORGE_UI_TI_FOCUSED_A;
+    } else if (ctx->hot == id) {
+        bg_r = FORGE_UI_TI_HOT_R;  bg_g = FORGE_UI_TI_HOT_G;
+        bg_b = FORGE_UI_TI_HOT_B;  bg_a = FORGE_UI_TI_HOT_A;
+    } else {
+        bg_r = FORGE_UI_TI_NORMAL_R;  bg_g = FORGE_UI_TI_NORMAL_G;
+        bg_b = FORGE_UI_TI_NORMAL_B;  bg_a = FORGE_UI_TI_NORMAL_A;
+    }
+
+    /* ── Emit background rectangle ───────────────────────────────────── */
+    forge_ui__emit_rect(ctx, rect, bg_r, bg_g, bg_b, bg_a);
+
+    /* ── Emit focused border (accent outline drawn on top of bg) ─────── */
+    if (is_focused) {
+        forge_ui__emit_border(ctx, rect, FORGE_UI_TI_BORDER_WIDTH,
+                              FORGE_UI_TI_BORDER_R, FORGE_UI_TI_BORDER_G,
+                              FORGE_UI_TI_BORDER_B, FORGE_UI_TI_BORDER_A);
+    }
+
+    /* ── Compute font metrics for baseline positioning ───────────────── */
+    float scale = 0.0f;
+    float ascender_px = 0.0f;
+    if (ctx->atlas->units_per_em > 0) {
+        scale = ctx->atlas->pixel_height / (float)ctx->atlas->units_per_em;
+        ascender_px = (float)ctx->atlas->ascender * scale;
+    }
+    (void)scale;  /* only ascender_px needed for baseline placement */
+
+    /* Vertically center the text within the rect: offset to the top of
+     * the em square, then add the ascender to reach the baseline where
+     * forge_ui_ctx_label expects the y coordinate. */
+    float text_top_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f;
+    float baseline_y = text_top_y + ascender_px;
+
+    /* ── Emit text quads ─────────────────────────────────────────────── */
+    if (state->length > 0) {
+        forge_ui_ctx_label(ctx, state->buffer,
+                           rect.x + FORGE_UI_TI_PADDING, baseline_y,
+                           FORGE_UI_TI_TEXT_R, FORGE_UI_TI_TEXT_G,
+                           FORGE_UI_TI_TEXT_B, FORGE_UI_TI_TEXT_A);
+    }
+
+    /* ── Emit cursor bar ─────────────────────────────────────────────── */
+    /* The cursor x position is computed by measuring the substring
+     * buffer[0..cursor] using forge_ui_text_measure.  This gives the
+     * pen_x advance, which is the exact pixel offset where the cursor
+     * should appear. */
+    if (is_focused && cursor_visible) {
+        float cursor_x = rect.x + FORGE_UI_TI_PADDING;
+        if (state->cursor > 0 && state->length > 0) {
+            /* Temporarily null-terminate at cursor so forge_ui_text_measure
+             * measures only the substring before the insertion point */
+            char saved = state->buffer[state->cursor];
+            state->buffer[state->cursor] = '\0';
+            ForgeUiTextMetrics m = forge_ui_text_measure(
+                ctx->atlas, state->buffer, NULL);
+            state->buffer[state->cursor] = saved;
+            cursor_x += m.width;
+        }
+
+        ForgeUiRect cursor_rect = {
+            cursor_x, text_top_y,
+            FORGE_UI_TI_CURSOR_WIDTH, ctx->atlas->pixel_height
+        };
+        forge_ui__emit_rect(ctx, cursor_rect,
+                            FORGE_UI_TI_CURSOR_R, FORGE_UI_TI_CURSOR_G,
+                            FORGE_UI_TI_CURSOR_B, FORGE_UI_TI_CURSOR_A);
+    }
+
+    return content_changed;
 }
 
 #endif /* FORGE_UI_CTX_H */

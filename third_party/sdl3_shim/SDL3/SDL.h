@@ -110,6 +110,11 @@ static inline int SDL_memcmp(const void *a, const void *b, size_t n)
     return memcmp(a, b, n);
 }
 
+static inline void *SDL_memmove(void *dst, const void *src, size_t n)
+{
+    return memmove(dst, src, n);
+}
+
 /* ── String helpers ─────────────────────────────────────────────────────── */
 
 static inline size_t SDL_strlen(const char *s)         { return strlen(s); }

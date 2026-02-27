@@ -145,15 +145,20 @@ from .ui_diagrams import (
     diagram_antialiasing_comparison,
     diagram_baseline_metrics,
     diagram_button_draw_data,
+    diagram_character_deletion,
+    diagram_character_insertion,
     diagram_checkbox_anatomy,
     diagram_checkbox_vs_button,
     diagram_contour_reconstruction,
+    diagram_cursor_positioning,
     diagram_declare_then_draw,
     diagram_drag_outside_bounds,
     diagram_endianness,
+    diagram_focus_state_machine,
     diagram_glyph_anatomy,
     diagram_hit_testing,
     diagram_hot_active_state_machine,
+    diagram_keyboard_input_flow,
     diagram_line_breaking,
     diagram_padding_bleed,
     diagram_pen_advance,
@@ -163,6 +168,7 @@ from .ui_diagrams import (
     diagram_slider_anatomy,
     diagram_slider_state_colors,
     diagram_slider_value_mapping,
+    diagram_text_input_anatomy,
     diagram_ttf_file_structure,
     diagram_uv_coordinates,
     diagram_widget_interaction_comparison,
@@ -388,6 +394,14 @@ DIAGRAMS = {
         ("slider_state_colors.png", diagram_slider_state_colors),
         ("widget_interaction_comparison.png", diagram_widget_interaction_comparison),
     ],
+    "ui/07": [
+        ("focus_state_machine.png", diagram_focus_state_machine),
+        ("text_input_anatomy.png", diagram_text_input_anatomy),
+        ("cursor_positioning.png", diagram_cursor_positioning),
+        ("character_insertion.png", diagram_character_insertion),
+        ("character_deletion.png", diagram_character_deletion),
+        ("keyboard_input_flow.png", diagram_keyboard_input_flow),
+    ],
 }
 
 # Full lesson directory names for display
@@ -429,6 +443,7 @@ LESSON_NAMES = {
     "ui/04": "ui/04-text-layout",
     "ui/05": "ui/05-immediate-mode-basics",
     "ui/06": "ui/06-checkboxes-and-sliders",
+    "ui/07": "ui/07-text-input",
 }
 
 

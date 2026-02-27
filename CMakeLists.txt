@@ -49,6 +49,10 @@ option(FORGE_CAPTURE "Enable frame capture for screenshots and GIFs" OFF)
 # ── Testing ─────────────────────────────────────────────────────────────────
 enable_testing()
 
+# Fuzz iteration count (override with -DFORGE_FUZZ_ITERATIONS=N)
+set(FORGE_FUZZ_ITERATIONS 100000 CACHE STRING
+    "Number of iterations for the text-input fuzz harness")
+
 # ── Math Lessons ────────────────────────────────────────────────────────────
 add_subdirectory(lessons/math/01-vectors)
 add_subdirectory(lessons/math/02-coordinate-spaces)
@@ -116,6 +120,7 @@ add_subdirectory(lessons/ui/03-font-atlas)
 add_subdirectory(lessons/ui/04-text-layout)
 add_subdirectory(lessons/ui/05-immediate-mode-basics)
 add_subdirectory(lessons/ui/06-checkboxes-and-sliders)
+add_subdirectory(lessons/ui/07-text-input)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

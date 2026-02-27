@@ -1635,6 +1635,324 @@ static void test_measure_wrapping(void)
     ASSERT_TRUE(m_wrap.height > m_nowrap.height);
 }
 
+/* ── Parameter validation tests (audit fixes) ───────────────────────────── */
+
+static void test_load_null_out_font(void)
+{
+    TEST("forge_ui_ttf_load rejects NULL out_font");
+    bool result = forge_ui_ttf_load(TEST_FONT_PATH, NULL);
+    ASSERT_TRUE(!result);
+}
+
+static void test_load_null_path(void)
+{
+    TEST("forge_ui_ttf_load rejects NULL path");
+    ForgeUiFont tmp;
+    bool result = forge_ui_ttf_load(NULL, &tmp);
+    ASSERT_TRUE(!result);
+}
+
+static void test_glyph_index_null_font(void)
+{
+    TEST("forge_ui_ttf_glyph_index returns 0 for NULL font");
+    Uint16 idx = forge_ui_ttf_glyph_index(NULL, 'A');
+    ASSERT_EQ_U16(idx, 0);
+}
+
+static void test_load_glyph_null_font(void)
+{
+    TEST("forge_ui_ttf_load_glyph rejects NULL font");
+    ForgeUiTtfGlyph glyph;
+    bool result = forge_ui_ttf_load_glyph(NULL, 0, &glyph);
+    ASSERT_TRUE(!result);
+}
+
+static void test_load_glyph_null_out(void)
+{
+    TEST("forge_ui_ttf_load_glyph rejects NULL out_glyph");
+    if (!font_loaded) return;
+    bool result = forge_ui_ttf_load_glyph(&test_font, 0, NULL);
+    ASSERT_TRUE(!result);
+}
+
+static void test_rasterize_null_font(void)
+{
+    TEST("forge_ui_rasterize_glyph rejects NULL font");
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(NULL, 0, 32.0f, NULL, &bmp);
+    ASSERT_TRUE(!result);
+}
+
+static void test_rasterize_null_out(void)
+{
+    TEST("forge_ui_rasterize_glyph rejects NULL out_bitmap");
+    if (!font_loaded) return;
+    bool result = forge_ui_rasterize_glyph(&test_font, 0, 32.0f, NULL, NULL);
+    ASSERT_TRUE(!result);
+}
+
+static void test_rasterize_zero_height(void)
+{
+    TEST("forge_ui_rasterize_glyph rejects zero pixel_height");
+    if (!font_loaded) return;
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, 0, 0.0f, NULL, &bmp);
+    ASSERT_TRUE(!result);
+}
+
+static void test_rasterize_negative_height(void)
+{
+    TEST("forge_ui_rasterize_glyph rejects negative pixel_height");
+    if (!font_loaded) return;
+    ForgeUiGlyphBitmap bmp;
+    bool result = forge_ui_rasterize_glyph(&test_font, 0, -10.0f, NULL, &bmp);
+    ASSERT_TRUE(!result);
+}
+
+static void test_rasterize_nan_height(void)
+{
+    TEST("forge_ui_rasterize_glyph rejects NaN pixel_height");
+    if (!font_loaded) return;
+    ForgeUiGlyphBitmap bmp;
+    float nan_val = 0.0f / 0.0f;
+    bool result = forge_ui_rasterize_glyph(&test_font, 0, nan_val, NULL, &bmp);
+    ASSERT_TRUE(!result);
+}
+
+static void test_advance_width_null_font(void)
+{
+    TEST("forge_ui_ttf_advance_width returns 0 for NULL font");
+    Uint16 w = forge_ui_ttf_advance_width(NULL, 0);
+    ASSERT_EQ_U16(w, 0);
+}
+
+static void test_atlas_build_null_font(void)
+{
+    TEST("forge_ui_atlas_build rejects NULL font");
+    ForgeUiFontAtlas atlas;
+    Uint32 cp = 'A';
+    bool result = forge_ui_atlas_build(NULL, 32.0f, &cp, 1, 1, &atlas);
+    ASSERT_TRUE(!result);
+}
+
+static void test_atlas_build_null_atlas(void)
+{
+    TEST("forge_ui_atlas_build rejects NULL out_atlas");
+    if (!font_loaded) return;
+    Uint32 cp = 'A';
+    bool result = forge_ui_atlas_build(&test_font, 32.0f, &cp, 1, 1, NULL);
+    ASSERT_TRUE(!result);
+}
+
+static void test_atlas_build_null_codepoints(void)
+{
+    TEST("forge_ui_atlas_build rejects NULL codepoints");
+    if (!font_loaded) return;
+    ForgeUiFontAtlas atlas;
+    bool result = forge_ui_atlas_build(&test_font, 32.0f, NULL, 1, 1, &atlas);
+    ASSERT_TRUE(!result);
+}
+
+static void test_atlas_build_zero_count(void)
+{
+    TEST("forge_ui_atlas_build rejects zero codepoint_count");
+    if (!font_loaded) return;
+    ForgeUiFontAtlas atlas;
+    Uint32 cp = 'A';
+    bool result = forge_ui_atlas_build(&test_font, 32.0f, &cp, 0, 1, &atlas);
+    ASSERT_TRUE(!result);
+}
+
+static void test_atlas_build_zero_height(void)
+{
+    TEST("forge_ui_atlas_build rejects zero pixel_height");
+    if (!font_loaded) return;
+    ForgeUiFontAtlas atlas;
+    Uint32 cp = 'A';
+    bool result = forge_ui_atlas_build(&test_font, 0.0f, &cp, 1, 1, &atlas);
+    ASSERT_TRUE(!result);
+}
+
+static void test_atlas_build_negative_height(void)
+{
+    TEST("forge_ui_atlas_build rejects negative pixel_height");
+    if (!font_loaded) return;
+    ForgeUiFontAtlas atlas;
+    Uint32 cp = 'A';
+    bool result = forge_ui_atlas_build(&test_font, -5.0f, &cp, 1, 1, &atlas);
+    ASSERT_TRUE(!result);
+}
+
+static void test_atlas_lookup_null_atlas(void)
+{
+    TEST("forge_ui_atlas_lookup returns NULL for NULL atlas");
+    const ForgeUiPackedGlyph *g = forge_ui_atlas_lookup(NULL, 'A');
+    ASSERT_TRUE(g == NULL);
+}
+
+static void test_atlas_lookup_null_glyphs(void)
+{
+    TEST("forge_ui_atlas_lookup returns NULL when atlas->glyphs is NULL");
+    ForgeUiFontAtlas empty;
+    SDL_memset(&empty, 0, sizeof(empty));
+    empty.glyph_count = 5;  /* non-zero count but NULL glyphs pointer */
+    const ForgeUiPackedGlyph *g = forge_ui_atlas_lookup(&empty, 'A');
+    ASSERT_TRUE(g == NULL);
+}
+
+/* ── Consequence tests: verify fixes prevent the actual dangerous path ─── */
+
+static void test_raster_supersample_overflow_returns_false(void)
+{
+    TEST("rasterize_glyph: rejects pixel_height that overflows supersample buffer");
+    if (!font_loaded) return;
+
+    Uint16 gi = forge_ui_ttf_glyph_index(&test_font, 'A');
+    ForgeUiRasterOpts opts;
+    opts.supersample_level = 8;
+
+    /* pixel_height = 5e8 produces bmp_w ~ 341 million.
+     * INT_MAX / 8 = 268435455.  bmp_w > INT_MAX/8, so either the
+     * supersample guard or the preceding calloc rejects this.
+     * Before the fix, bmp_w * ss would overflow int → tiny allocation
+     * → heap overwrite during rasterization. */
+    ForgeUiGlyphBitmap bitmap;
+    bool result = forge_ui_rasterize_glyph(&test_font, gi, 5.0e8f,
+                                            &opts, &bitmap);
+    ASSERT_TRUE(!result);
+    /* Verify no partial state leaked */
+    ASSERT_TRUE(bitmap.pixels == NULL);
+    ASSERT_EQ_INT(bitmap.width, 0);
+    ASSERT_EQ_INT(bitmap.height, 0);
+}
+
+static void test_bmp_write_overflow_dimensions_rejected(void)
+{
+    TEST("write_grayscale_bmp: rejects dimensions that overflow pixel data size");
+
+    Uint8 dummy[4] = {0};
+
+    /* Build a portable temp path using SDL_GetBasePath() so the test works
+     * on all platforms (the old "/dev/null" was POSIX-only).  The overflow
+     * check fires before any file I/O, but we still use a real path in case
+     * the guard thresholds ever change. */
+    const char *base = SDL_GetBasePath();
+    ASSERT_TRUE(base != NULL);
+    const char *name = "overflow_test.bmp";
+    size_t path_len = SDL_strlen(base) + SDL_strlen(name) + 1;
+    char *path = (char *)SDL_malloc(path_len);
+    ASSERT_TRUE(path != NULL);
+    SDL_snprintf(path, (int)path_len, "%s%s", base, name);
+
+    /* row_stride = 65536 (already 4-aligned).
+     * pixel_data_size_64 = 65536 * 65536 = 4294967296 > UINT32_MAX.
+     * Before the fix, 32-bit row_stride * height wrapped to 0 → zero-byte
+     * allocation → pixel copy overwrites heap. */
+    bool result = forge_ui__write_grayscale_bmp(path, dummy,
+                                                 65536, 65536);
+    ASSERT_TRUE(!result);
+
+    /* Clean up in case the file was somehow created */
+    SDL_RemovePath(path);
+    SDL_free(path);
+}
+
+static void test_build_edges_oob_contour_endpoint_skipped(void)
+{
+    TEST("build_edges: skips contour with out-of-bounds endpoint");
+
+    /* 4 points, 1 contour — but contour_ends[0] = 10, past point_count.
+     * Before the fix, the edge builder would read points[10] and flags[10]
+     * past the end of the arrays → out-of-bounds read / crash. */
+    ForgeUiPoint points[4] = {
+        {0, 0}, {100, 0}, {100, 100}, {0, 100}
+    };
+    Uint8 flags[4];
+    SDL_memset(flags, FORGE_UI_FLAG_ON_CURVE, sizeof(flags));
+
+    Uint16 contour_ends[1] = {10};  /* OUT OF BOUNDS */
+
+    ForgeUiTtfGlyph glyph;
+    SDL_memset(&glyph, 0, sizeof(glyph));
+    glyph.contour_count = 1;
+    glyph.point_count   = 4;
+    glyph.contour_ends  = contour_ends;
+    glyph.flags          = flags;
+    glyph.points         = points;
+
+    ForgeUi__Edge edges[64];
+    int edge_count = forge_ui__build_edges(&glyph, 1.0f, 100.0f,
+                                            edges, 64);
+    /* The bad contour must be skipped entirely — zero edges */
+    ASSERT_EQ_INT(edge_count, 0);
+}
+
+static void test_build_edges_oob_contour_with_valid_contour(void)
+{
+    TEST("build_edges: processes valid contour, skips invalid one");
+
+    /* 8 points, 2 contours.
+     * Contour 0: points 0-3 — valid closed quad (4 edges).
+     * Contour 1: contour_ends[1] = 100 — out of bounds for point_count=8.
+     * Before the fix, contour 1 would read points[4..100] → OOB read. */
+    ForgeUiPoint points[8] = {
+        {0, 0}, {100, 0}, {100, 100}, {0, 100},      /* contour 0 */
+        {200, 0}, {300, 0}, {300, 100}, {200, 100}    /* contour 1 (unused) */
+    };
+    Uint8 flags[8];
+    SDL_memset(flags, FORGE_UI_FLAG_ON_CURVE, sizeof(flags));
+
+    Uint16 contour_ends[2] = {3, 100};  /* contour 1 endpoint is OOB */
+
+    ForgeUiTtfGlyph glyph;
+    SDL_memset(&glyph, 0, sizeof(glyph));
+    glyph.contour_count = 2;
+    glyph.point_count   = 8;
+    glyph.contour_ends  = contour_ends;
+    glyph.flags          = flags;
+    glyph.points         = points;
+
+    ForgeUi__Edge edges[64];
+    int edge_count = forge_ui__build_edges(&glyph, 1.0f, 100.0f,
+                                            edges, 64);
+    /* Contour 0 has 4 on-curve points = 4 line edges (including closing).
+     * Contour 1 is skipped.  Exact count depends on degenerate-line
+     * filtering, but must be > 0 (contour 0 produced edges). */
+    ASSERT_TRUE(edge_count > 0);
+}
+
+static void test_shelf_pack_rejects_oversized_glyph(void)
+{
+    TEST("shelf_pack: rejects glyph wider than atlas");
+
+    /* Glyph 300px wide in a 256px atlas.
+     * Before the fix, the packer would place it at x=padding and the
+     * pixel copy in Phase 4 would write past each atlas row → heap
+     * overwrite. */
+    ForgeUi__GlyphEntry entry;
+    SDL_memset(&entry, 0, sizeof(entry));
+    entry.bitmap.width  = 300;
+    entry.bitmap.height = 20;
+    entry.bitmap.pixels = (Uint8 *)1;  /* non-NULL to avoid whitespace skip */
+
+    bool result = forge_ui__shelf_pack(&entry, 1, 256, 256, 1);
+    ASSERT_TRUE(!result);
+}
+
+static void test_shelf_pack_rejects_oversized_height(void)
+{
+    TEST("shelf_pack: rejects glyph taller than atlas");
+
+    ForgeUi__GlyphEntry entry;
+    SDL_memset(&entry, 0, sizeof(entry));
+    entry.bitmap.width  = 20;
+    entry.bitmap.height = 300;
+    entry.bitmap.pixels = (Uint8 *)1;
+
+    bool result = forge_ui__shelf_pack(&entry, 1, 256, 256, 1);
+    ASSERT_TRUE(!result);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -1754,6 +2072,35 @@ int main(int argc, char *argv[])
     test_measure_null_params();
     test_measure_multiline();
     test_measure_wrapping();
+
+    /* Parameter validation (audit fixes) */
+    test_load_null_out_font();
+    test_load_null_path();
+    test_glyph_index_null_font();
+    test_load_glyph_null_font();
+    test_load_glyph_null_out();
+    test_rasterize_null_font();
+    test_rasterize_null_out();
+    test_rasterize_zero_height();
+    test_rasterize_negative_height();
+    test_rasterize_nan_height();
+    test_advance_width_null_font();
+    test_atlas_build_null_font();
+    test_atlas_build_null_atlas();
+    test_atlas_build_null_codepoints();
+    test_atlas_build_zero_count();
+    test_atlas_build_zero_height();
+    test_atlas_build_negative_height();
+    test_atlas_lookup_null_atlas();
+    test_atlas_lookup_null_glyphs();
+
+    /* Consequence tests: dangerous paths the audit fixes prevent */
+    test_raster_supersample_overflow_returns_false();
+    test_bmp_write_overflow_dimensions_rejected();
+    test_build_edges_oob_contour_endpoint_skipped();
+    test_build_edges_oob_contour_with_valid_contour();
+    test_shelf_pack_rejects_oversized_glyph();
+    test_shelf_pack_rejects_oversized_height();
 
     /* Print summary before tearing down SDL (SDL_Log needs SDL alive) */
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",
