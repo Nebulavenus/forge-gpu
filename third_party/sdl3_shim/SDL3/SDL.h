@@ -153,6 +153,22 @@ static inline void SDL_qsort(void *base, size_t nmemb, size_t size,
     qsort(base, nmemb, size, compar);
 }
 
+/* ── Filesystem helpers ─────────────────────────────────────────────────── */
+
+/* Returns the directory where the application resides.  The real SDL3 returns
+ * a pointer to an internally-managed string.  The shim returns "./" so that
+ * temp-file tests build paths relative to the current working directory. */
+static inline const char *SDL_GetBasePath(void)
+{
+    return "./";
+}
+
+/* Removes a file or empty directory.  Returns true on success. */
+static inline bool SDL_RemovePath(const char *path)
+{
+    return remove(path) == 0;
+}
+
 /* ── File I/O ───────────────────────────────────────────────────────────── */
 
 static inline void *SDL_LoadFile(const char *file, size_t *datasize)
