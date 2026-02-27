@@ -15,6 +15,7 @@
 
 #include <SDL3/SDL.h>
 #include <limits.h>
+#include <math.h>
 #include "ui/forge_ui.h"
 #include "ui/forge_ui_ctx.h"
 
@@ -58,6 +59,26 @@ static int fail_count = 0;
         if (_a != _b) {                                           \
             SDL_Log("    FAIL: %s == %u, expected %u (line %d)",  \
                     #a, _a, _b, __LINE__);                        \
+            fail_count++;                                         \
+            return;                                               \
+        }                                                         \
+        pass_count++;                                             \
+    } while (0)
+
+#define ASSERT_NEAR(a, b, eps)                                    \
+    do {                                                          \
+        float _a = (a), _b = (b);                                 \
+        if (isnan(_a) || isnan(_b)) {                             \
+            SDL_Log("    FAIL: %s == %f, expected %f (NaN, "      \
+                    "line %d)", #a, (double)_a, (double)_b,       \
+                    __LINE__);                                    \
+            fail_count++;                                         \
+            return;                                               \
+        }                                                         \
+        if (fabsf(_a - _b) > (eps)) {                             \
+            SDL_Log("    FAIL: %s == %f, expected %f (eps=%f, "   \
+                    "line %d)", #a, _a, _b, (float)(eps),         \
+                    __LINE__);                                    \
             fail_count++;                                         \
             return;                                               \
         }                                                         \
@@ -741,6 +762,47 @@ static void test_multiple_buttons_independent(void)
     forge_ui_ctx_free(&ctx);
 }
 
+static void test_overlap_press_last_drawn_wins(void)
+{
+    TEST("multiple buttons: overlapping press activates last-drawn (topmost)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    /* Two overlapping buttons -- B is drawn after A so B is on top */
+    ForgeUiRect rect_a = { 10.0f, 10.0f, 100.0f, 40.0f };
+    ForgeUiRect rect_b = { 50.0f, 10.0f, 100.0f, 40.0f };
+    float cx = 80.0f, cy = 30.0f;  /* in overlap region */
+
+    /* Frame 0: hover -- establish hot (last-drawn wins) */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_button(&ctx, 1, "A", rect_a);
+    forge_ui_ctx_button(&ctx, 2, "B", rect_b);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.hot, 2);
+
+    /* Frame 1: press -- last-drawn button must become active */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    bool clicked_a = forge_ui_ctx_button(&ctx, 1, "A", rect_a);
+    bool clicked_b = forge_ui_ctx_button(&ctx, 2, "B", rect_b);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 2);
+    ASSERT_TRUE(!clicked_a);
+    ASSERT_TRUE(!clicked_b);
+
+    /* Frame 2: release -- only button B registers a click */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    clicked_a = forge_ui_ctx_button(&ctx, 1, "A", rect_a);
+    clicked_b = forge_ui_ctx_button(&ctx, 2, "B", rect_b);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!clicked_a);
+    ASSERT_TRUE(clicked_b);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ── Draw data verification tests ───────────────────────────────────────── */
 
 static void test_button_rect_uses_white_uv(void)
@@ -1091,6 +1153,843 @@ static void test_emit_text_layout_empty(void)
     forge_ui_ctx_free(&ctx);
 }
 
+/* ── forge_ui_ctx_checkbox tests ────────────────────────────────────────── */
+
+static void test_checkbox_emits_draw_data(void)
+{
+    TEST("ctx_checkbox: emits box rect + label vertices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    forge_ui_ctx_begin(&ctx, 0.0f, 0.0f, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "AB", &val, rect);
+
+    /* Outer box: 4 verts + 6 idx.  "AB" = 2 glyphs: 8 verts + 12 idx.
+     * No inner fill because val is false.  Total: 12 verts, 18 idx */
+    ASSERT_EQ_INT(ctx.vertex_count, 12);
+    ASSERT_EQ_INT(ctx.index_count, 18);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_checked_emits_inner_fill(void)
+{
+    TEST("ctx_checkbox: checked state emits inner fill rect");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = true;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    forge_ui_ctx_begin(&ctx, 0.0f, 0.0f, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "AB", &val, rect);
+
+    /* Outer box: 4+6.  Inner fill: 4+6.  "AB": 8+12.  Total: 16 verts, 24 idx */
+    ASSERT_EQ_INT(ctx.vertex_count, 16);
+    ASSERT_EQ_INT(ctx.index_count, 24);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_toggle_sequence(void)
+{
+    TEST("ctx_checkbox: full toggle sequence (hover -> press -> release toggles value)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 50.0f, cy = 25.0f;
+    bool toggled;
+
+    /* Frame 0: mouse away */
+    forge_ui_ctx_begin(&ctx, 300.0f, 300.0f, false);
+    toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+    ASSERT_TRUE(!val);
+
+    /* Frame 1: hover (becomes hot) */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+    ASSERT_EQ_U32(ctx.hot, 1);
+
+    /* Frame 2: press (becomes active) */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+    ASSERT_EQ_U32(ctx.active, 1);
+    ASSERT_TRUE(!val);
+
+    /* Frame 3: release (toggles val to true) */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(toggled);
+    ASSERT_TRUE(val);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+
+    /* Frame 4-5-6: click again to toggle back to false */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(toggled);
+    ASSERT_TRUE(!val);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_no_toggle_release_outside(void)
+{
+    TEST("ctx_checkbox: no toggle when released outside");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 1);
+
+    /* Release outside */
+    forge_ui_ctx_begin(&ctx, 300.0f, 300.0f, false);
+    bool toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+    ASSERT_TRUE(!val);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_null_ctx(void)
+{
+    TEST("ctx_checkbox: NULL ctx returns false");
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    bool toggled = forge_ui_ctx_checkbox(NULL, 1, "Opt", &val, rect);
+    ASSERT_TRUE(!toggled);
+}
+
+static void test_checkbox_null_label(void)
+{
+    TEST("ctx_checkbox: NULL label returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+    bool toggled = forge_ui_ctx_checkbox(&ctx, 1, NULL, &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_null_value(void)
+{
+    TEST("ctx_checkbox: NULL value returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+    bool toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", NULL, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_id_zero_rejected(void)
+{
+    TEST("ctx_checkbox: ID 0 (FORGE_UI_ID_NONE) returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+    bool toggled = forge_ui_ctx_checkbox(&ctx, FORGE_UI_ID_NONE, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!toggled);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_null_atlas(void)
+{
+    TEST("ctx_checkbox: NULL atlas returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+
+    const ForgeUiFontAtlas *saved = ctx.atlas;
+    ctx.atlas = NULL;
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    bool toggled = forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    ASSERT_TRUE(!toggled);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    ctx.atlas = saved;
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_normal_color(void)
+{
+    TEST("ctx_checkbox: normal state uses normal box color");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    /* Mouse far away -> normal state */
+    forge_ui_ctx_begin(&ctx, 300.0f, 300.0f, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* First 4 vertices are the outer box */
+    ASSERT_TRUE(ctx.vertices[0].r == FORGE_UI_CB_NORMAL_R);
+    ASSERT_TRUE(ctx.vertices[0].g == FORGE_UI_CB_NORMAL_G);
+    ASSERT_TRUE(ctx.vertices[0].b == FORGE_UI_CB_NORMAL_B);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_hot_color(void)
+{
+    TEST("ctx_checkbox: hot state uses hot box color");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Frame 0: become hot */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 1: now hot=1, check color */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertices[0].r == FORGE_UI_CB_HOT_R);
+    ASSERT_TRUE(ctx.vertices[0].g == FORGE_UI_CB_HOT_G);
+    ASSERT_TRUE(ctx.vertices[0].b == FORGE_UI_CB_HOT_B);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_active_color(void)
+{
+    TEST("ctx_checkbox: active state uses active box color");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press (active) */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertices[0].r == FORGE_UI_CB_ACTIVE_R);
+    ASSERT_TRUE(ctx.vertices[0].g == FORGE_UI_CB_ACTIVE_G);
+    ASSERT_TRUE(ctx.vertices[0].b == FORGE_UI_CB_ACTIVE_B);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_checkbox_edge_trigger(void)
+{
+    TEST("ctx_checkbox: held mouse dragged onto checkbox does NOT activate");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    bool val = false;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 50.0f, cy = 25.0f;
+
+    /* Frame 0: mouse held down away */
+    forge_ui_ctx_begin(&ctx, 300.0f, 300.0f, true);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 1: mouse still held, dragged onto checkbox */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_checkbox(&ctx, 1, "Opt", &val, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── forge_ui_ctx_slider tests ─────────────────────────────────────────── */
+
+static void test_slider_emits_draw_data(void)
+{
+    TEST("ctx_slider: emits track + thumb rectangles");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    forge_ui_ctx_begin(&ctx, 0.0f, 0.0f, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+
+    /* Track: 4 verts + 6 idx.  Thumb: 4 verts + 6 idx.
+     * Total: 8 verts, 12 idx */
+    ASSERT_EQ_INT(ctx.vertex_count, 8);
+    ASSERT_EQ_INT(ctx.index_count, 12);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_value_snap_on_click(void)
+{
+    TEST("ctx_slider: value snaps to click position on press");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.0f;
+    ForgeUiRect rect = { 100.0f, 10.0f, 200.0f, 30.0f };
+    /* Effective track: x = 100 + 6 = 106, w = 200 - 12 = 188 */
+    /* Click at midpoint: mouse_x = 106 + 94 = 200 -> t = 94/188 = 0.5 */
+    float mid_x = 100.0f + FORGE_UI_SL_THUMB_WIDTH * 0.5f + (200.0f - FORGE_UI_SL_THUMB_WIDTH) * 0.5f;
+    float cy = 25.0f;
+    bool changed;
+
+    /* Frame 0: hover */
+    forge_ui_ctx_begin(&ctx, mid_x, cy, false);
+    changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_U32(ctx.hot, 1);
+
+    /* Frame 1: press (active + snap) */
+    forge_ui_ctx_begin(&ctx, mid_x, cy, true);
+    changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(changed);
+    ASSERT_NEAR(val, 0.5f, 0.01f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_drag_outside_bounds(void)
+{
+    TEST("ctx_slider: drag continues when cursor moves outside widget");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 100.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 200.0f, cy = 25.0f;
+    bool changed;
+
+    /* Frame 0: hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 1: press */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 1);
+
+    /* Frame 2: drag FAR to the right (outside widget) — still active, value clamped */
+    forge_ui_ctx_begin(&ctx, 500.0f, 200.0f, true);
+    changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(changed);
+    ASSERT_NEAR(val, 1.0f, 0.001f);
+    ASSERT_EQ_U32(ctx.active, 1);
+
+    /* Frame 3: drag FAR to the left — value clamped to min */
+    forge_ui_ctx_begin(&ctx, -100.0f, 200.0f, true);
+    changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(changed);
+    ASSERT_NEAR(val, 0.0f, 0.001f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_release_clears_active(void)
+{
+    TEST("ctx_slider: releasing mouse clears active");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 100.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 200.0f, cy = 25.0f;
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, 1);
+
+    /* Release */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_value_mapping(void)
+{
+    TEST("ctx_slider: value maps correctly with custom range");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.0f;
+    ForgeUiRect rect = { 100.0f, 10.0f, 200.0f, 30.0f };
+    /* track_x = 100 + 6 = 106, track_w = 200 - 12 = 188 */
+    float track_x = 100.0f + FORGE_UI_SL_THUMB_WIDTH * 0.5f;
+    float track_w = 200.0f - FORGE_UI_SL_THUMB_WIDTH;
+    float cy = 25.0f;
+
+    /* Click at 75% of the track with range [10, 50] */
+    float click_x = track_x + track_w * 0.75f;
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, click_x, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 10.0f, 50.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press */
+    forge_ui_ctx_begin(&ctx, click_x, cy, true);
+    forge_ui_ctx_slider(&ctx, 1, &val, 10.0f, 50.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Expected: 10 + 0.75 * (50 - 10) = 10 + 30 = 40 */
+    ASSERT_NEAR(val, 40.0f, 0.5f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_null_ctx(void)
+{
+    TEST("ctx_slider: NULL ctx returns false");
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    bool changed = forge_ui_ctx_slider(NULL, 1, &val, 0.0f, 1.0f, rect);
+    ASSERT_TRUE(!changed);
+}
+
+static void test_slider_null_value(void)
+{
+    TEST("ctx_slider: NULL value returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+    bool changed = forge_ui_ctx_slider(&ctx, 1, NULL, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_id_zero_rejected(void)
+{
+    TEST("ctx_slider: ID 0 (FORGE_UI_ID_NONE) returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+    bool changed = forge_ui_ctx_slider(&ctx, FORGE_UI_ID_NONE, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_null_atlas(void)
+{
+    TEST("ctx_slider: NULL atlas returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+
+    const ForgeUiFontAtlas *saved = ctx.atlas;
+    ctx.atlas = NULL;
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    bool changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    ctx.atlas = saved;
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_invalid_range(void)
+{
+    TEST("ctx_slider: max <= min returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+
+    /* Equal range */
+    bool changed = forge_ui_ctx_slider(&ctx, 1, &val, 5.0f, 5.0f, rect);
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    /* Inverted range */
+    changed = forge_ui_ctx_slider(&ctx, 1, &val, 10.0f, 5.0f, rect);
+    ASSERT_TRUE(!changed);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_nan_range_rejected(void)
+{
+    TEST("ctx_slider: NaN in range returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float nan_val = NAN;
+
+    forge_ui_ctx_begin(&ctx, 50.0f, 25.0f, false);
+
+    /* NaN min */
+    bool changed = forge_ui_ctx_slider(&ctx, 1, &val, nan_val, 1.0f, rect);
+    ASSERT_TRUE(!changed);
+
+    /* NaN max */
+    changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, nan_val, rect);
+    ASSERT_TRUE(!changed);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_narrow_rect(void)
+{
+    TEST("ctx_slider: rect narrower than thumb width still works");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    /* Width of 5 is less than FORGE_UI_SL_THUMB_WIDTH (12) */
+    ForgeUiRect rect = { 10.0f, 10.0f, 5.0f, 30.0f };
+
+    forge_ui_ctx_begin(&ctx, 0.0f, 0.0f, false);
+    bool changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Should emit draw data (track + thumb) without crashing */
+    ASSERT_TRUE(!changed);
+    ASSERT_EQ_INT(ctx.vertex_count, 8);
+    ASSERT_EQ_INT(ctx.index_count, 12);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_normal_color(void)
+{
+    TEST("ctx_slider: normal state uses normal thumb color");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    /* Mouse far away */
+    forge_ui_ctx_begin(&ctx, 300.0f, 300.0f, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* First 4 vertices = track, next 4 = thumb */
+    ASSERT_TRUE(ctx.vertex_count >= 8);
+    ASSERT_TRUE(ctx.vertices[4].r == FORGE_UI_SL_NORMAL_R);
+    ASSERT_TRUE(ctx.vertices[4].g == FORGE_UI_SL_NORMAL_G);
+    ASSERT_TRUE(ctx.vertices[4].b == FORGE_UI_SL_NORMAL_B);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_hot_color(void)
+{
+    TEST("ctx_slider: hot state uses hot thumb color");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 100.0f, cy = 25.0f;
+
+    /* Frame 0: become hot */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 1: now hot, check thumb color */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertices[4].r == FORGE_UI_SL_HOT_R);
+    ASSERT_TRUE(ctx.vertices[4].g == FORGE_UI_SL_HOT_G);
+    ASSERT_TRUE(ctx.vertices[4].b == FORGE_UI_SL_HOT_B);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_active_color(void)
+{
+    TEST("ctx_slider: active state uses active thumb color");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 100.0f, cy = 25.0f;
+
+    /* Hover */
+    forge_ui_ctx_begin(&ctx, cx, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press (active) */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertices[4].r == FORGE_UI_SL_ACTIVE_R);
+    ASSERT_TRUE(ctx.vertices[4].g == FORGE_UI_SL_ACTIVE_G);
+    ASSERT_TRUE(ctx.vertices[4].b == FORGE_UI_SL_ACTIVE_B);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_track_uses_white_uv(void)
+{
+    TEST("ctx_slider: track rect uses atlas white_uv");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+
+    forge_ui_ctx_begin(&ctx, 300.0f, 300.0f, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* First 4 vertices are the track rect */
+    float expected_u = (test_atlas.white_uv.u0 + test_atlas.white_uv.u1) * 0.5f;
+    float expected_v = (test_atlas.white_uv.v0 + test_atlas.white_uv.v1) * 0.5f;
+    ASSERT_TRUE(ctx.vertex_count >= 4);
+    for (int i = 0; i < 4; i++) {
+        ASSERT_TRUE(ctx.vertices[i].uv_u == expected_u);
+        ASSERT_TRUE(ctx.vertices[i].uv_v == expected_v);
+    }
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_edge_trigger(void)
+{
+    TEST("ctx_slider: held mouse dragged onto slider does NOT activate");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.5f;
+    ForgeUiRect rect = { 10.0f, 10.0f, 200.0f, 30.0f };
+    float cx = 100.0f, cy = 25.0f;
+
+    /* Frame 0: mouse held away */
+    forge_ui_ctx_begin(&ctx, 400.0f, 400.0f, true);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 1: still held, dragged onto slider */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_U32(ctx.active, FORGE_UI_ID_NONE);
+    /* Value should not have changed */
+    ASSERT_NEAR(val, 0.5f, 0.001f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_slider_returns_false_when_same_value(void)
+{
+    TEST("ctx_slider: returns false when drag produces same value");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float val = 0.0f;
+    ForgeUiRect rect = { 100.0f, 10.0f, 200.0f, 30.0f };
+    float track_x = 100.0f + FORGE_UI_SL_THUMB_WIDTH * 0.5f;
+    float cy = 25.0f;
+
+    /* Hover at far left */
+    forge_ui_ctx_begin(&ctx, track_x, cy, false);
+    forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Press at far left, val should become 0.0 = same as current */
+    forge_ui_ctx_begin(&ctx, track_x, cy, true);
+    bool changed = forge_ui_ctx_slider(&ctx, 1, &val, 0.0f, 1.0f, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(!changed);
+    ASSERT_NEAR(val, 0.0f, 0.001f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── Button NULL atlas test ────────────────────────────────────────────── */
+
+static void test_button_null_atlas(void)
+{
+    TEST("ctx_button: NULL atlas returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 50.0f, 30.0f, false);
+
+    const ForgeUiFontAtlas *saved = ctx.atlas;
+    ctx.atlas = NULL;
+
+    ForgeUiRect rect = { 10.0f, 10.0f, 100.0f, 40.0f };
+    bool clicked = forge_ui_ctx_button(&ctx, 1, "Btn", rect);
+    ASSERT_TRUE(!clicked);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+
+    ctx.atlas = saved;
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -1159,6 +2058,7 @@ int main(int argc, char *argv[])
     /* Multiple buttons */
     test_multiple_buttons_last_hot_wins();
     test_multiple_buttons_independent();
+    test_overlap_press_last_drawn_wins();
 
     /* Draw data verification */
     test_button_rect_uses_white_uv();
@@ -1183,6 +2083,44 @@ int main(int argc, char *argv[])
     test_emit_rect_null_atlas();
     test_emit_text_layout_null();
     test_emit_text_layout_empty();
+
+    /* Checkboxes */
+    test_checkbox_emits_draw_data();
+    test_checkbox_checked_emits_inner_fill();
+    test_checkbox_toggle_sequence();
+    test_checkbox_no_toggle_release_outside();
+    test_checkbox_null_ctx();
+    test_checkbox_null_label();
+    test_checkbox_null_value();
+    test_checkbox_id_zero_rejected();
+    test_checkbox_null_atlas();
+    test_checkbox_normal_color();
+    test_checkbox_hot_color();
+    test_checkbox_active_color();
+    test_checkbox_edge_trigger();
+
+    /* Sliders */
+    test_slider_emits_draw_data();
+    test_slider_value_snap_on_click();
+    test_slider_drag_outside_bounds();
+    test_slider_release_clears_active();
+    test_slider_value_mapping();
+    test_slider_null_ctx();
+    test_slider_null_value();
+    test_slider_id_zero_rejected();
+    test_slider_null_atlas();
+    test_slider_invalid_range();
+    test_slider_nan_range_rejected();
+    test_slider_narrow_rect();
+    test_slider_normal_color();
+    test_slider_hot_color();
+    test_slider_active_color();
+    test_slider_track_uses_white_uv();
+    test_slider_edge_trigger();
+    test_slider_returns_false_when_same_value();
+
+    /* Button NULL atlas (audit fix) */
+    test_button_null_atlas();
 
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",
             test_count, pass_count, fail_count);

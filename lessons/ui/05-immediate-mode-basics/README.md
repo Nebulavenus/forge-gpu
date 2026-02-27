@@ -413,9 +413,11 @@ text layout, and interactive controls.
 
 ## What's next
 
-The next UI lesson adds checkboxes, sliders, and a layout system that
-automatically positions widgets in rows and columns — building on the
-hot/active state machine and draw data generation from this lesson.
+[UI Lesson 06 — Checkboxes and Sliders](../06-checkboxes-and-sliders/)
+adds controls that modify external mutable state: checkboxes toggle a
+`bool *value` on click using the same state machine from this lesson, and
+sliders introduce drag interaction where active persists as the mouse
+moves outside the widget bounds.
 
 ## Exercises
 

@@ -80,6 +80,76 @@
 #define FORGE_UI_BTN_TEXT_B     0.95f
 #define FORGE_UI_BTN_TEXT_A     1.00f
 
+/* ── Checkbox style ────────────────────────────────────────────────────── */
+
+/* Checkbox box dimensions.  The box is a square drawn at the left edge
+ * of the widget rect, vertically centered.  The label text is drawn to
+ * the right of the box with a small gap. */
+#define FORGE_UI_CB_BOX_SIZE     18.0f  /* checkbox square side length in pixels */
+#define FORGE_UI_CB_INNER_PAD     3.0f  /* padding between box edge and check fill */
+#define FORGE_UI_CB_LABEL_GAP     8.0f  /* horizontal gap between box and label */
+
+/* Box outline colors by state (RGBA floats in [0, 1]) */
+#define FORGE_UI_CB_NORMAL_R    0.30f
+#define FORGE_UI_CB_NORMAL_G    0.30f
+#define FORGE_UI_CB_NORMAL_B    0.35f
+#define FORGE_UI_CB_NORMAL_A    1.00f
+
+#define FORGE_UI_CB_HOT_R       0.40f
+#define FORGE_UI_CB_HOT_G       0.40f
+#define FORGE_UI_CB_HOT_B       0.48f
+#define FORGE_UI_CB_HOT_A       1.00f
+
+#define FORGE_UI_CB_ACTIVE_R    0.22f
+#define FORGE_UI_CB_ACTIVE_G    0.22f
+#define FORGE_UI_CB_ACTIVE_B    0.26f
+#define FORGE_UI_CB_ACTIVE_A    1.00f
+
+/* Inner fill color when checked (accent cyan) */
+#define FORGE_UI_CB_CHECK_R     0.31f
+#define FORGE_UI_CB_CHECK_G     0.76f
+#define FORGE_UI_CB_CHECK_B     0.97f
+#define FORGE_UI_CB_CHECK_A     1.00f
+
+/* Checkbox label text color (near-white, matches button text) */
+#define FORGE_UI_CB_TEXT_R      0.95f
+#define FORGE_UI_CB_TEXT_G      0.95f
+#define FORGE_UI_CB_TEXT_B      0.95f
+#define FORGE_UI_CB_TEXT_A      1.00f
+
+/* ── Slider style ──────────────────────────────────────────────────────── */
+
+/* Slider track and thumb dimensions.  The track is a thin horizontal bar
+ * centered vertically in the widget rect.  The thumb slides along the
+ * track to indicate the current value.  The "effective track" (the range
+ * the thumb center can travel) is inset by half the thumb width on each
+ * side, so the thumb never overhangs the rect edges. */
+#define FORGE_UI_SL_TRACK_HEIGHT   4.0f   /* thin track bar height */
+#define FORGE_UI_SL_THUMB_WIDTH   12.0f   /* thumb rectangle width */
+#define FORGE_UI_SL_THUMB_HEIGHT  22.0f   /* thumb rectangle height */
+
+/* Track background color (dark gray) */
+#define FORGE_UI_SL_TRACK_R     0.30f
+#define FORGE_UI_SL_TRACK_G     0.30f
+#define FORGE_UI_SL_TRACK_B     0.35f
+#define FORGE_UI_SL_TRACK_A     1.00f
+
+/* Thumb colors by state */
+#define FORGE_UI_SL_NORMAL_R    0.50f
+#define FORGE_UI_SL_NORMAL_G    0.50f
+#define FORGE_UI_SL_NORMAL_B    0.58f
+#define FORGE_UI_SL_NORMAL_A    1.00f
+
+#define FORGE_UI_SL_HOT_R       0.60f
+#define FORGE_UI_SL_HOT_G       0.60f
+#define FORGE_UI_SL_HOT_B       0.72f
+#define FORGE_UI_SL_HOT_A       1.00f
+
+#define FORGE_UI_SL_ACTIVE_R    0.31f
+#define FORGE_UI_SL_ACTIVE_G    0.76f
+#define FORGE_UI_SL_ACTIVE_B    0.97f
+#define FORGE_UI_SL_ACTIVE_A    1.00f
+
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 /* A simple rectangle for widget bounds. */
@@ -126,8 +196,7 @@ typedef struct ForgeUiContext {
     Uint32 hot;           /* widget under the cursor (or FORGE_UI_ID_NONE) */
     Uint32 active;        /* widget being pressed (or FORGE_UI_ID_NONE) */
 
-    /* Used internally to track hot candidates within a single frame */
-    Uint32 next_hot;
+    Uint32 next_hot;      /* hot candidate for this frame (resolved in ctx_end) */
 
     /* Draw data (reset each frame by forge_ui_ctx_begin) */
     ForgeUiVertex *vertices;   /* dynamically growing vertex buffer */
@@ -176,6 +245,61 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
                                        Uint32 id,
                                        const char *text,
                                        ForgeUiRect rect);
+
+/* Draw a checkbox with a toggle box and text label.
+ * Toggles *value on click (mouse released over the widget).
+ * Returns true on the frame the value changes.
+ *
+ * The checkbox uses the same hot/active state machine as buttons:
+ * it becomes hot when the cursor is over the widget rect, active on
+ * mouse press, and toggles *value when the mouse is released while
+ * still over the widget.
+ *
+ * Draw elements: an outer box rect (white_uv, color varies by state),
+ * a filled inner square when *value is true (accent color), and the
+ * label text positioned to the right of the box.
+ *
+ * id:    unique non-zero identifier for this widget
+ * label: text drawn to the right of the checkbox box
+ * value: pointer to the boolean state (toggled on click)
+ * rect:  bounding rectangle for the entire widget (box + label area) */
+static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
+                                          Uint32 id,
+                                          const char *label,
+                                          bool *value,
+                                          ForgeUiRect rect);
+
+/* Draw a horizontal slider with a track and draggable thumb.
+ * Updates *value while the slider is being dragged.
+ * Returns true on frames where the value changes.
+ *
+ * The slider introduces drag interaction: when the mouse is pressed on
+ * the slider (anywhere on the track or thumb), the slider becomes active
+ * and the value snaps to the click position.  While active, the value
+ * tracks the mouse x position even if the cursor moves outside the
+ * widget bounds.  The value is always clamped to [min_val, max_val].
+ *
+ * Value mapping (pixel position to user value):
+ *   t = clamp((mouse_x - track_x) / track_w, 0, 1)
+ *   *value = min_val + t * (max_val - min_val)
+ *
+ * Inverse mapping (user value to thumb position):
+ *   t = (*value - min_val) / (max_val - min_val)
+ *   thumb_x = track_x + t * track_w
+ *
+ * Draw elements: a thin horizontal track rect (white_uv), a thumb rect
+ * that slides along the track (white_uv, color varies by state).
+ *
+ * id:      unique non-zero identifier for this widget
+ * value:   pointer to the float value (updated during drag)
+ * min_val: minimum value (left edge of track)
+ * max_val: maximum value (right edge of track), must be > min_val
+ * rect:    bounding rectangle for the slider track/thumb area */
+static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
+                                        Uint32 id,
+                                        float *value,
+                                        float min_val, float max_val,
+                                        ForgeUiRect rect);
 
 /* ── Internal Helpers ───────────────────────────────────────────────────── */
 
@@ -437,7 +561,7 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
                                        const char *text,
                                        ForgeUiRect rect)
 {
-    if (!ctx || !text || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !text || id == FORGE_UI_ID_NONE) return false;
 
     bool clicked = false;
 
@@ -454,9 +578,11 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
     /* Active transition: on the frame the mouse button transitions from up
      * to down (press edge), if this widget is hot, it becomes active.
      * Using edge detection prevents a held mouse dragged onto a button
-     * from falsely activating it. */
+     * from falsely activating it.  When overlapping widgets share a click
+     * point, each hovered widget overwrites ctx->active in draw order so
+     * the last-drawn (topmost) widget wins. */
     bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
-    if (ctx->active == FORGE_UI_ID_NONE && mouse_pressed && ctx->hot == id) {
+    if (mouse_pressed && ctx->next_hot == id) {
         ctx->active = id;
     }
 
@@ -521,6 +647,214 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
                        FORGE_UI_BTN_TEXT_B, FORGE_UI_BTN_TEXT_A);
 
     return clicked;
+}
+
+static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
+                                          Uint32 id,
+                                          const char *label,
+                                          bool *value,
+                                          ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !label || !value || id == FORGE_UI_ID_NONE) return false;
+
+    bool toggled = false;
+
+    /* ── Hit testing ──────────────────────────────────────────────────── */
+    /* The hit area covers the entire widget rect (box + label region).
+     * This gives users a generous click target -- they can click on the
+     * label text, not just the small box. */
+    bool mouse_over = forge_ui__rect_contains(rect, ctx->mouse_x, ctx->mouse_y);
+    if (mouse_over) {
+        ctx->next_hot = id;
+    }
+
+    /* ── State transitions ────────────────────────────────────────────── */
+    /* Edge-triggered: activation fires once on the press edge (up→down).
+     * This prevents a held mouse dragged onto the checkbox from toggling
+     * it, and lets the user cancel by dragging off before releasing.
+     * Overlapping widgets overwrite ctx->active in draw order so the
+     * last-drawn (topmost) widget wins. */
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    if (mouse_pressed && ctx->next_hot == id) {
+        ctx->active = id;
+    }
+
+    /* Toggle on release: flip *value when the mouse is released while
+     * still over the widget and it was the active widget. */
+    if (ctx->active == id && !ctx->mouse_down) {
+        if (mouse_over) {
+            *value = !(*value);
+            toggled = true;
+        }
+        ctx->active = FORGE_UI_ID_NONE;
+    }
+
+    /* ── Box color reflects interaction state ─────────────────────────── */
+    float box_r, box_g, box_b, box_a;
+    if (ctx->active == id) {
+        box_r = FORGE_UI_CB_ACTIVE_R;  box_g = FORGE_UI_CB_ACTIVE_G;
+        box_b = FORGE_UI_CB_ACTIVE_B;  box_a = FORGE_UI_CB_ACTIVE_A;
+    } else if (ctx->hot == id) {
+        box_r = FORGE_UI_CB_HOT_R;  box_g = FORGE_UI_CB_HOT_G;
+        box_b = FORGE_UI_CB_HOT_B;  box_a = FORGE_UI_CB_HOT_A;
+    } else {
+        box_r = FORGE_UI_CB_NORMAL_R;  box_g = FORGE_UI_CB_NORMAL_G;
+        box_b = FORGE_UI_CB_NORMAL_B;  box_a = FORGE_UI_CB_NORMAL_A;
+    }
+
+    /* ── Compute box position (vertically centered in widget rect) ────── */
+    float box_x = rect.x;
+    float box_y = rect.y + (rect.h - FORGE_UI_CB_BOX_SIZE) * 0.5f;
+    ForgeUiRect box_rect = { box_x, box_y,
+                             FORGE_UI_CB_BOX_SIZE, FORGE_UI_CB_BOX_SIZE };
+
+    /* ── Outer box — border with hover feedback via box color ────────── */
+    forge_ui__emit_rect(ctx, box_rect, box_r, box_g, box_b, box_a);
+
+    /* ── Inner fill — solid rect rather than a glyph keeps the renderer
+     *    purely quad-based with no dedicated checkmark in the atlas ──── */
+    if (*value) {
+        ForgeUiRect inner = {
+            box_x + FORGE_UI_CB_INNER_PAD,
+            box_y + FORGE_UI_CB_INNER_PAD,
+            FORGE_UI_CB_BOX_SIZE - 2.0f * FORGE_UI_CB_INNER_PAD,
+            FORGE_UI_CB_BOX_SIZE - 2.0f * FORGE_UI_CB_INNER_PAD
+        };
+        forge_ui__emit_rect(ctx, inner,
+                            FORGE_UI_CB_CHECK_R, FORGE_UI_CB_CHECK_G,
+                            FORGE_UI_CB_CHECK_B, FORGE_UI_CB_CHECK_A);
+    }
+
+    /* ── Label baseline alignment ────────────────────────────────────── */
+    /* The font origin is at the baseline, not the top of the em square.
+     * Offset by the ascender so text sits visually centered in the rect. */
+    float scale = 0.0f;
+    float ascender_px = 0.0f;
+    if (ctx->atlas->units_per_em > 0) {
+        scale = ctx->atlas->pixel_height / (float)ctx->atlas->units_per_em;
+        ascender_px = (float)ctx->atlas->ascender * scale;
+    }
+    (void)scale;  /* only ascender_px is needed for baseline placement */
+
+    float label_x = box_x + FORGE_UI_CB_BOX_SIZE + FORGE_UI_CB_LABEL_GAP;
+    float label_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f
+                    + ascender_px;
+
+    forge_ui_ctx_label(ctx, label, label_x, label_y,
+                       FORGE_UI_CB_TEXT_R, FORGE_UI_CB_TEXT_G,
+                       FORGE_UI_CB_TEXT_B, FORGE_UI_CB_TEXT_A);
+
+    return toggled;
+}
+
+static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
+                                        Uint32 id,
+                                        float *value,
+                                        float min_val, float max_val,
+                                        ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !value || id == FORGE_UI_ID_NONE) return false;
+    if (!(max_val > min_val)) return false;  /* also rejects NaN */
+
+    bool changed = false;
+
+    /* ── Hit testing ──────────────────────────────────────────────────── */
+    /* The hit area covers the entire widget rect.  Clicking anywhere on
+     * the track (not just the thumb) activates the slider and snaps the
+     * value to the click position. */
+    bool mouse_over = forge_ui__rect_contains(rect, ctx->mouse_x, ctx->mouse_y);
+    if (mouse_over) {
+        ctx->next_hot = id;
+    }
+
+    /* ── State transitions ────────────────────────────────────────────── */
+    /* Edge-triggered: activation fires once on the press edge (up→down).
+     * Subsequent frames update the value via the drag path below, without
+     * re-entering the activation branch.  Overlapping widgets overwrite
+     * ctx->active in draw order so the last-drawn (topmost) widget wins. */
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    if (mouse_pressed && ctx->next_hot == id) {
+        ctx->active = id;
+    }
+
+    /* ── Effective track geometry ─────────────────────────────────────── */
+    /* The thumb center can travel from half a thumb width inside the left
+     * edge to half a thumb width inside the right edge.  This keeps the
+     * thumb fully within the widget rect at both extremes.  Clamp to
+     * zero so a rect narrower than the thumb does not produce a negative
+     * range. */
+    float track_x = rect.x + FORGE_UI_SL_THUMB_WIDTH * 0.5f;
+    float track_w = rect.w - FORGE_UI_SL_THUMB_WIDTH;
+    if (track_w < 0.0f) track_w = 0.0f;
+
+    /* ── Value update while active (drag interaction) ─────────────────── */
+    /* While the mouse button is held and this slider is active, map the
+     * mouse x position to a normalized t in [0, 1], then to the user
+     * value.  This update happens regardless of whether the cursor is
+     * inside the widget bounds -- that is the key property of drag
+     * interaction.  The value is always clamped to [min_val, max_val]. */
+    if (ctx->active == id && ctx->mouse_down) {
+        float t = 0.0f;
+        if (track_w > 0.0f) {
+            t = (ctx->mouse_x - track_x) / track_w;
+        }
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        float new_val = min_val + t * (max_val - min_val);
+        if (new_val != *value) {
+            *value = new_val;
+            changed = true;
+        }
+    }
+
+    /* ── Release: clear active ────────────────────────────────────────── */
+    /* Unlike button, there is no click event to detect -- the slider's
+     * purpose is the continuous value update during drag.  On release we
+     * simply clear active so other widgets can become active again. */
+    if (ctx->active == id && !ctx->mouse_down) {
+        ctx->active = FORGE_UI_ID_NONE;
+    }
+
+    /* ── Re-derive t from *value for thumb positioning ──────────────── */
+    /* Use the canonical *value (not the drag t) so the thumb reflects any
+     * clamping or quantization the caller may apply between frames. */
+    float t = (*value - min_val) / (max_val - min_val);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    /* ── Track — thin bar so the thumb visually protrudes above/below ── */
+    float track_draw_y = rect.y + (rect.h - FORGE_UI_SL_TRACK_HEIGHT) * 0.5f;
+    ForgeUiRect track_rect = { rect.x, track_draw_y,
+                               rect.w, FORGE_UI_SL_TRACK_HEIGHT };
+    forge_ui__emit_rect(ctx, track_rect,
+                        FORGE_UI_SL_TRACK_R, FORGE_UI_SL_TRACK_G,
+                        FORGE_UI_SL_TRACK_B, FORGE_UI_SL_TRACK_A);
+
+    /* ── Choose thumb color based on state ────────────────────────────── */
+    float th_r, th_g, th_b, th_a;
+    if (ctx->active == id) {
+        th_r = FORGE_UI_SL_ACTIVE_R;  th_g = FORGE_UI_SL_ACTIVE_G;
+        th_b = FORGE_UI_SL_ACTIVE_B;  th_a = FORGE_UI_SL_ACTIVE_A;
+    } else if (ctx->hot == id) {
+        th_r = FORGE_UI_SL_HOT_R;  th_g = FORGE_UI_SL_HOT_G;
+        th_b = FORGE_UI_SL_HOT_B;  th_a = FORGE_UI_SL_HOT_A;
+    } else {
+        th_r = FORGE_UI_SL_NORMAL_R;  th_g = FORGE_UI_SL_NORMAL_G;
+        th_b = FORGE_UI_SL_NORMAL_B;  th_a = FORGE_UI_SL_NORMAL_A;
+    }
+
+    /* ── Emit thumb rectangle ─────────────────────────────────────────── */
+    /* The thumb center is at track_x + t * track_w.  Subtract half the
+     * thumb width to get the left edge. */
+    float thumb_cx = track_x + t * track_w;
+    float thumb_x = thumb_cx - FORGE_UI_SL_THUMB_WIDTH * 0.5f;
+    float thumb_y = rect.y + (rect.h - FORGE_UI_SL_THUMB_HEIGHT) * 0.5f;
+    ForgeUiRect thumb_rect = { thumb_x, thumb_y,
+                               FORGE_UI_SL_THUMB_WIDTH,
+                               FORGE_UI_SL_THUMB_HEIGHT };
+    forge_ui__emit_rect(ctx, thumb_rect, th_r, th_g, th_b, th_a);
+
+    return changed;
 }
 
 #endif /* FORGE_UI_CTX_H */

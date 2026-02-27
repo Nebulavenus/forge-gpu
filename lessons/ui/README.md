@@ -10,7 +10,7 @@ UI lessons teach how to build the **data layer** for a game or tool UI:
 - Parse TrueType fonts and extract glyph outlines
 - Rasterize glyphs into bitmap atlases
 - Lay out text with proper metrics, kerning, and line breaking
-- Build immediate-mode controls (buttons, sliders, text input, panels)
+- Build immediate-mode controls (buttons, checkboxes, sliders, text input, panels)
 - Generate vertex, index, and texture data ready for any renderer
 
 The UI library produces **textures, vertices, indices, and UVs** — it contains
@@ -50,6 +50,7 @@ earlier ones. Reusable code moves into the shared UI library at
 | 03 | [Font Atlas](03-font-atlas/) | Rectangle packing, shelf algorithm, atlas sizing, UV coordinates, per-glyph metadata, padding for texture bleed, white pixel technique |
 | 04 | [Text Layout](04-text-layout/) | Pen/cursor model, advance widths, bearing offsets, baseline positioning, quad generation, index buffers, line breaking, text alignment, ForgeUiVertex format |
 | 05 | [Immediate-Mode Basics](05-immediate-mode-basics/) | Retained vs immediate mode, declare-then-draw loop, ForgeUiContext, hot/active state machine, hit testing, labels, buttons, white pixel technique |
+| 06 | [Checkboxes and Sliders](06-checkboxes-and-sliders/) | External mutable state, checkbox toggle, slider drag interaction, value mapping (pixel to normalized to user value), active persistence outside widget bounds |
 
 ## Building
 

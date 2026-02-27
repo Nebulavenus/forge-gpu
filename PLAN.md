@@ -109,8 +109,8 @@ vertices, indices, UVs) with no GPU dependency.
 ### Immediate-Mode UI
 
 - [x] **UI Lesson 05 — Immediate-Mode Basics** — Retained vs immediate-mode UI; frame-based widget declaration; widget identity (ID generation); hot/active state tracking; input routing (mouse position, clicks)
-- [ ] **UI Lesson 06 — Buttons and Checkboxes** — Clickable button with hover/press states; checkbox toggle; generating quads with background color and text label; hit testing with bounding rects
-- [ ] **UI Lesson 07 — Sliders and Text Input** — Draggable slider with value range; text input field with cursor and selection; character insertion and deletion; generating draw data for interactive controls
+- [x] **UI Lesson 06 — Checkboxes and Sliders** — External mutable state; checkbox toggle with bool*; slider drag interaction; value mapping (pixel to normalized to user value); active persistence outside widget bounds; track/thumb/value-label draw elements
+- [ ] **UI Lesson 07 — Text Input** — Text input field with cursor and selection; character insertion and deletion; generating draw data for interactive controls
 
 ### Layout and Containers
 

@@ -145,8 +145,11 @@ from .ui_diagrams import (
     diagram_antialiasing_comparison,
     diagram_baseline_metrics,
     diagram_button_draw_data,
+    diagram_checkbox_anatomy,
+    diagram_checkbox_vs_button,
     diagram_contour_reconstruction,
     diagram_declare_then_draw,
+    diagram_drag_outside_bounds,
     diagram_endianness,
     diagram_glyph_anatomy,
     diagram_hit_testing,
@@ -157,8 +160,12 @@ from .ui_diagrams import (
     diagram_quad_vertex_layout,
     diagram_scanline_crossings,
     diagram_shelf_packing,
+    diagram_slider_anatomy,
+    diagram_slider_state_colors,
+    diagram_slider_value_mapping,
     diagram_ttf_file_structure,
     diagram_uv_coordinates,
+    diagram_widget_interaction_comparison,
     diagram_winding_direction,
 )
 
@@ -372,6 +379,15 @@ DIAGRAMS = {
         ("button_draw_data.png", diagram_button_draw_data),
         ("hit_testing.png", diagram_hit_testing),
     ],
+    "ui/06": [
+        ("checkbox_anatomy.png", diagram_checkbox_anatomy),
+        ("checkbox_vs_button.png", diagram_checkbox_vs_button),
+        ("slider_anatomy.png", diagram_slider_anatomy),
+        ("slider_value_mapping.png", diagram_slider_value_mapping),
+        ("drag_outside_bounds.png", diagram_drag_outside_bounds),
+        ("slider_state_colors.png", diagram_slider_state_colors),
+        ("widget_interaction_comparison.png", diagram_widget_interaction_comparison),
+    ],
 }
 
 # Full lesson directory names for display
@@ -412,6 +428,7 @@ LESSON_NAMES = {
     "ui/03": "ui/03-font-atlas",
     "ui/04": "ui/04-text-layout",
     "ui/05": "ui/05-immediate-mode-basics",
+    "ui/06": "ui/06-checkboxes-and-sliders",
 }
 
 
