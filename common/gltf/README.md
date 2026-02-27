@@ -36,8 +36,13 @@ if (forge_gltf_load("model.gltf", &scene)) {
   interleaved and ready for GPU upload
 - **`ForgeGltfPrimitive`** -- Vertices + indices sharing one material (one draw call)
 - **`ForgeGltfMesh`** -- A named collection of primitives
-- **`ForgeGltfMaterial`** -- Base color (RGBA) + optional texture file path
-- **`ForgeGltfNode`** -- Scene hierarchy node with TRS transform and mesh reference
+- **`ForgeGltfMaterial`** -- Material properties: base color (RGBA), texture
+  path, alpha mode (opaque/mask/blend), alpha cutoff, double-sided flag,
+  optional normal map path
+- **`ForgeGltfAlphaMode`** -- Enum: `FORGE_GLTF_ALPHA_OPAQUE`, `FORGE_GLTF_ALPHA_MASK`,
+  `FORGE_GLTF_ALPHA_BLEND`
+- **`ForgeGltfNode`** -- Scene hierarchy node with name, TRS transform, and
+  mesh reference
 - **`ForgeGltfBuffer`** -- A loaded binary buffer (`.bin` file)
 - **`ForgeGltfScene`** -- Top-level container holding all parsed data
 
@@ -93,6 +98,8 @@ parser preserves index buffers. Each primitive has:
 
 - `vertices` / `vertex_count` -- vertex data for GPU upload
 - `indices` / `index_count` / `index_stride` -- index data (16-bit or 32-bit)
+- `has_uvs` -- whether TEXCOORD_0 was present in the source data
+- `tangents` / `has_tangents` -- optional vec4 tangent vectors for normal mapping
 
 Use `SDL_DrawGPUIndexedPrimitives` for rendering, which reduces memory usage
 and improves GPU vertex cache performance.
@@ -104,6 +111,11 @@ Each primitive can reference a material with:
 - **`base_color[4]`** -- RGBA color factor (default: opaque white)
 - **`texture_path`** -- File path to the base color texture (empty if none)
 - **`has_texture`** -- Whether a texture path was resolved
+- **`normal_map_path`** -- File path to the normal map texture (empty if none)
+- **`has_normal_map`** -- Whether a normal map was resolved
+- **`alpha_mode`** -- `OPAQUE`, `MASK`, or `BLEND` (default: opaque)
+- **`alpha_cutoff`** -- Threshold for alpha mask mode (default: 0.5)
+- **`double_sided`** -- Whether to render both faces
 
 The parser stores file paths, not GPU textures. The caller loads and creates
 GPU textures however they prefer -- see Lesson 09 for a full example.
@@ -112,10 +124,14 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 
 - **Meshes** with multiple primitives (one per material)
 - **Materials** with PBR base color factor and base color texture
-- **Scene hierarchy** with parent-child node relationships
+- **Alpha modes** (OPAQUE, MASK, BLEND) with configurable cutoff
+- **Normal map textures** (`normalTexture`)
+- **Double-sided materials**
+- **`KHR_materials_transmission`** extension (approximated as blend)
+- **Scene hierarchy** with parent-child node relationships and named nodes
 - **TRS transforms** (translation, rotation, scale) and raw matrices
 - **Indexed geometry** with 16-bit and 32-bit indices
-- **Vertex attributes**: POSITION, NORMAL, TEXCOORD_0
+- **Vertex attributes**: POSITION, NORMAL, TEXCOORD_0, TANGENT
 - **Multiple binary buffers** referenced by URI
 - **Accessor validation** (bounds checking, component type validation)
 
@@ -130,6 +146,9 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 | `FORGE_GLTF_MAX_IMAGES` | 128 | Maximum image references |
 | `FORGE_GLTF_MAX_BUFFERS` | 16 | Maximum binary buffer files |
 | `FORGE_GLTF_MAX_CHILDREN` | 256 | Maximum children per node |
+| `FORGE_GLTF_PATH_SIZE` | 512 | Maximum file path length |
+| `FORGE_GLTF_NAME_SIZE` | 64 | Maximum node/material name length |
+| `FORGE_GLTF_DEFAULT_ALPHA_CUTOFF` | 0.5 | Default alpha mask threshold |
 
 These limits cover typical models (CesiumMilkTruck: 6 nodes; VirtualCity:
 234 nodes, 167 materials).

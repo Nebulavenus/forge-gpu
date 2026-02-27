@@ -43,9 +43,12 @@ in the shader.
 
 - **Interpolation:** `forge_lerpf(a, b, t)` — scalar lerp
 - **Bilinear interpolation:** `forge_bilerpf(c00, c10, c01, c11, tx, ty)` — blend 4 grid values
-- **Logarithm:** `forge_log2f(x)` — base-2 logarithm (mip level count)
-- **Clamping:** `forge_clampf(x, lo, hi)` — clamp scalar to range
 - **Trilinear interpolation:** `forge_trilerpf(c000..c111, tx, ty, tz)` — blend 8 cube corners
+- **Logarithm:** `forge_log2f(x)` — base-2 logarithm (mip level count)
+- **Trig wrappers:** `forge_sinf(x)`, `forge_cosf(x)` — thin wrappers for sinf/cosf
+- **Clamping:** `forge_clampf(x, lo, hi)` — clamp scalar to range
+- **Comparison:** `forge_approx_equalf(a, b, tolerance)` — absolute tolerance,
+  `forge_rel_equalf(a, b, tolerance)` — relative tolerance
 
 ### Vector Operations
 
@@ -60,6 +63,8 @@ Each vector type supports:
 - **Bilinear interpolation:** `vec3_bilerp(...)`, `vec4_bilerp(...)` — blend 4 grid values in 2D
 - **Trilinear interpolation:** `vec3_trilerp(...)`, `vec4_trilerp(...)` — blend 8 cube corners in 3D
 - **Cross product:** `vec3_cross(a, b)` (3D only)
+- **Negate:** `vec3_negate(v)` (3D)
+- **Reflect:** `vec3_reflect(incident, normal)` — reflect vector about a surface normal (3D)
 
 ### mat2 Operations
 
@@ -104,7 +109,74 @@ Each vector type supports:
   - `quat_from_euler(yaw, pitch, roll)` / `quat_to_euler(q)` — intrinsic Y-X-Z order
   - `quat_to_mat4(q)` / `quat_from_mat4(m)` — quaternion to/from rotation matrix
 - **Interpolation:** `quat_slerp(a, b, t)`, `quat_nlerp(a, b, t)`
+- **Direction extraction:** `quat_forward(q)`, `quat_right(q)`, `quat_up(q)` — extract basis vectors
+- **View matrix:** `mat4_view_from_quat(position, orientation)` — camera view from quaternion
 - **Rodrigues:** `vec3_rotate_axis_angle(v, axis, angle)` — rotate vector around arbitrary axis
+
+### Color Space Transforms
+
+Functions for converting between color spaces and applying tone mapping:
+
+- **sRGB ↔ linear:** `color_srgb_to_linear(s)`, `color_linear_to_srgb(linear)`,
+  `color_srgb_to_linear_rgb(srgb)`, `color_linear_to_srgb_rgb(linear)`
+- **Luminance:** `color_luminance(linear_rgb)` — BT.709 relative luminance
+- **HSL ↔ RGB:** `color_rgb_to_hsl(rgb)`, `color_hsl_to_rgb(hsl)`
+- **HSV ↔ RGB:** `color_rgb_to_hsv(rgb)`, `color_hsv_to_rgb(hsv)`
+- **CIE XYZ ↔ RGB:** `color_linear_rgb_to_xyz(rgb)`, `color_xyz_to_linear_rgb(xyz)`
+- **CIE xyY ↔ XYZ:** `color_xyz_to_xyY(xyz)`, `color_xyY_to_xyz(xyY)`
+- **Tone mapping:** `color_tonemap_reinhard(hdr)`, `color_tonemap_aces(hdr)`
+- **Exposure:** `color_apply_exposure(hdr, exposure_ev)`
+
+### Hash Functions
+
+Integer hash functions for procedural generation, noise, and sampling:
+
+- **Single-value:** `forge_hash_wang(key)`, `forge_hash_pcg(input)`, `forge_hash_xxhash32(h)`
+- **Combining:** `forge_hash_combine(seed, value)` — boost-style hash combine
+- **Coordinate hashing:** `forge_hash2d(x, y)`, `forge_hash3d(x, y, z)`
+- **Hash to float:** `forge_hash_to_float(h)` → `[0, 1)`,
+  `forge_hash_to_sfloat(h)` → `[-1, 1)`
+
+### Gradient Noise
+
+Perlin, simplex, and fractal noise for procedural content:
+
+- **Fade curve:** `forge_noise_fade(t)` — quintic smoothstep
+- **Gradient helpers:** `forge_noise_grad1d(hash, dx)`, `forge_noise_grad2d(hash, dx, dy)`,
+  `forge_noise_grad3d(hash, dx, dy, dz)`
+- **Perlin noise:** `forge_noise_perlin1d(x, seed)`, `forge_noise_perlin2d(x, y, seed)`,
+  `forge_noise_perlin3d(x, y, z, seed)`
+- **Simplex noise:** `forge_noise_simplex2d(x, y, seed)`
+- **Fractal Brownian motion:** `forge_noise_fbm2d(x, y, seed, octaves, lacunarity, persistence)`,
+  `forge_noise_fbm3d(x, y, z, seed, octaves, lacunarity, persistence)`
+- **Domain warping:** `forge_noise_domain_warp2d(x, y, seed, warp_strength)`
+
+### Low-Discrepancy Sequences
+
+Quasi-random and blue noise sequences for sampling:
+
+- **Halton:** `forge_halton(index, base)` — radical inverse sequence
+- **R-sequences:** `forge_r1(index)`, `forge_r2(index, out_x, out_y)` — additive
+  recurrence sequences
+- **Sobol:** `forge_sobol_2d(index, out_x, out_y)` — 2D Sobol sequence
+- **Blue noise:** `forge_blue_noise_2d(out_x, out_y, count, candidates, seed)` —
+  Mitchell's best candidate algorithm
+- **Measurement:** `forge_star_discrepancy_2d(xs, ys, count)` — star discrepancy
+
+### Bezier Curves
+
+Quadratic and cubic Bezier curve evaluation and utilities:
+
+- **Evaluation:** `vec2_bezier_quadratic(p0, p1, p2, t)`,
+  `vec2_bezier_cubic(p0, p1, p2, p3, t)` (also `vec3` variants)
+- **Tangents:** `vec2_bezier_quadratic_tangent(...)`, `vec2_bezier_cubic_tangent(...)`
+  (also `vec3` variants)
+- **Arc length:** `vec2_bezier_quadratic_length(...)`, `vec2_bezier_cubic_length(...)`
+- **Splitting:** `vec2_bezier_quadratic_split(...)`, `vec2_bezier_cubic_split(...)`
+- **Degree elevation:** `vec2_bezier_quadratic_to_cubic(...)` — convert quadratic to cubic
+- **Flatness test:** `vec2_bezier_quadratic_is_flat(...)`, `vec2_bezier_cubic_is_flat(...)`
+- **Adaptive flattening:** `vec2_bezier_quadratic_flatten(...)`,
+  `vec2_bezier_cubic_flatten(...)` — convert curves to line segments
 
 ### Constants
 
@@ -112,6 +184,8 @@ Each vector type supports:
 - `FORGE_TAU` — 2π (6.28318...)
 - `FORGE_DEG2RAD` — Convert degrees to radians
 - `FORGE_RAD2DEG` — Convert radians to degrees
+- `FORGE_EPSILON` — Machine epsilon for 32-bit float (1.192e-7)
+- `FORGE_BEZIER_DEGENERATE_EPSILON` — Degenerate Bezier threshold (1e-12)
 
 ## Coordinate System
 
@@ -156,6 +230,11 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/08-orientation/` — Quaternions, Euler angles, axis-angle, rotation matrices, slerp
 - `lessons/math/09-view-matrix/` — Camera as inverse transform, look-at, MVP pipeline
 - `lessons/math/10-anisotropy/` — Jacobian, singular values, anisotropic filtering, noise, friction
+- `lessons/math/11-color-spaces/` — sRGB, linear, HSL, HSV, CIE XYZ, tone mapping
+- `lessons/math/12-hash-functions/` — Integer hashing, coordinate hashing, hash-to-float
+- `lessons/math/13-gradient-noise/` — Perlin noise, simplex noise, fBm, domain warping
+- `lessons/math/14-blue-noise-sequences/` — Halton, R2, Sobol, Mitchell's best candidate
+- `lessons/math/15-bezier-curves/` — Quadratic/cubic evaluation, tangents, splitting, flattening
 
 Each lesson includes a demo program and README explaining the math.
 

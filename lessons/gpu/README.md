@@ -30,10 +30,25 @@ portable C interface.
 | 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/05-matrices/) |
 | 07 | [Camera & Input](07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time | [Orientation](../math/08-orientation/), [View Matrix](../math/09-view-matrix/) |
 | 08 | [Loading a Mesh (OBJ)](08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmaps | [Vectors](../math/01-vectors/), [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
-
-*More lessons coming soon:* Lighting, scene loading, and more.
-
-See [PLAN.md](../../PLAN.md) for the full roadmap.
+| 09 | [Loading a Scene (glTF)](09-scene-loading/) | glTF parsing, multi-material meshes, scene hierarchy, indexed drawing | [Matrices](../math/05-matrices/) |
+| 10 | [Basic Lighting (Blinn-Phong)](10-basic-lighting/) | Ambient, diffuse, specular lighting, world-space normals | [Vectors](../math/01-vectors/) |
+| 11 | [Compute Shaders](11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups | — |
+| 12 | [Shader Grid](12-shader-grid/) | Procedural anti-aliased grid, screen-space derivatives, multiple pipelines | — |
+| 13 | [Instanced Rendering](13-instanced-rendering/) | Per-instance vertex buffers, repeated geometry | [Matrices](../math/05-matrices/) |
+| 14 | [Environment Mapping](14-environment-mapping/) | Cube map textures, skybox, reflective surfaces | [Vectors](../math/01-vectors/) |
+| 15 | [Cascaded Shadow Maps](15-cascaded-shadow-maps/) | Shadow mapping, PCF soft shadows, cascade splitting | [Projections](../math/06-projections/) |
+| 16 | [Blending](16-blending/) | Alpha blending, alpha testing, additive blending, blend state | — |
+| 17 | [Normal Maps](17-normal-maps/) | Tangent-space normal mapping, TBN matrix | [Vectors](../math/01-vectors/) |
+| 18 | [Blinn-Phong with Materials](18-blinn-phong-materials/) | Per-material lighting, material properties | — |
+| 19 | [Debug Lines](19-debug-lines/) | Immediate-mode debug drawing, grids, axes, wireframes | [Vectors](../math/01-vectors/) |
+| 20 | [Linear Fog](20-linear-fog/) | Distance fog, linear/exponential/exponential-squared modes | — |
+| 21 | [HDR & Tone Mapping](21-hdr-tone-mapping/) | Floating-point render targets, Reinhard/ACES tone mapping, exposure | [Color Spaces](../math/11-color-spaces/) |
+| 22 | [Bloom (Jimenez Dual-Filter)](22-bloom/) | Downsample/upsample chain, Karis averaging, tent filter | — |
+| 23 | [Point Light Shadows](23-point-light-shadows/) | Omnidirectional shadows, cube map depth textures | [Projections](../math/06-projections/) |
+| 24 | [Gobo Spotlight](24-gobo-spotlight/) | Projected-texture spotlight, cone falloff, pattern projection | — |
+| 25 | [Shader Noise](25-shader-noise/) | Hash functions, value/Perlin noise, fBm, domain warping | [Hash Functions](../math/12-hash-functions/), [Gradient Noise](../math/13-gradient-noise/) |
+| 26 | [Procedural Sky (Hillaire)](26-procedural-sky/) | Atmospheric scattering, Rayleigh/Mie, LUT transmittance | — |
+| 27 | [SSAO](27-ssao/) | Screen-space ambient occlusion, G-buffer, hemisphere sampling | [Blue Noise](../math/14-blue-noise-sequences/) |
 
 ## Prerequisites
 
@@ -117,6 +132,10 @@ GPU lessons use the **forge-gpu math library** (`common/math/`) for all math ope
 - **Before GPU Lesson 06**: Read [Matrices](../math/05-matrices/) for MVP transform walkthrough
 - **Before GPU Lesson 07**: Read [Orientation](../math/08-orientation/) and [View Matrix](../math/09-view-matrix/) for camera math
 - **Before GPU Lesson 08**: Review [Mipmaps & LOD](../math/04-mipmaps-and-lod/) for texture loading
+- **Before GPU Lesson 15**: Read [Projections](../math/06-projections/) for shadow map frustums
+- **Before GPU Lesson 21**: Read [Color Spaces](../math/11-color-spaces/) for HDR and tone mapping
+- **Before GPU Lesson 25**: Read [Hash Functions](../math/12-hash-functions/) and [Gradient Noise](../math/13-gradient-noise/) for shader noise
+- **Before GPU Lesson 27**: Read [Blue Noise](../math/14-blue-noise-sequences/) for SSAO sampling
 - **When confused**: Math lessons explain the theory behind GPU operations
 
 See [lessons/math/README.md](../math/README.md) for the complete math curriculum.
@@ -171,6 +190,25 @@ the same pattern. Use these to build projects quickly:
 - **`/depth-and-3d`** — Depth buffer, MVP pipeline, 3D rendering
 - **`/camera-and-input`** — First-person camera, keyboard/mouse input, delta time
 - **`/mesh-loading`** — Load OBJ models, textured mesh rendering
+- **`/scene-loading`** — Load glTF scenes with multi-material rendering
+- **`/basic-lighting`** — Blinn-Phong ambient + diffuse + specular lighting
+- **`/compute-shaders`** — Compute pipelines, storage textures, dispatch groups
+- **`/shader-grid`** — Procedural anti-aliased grid with screen-space derivatives
+- **`/instanced-rendering`** — Draw repeated geometry with per-instance buffers
+- **`/environment-mapping`** — Cube map skybox and reflective surfaces
+- **`/cascaded-shadow-maps`** — Cascaded shadow maps with PCF soft shadows
+- **`/blending`** — Alpha blending, alpha testing, additive blending
+- **`/normal-maps`** — Tangent-space normal mapping with TBN matrix
+- **`/blinn-phong-materials`** — Per-material Blinn-Phong lighting
+- **`/debug-lines`** — Immediate-mode debug line drawing
+- **`/linear-fog`** — Depth-based distance fog (linear, exponential)
+- **`/hdr-tone-mapping`** — HDR rendering with Reinhard/ACES tone mapping
+- **`/bloom`** — Jimenez dual-filter bloom with Karis averaging
+- **`/point-light-shadows`** — Omnidirectional point light shadows
+- **`/gobo-spotlight`** — Projected-texture gobo spotlight
+- **`/shader-noise`** — GPU noise functions (hash, Perlin, fBm, domain warp)
+- **`/procedural-sky`** — Physically-based procedural atmospheric scattering
+- **`/ssao`** — Screen-space ambient occlusion
 
 **How to use:**
 
@@ -191,7 +229,9 @@ These lessons are **not just tutorials** — they're patterns you'll use in prod
 - **Textures** (Lesson 04) — Essential for realistic rendering
 - **Mipmaps** (Lesson 05) — Prevent aliasing at any distance
 - **Depth buffers** (Lesson 06) — Required for 3D scenes
-- **Lighting** *(coming)* — Makes 3D objects look real
+- **Lighting** (Lesson 10) — Makes 3D objects look real
+- **Shadow maps** (Lessons 15, 23, 24) — Dynamic shadows for directional and point lights
+- **Post-processing** (Lessons 21, 22, 27) — HDR, bloom, and ambient occlusion
 
 The code is **production-ready** — clean, efficient, well-documented. Copy it,
 adapt it, build on it.
@@ -257,16 +297,13 @@ GPU programming has a learning curve, but these lessons make it manageable.
 
 ## What's Next?
 
-After completing the current lessons, you'll be ready for:
-
-- **Loading a Scene (glTF)** — Multi-mesh scenes, PBR materials
-- **Lighting** — Diffuse + specular, normal vectors, Phong model
-- **Advanced Techniques** — Shadows, post-processing, compute shaders
-
-See [PLAN.md](../../PLAN.md) for the full roadmap.
+After completing the current 27 lessons, you'll have the skills to build
+real-time 3D applications with lighting, shadows, post-processing, and
+procedural content. Use the skills to build your own projects, or extend
+the lessons with new techniques.
 
 ---
 
 **Welcome to GPU programming with SDL!** These lessons will take you from
 "What's a vertex buffer?" to building real-time 3D applications. Let's build
-something amazing! 🚀
+something amazing!
