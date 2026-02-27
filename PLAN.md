@@ -115,12 +115,13 @@ vertices, indices, UVs) with no GPU dependency.
 ### Layout and Containers
 
 - [ ] **UI Lesson 08 — Layout System** — Automatic horizontal and vertical stacking; padding and margins; size constraints (min/max); layout pass that computes widget positions before generating draw data
-- [ ] **UI Lesson 09 — Panels and Scrolling** — Scrollable container with clipping rects; scroll offset and content bounds; nested panels; scissor rect output for the renderer
+- [ ] **UI Lesson 09 — Panels and Clipping** — Static containers with scroll; clipping rects and scissor rect output for the renderer; scroll offset and content bounds; nested panels
+- [ ] **UI Lesson 10 — Windows** — Draggable panels with title bars; z-ordering (bring-to-front on click); collapse/expand; move interaction; builds on layout (Lesson 08) and clipping (Lesson 09)
 
 ### Application Patterns
 
-- [ ] **UI Lesson 10 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
-- [ ] **UI Lesson 11 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
+- [ ] **UI Lesson 11 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
+- [ ] **UI Lesson 12 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
 
 ## Engine Lessons
 

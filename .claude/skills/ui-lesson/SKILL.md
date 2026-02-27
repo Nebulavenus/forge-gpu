@@ -231,11 +231,22 @@ build\lessons\ui\NN-topic-name\Debug\NN-topic-name.exe
 
 - **`CMakeLists.txt` (root)**: Add `add_subdirectory(lessons/ui/NN-topic-name)`
   under a "UI Lessons" section (create the section if it doesn't exist yet)
+- **`PLAN.md`**: Check off or add the UI lesson entry
+
+### 6b. Keep READMEs in sync
+
+Every new UI lesson must update **all four** of these files:
+
 - **`README.md` (root)**: Add a row to the UI lessons table in the
   "UI Lessons (lessons/ui/)" section — follow the same format as the
-  engine/math lesson tables
+  existing rows
 - **`lessons/ui/README.md`**: Add a row to the lessons table
-- **`PLAN.md`**: Check off or add the UI lesson entry
+- **`common/ui/README.md`**: If the lesson adds new types or functions to the
+  shared library, add them to the API reference sections. Always add the
+  lesson to the "Where It's Used" list
+- **Previous lesson's `README.md`**: Update the "What's next" section to
+  include the new lesson (and verify it matches the current plan order in
+  `PLAN.md`)
 
 ### 7. Cross-reference other lessons
 

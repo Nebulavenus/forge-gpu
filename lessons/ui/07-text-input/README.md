@@ -400,9 +400,12 @@ cmake -DFORGE_FUZZ_ITERATIONS=1000000 -B build
 
 ## What's next
 
-- **UI Lesson 08 — Panels and Clipping** — static containers with scroll
+- **UI Lesson 08 — Layout System** — automatic horizontal and vertical
+  stacking, padding and margins, size constraints, a layout pass that computes
+  widget positions before generating draw data
+- **UI Lesson 09 — Panels and Clipping** — static containers with scroll
   regions, using scissor rects to clip child widgets to a panel boundary
-- **UI Lesson 09 — Windows** — draggable panels with z-ordering, title bars,
+- **UI Lesson 10 — Windows** — draggable panels with z-ordering, title bars,
   and collapse/expand
 
 ## Exercises
