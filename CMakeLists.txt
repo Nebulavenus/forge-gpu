@@ -76,6 +76,7 @@ add_subdirectory(lessons/engine/06-reading-error-messages)
 add_subdirectory(lessons/engine/07-using-a-debugger)
 add_subdirectory(lessons/engine/08-renderdoc)
 add_subdirectory(lessons/engine/09-hlsl-shared-headers)
+add_subdirectory(lessons/engine/10-cpu-rasterization)
 
 # ── GPU Lessons (require real SDL3) ─────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)
@@ -117,6 +118,7 @@ add_subdirectory(lessons/ui/04-text-layout)
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
 add_subdirectory(tests/ui)
+add_subdirectory(tests/raster)
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(tests/obj)
     add_subdirectory(tests/gltf)

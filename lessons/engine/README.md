@@ -42,6 +42,7 @@ source code into a working program.
 | 07 | [Using a Debugger](07-using-a-debugger/) | Breakpoints, stepping, inspecting variables, call stack, conditional breakpoints, watchpoints |
 | 08 | [Debugging Graphics with RenderDoc](08-renderdoc/) | GPU frame capture, debug groups and labels, Event Browser, Pipeline State, Texture/Mesh Viewer, in-application API |
 | 09 | [HLSL Shared Headers](09-hlsl-shared-headers/) | `#include` in HLSL, `.hlsli` files, include guards, `-I` search paths, comparison to C headers |
+| 10 | [CPU Rasterization](10-cpu-rasterization/) | Edge function triangle rasterization, barycentric interpolation, texture sampling, alpha blending, indexed drawing, BMP output |
 
 <!-- Add lessons here as they are created -->
 

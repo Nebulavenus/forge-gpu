@@ -475,6 +475,11 @@ Starting with the next lesson, you will use matrices to transform vertices:
 - [Engine 06 — Reading Error Messages](../../engine/06-reading-error-messages/) —
   how to diagnose shader compilation errors, pipeline creation failures, and
   runtime GPU validation messages
+- [Engine 10 — CPU Rasterization](../../engine/10-cpu-rasterization/) — the
+  algorithm behind what the GPU does in hardware when it draws your triangle.
+  Implements edge-function rasterization, barycentric interpolation, and alpha
+  blending in software — the same operations the rasterizer stage performs
+  automatically in step 3 of the pipeline above
 
 ## Building
 

@@ -148,6 +148,10 @@ graphics applications.
 - [x] **Engine Lesson 08 — Debugging Graphics with RenderDoc** — GPU frame capture; debug groups and labels (`SDL_PushGPUDebugGroup`, `SDL_PopGPUDebugGroup`, `SDL_InsertGPUDebugLabel`); RenderDoc Event Browser, Pipeline State, Texture/Mesh Viewer; RenderDoc in-application API for programmatic capture
 - [x] **Engine Lesson 09 — HLSL Shared Headers** — `#include` in HLSL; `.hlsli` files for shared constants and utilities; include guards; `-I` search paths in dxc; comparison to C header-only libraries (Engine Lesson 05); real example from GPU Lesson 26 (`atmosphere_params.hlsli`)
 
+### Rasterization
+
+- [x] **Engine Lesson 10 — CPU Rasterization** — Edge function triangle rasterization; barycentric coordinate interpolation; bounding box optimization; texture sampling (nearest-neighbor); alpha blending (source-over compositing); indexed drawing; winding order; header-only rasterizer library (`common/raster/forge_raster.h`) with ForgeUiVertex-compatible vertex format; BMP image output
+
 ## Math Lessons
 
 - [x] **Math Lesson 01 — Vectors** — vec2/vec3/vec4, dot product, cross product, normalization, lerp

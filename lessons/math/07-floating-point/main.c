@@ -23,7 +23,6 @@
 #include <string.h>  /* memcpy */
 #include <stdint.h>  /* uint32_t, uint64_t */
 #include <float.h>   /* FLT_EPSILON, FLT_MAX, FLT_MIN, DBL_EPSILON */
-#include <SDL3/SDL_main.h>
 #include "math/forge_math.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */

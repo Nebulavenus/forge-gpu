@@ -201,6 +201,7 @@ C fundamentals, debugging, and project structure:
 | 07 | [Using a Debugger](lessons/engine/07-using-a-debugger/) | Breakpoints, stepping, inspecting variables, call stack, conditional breakpoints, watchpoints |
 | 08 | [Debugging Graphics with RenderDoc](lessons/engine/08-renderdoc/) | GPU frame capture, debug groups and labels, RenderDoc Event Browser, Pipeline State, Texture/Mesh Viewer, in-application API |
 | 09 | [HLSL Shared Headers](lessons/engine/09-hlsl-shared-headers/) | `#include` in HLSL, `.hlsli` files, include guards, `-I` search paths, comparison to C headers |
+| 10 | [CPU Rasterization](lessons/engine/10-cpu-rasterization/) | Edge function triangle rasterization, barycentric interpolation, texture sampling, alpha blending, indexed drawing, BMP output |
 
 See [lessons/engine/README.md](lessons/engine/README.md) for details and the
 full topic list. See [PLAN.md](PLAN.md) for the roadmap.
@@ -297,7 +298,29 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 }
 ```
 
-All four libraries are header-only — just include and use. No build
+### Raster Library (`common/raster/`)
+
+Software triangle rasterizer using the edge function method. Supports vertex
+color interpolation, grayscale texture sampling, alpha blending, and indexed
+drawing — the CPU equivalent of the GPU rendering pipeline.
+See [Engine Lesson 10](lessons/engine/10-cpu-rasterization/) for a walkthrough.
+
+```c
+#include "raster/forge_raster.h"
+
+ForgeRasterBuffer buf = forge_raster_buffer_create(512, 512);
+forge_raster_clear(&buf, 0.1f, 0.1f, 0.1f, 1.0f);
+
+ForgeRasterVertex v0 = {256, 50,  0,0, 1,0,0,1};
+ForgeRasterVertex v1 = {100, 400, 0,0, 0,1,0,1};
+ForgeRasterVertex v2 = {412, 400, 0,0, 0,0,1,1};
+forge_raster_triangle(&buf, &v0, &v1, &v2, NULL);
+
+forge_raster_write_bmp(&buf, "triangle.bmp");
+forge_raster_buffer_destroy(&buf);
+```
+
+All five libraries are header-only — just include and use. No build
 configuration needed.
 
 ## Getting Started
@@ -364,7 +387,7 @@ build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
 ## Testing
 
 The shared libraries have automated tests covering math operations, OBJ parsing,
-and glTF parsing.
+glTF parsing, and CPU rasterization.
 
 **Run all tests:**
 
@@ -379,6 +402,7 @@ ctest -C Debug --output-on-failure
 cmake --build build --config Debug --target test_math
 cmake --build build --config Debug --target test_obj
 cmake --build build --config Debug --target test_gltf
+cmake --build build --config Debug --target test_raster
 ```
 
 All tests use epsilon comparison for floating-point accuracy and return proper
@@ -453,13 +477,16 @@ forge-gpu/
 │   ├── ui/                UI library (font parsing, rasterization, atlas)
 │   │   ├── forge_ui.h     TTF parser, rasterizer, atlas packer (header-only)
 │   │   └── README.md      Usage guide and supported features
+│   ├── raster/            CPU triangle rasterizer (edge function method)
+│   │   └── forge_raster.h Rasterizer implementation (header-only)
 │   ├── capture/           Screenshot/GIF capture utility
 │   │   └── forge_capture.h
 │   └── forge.h            Shared utilities for lessons
 ├── tests/                 Test suite (CTest integration)
 │   ├── math/              Math library tests
 │   ├── obj/               OBJ parser tests
-│   └── gltf/              glTF parser tests
+│   ├── gltf/              glTF parser tests
+│   └── raster/            CPU rasterizer tests
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── math-lesson/       Add math concept + lesson + update library
 │   ├── ui-lesson/         Add UI lesson (fonts, text, controls)
@@ -480,6 +507,7 @@ forge-gpu/
 - **UI lessons** build an immediate-mode UI system (fonts, text, controls) as CPU-side data
 - **GPU lessons** use the shared libraries, render UI data, and link to math lessons for theory
 - **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
+- **Rasterizer** (`common/raster/`) software-renders triangles for testing and visualization
 - **Skills** automate lesson creation and teach AI agents the patterns
 - **Shared libraries** are reusable in lessons and your own projects
 

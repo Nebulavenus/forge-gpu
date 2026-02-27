@@ -21,10 +21,16 @@ import argparse
 import sys
 
 from .engine_diagrams import (
+    diagram_alpha_blending,
+    diagram_barycentric_coords,
+    diagram_bounding_box,
     diagram_call_stack,
     diagram_debugger_workflow,
+    diagram_edge_functions,
     diagram_gpu_upload_pipeline,
+    diagram_indexed_quad,
     diagram_pointer_arithmetic,
+    diagram_rasterization_pipeline,
     diagram_stack_vs_heap,
     diagram_stepping_modes,
     diagram_struct_padding,
@@ -168,6 +174,14 @@ DIAGRAMS = {
         ("debugger_workflow.png", diagram_debugger_workflow),
         ("stepping_modes.png", diagram_stepping_modes),
         ("call_stack.png", diagram_call_stack),
+    ],
+    "engine/10": [
+        ("rasterization_pipeline.png", diagram_rasterization_pipeline),
+        ("edge_functions.png", diagram_edge_functions),
+        ("barycentric_coords.png", diagram_barycentric_coords),
+        ("bounding_box.png", diagram_bounding_box),
+        ("alpha_blending.png", diagram_alpha_blending),
+        ("indexed_quad.png", diagram_indexed_quad),
     ],
     "math/01": [
         ("vector_addition.png", diagram_vector_addition),
@@ -354,6 +368,7 @@ DIAGRAMS = {
 LESSON_NAMES = {
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
+    "engine/10": "engine/10-cpu-rasterization",
     "math/01": "math/01-vectors",
     "math/02": "math/02-coordinate-spaces",
     "math/03": "math/03-bilinear-interpolation",

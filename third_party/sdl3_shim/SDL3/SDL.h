@@ -31,6 +31,11 @@ typedef uint16_t Uint16;
 typedef uint32_t Uint32;
 typedef uint64_t Uint64;
 
+/* ── Integer limits ─────────────────────────────────────────────────────── */
+
+#define SDL_MAX_SINT32 0x7FFFFFFF
+#define SDL_MAX_UINT32 0xFFFFFFFFu
+
 /* ── Init / Quit ────────────────────────────────────────────────────────── */
 
 #define SDL_INIT_VIDEO 0x00000020u
@@ -46,6 +51,22 @@ static inline void SDL_Quit(void) { }
 static inline const char *SDL_GetError(void)
 {
     return "(SDL3 shim)";
+}
+
+static inline int SDL_GetVersion(void)
+{
+    return 30000; /* SDL 3.0.0 */
+}
+
+static inline int SDL_GetNumVideoDrivers(void)
+{
+    return 1;
+}
+
+static inline const char *SDL_GetVideoDriver(int index)
+{
+    (void)index;
+    return "shim";
 }
 
 /* ── Logging ────────────────────────────────────────────────────────────── */

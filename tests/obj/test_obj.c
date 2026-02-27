@@ -11,7 +11,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h>
 #include "math/forge_math.h"
 #include "obj/forge_obj.h"
 
