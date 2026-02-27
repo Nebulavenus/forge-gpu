@@ -79,11 +79,11 @@ forge-gpu/
 │   ├── math/              # Math library (header-only, documented)
 │   ├── obj/               # OBJ parser (Wavefront .obj files)
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
-│   ├── ui/                # UI library (TTF parsing, rasterization, atlas)
+│   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster)
+├── tests/                 # Tests per module (math, obj, gltf, raster, ui)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)
 ```

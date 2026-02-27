@@ -114,6 +114,7 @@ add_subdirectory(lessons/ui/01-ttf-parsing)
 add_subdirectory(lessons/ui/02-glyph-rasterization)
 add_subdirectory(lessons/ui/03-font-atlas)
 add_subdirectory(lessons/ui/04-text-layout)
+add_subdirectory(lessons/ui/05-immediate-mode-basics)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

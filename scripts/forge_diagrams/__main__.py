@@ -144,9 +144,13 @@ from .math_diagrams import (
 from .ui_diagrams import (
     diagram_antialiasing_comparison,
     diagram_baseline_metrics,
+    diagram_button_draw_data,
     diagram_contour_reconstruction,
+    diagram_declare_then_draw,
     diagram_endianness,
     diagram_glyph_anatomy,
+    diagram_hit_testing,
+    diagram_hot_active_state_machine,
     diagram_line_breaking,
     diagram_padding_bleed,
     diagram_pen_advance,
@@ -362,6 +366,12 @@ DIAGRAMS = {
         ("quad_vertex_layout.png", diagram_quad_vertex_layout),
         ("line_breaking.png", diagram_line_breaking),
     ],
+    "ui/05": [
+        ("hot_active_state_machine.png", diagram_hot_active_state_machine),
+        ("declare_then_draw.png", diagram_declare_then_draw),
+        ("button_draw_data.png", diagram_button_draw_data),
+        ("hit_testing.png", diagram_hit_testing),
+    ],
 }
 
 # Full lesson directory names for display
@@ -401,6 +411,7 @@ LESSON_NAMES = {
     "ui/02": "ui/02-glyph-rasterization",
     "ui/03": "ui/03-font-atlas",
     "ui/04": "ui/04-text-layout",
+    "ui/05": "ui/05-immediate-mode-basics",
 }
 
 
