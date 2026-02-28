@@ -2623,10 +2623,7 @@ def diagram_hash_pipeline():
     """Visual flow of the Wang hash pipeline showing each mixing step."""
     fig = plt.figure(figsize=(10, 4), facecolor=STYLE["bg"])
     ax = fig.add_subplot(111)
-    ax.set_facecolor(STYLE["bg"])
-    ax.set_xlim(-0.5, 10.5)
-    ax.set_ylim(-1.5, 2.5)
-    ax.set_aspect("equal")
+    setup_axes(ax, xlim=(-0.8, 10.5), ylim=(-1.5, 2.5), grid=False)
     ax.axis("off")
 
     steps = [
@@ -2665,7 +2662,7 @@ def diagram_hash_pipeline():
             ha="center",
             va="center",
             zorder=3,
-            path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
+            path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
         )
 
         # Arrow to next step
@@ -2702,6 +2699,7 @@ def diagram_hash_pipeline():
                 fontsize=7,
                 ha="center",
                 va="top",
+                path_effects=[pe.withStroke(linewidth=3, foreground=STYLE["bg"])],
             )
 
     ax.set_title(
