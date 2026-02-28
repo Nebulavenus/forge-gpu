@@ -1,7 +1,5 @@
 # forge-gpu
 
-**Graphics programming from first principles.**
-
 A hands-on course in real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
 62 lessons across four tracks take you from a blank window to shadow maps,
