@@ -56,8 +56,13 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - **`ForgeUiRect`** -- Simple rectangle (x, y, w, h) for widget bounds
 - **`ForgeUiTextInputState`** -- Application-owned text input buffer state
   (buffer, capacity, length, cursor)
+- **`ForgeUiLayoutDirection`** -- Enum: `VERTICAL` (cursor moves down) or
+  `HORIZONTAL` (cursor moves right)
+- **`ForgeUiLayout`** -- Layout region: rect, direction, padding, spacing,
+  cursor position, remaining space
 - **`ForgeUiContext`** -- Immediate-mode UI context: holds mouse input, the
-  hot/active widget IDs, font atlas reference, and dynamic vertex/index buffers
+  hot/active widget IDs, font atlas reference, layout stack, and dynamic
+  vertex/index buffers
 
 ### Functions -- Font Parsing & Rasterization
 
@@ -115,6 +120,20 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   state for the current frame
 - **`forge_ui_ctx_text_input(ctx, id, state, rect, cursor_visible)`** -- Draw
   a text input field with cursor and keyboard editing
+- **`forge_ui_ctx_layout_push(ctx, rect, direction, padding, spacing)`** --
+  Push a layout region onto the layout stack
+- **`forge_ui_ctx_layout_pop(ctx)`** -- Pop the current layout and return to
+  the parent
+- **`forge_ui_ctx_layout_next(ctx, size)`** -- Return the next widget rect
+  from the current layout, advancing the cursor
+- **`forge_ui_ctx_label_layout(ctx, text, size, r, g, b, a)`** -- Label
+  placed by the current layout
+- **`forge_ui_ctx_button_layout(ctx, id, text, size)`** -- Button placed
+  by the current layout
+- **`forge_ui_ctx_checkbox_layout(ctx, id, label, value, size)`** -- Checkbox
+  placed by the current layout
+- **`forge_ui_ctx_slider_layout(ctx, id, value, min, max, size)`** -- Slider
+  placed by the current layout
 
 ## Supported Features
 
@@ -151,6 +170,8 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - Buttons, checkboxes, sliders, and text input fields
 - Keyboard input support (typing, cursor movement, backspace, delete)
 - Focus management for text inputs
+- Stack-based layout system (vertical/horizontal, padding, spacing, nesting)
+- Layout-aware widget variants (`_layout()` overloads)
 - Dynamic vertex/index buffer accumulation per frame
 
 ## Limitations
@@ -187,6 +208,8 @@ These are intentional simplifications for a learning library:
   Checkboxes and slider controls
 - [`lessons/ui/07-text-input/`](../../lessons/ui/07-text-input/) -- Text input
   fields with cursor and keyboard editing
+- [`lessons/ui/08-layout/`](../../lessons/ui/08-layout/) -- Automatic widget
+  layout with vertical/horizontal stacking and nested layouts
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

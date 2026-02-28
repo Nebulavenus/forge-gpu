@@ -88,6 +88,17 @@ static inline void SDL_Log(const char *fmt, ...)
     printf("\n");
 }
 
+/* ── Assertions ─────────────────────────────────────────────────────────── */
+
+#define SDL_assert(condition) \
+    do { \
+        if (!(condition)) { \
+            fprintf(stderr, "SDL_assert failed: %s at %s:%d\n", \
+                    #condition, __FILE__, __LINE__); \
+            abort(); \
+        } \
+    } while (0)
+
 /* ── Memory ─────────────────────────────────────────────────────────────── */
 
 static inline void *SDL_malloc(size_t size)            { return malloc(size); }

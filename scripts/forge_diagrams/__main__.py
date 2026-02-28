@@ -157,9 +157,15 @@ from .ui_diagrams import (
     diagram_focus_state_machine,
     diagram_glyph_anatomy,
     diagram_hit_testing,
+    diagram_horizontal_vs_vertical,
     diagram_hot_active_state_machine,
     diagram_keyboard_input_flow,
+    diagram_layout_cursor_model,
+    diagram_layout_next_sequence,
+    diagram_layout_stack_visualization,
     diagram_line_breaking,
+    diagram_nested_layout,
+    diagram_padding_and_spacing,
     diagram_padding_bleed,
     diagram_pen_advance,
     diagram_quad_vertex_layout,
@@ -402,6 +408,14 @@ DIAGRAMS = {
         ("character_deletion.png", diagram_character_deletion),
         ("keyboard_input_flow.png", diagram_keyboard_input_flow),
     ],
+    "ui/08": [
+        ("layout_cursor_model.png", diagram_layout_cursor_model),
+        ("horizontal_vs_vertical.png", diagram_horizontal_vs_vertical),
+        ("nested_layout.png", diagram_nested_layout),
+        ("layout_stack_visualization.png", diagram_layout_stack_visualization),
+        ("padding_and_spacing.png", diagram_padding_and_spacing),
+        ("layout_next_sequence.png", diagram_layout_next_sequence),
+    ],
 }
 
 # Full lesson directory names for display
@@ -444,6 +458,7 @@ LESSON_NAMES = {
     "ui/05": "ui/05-immediate-mode-basics",
     "ui/06": "ui/06-checkboxes-and-sliders",
     "ui/07": "ui/07-text-input",
+    "ui/08": "ui/08-layout",
 }
 
 

@@ -58,8 +58,10 @@ dkms.conf
 # debug information files
 *.dwo
 
-# Generated BMP files from running UI lessons (committed copies live in assets/)
+# Generated BMP files from running UI lessons — root-anchored so only
+# top-level outputs are ignored; committed copies under assets/ stay tracked.
 /glyph_*.bmp
+/layout_*.bmp
 
 # CMake build directories
 build/
