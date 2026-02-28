@@ -43,6 +43,7 @@ source code into a working program.
 | 08 | [Debugging Graphics with RenderDoc](08-renderdoc/) | GPU frame capture, debug groups and labels, Event Browser, Pipeline State, Texture/Mesh Viewer, in-application API |
 | 09 | [HLSL Shared Headers](09-hlsl-shared-headers/) | `#include` in HLSL, `.hlsli` files, include guards, `-I` search paths, comparison to C headers |
 | 10 | [CPU Rasterization](10-cpu-rasterization/) | Edge function triangle rasterization, barycentric interpolation, texture sampling, alpha blending, indexed drawing, BMP output |
+| 11 | [Git & Version Control](11-git-version-control/) | Content hashing, staging area, branching, merging, `.gitignore`, submodules for dependencies, worktrees for parallel workflows |
 
 <!-- Add lessons here as they are created -->
 

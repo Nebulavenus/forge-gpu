@@ -81,6 +81,7 @@ add_subdirectory(lessons/engine/07-using-a-debugger)
 add_subdirectory(lessons/engine/08-renderdoc)
 add_subdirectory(lessons/engine/09-hlsl-shared-headers)
 add_subdirectory(lessons/engine/10-cpu-rasterization)
+add_subdirectory(lessons/engine/11-git-version-control)
 
 # ── GPU Lessons (require real SDL3) ─────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)

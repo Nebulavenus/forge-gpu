@@ -153,6 +153,10 @@ graphics applications.
 
 - [x] **Engine Lesson 10 — CPU Rasterization** — Edge function triangle rasterization; barycentric coordinate interpolation; bounding box optimization; texture sampling (nearest-neighbor); alpha blending (source-over compositing); indexed drawing; winding order; header-only rasterizer library (`common/raster/forge_raster.h`) with ForgeUiVertex-compatible vertex format; BMP image output
 
+### Version Control
+
+- [x] **Engine Lesson 11 — Git & Version Control** — Content-addressable storage; staging area (working directory, index, HEAD); branching and three-way merge; `.gitignore` patterns for C/CMake projects; git submodules for pinning dependencies (contrast with FetchContent from Engine Lesson 03); git worktrees for parallel agent workflows with independent build directories
+
 ## Math Lessons
 
 - [x] **Math Lesson 01 — Vectors** — vec2/vec3/vec4, dot product, cross product, normalization, lerp

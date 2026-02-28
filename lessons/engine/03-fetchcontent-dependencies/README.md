@@ -485,7 +485,7 @@ Each has trade-offs:
 | `FetchContent` | Downloads and builds source alongside your project | Projects that want zero-setup builds |
 | `find_package` | Finds a pre-installed library on the system | Libraries installed via package manager |
 | `add_subdirectory` | Builds source from a directory you provide | Vendored dependencies or git submodules |
-| Git submodules | Embeds another repo in yours at a pinned commit | When you want the source in your tree |
+| Git submodules | Embeds another repo in yours at a pinned commit | When you want the source in your tree (see [Engine Lesson 11](../11-git-version-control/)) |
 | Package managers (vcpkg, Conan) | External tool installs pre-built binaries | Large projects with many dependencies |
 
 forge-gpu uses a hybrid approach: try `find_package` first (fast, uses

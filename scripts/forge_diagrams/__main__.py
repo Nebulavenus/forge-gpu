@@ -34,7 +34,10 @@ from .engine_diagrams import (
     diagram_stack_vs_heap,
     diagram_stepping_modes,
     diagram_struct_padding,
+    diagram_submodule_vs_fetchcontent,
+    diagram_three_areas,
     diagram_vertex_memory_layout,
+    diagram_worktree_architecture,
 )
 from .gpu_diagrams import (
     diagram_aabb_sorting,
@@ -220,6 +223,11 @@ DIAGRAMS = {
         ("bounding_box.png", diagram_bounding_box),
         ("alpha_blending.png", diagram_alpha_blending),
         ("indexed_quad.png", diagram_indexed_quad),
+    ],
+    "engine/11": [
+        ("three_areas.png", diagram_three_areas),
+        ("worktree_architecture.png", diagram_worktree_architecture),
+        ("submodule_vs_fetchcontent.png", diagram_submodule_vs_fetchcontent),
     ],
     "math/01": [
         ("vector_addition.png", diagram_vector_addition),
@@ -457,6 +465,7 @@ LESSON_NAMES = {
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",
+    "engine/11": "engine/11-git-version-control",
     "math/01": "math/01-vectors",
     "math/02": "math/02-coordinate-spaces",
     "math/03": "math/03-bilinear-interpolation",

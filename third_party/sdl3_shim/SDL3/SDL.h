@@ -36,6 +36,10 @@ typedef uint64_t Uint64;
 #define SDL_MAX_SINT32 0x7FFFFFFF
 #define SDL_MAX_UINT32 0xFFFFFFFFu
 
+/* ── Array utilities ────────────────────────────────────────────────────── */
+
+#define SDL_arraysize(a) (sizeof(a) / sizeof((a)[0]))
+
 /* ── Init / Quit ────────────────────────────────────────────────────────── */
 
 #define SDL_INIT_VIDEO 0x00000020u
@@ -130,6 +134,7 @@ static inline void *SDL_memmove(void *dst, const void *src, size_t n)
 
 static inline size_t SDL_strlen(const char *s)         { return strlen(s); }
 static inline int    SDL_strcmp(const char *a, const char *b) { return strcmp(a, b); }
+static inline int    SDL_strncmp(const char *a, const char *b, size_t n) { return strncmp(a, b, n); }
 
 static inline char *SDL_strdup(const char *s)
 {

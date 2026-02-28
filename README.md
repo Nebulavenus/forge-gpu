@@ -190,8 +190,8 @@ and a reusable implementation added to the shared math library.
 ### Engine Lessons (lessons/engine/)
 
 The practical engineering. CMake, C fundamentals, pointers and memory,
-header-only libraries, debuggers, RenderDoc, HLSL shared headers, and a CPU
-triangle rasterizer.
+header-only libraries, debuggers, RenderDoc, HLSL shared headers, CPU
+rasterization, and git version control.
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
@@ -205,6 +205,7 @@ triangle rasterizer.
 | 08 | [Debugging Graphics with RenderDoc](lessons/engine/08-renderdoc/) | GPU frame capture, debug groups and labels, RenderDoc Event Browser, Pipeline State, Texture/Mesh Viewer, in-application API |
 | 09 | [HLSL Shared Headers](lessons/engine/09-hlsl-shared-headers/) | `#include` in HLSL, `.hlsli` files, include guards, `-I` search paths, comparison to C headers |
 | 10 | [CPU Rasterization](lessons/engine/10-cpu-rasterization/) | Edge function triangle rasterization, barycentric interpolation, texture sampling, alpha blending, indexed drawing, BMP output |
+| 11 | [Git & Version Control](lessons/engine/11-git-version-control/) | Content hashing, staging area, branching, merging, `.gitignore`, submodules for dependencies, worktrees for parallel workflows |
 
 See [lessons/engine/README.md](lessons/engine/README.md) for details and the
 full topic list. See [PLAN.md](PLAN.md) for the roadmap.

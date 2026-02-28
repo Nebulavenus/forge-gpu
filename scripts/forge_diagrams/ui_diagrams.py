@@ -7225,7 +7225,11 @@ def diagram_window_anatomy():
     tri_x = wx + 0.4
     tri_cy = wy + wh - th / 2
     tri = plt.Polygon(
-        [[tri_x, tri_cy + 0.2], [tri_x + 0.4, tri_cy + 0.2], [tri_x + 0.2, tri_cy - 0.2]],
+        [
+            [tri_x, tri_cy + 0.2],
+            [tri_x + 0.4, tri_cy + 0.2],
+            [tri_x + 0.2, tri_cy - 0.2],
+        ],
         closed=True,
         facecolor=STYLE["accent3"],
         edgecolor=STYLE["accent3"],
