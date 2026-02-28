@@ -5316,8 +5316,22 @@ def diagram_exposure_effect():
 def diagram_bloom_pipeline():
     """Full bloom render pipeline: scene → downsample chain → upsample chain → tonemap."""
     fig, ax = plt.subplots(figsize=(14, 7), facecolor=STYLE["bg"])
-    setup_axes(ax, xlim=(-0.5, 14), ylim=(-4.5, 5), grid=False, aspect=None)
+    setup_axes(ax, xlim=(-0.5, 11), ylim=(-4.5, 5), grid=False, aspect=None)
     ax.axis("off")
+
+    stroke = [pe.withStroke(linewidth=2, foreground=STYLE["bg"])]
+
+    # --- Shared arrow style ---
+    arrow_kw = {
+        "arrowstyle": "->,head_width=0.25,head_length=0.12",
+        "color": STYLE["text_dim"],
+        "lw": 2,
+    }
+    green_arrow_kw = {
+        "arrowstyle": "->,head_width=0.25,head_length=0.12",
+        "color": STYLE["accent3"],
+        "lw": 2,
+    }
 
     # --- Row 1: Scene pass ---
     scene_box = Rectangle(
@@ -5340,7 +5354,7 @@ def diagram_bloom_pipeline():
         fontweight="bold",
         ha="center",
         va="center",
-        path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
+        path_effects=stroke,
     )
     ax.text(
         2.0,
@@ -5350,27 +5364,23 @@ def diagram_bloom_pipeline():
         fontsize=8.5,
         ha="center",
         va="center",
+        path_effects=stroke,
     )
 
     # Arrow from scene to downsample
-    arrow_kw = {
-        "arrowstyle": "->,head_width=0.25,head_length=0.12",
-        "color": STYLE["text_dim"],
-        "lw": 2,
-    }
-    ax.annotate("", xy=(2.0, 2.9), xytext=(2.0, 2.2), arrowprops=arrow_kw)
+    ax.annotate("", xy=(2.0, 2.2), xytext=(2.0, 2.9), arrowprops=arrow_kw)
 
     # --- Row 2: Downsample chain (left to right, shrinking boxes) ---
-    ds_label_y = 2.05
     ax.text(
         0.2,
-        ds_label_y,
+        2.05,
         "2. Downsample (5 passes)",
         color=STYLE["accent2"],
         fontsize=10,
         fontweight="bold",
         ha="left",
         va="center",
+        path_effects=stroke,
     )
 
     # HDR source box
@@ -5395,6 +5405,7 @@ def diagram_bloom_pipeline():
         fontweight="bold",
         ha="center",
         va="center",
+        path_effects=stroke,
     )
     ax.text(
         hdr_x + hdr_w / 2,
@@ -5404,6 +5415,7 @@ def diagram_bloom_pipeline():
         fontsize=7,
         ha="center",
         va="center",
+        path_effects=stroke,
     )
 
     mip_sizes = [
@@ -5441,6 +5453,7 @@ def diagram_bloom_pipeline():
             fontweight="bold",
             ha="center",
             va="center",
+            path_effects=stroke,
         )
         ax.text(
             cx + mw / 2,
@@ -5450,6 +5463,7 @@ def diagram_bloom_pipeline():
             fontsize=6.5,
             ha="center",
             va="center",
+            path_effects=stroke,
         )
 
         # Arrow from previous box
@@ -5480,37 +5494,36 @@ def diagram_bloom_pipeline():
                 fontweight="bold",
                 ha="center",
                 va="top",
+                path_effects=stroke,
             )
 
         mip_x_starts.append(cx)
         cx += mw + 0.4
 
-    # --- Row 3: Upsample chain (right to left, growing boxes) ---
-    us_label_y = -1.6
+    # --- Row 3: Upsample chain (right to left, aligned below downsample) ---
+    # Each upsample mip sits directly below its downsample counterpart.
+    # Arrows flow right-to-left: Mip 4 → Mip 3 → ... → Mip 0.
     ax.text(
         0.2,
-        us_label_y,
+        -1.2,
         "3. Upsample (4 passes, additive blend)",
         color=STYLE["accent3"],
         fontsize=10,
         fontweight="bold",
         ha="left",
         va="center",
+        path_effects=stroke,
     )
 
-    # Draw upsample arrows going right-to-left
     us_y_base = -3.6
-    us_mip_widths = list(reversed(mip_widths))
-    us_mip_heights = list(reversed(mip_heights))
-    us_labels = list(reversed(mip_sizes))
-    us_cx = 0.5
-    us_positions = []
+    us_positions = []  # (x, y, w, h) indexed by mip level 0..4
     for i, ((label, size), mw, mh) in enumerate(
-        zip(us_labels, us_mip_widths, us_mip_heights)
+        zip(mip_sizes, mip_widths, mip_heights)
     ):
-        my = us_y_base + (hdr_h - mh) / 2
+        ux = mip_x_starts[i]
+        uy = us_y_base + (hdr_h - mh) / 2
         rect = Rectangle(
-            (us_cx, my),
+            (ux, uy),
             mw,
             mh,
             linewidth=1.5,
@@ -5521,79 +5534,72 @@ def diagram_bloom_pipeline():
         )
         ax.add_patch(rect)
         ax.text(
-            us_cx + mw / 2,
-            my + mh * 0.6,
+            ux + mw / 2,
+            uy + mh * 0.6,
             label,
             color=STYLE["accent3"],
             fontsize=8,
             fontweight="bold",
             ha="center",
             va="center",
+            path_effects=stroke,
         )
         ax.text(
-            us_cx + mw / 2,
-            my + mh * 0.25,
+            ux + mw / 2,
+            uy + mh * 0.25,
             size,
             color=STYLE["text_dim"],
             fontsize=6.5,
             ha="center",
             va="center",
+            path_effects=stroke,
+        )
+        us_positions.append((ux, uy, mw, mh))
+
+    # Arrows between upsample mips (right to left: Mip 4 → Mip 3 → ... → Mip 0)
+    us_mid_y = us_y_base + hdr_h / 2
+    for i in range(4, 0, -1):
+        src_x = us_positions[i][0]
+        dst_x, _, dst_w, _ = us_positions[i - 1]
+        ax.annotate(
+            "",
+            xy=(dst_x + dst_w, us_mid_y),
+            xytext=(src_x, us_mid_y),
+            arrowprops=green_arrow_kw,
+        )
+        # "+" label between each pair
+        gap_mid = (src_x + dst_x + dst_w) / 2
+        ax.text(
+            gap_mid,
+            us_mid_y + 0.25,
+            "+",
+            color=STYLE["accent3"],
+            fontsize=10,
+            fontweight="bold",
+            ha="center",
+            va="center",
+            path_effects=stroke,
         )
 
-        # Arrow from previous (smaller) to this (larger)
-        if i > 0:
-            prev_x = us_positions[-1][0] + us_mip_widths[i - 1]
-            ax.annotate(
-                "",
-                xy=(us_cx, us_y_base + hdr_h / 2),
-                xytext=(prev_x, us_y_base + hdr_h / 2),
-                arrowprops={
-                    "arrowstyle": "->,head_width=0.25,head_length=0.12",
-                    "color": STYLE["accent3"],
-                    "lw": 2,
-                },
-            )
-
-        # Label "ADD" on arrows
-        if i > 0:
-            mid_x = (us_cx + us_positions[-1][0] + us_mip_widths[i - 1]) / 2
-            ax.text(
-                mid_x,
-                us_y_base + hdr_h / 2 + 0.25,
-                "+",
-                color=STYLE["accent3"],
-                fontsize=10,
-                fontweight="bold",
-                ha="center",
-                va="center",
-            )
-
-        us_positions.append((us_cx, my))
-        us_cx += mw + 0.4
-
-    # Vertical arrow from downsample mip4 down to upsample mip4
-    last_ds_x = mip_x_starts[-1] + mip_widths[-1] / 2
+    # Straight vertical arrow from downsample Mip 4 to upsample Mip 4
+    mip4_cx = mip_x_starts[4] + mip_widths[4] / 2
+    ds_mip4_bottom = hdr_y + (hdr_h - mip_heights[4]) / 2
+    us_mip4_top = us_positions[4][1] + us_positions[4][3]
     ax.annotate(
         "",
-        xy=(0.5 + us_mip_widths[0] / 2, us_y_base + hdr_h),
-        xytext=(last_ds_x, hdr_y),
-        arrowprops={
-            "arrowstyle": "->,head_width=0.25,head_length=0.12",
-            "color": STYLE["accent3"],
-            "lw": 2,
-            "connectionstyle": "arc3,rad=0.3",
-        },
+        xy=(mip4_cx, us_mip4_top),
+        xytext=(mip4_cx, ds_mip4_bottom),
+        arrowprops=green_arrow_kw,
     )
 
-    # --- Row 4: Tonemap pass ---
-    # Arrow from upsample mip0 to tonemap
-    last_us = us_positions[-1]
-    tm_x = last_us[0] + us_mip_widths[-1] + 0.6
-    tm_y = us_y_base + (hdr_h - 1.4) / 2
+    # --- Tone Map pass (below HDR, at the left end of the upsample row) ---
+    tm_w, tm_h = 2.0, 1.4
+    tm_x = hdr_x
+    tm_y = us_y_base + (hdr_h - tm_h) / 2
     tm_box = Rectangle(
         (tm_x, tm_y),
-        2.5,
-        1.4,
+        tm_w,
+        tm_h,
         linewidth=2,
         edgecolor=STYLE["accent4"],
         facecolor=STYLE["surface"],
@@ -5602,56 +5608,59 @@ def diagram_bloom_pipeline():
     )
     ax.add_patch(tm_box)
     ax.text(
-        tm_x + 1.25,
-        tm_y + 0.9,
+        tm_x + tm_w / 2,
+        tm_y + tm_h * 0.7,
         "4. Tone Map",
         color=STYLE["text"],
         fontsize=10,
         fontweight="bold",
         ha="center",
         va="center",
-        path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
+        path_effects=stroke,
     )
     ax.text(
-        tm_x + 1.25,
-        tm_y + 0.35,
+        tm_x + tm_w / 2,
+        tm_y + tm_h * 0.3,
         "HDR + Bloom \u00d7 intensity\n\u2192 swapchain",
         color=STYLE["text_dim"],
         fontsize=8,
         ha="center",
         va="center",
+        path_effects=stroke,
     )
 
-    # Arrow from last upsample mip to tonemap
+    # Arrow from upsample Mip 0 to Tone Map
+    us_mip0_x = us_positions[0][0]
     ax.annotate(
         "",
-        xy=(tm_x, us_y_base + hdr_h / 2),
-        xytext=(last_us[0] + us_mip_widths[-1], us_y_base + hdr_h / 2),
-        arrowprops=arrow_kw,
+        xy=(tm_x + tm_w, us_mid_y),
+        xytext=(us_mip0_x, us_mid_y),
+        arrowprops=green_arrow_kw,
     )
 
-    # Arrow from HDR target to tonemap (it reads both)
+    # Straight dashed arrow from HDR down to Tone Map
+    hdr_cx = hdr_x + hdr_w / 2
     ax.annotate(
         "",
-        xy=(tm_x, tm_y + 1.4),
-        xytext=(hdr_x + hdr_w / 2, hdr_y),
+        xy=(hdr_cx, tm_y + tm_h),
+        xytext=(hdr_cx, hdr_y),
         arrowprops={
             "arrowstyle": "->,head_width=0.25,head_length=0.12",
             "color": STYLE["accent1"],
             "lw": 1.5,
             "linestyle": "--",
-            "connectionstyle": "arc3,rad=-0.4",
         },
     )
     ax.text(
-        tm_x - 1.5,
+        hdr_cx - 0.15,
         -0.5,
         "HDR input",
         color=STYLE["accent1"],
         fontsize=7.5,
         fontstyle="italic",
-        ha="center",
-        path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
+        ha="right",
+        va="center",
+        path_effects=stroke,
     )
 
     fig.suptitle(
@@ -5659,9 +5668,9 @@ def diagram_bloom_pipeline():
         color=STYLE["text"],
         fontsize=14,
         fontweight="bold",
-        y=0.99,
+        y=0.97,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     save(fig, "gpu/22-bloom", "bloom_pipeline.png")
 
 
