@@ -95,7 +95,7 @@ translates to lower integration error.
 
 ### The Halton sequence
 
-![Radical inverse filling [0,1) progressively](assets/radical_inverse.png)
+![Radical inverse filling \[0,1) progressively](assets/radical_inverse.png)
 
 The Halton sequence constructs each coordinate using the **radical inverse**
 in a different prime base. The radical inverse reverses the digits of an integer
