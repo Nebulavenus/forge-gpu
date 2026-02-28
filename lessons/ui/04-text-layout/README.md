@@ -54,7 +54,7 @@ The example program lays out four test strings and writes each as a BMP image.
 
 **"Hello, World!" — single-line layout:**
 
-![Hello, World! rendered as laid-out text](assets/layout_hello.bmp)
+![Hello, World! rendered as laid-out text](assets/layout_hello.png)
 
 The first time readable text appears from the learner's own code — 13
 characters, 12 visible quads (the space has no geometry), 48 vertices, 72
@@ -62,21 +62,21 @@ indices.
 
 **Multi-line text with explicit newlines:**
 
-![Four lines of text with explicit line breaks](assets/layout_multiline.bmp)
+![Four lines of text with explicit line breaks](assets/layout_multiline.png)
 
 Four lines demonstrating baseline spacing. Each line drops by the full line
 height (ascender − descender + lineGap, scaled to pixels).
 
 **Wrapped text with max\_width:**
 
-![Long string wrapped at 300 pixels](assets/layout_wrapped.bmp)
+![Long string wrapped at 300 pixels](assets/layout_wrapped.png)
 
 A long sentence wrapped at 300 pixels wide. The layout system breaks
 characters to the next line when the pen would exceed the boundary.
 
 **Alignment comparison — left, center, right:**
 
-![Same text shown left-aligned, center-aligned, and right-aligned](assets/layout_alignment.bmp)
+![Same text shown left-aligned, center-aligned, and right-aligned](assets/layout_alignment.png)
 
 The same string rendered three times within a 300-pixel-wide region. Alignment
 is a post-processing step — shift all vertices on a line by
@@ -486,6 +486,8 @@ The program writes BMP files to the current directory:
 - `layout_multiline.bmp` — four lines with explicit `\n` breaks
 - `layout_wrapped.bmp` — long text wrapped at 300 px
 - `layout_alignment.bmp` — left, center, and right alignment side by side
+
+Pre-generated PNG versions are in `assets/`.
 
 ## AI skill
 

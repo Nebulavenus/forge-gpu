@@ -59,23 +59,23 @@ release).
 
 | Frame 0: All normal | Frame 1: Checkbox hot |
 |---|---|
-| ![All widgets normal](assets/controls_frame_0.bmp) | ![Checkbox hovered](assets/controls_frame_1.bmp) |
+| ![All widgets normal](assets/controls_frame_0.png) | ![Checkbox hovered](assets/controls_frame_1.png) |
 
 | Frame 2: Checkbox active | Frame 3: Checkbox toggled |
 |---|---|
-| ![Checkbox pressed](assets/controls_frame_2.bmp) | ![Checkbox toggled on](assets/controls_frame_3.bmp) |
+| ![Checkbox pressed](assets/controls_frame_2.png) | ![Checkbox toggled on](assets/controls_frame_3.png) |
 
 | Frame 4: Slider hot | Frame 5: Slider snaps to 25% |
 |---|---|
-| ![Slider hovered](assets/controls_frame_4.bmp) | ![Slider snap on click](assets/controls_frame_5.bmp) |
+| ![Slider hovered](assets/controls_frame_4.png) | ![Slider snap on click](assets/controls_frame_5.png) |
 
 | Frame 6: Drag to 75% | Frame 7: Past right edge (clamped) |
 |---|---|
-| ![Slider dragged right](assets/controls_frame_6.bmp) | ![Value clamped to max](assets/controls_frame_7.bmp) |
+| ![Slider dragged right](assets/controls_frame_6.png) | ![Value clamped to max](assets/controls_frame_7.png) |
 
 | Frame 8: Released |
 |---|
-| ![Slider released](assets/controls_frame_8.bmp) |
+| ![Slider released](assets/controls_frame_8.png) |
 
 ## Key concepts
 

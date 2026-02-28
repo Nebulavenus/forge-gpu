@@ -39,7 +39,7 @@ simulate scrolling, scrollbar drag, and checkbox interaction.
 
 | Initial view | Scrolled down | Scrollbar drag | Checkbox click |
 |:---:|:---:|:---:|:---:|
-| ![Frame 0](assets/panels_frame_0.bmp) | ![Frame 3](assets/panels_frame_3.bmp) | ![Frame 5](assets/panels_frame_5.bmp) | ![Frame 9](assets/panels_frame_9.bmp) |
+| ![Frame 0](assets/panels_frame_0.png) | ![Frame 3](assets/panels_frame_3.png) | ![Frame 5](assets/panels_frame_5.png) | ![Frame 9](assets/panels_frame_9.png) |
 
 A yellow dot shows the simulated cursor position. The status label below the
 panels displays the current `scroll_y` and maximum scroll values.
@@ -260,7 +260,7 @@ cmake --build build --target 09-panels-and-scrolling
 ```
 
 The program writes `panels_frame_0.bmp` through `panels_frame_9.bmp` to the
-current directory. Pre-generated frames are in the `assets/` directory.
+current directory. Pre-generated PNG versions are in `assets/`.
 
 ## AI skill
 

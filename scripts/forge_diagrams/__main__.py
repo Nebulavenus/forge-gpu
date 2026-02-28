@@ -150,9 +150,12 @@ from .ui_diagrams import (
     diagram_checkbox_anatomy,
     diagram_checkbox_vs_button,
     diagram_clip_rect_operation,
+    diagram_collapse_toggle,
     diagram_contour_reconstruction,
     diagram_cursor_positioning,
     diagram_declare_then_draw,
+    diagram_deferred_draw_pipeline,
+    diagram_drag_mechanics,
     diagram_drag_outside_bounds,
     diagram_endianness,
     diagram_focus_state_machine,
@@ -160,6 +163,7 @@ from .ui_diagrams import (
     diagram_hit_testing,
     diagram_horizontal_vs_vertical,
     diagram_hot_active_state_machine,
+    diagram_input_routing_overlap,
     diagram_keyboard_input_flow,
     diagram_layout_cursor_model,
     diagram_layout_next_sequence,
@@ -186,6 +190,10 @@ from .ui_diagrams import (
     diagram_uv_remap_on_clip,
     diagram_widget_interaction_comparison,
     diagram_winding_direction,
+    diagram_window_anatomy,
+    diagram_window_state_persistence,
+    diagram_window_vs_panel_comparison,
+    diagram_z_order_model,
 )
 
 # ---------------------------------------------------------------------------
@@ -432,6 +440,16 @@ DIAGRAMS = {
         ("panel_with_scroll_sequence.png", diagram_panel_with_scroll_sequence),
         ("mouse_wheel_and_drag.png", diagram_mouse_wheel_and_drag),
     ],
+    "ui/10": [
+        ("window_anatomy.png", diagram_window_anatomy),
+        ("z_order_model.png", diagram_z_order_model),
+        ("drag_mechanics.png", diagram_drag_mechanics),
+        ("deferred_draw_pipeline.png", diagram_deferred_draw_pipeline),
+        ("input_routing_overlap.png", diagram_input_routing_overlap),
+        ("collapse_toggle.png", diagram_collapse_toggle),
+        ("window_state_persistence.png", diagram_window_state_persistence),
+        ("window_vs_panel_comparison.png", diagram_window_vs_panel_comparison),
+    ],
 }
 
 # Full lesson directory names for display
@@ -476,6 +494,7 @@ LESSON_NAMES = {
     "ui/07": "ui/07-text-input",
     "ui/08": "ui/08-layout",
     "ui/09": "ui/09-panels-and-scrolling",
+    "ui/10": "ui/10-windows",
 }
 
 

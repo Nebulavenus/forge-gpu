@@ -64,15 +64,15 @@ position. The three buttons change appearance based on interaction state:
 
 | Frame 0: All normal | Frame 1: Start is hot |
 |---|---|
-| ![Mouse away from buttons](assets/imgui_frame_0.bmp) | ![Mouse over Start button](assets/imgui_frame_1.bmp) |
+| ![Mouse away from buttons](assets/imgui_frame_0.png) | ![Mouse over Start button](assets/imgui_frame_1.png) |
 
 | Frame 2: Start is active | Frame 3: Click detected |
 |---|---|
-| ![Mouse pressed on Start](assets/imgui_frame_2.bmp) | ![Mouse released on Start](assets/imgui_frame_3.bmp) |
+| ![Mouse pressed on Start](assets/imgui_frame_2.png) | ![Mouse released on Start](assets/imgui_frame_3.png) |
 
 | Frame 4: Options is hot | Frame 5: Options is active |
 |---|---|
-| ![Mouse over Options](assets/imgui_frame_4.bmp) | ![Mouse pressed on Options](assets/imgui_frame_5.bmp) |
+| ![Mouse over Options](assets/imgui_frame_4.png) | ![Mouse pressed on Options](assets/imgui_frame_5.png) |
 
 ## Key concepts
 

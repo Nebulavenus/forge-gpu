@@ -53,15 +53,15 @@ unfocused to show the visual contrast.
 
 | Frame 0 — Unfocused | Frame 2 — Focused (empty) | Frame 3 — Typed "Hi" |
 |---|---|---|
-| ![Frame 0](assets/text_input_frame_0.bmp) | ![Frame 2](assets/text_input_frame_2.bmp) | ![Frame 3](assets/text_input_frame_3.bmp) |
+| ![Frame 0](assets/text_input_frame_0.png) | ![Frame 2](assets/text_input_frame_2.png) | ![Frame 3](assets/text_input_frame_3.png) |
 
 | Frame 5 — Inserted "e" | Frame 6 — Backspace | Frame 8 — "Hi!" |
 |---|---|---|
-| ![Frame 5](assets/text_input_frame_5.bmp) | ![Frame 6](assets/text_input_frame_6.bmp) | ![Frame 8](assets/text_input_frame_8.bmp) |
+| ![Frame 5](assets/text_input_frame_5.png) | ![Frame 6](assets/text_input_frame_6.png) | ![Frame 8](assets/text_input_frame_8.png) |
 
 | Frame 9 — Unfocused |
 |---|
-| ![Frame 9](assets/text_input_frame_9.bmp) |
+| ![Frame 9](assets/text_input_frame_9.png) |
 
 ## Key concepts
 

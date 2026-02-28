@@ -54,17 +54,17 @@ writes three BMP files:
 
 **Full atlas** — every printable ASCII character packed into rows:
 
-![Font atlas](assets/atlas.bmp)
+![Font atlas](assets/atlas.png)
 
 **Debug atlas** — same image with 1px outlines around each glyph rectangle,
 making the shelf rows and padding gaps visible:
 
-![Debug atlas with outlines](assets/atlas_debug.bmp)
+![Debug atlas with outlines](assets/atlas_debug.png)
 
 **Extracted glyph** — the letter 'A' extracted from the atlas using its UV
 coordinates, proving the UV round-trip is correct:
 
-![Glyph A extracted from atlas](assets/glyph_A_from_atlas.bmp)
+![Glyph A extracted from atlas](assets/glyph_A_from_atlas.png)
 
 ## Key concepts
 

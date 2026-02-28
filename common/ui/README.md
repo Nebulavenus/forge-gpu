@@ -66,6 +66,19 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   hot/active widget IDs, font atlas reference, layout stack, clip rect,
   panel state, and dynamic vertex/index buffers
 
+### Types -- Windows (forge_ui_window.h)
+
+- **`ForgeUiWindowState`** -- Application-owned persistent window state: rect
+  (position and size, updated by dragging), scroll_y (content scroll offset),
+  collapsed (bool toggle), z_order (int draw priority, higher = on top)
+- **`ForgeUiWindowEntry`** -- Per-frame window registration: widget ID,
+  pointer to window state, and a separate vertex/index draw list for
+  deferred rendering
+- **`ForgeUiWindowContext`** -- Window management wrapper around ForgeUiContext:
+  window registration array, active window tracking, hovered window ID for
+  input routing, grab offset for drag, previous frame data for z-aware hit
+  testing, and saved buffer pointers for draw list redirection
+
 ### Functions -- Font Parsing & Rasterization
 
 - **`forge_ui_ttf_load(path, out_font)`** -- Load a TTF file and parse core
@@ -142,6 +155,24 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - **`forge_ui_ctx_panel_end(ctx)`** -- End a panel: compute content overflow,
   draw scrollbar if needed, clear clip rect
 
+### Functions -- Windows (forge_ui_window.h)
+
+- **`forge_ui_wctx_init(wctx, ctx)`** -- Initialize a window context wrapping
+  an existing UI context. Returns `true` on success
+- **`forge_ui_wctx_free(wctx)`** -- Free per-window draw list buffers
+- **`forge_ui_wctx_begin(wctx)`** -- Begin a frame: determine hovered window
+  from previous frame data, reset per-frame window state. Call after
+  `forge_ui_ctx_begin()`
+- **`forge_ui_wctx_end(wctx)`** -- End the frame: sort window draw lists by
+  z_order and append to the main context buffers in back-to-front order. Call
+  before `forge_ui_ctx_end()`
+- **`forge_ui_wctx_window_begin(wctx, id, title, state)`** -- Begin a window:
+  draw title bar with collapse toggle, process dragging and z-ordering. Returns
+  `true` if expanded (caller declares child widgets and calls window_end).
+  Returns `false` if collapsed (caller must NOT call window_end)
+- **`forge_ui_wctx_window_end(wctx)`** -- End a window: compute content height,
+  draw scrollbar, pop layout, clear clip rect, restore main context buffers
+
 ## Supported Features
 
 ### Font Parsing
@@ -183,6 +214,9 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - Axis-aligned rect clipping with UV remapping for glyph quads
 - Interactive scrollbar with proportional thumb and drag interaction
 - Mouse wheel scroll input via `scroll_delta` field
+- Draggable windows with title bar drag, z-ordering, and collapse toggle
+- Deferred draw ordering: per-window draw lists assembled back-to-front
+- Z-aware input routing: only the topmost window receives mouse interaction
 - Dynamic vertex/index buffer accumulation per frame
 
 ## Limitations
@@ -223,13 +257,16 @@ These are intentional simplifications for a learning library:
   layout with vertical/horizontal stacking and nested layouts
 - [`lessons/ui/09-panels-and-scrolling/`](../../lessons/ui/09-panels-and-scrolling/) --
   Panels with clipping, scrolling, and interactive scrollbar
+- [`lessons/ui/10-windows/`](../../lessons/ui/10-windows/) -- Draggable windows
+  with z-ordering, collapse toggle, and deferred draw ordering
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy
 
 1. **Readability over performance** -- code is meant to be learned from
 2. **Header-only** -- include `forge_ui.h` for fonts/atlas/layout, add
-   `forge_ui_ctx.h` for immediate-mode controls
+   `forge_ui_ctx.h` for immediate-mode controls, add `forge_ui_window.h`
+   for draggable windows with z-ordering
 3. **On-demand glyph parsing** -- font data is kept in memory; glyphs are
    parsed only when requested, so loading a font is fast
 4. **No dependencies beyond SDL** -- no external parsing libraries

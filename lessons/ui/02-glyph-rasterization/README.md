@@ -53,14 +53,14 @@ comparison for the letter 'A'.
 
 | A | O | g | i |
 |---|---|---|---|
-| ![A](assets/glyph_A.bmp) | ![O](assets/glyph_O.bmp) | ![g](assets/glyph_g.bmp) | ![i](assets/glyph_i.bmp) |
+| ![A](assets/glyph_A.png) | ![O](assets/glyph_O.png) | ![g](assets/glyph_g.png) | ![i](assets/glyph_i.png) |
 
 **Anti-aliasing comparison** — 'A' without (left) and with (right) 4x4
 supersampling:
 
 | Without anti-aliasing | With anti-aliasing |
 |-----------------------|--------------------|
-| ![A without AA](assets/glyph_A_noaa.bmp) | ![A with AA](assets/glyph_A_aa.bmp) |
+| ![A without AA](assets/glyph_A_noaa.png) | ![A with AA](assets/glyph_A_aa.png) |
 
 ## Key concepts
 

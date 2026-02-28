@@ -40,7 +40,7 @@ identical draw data.
 
 | Manual layout | Automatic layout |
 |---|---|
-| ![Manual layout](assets/layout_manual.bmp) | ![Automatic layout](assets/layout_auto.bmp) |
+| ![Manual layout](assets/layout_manual.png) | ![Automatic layout](assets/layout_auto.png) |
 
 Both produce **220 vertices and 330 indices** — the layout system computes
 exactly the same positions as hand-written code.
@@ -50,11 +50,11 @@ interaction:
 
 | Frame 0 — idle | Frame 1 — hover checkbox | Frame 2 — press checkbox | Frame 3 — toggled off |
 |---|---|---|---|
-| ![Frame 0](assets/layout_frame_0.bmp) | ![Frame 1](assets/layout_frame_1.bmp) | ![Frame 2](assets/layout_frame_2.bmp) | ![Frame 3](assets/layout_frame_3.bmp) |
+| ![Frame 0](assets/layout_frame_0.png) | ![Frame 1](assets/layout_frame_1.png) | ![Frame 2](assets/layout_frame_2.png) | ![Frame 3](assets/layout_frame_3.png) |
 
 | Frame 4 — hover OK | Frame 5 — press OK | Frame 6 — click OK | Frame 7 — drag slider |
 |---|---|---|---|
-| ![Frame 4](assets/layout_frame_4.bmp) | ![Frame 5](assets/layout_frame_5.bmp) | ![Frame 6](assets/layout_frame_6.bmp) | ![Frame 7](assets/layout_frame_7.bmp) |
+| ![Frame 4](assets/layout_frame_4.png) | ![Frame 5](assets/layout_frame_5.png) | ![Frame 6](assets/layout_frame_6.png) | ![Frame 7](assets/layout_frame_7.png) |
 
 ## Key concepts
 
