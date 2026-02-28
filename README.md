@@ -2,31 +2,15 @@
 
 A hands-on set of lessons covering real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
-62 lessons across four tracks take you from a blank window to shadow maps,
+Four learning tracks take you from a blank window to shadow maps,
 bloom, SSAO, and procedural skies — with tested libraries and AI skills
 you can use in your own projects.
 
-## What's inside
+## Overview
 
-**Four learning tracks, each building on the others:**
-
-- **GPU** (27 lessons) — The core rendering track. Start with a triangle,
-  end with screen-space ambient occlusion. Every lesson is a standalone C
-  program introducing one SDL GPU concept: pipelines, textures, depth
-  buffers, lighting, shadows, compute shaders, HDR, and more.
-
-- **Math** (15 lessons) — The theory behind the pixels. Vectors, matrices,
-  quaternions, projections, color spaces, noise functions, and Bézier
-  curves — each with a demo program and a reusable implementation added to the
-  shared math library.
-
-- **Engine** (10 lessons) — The practical engineering. CMake, C fundamentals,
-  pointers and memory, header-only libraries, debuggers, RenderDoc, HLSL
-  shared headers, and a CPU triangle rasterizer.
-
-- **UI** (10 lessons) — An immediate-mode UI system built from scratch. TTF
-  parsing, glyph rasterization, font atlases, text layout, buttons, sliders,
-  text input, automatic layout, scrollable panels, and draggable windows.
+**Lessons** — Four tracks covering GPU rendering, math fundamentals, engine
+tooling, and UI systems. Each lesson is a standalone program you can build
+and run.
 
 **Reusable libraries** — Five header-only C libraries for math, OBJ loading,
 glTF scene loading, UI, and CPU rasterization. Documented, tested, and ready
@@ -45,7 +29,10 @@ with AI when they understand what they're building.
 
 ### GPU Lessons (lessons/gpu/)
 
-Learn the SDL GPU API and modern rendering techniques:
+The core rendering track. Start with a triangle, end with screen-space
+ambient occlusion. Every lesson is a standalone C program introducing one
+SDL GPU concept: pipelines, textures, depth buffers, lighting, shadows,
+compute shaders, HDR, and more.
 
 <table>
 <tr>
@@ -178,7 +165,9 @@ Learn the SDL GPU API and modern rendering techniques:
 
 ### Math Lessons (lessons/math/)
 
-Standalone programs teaching the math behind graphics:
+The theory behind the pixels. Vectors, matrices, quaternions, projections,
+color spaces, noise functions, and Bézier curves — each with a demo program
+and a reusable implementation added to the shared math library.
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
@@ -198,13 +187,11 @@ Standalone programs teaching the math behind graphics:
 | 14 | [Blue Noise & Low-Discrepancy Sequences](lessons/math/14-blue-noise-sequences/) | Blue noise, Halton/Sobol/R2 sequences, dithering, sampling quality, discrepancy |
 | 15 | [Bézier Curves](lessons/math/15-bezier-curves/) | Quadratic and cubic Bézier curves, De Casteljau's algorithm, tangent vectors, arc length, curve splitting, adaptive flattening |
 
-Each math lesson includes a demo program and updates the shared math
-library (`common/math/`) with documented, reusable implementations.
-
 ### Engine Lessons (lessons/engine/)
 
-Learn the practical engineering behind graphics applications — build systems,
-C fundamentals, debugging, and project structure:
+The practical engineering. CMake, C fundamentals, pointers and memory,
+header-only libraries, debuggers, RenderDoc, HLSL shared headers, and a CPU
+triangle rasterizer.
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
