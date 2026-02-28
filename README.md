@@ -3,7 +3,7 @@
 A hands-on set of lessons covering real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
 62 lessons across four tracks take you from a blank window to shadow maps,
-bloom, SSAO, and procedural skies — with tested libraries and AI-ready skills
+bloom, SSAO, and procedural skies — with tested libraries and AI skills
 you can use in your own projects.
 
 ## What's inside
