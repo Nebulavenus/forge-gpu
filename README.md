@@ -2,24 +2,42 @@
 
 **Learn graphics fundamentals. Build real projects.**
 
-A learning platform and building tool for real-time graphics with
+A hands-on course in real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
+62 lessons across four tracks take you from a blank window to shadow maps,
+bloom, SSAO, and procedural skies — with tested libraries and AI-ready skills
+you can use in your own projects.
 
-## Why forge-gpu?
+## What's inside
 
-**Two ways to use this project:**
+**Four learning tracks, each building on the others:**
 
-1. **Learn** — Follow guided lessons teaching GPU programming, math, and game techniques
-   - Each lesson is a standalone program introducing one concept
-   - Progressive curriculum from "Hello Window" to advanced rendering
-   - Covers SDL GPU API, math fundamentals, UI systems, engine/toolchain skills, and more
-   - Every line commented to explain *why*, not just *what*
+- **GPU** (27 lessons) — The core rendering track. Start with a triangle,
+  end with screen-space ambient occlusion. Every lesson is a standalone C
+  program introducing one SDL GPU concept: pipelines, textures, depth
+  buffers, lighting, shadows, compute shaders, HDR, and more.
 
-2. **Forge** — Use skills and libraries to build games and tools with AI
-   - Reusable math library (documented, readable, learning-focused)
-   - Claude Code skills teaching AI agents the patterns from lessons
-   - Copy skills to your project and build confidently with Claude
-   - Understanding fundamentals makes working with AI more productive
+- **Math** (15 lessons) — The theory behind the pixels. Vectors, matrices,
+  quaternions, projections, color spaces, noise functions, and Bézier
+  curves — each with a demo program and a reusable implementation added to the
+  shared math library.
+
+- **Engine** (10 lessons) — The practical engineering. CMake, C fundamentals,
+  pointers and memory, header-only libraries, debuggers, RenderDoc, HLSL
+  shared headers, and a CPU triangle rasterizer.
+
+- **UI** (10 lessons) — An immediate-mode UI system built from scratch. TTF
+  parsing, glyph rasterization, font atlases, text layout, buttons, sliders,
+  text input, automatic layout, scrollable panels, and draggable windows.
+
+**Reusable libraries** — Five header-only C libraries for math, OBJ loading,
+glTF scene loading, UI, and CPU rasterization. Documented, tested, and ready
+to drop into your own projects.
+
+**AI-ready skills** — Key lessons distill into
+[Claude Code skills](https://code.claude.com/docs/en/skills). Copy
+`.claude/skills/` into your project and build with AI that knows the same
+patterns you learned.
 
 **Philosophy:** Learn the concepts, then use them to build. When you hit a
 problem building, dive deeper into the relevant lesson. Humans work better
@@ -547,8 +565,8 @@ forge-gpu/
 
 ## Skills — Build with AI
 
-Every lesson distills into a **[Claude Code skill](https://code.claude.com/docs/en/skills)**
-that teaches AI agents the same pattern. Copy `.claude/skills/` into your own
+Key lessons distill into **[Claude Code skills](https://code.claude.com/docs/en/skills)**
+that teach AI agents the same patterns. Copy `.claude/skills/` into your own
 project to enable Claude to build games and tools with you.
 
 ### Building skills (use these in your projects)
