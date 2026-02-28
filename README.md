@@ -32,7 +32,7 @@ you can use in your own projects.
 glTF scene loading, UI, and CPU rasterization. Documented, tested, and ready
 to drop into your own projects.
 
-**AI-ready skills** — Key lessons distill into
+**AI skills** — Key lessons distill into
 [Claude Code skills](https://code.claude.com/docs/en/skills). Copy
 `.claude/skills/` into your project and build with AI that knows the same
 patterns you learned.
