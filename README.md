@@ -13,13 +13,13 @@ tooling, and UI systems. Each lesson is a standalone program you can build
 and run.
 
 **Reusable libraries** — Five header-only C libraries for math, OBJ loading,
-glTF scene loading, UI, and CPU rasterization. Documented, tested, and ready
-to drop into your own projects.
+glTF scene loading, UI, and CPU rasterization. Documented, tested, and
+available for your your own projects.
 
 **AI skills** — Key lessons distill into
 [Claude Code skills](https://code.claude.com/docs/en/skills). Copy
-`.claude/skills/` into your project and build with AI that knows the same
-patterns you learned.
+`.claude/skills/` into your project and build with AI that utilizes
+the same patterns from the lessons.
 
 **Philosophy:** Learn the concepts, then use them to build. When you hit a
 problem building, dive deeper into the relevant lesson. Humans work better
