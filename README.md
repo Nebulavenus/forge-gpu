@@ -223,6 +223,7 @@ the output.
 | 06 | [Checkboxes and Sliders](lessons/ui/06-checkboxes-and-sliders/) | External mutable state, checkbox toggle, slider drag interaction, value mapping (pixel to normalized to user value), active persistence outside widget bounds |
 | 07 | [Text Input](lessons/ui/07-text-input/) | Focused ID (keyboard focus), click-to-focus / click-outside-to-unfocus, ForgeUiTextInputState, character insertion and deletion, cursor movement, cursor bar positioning via text measurement |
 | 08 | [Layout](lessons/ui/08-layout/) | ForgeUiLayout cursor model, vertical and horizontal directions, padding and spacing, layout stack with push/pop nesting, layout_next() for automatic widget positioning, layout-aware widget variants |
+| 09 | [Panels and Scrolling](lessons/ui/09-panels-and-scrolling/) | ForgeUiPanel containers, axis-aligned rect clipping with UV remapping, scroll offset in layout, interactive scrollbar with proportional thumb, mouse wheel input |
 
 See [lessons/ui/README.md](lessons/ui/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
@@ -506,7 +507,7 @@ forge-gpu/
 │   │   └── README.md      Usage guide, scene hierarchy, materials
 │   ├── ui/                UI library (font parsing, atlas, immediate-mode controls)
 │   │   ├── forge_ui.h     TTF parser, rasterizer, atlas packer (header-only)
-│   │   ├── forge_ui_ctx.h Immediate-mode context: labels, buttons, checkboxes, sliders, text input, layout
+│   │   ├── forge_ui_ctx.h Immediate-mode context: labels, buttons, checkboxes, sliders, text input, layout, panels
 │   │   └── README.md      Usage guide and supported features
 │   ├── raster/            CPU triangle rasterizer (edge function method)
 │   │   └── forge_raster.h Rasterizer implementation (header-only)

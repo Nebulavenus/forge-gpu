@@ -60,9 +60,11 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   `HORIZONTAL` (cursor moves right)
 - **`ForgeUiLayout`** -- Layout region: rect, direction, padding, spacing,
   cursor position, remaining space
+- **`ForgeUiPanel`** -- Panel container: outer rect, content rect, scroll
+  offset pointer, computed content height, and widget ID
 - **`ForgeUiContext`** -- Immediate-mode UI context: holds mouse input, the
-  hot/active widget IDs, font atlas reference, layout stack, and dynamic
-  vertex/index buffers
+  hot/active widget IDs, font atlas reference, layout stack, clip rect,
+  panel state, and dynamic vertex/index buffers
 
 ### Functions -- Font Parsing & Rasterization
 
@@ -134,6 +136,11 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   placed by the current layout
 - **`forge_ui_ctx_slider_layout(ctx, id, value, min, max, size)`** -- Slider
   placed by the current layout
+- **`forge_ui_ctx_panel_begin(ctx, id, title, rect, scroll_y)`** -- Begin a
+  panel: draw background and title bar, set clip rect, push layout for
+  child widgets. Returns `true` on success
+- **`forge_ui_ctx_panel_end(ctx)`** -- End a panel: compute content overflow,
+  draw scrollbar if needed, clear clip rect
 
 ## Supported Features
 
@@ -172,6 +179,10 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - Focus management for text inputs
 - Stack-based layout system (vertical/horizontal, padding, spacing, nesting)
 - Layout-aware widget variants (`_layout()` overloads)
+- Panels with title bar, clipping, and vertical scrolling
+- Axis-aligned rect clipping with UV remapping for glyph quads
+- Interactive scrollbar with proportional thumb and drag interaction
+- Mouse wheel scroll input via `scroll_delta` field
 - Dynamic vertex/index buffer accumulation per frame
 
 ## Limitations
@@ -210,6 +221,8 @@ These are intentional simplifications for a learning library:
   fields with cursor and keyboard editing
 - [`lessons/ui/08-layout/`](../../lessons/ui/08-layout/) -- Automatic widget
   layout with vertical/horizontal stacking and nested layouts
+- [`lessons/ui/09-panels-and-scrolling/`](../../lessons/ui/09-panels-and-scrolling/) --
+  Panels with clipping, scrolling, and interactive scrollbar
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

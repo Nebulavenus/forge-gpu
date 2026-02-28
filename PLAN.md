@@ -115,7 +115,7 @@ vertices, indices, UVs) with no GPU dependency.
 ### Layout and Containers
 
 - [x] **UI Lesson 08 — Layout System** — Automatic horizontal and vertical stacking; padding and spacing; ForgeUiLayout cursor model; layout stack with push/pop nesting; layout_next() for automatic widget positioning; layout-aware widget variants
-- [ ] **UI Lesson 09 — Panels and Clipping** — Static containers with scroll; clipping rects and scissor rect output for the renderer; scroll offset and content bounds; nested panels
+- [x] **UI Lesson 09 — Panels and Scrolling** — Fixed-position containers with clipping and vertical scroll; axis-aligned rect clipping with UV remapping; scroll offset in the layout system; interactive scrollbar with proportional thumb; mouse wheel input
 - [ ] **UI Lesson 10 — Windows** — Draggable panels with title bars; z-ordering (bring-to-front on click); collapse/expand; move interaction; builds on layout (Lesson 08) and clipping (Lesson 09)
 
 ### Application Patterns

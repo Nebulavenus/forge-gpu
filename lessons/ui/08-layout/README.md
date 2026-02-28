@@ -302,8 +302,8 @@ In forge-gpu lessons:
 - [UI Lesson 06](../06-checkboxes-and-sliders/) defines checkboxes and
   sliders that now have `_layout()` variants
 - [UI Lesson 07](../07-text-input/) adds text input with keyboard focus
-- UI Lesson 09 (upcoming) will add panels and clipping on top of the layout
-  system
+- [UI Lesson 09](../09-panels-and-scrolling/) adds panels with clipping and
+  scrolling on top of the layout system
 
 ## Building
 
@@ -327,9 +327,9 @@ vertical/horizontal stacking, padding, spacing, and nesting.
 
 ## What's next
 
-- **[UI Lesson 09 — Panels and Clipping](../09-panels-and-clipping/)** —
-  static containers with scroll regions, scissor rect output for the renderer,
-  scroll offset and content bounds
+- **[UI Lesson 09 — Panels and Scrolling](../09-panels-and-scrolling/)** —
+  Fixed-position containers with clipping and vertical scroll, interactive
+  scrollbar, mouse wheel input, UV remapping for clipped glyph quads
 
 ## Exercises
 

@@ -149,6 +149,7 @@ from .ui_diagrams import (
     diagram_character_insertion,
     diagram_checkbox_anatomy,
     diagram_checkbox_vs_button,
+    diagram_clip_rect_operation,
     diagram_contour_reconstruction,
     diagram_cursor_positioning,
     diagram_declare_then_draw,
@@ -164,12 +165,17 @@ from .ui_diagrams import (
     diagram_layout_next_sequence,
     diagram_layout_stack_visualization,
     diagram_line_breaking,
+    diagram_mouse_wheel_and_drag,
     diagram_nested_layout,
     diagram_padding_and_spacing,
     diagram_padding_bleed,
+    diagram_panel_anatomy,
+    diagram_panel_with_scroll_sequence,
     diagram_pen_advance,
     diagram_quad_vertex_layout,
     diagram_scanline_crossings,
+    diagram_scroll_offset_model,
+    diagram_scrollbar_proportions,
     diagram_shelf_packing,
     diagram_slider_anatomy,
     diagram_slider_state_colors,
@@ -177,6 +183,7 @@ from .ui_diagrams import (
     diagram_text_input_anatomy,
     diagram_ttf_file_structure,
     diagram_uv_coordinates,
+    diagram_uv_remap_on_clip,
     diagram_widget_interaction_comparison,
     diagram_winding_direction,
 )
@@ -416,6 +423,15 @@ DIAGRAMS = {
         ("padding_and_spacing.png", diagram_padding_and_spacing),
         ("layout_next_sequence.png", diagram_layout_next_sequence),
     ],
+    "ui/09": [
+        ("panel_anatomy.png", diagram_panel_anatomy),
+        ("clip_rect_operation.png", diagram_clip_rect_operation),
+        ("scroll_offset_model.png", diagram_scroll_offset_model),
+        ("scrollbar_proportions.png", diagram_scrollbar_proportions),
+        ("uv_remap_on_clip.png", diagram_uv_remap_on_clip),
+        ("panel_with_scroll_sequence.png", diagram_panel_with_scroll_sequence),
+        ("mouse_wheel_and_drag.png", diagram_mouse_wheel_and_drag),
+    ],
 }
 
 # Full lesson directory names for display
@@ -459,6 +475,7 @@ LESSON_NAMES = {
     "ui/06": "ui/06-checkboxes-and-sliders",
     "ui/07": "ui/07-text-input",
     "ui/08": "ui/08-layout",
+    "ui/09": "ui/09-panels-and-scrolling",
 }
 
 

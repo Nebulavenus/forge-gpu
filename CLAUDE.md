@@ -79,7 +79,7 @@ forge-gpu/
 │   ├── math/              # Math library (header-only, documented)
 │   ├── obj/               # OBJ parser (Wavefront .obj files)
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
-│   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout)
+│   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout, panels)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons

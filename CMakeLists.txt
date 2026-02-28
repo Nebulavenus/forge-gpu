@@ -122,6 +122,7 @@ add_subdirectory(lessons/ui/05-immediate-mode-basics)
 add_subdirectory(lessons/ui/06-checkboxes-and-sliders)
 add_subdirectory(lessons/ui/07-text-input)
 add_subdirectory(lessons/ui/08-layout)
+add_subdirectory(lessons/ui/09-panels-and-scrolling)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
