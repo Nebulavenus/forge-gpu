@@ -166,6 +166,10 @@ HDR, post-processing, and UI rendering.
 <a href="lessons/gpu/28-ui-rendering/"><img src="lessons/gpu/28-ui-rendering/assets/screenshot.png" width="200" alt="UI Rendering" /></a><br />
 <b>28</b> — UI Rendering
 </td>
+<td align="center">
+<a href="lessons/gpu/29-screen-space-reflections/"><img src="lessons/gpu/29-screen-space-reflections/assets/render_pipeline.png" width="200" alt="Screen-Space Reflections" /></a><br />
+<b>29</b> — Screen-Space Reflections
+</td>
 </tr>
 </table>
 

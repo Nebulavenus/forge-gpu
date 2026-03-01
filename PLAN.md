@@ -61,7 +61,7 @@ Infrastructure that supports all lessons:
 
 - [x] **Lesson 27 — SSAO** — Screen-space ambient occlusion; sampling hemisphere kernel in view space; depth buffer reconstruction; random rotation via noise texture; blur pass for smooth results; combining AO factor with lighting (depends on Lesson 21 for render-to-texture pattern)
 - [x] **Lesson 28 — UI Rendering** — Rendering the immediate-mode UI system (forge_ui_ctx.h, forge_ui_window.h) on the GPU; single draw call with alpha blending; R8_UNORM font atlas upload; white-pixel technique for solid rectangles; orthographic projection; dynamic vertex/index buffer streaming with power-of-two growth; project theme colors (dark blue-gray palette from `_common.py`)
-- [ ] **Lesson 29 — Screen-Space Reflections (SSR)** — Ray marching against the depth buffer in screen space; hierarchical tracing for performance; handling misses and fallback to environment map; combining SSR with existing reflections from Lesson 14
+- [x] **Lesson 29 — Screen-Space Reflections (SSR)** — Ray marching against the depth buffer in screen space; view-space reflection via G-buffer with 3 MRT targets; depth intersection testing with thickness threshold; screen-edge fadeout; 5 debug display modes; shadow mapping; procedural grid floor as reflective surface
 
 ### Reflections
 

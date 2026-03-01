@@ -113,6 +113,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/26-procedural-sky)
     add_subdirectory(lessons/gpu/27-ssao)
     add_subdirectory(lessons/gpu/28-ui-rendering)
+    add_subdirectory(lessons/gpu/29-screen-space-reflections)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────
