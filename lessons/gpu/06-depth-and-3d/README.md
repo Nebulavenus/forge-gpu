@@ -195,8 +195,8 @@ handles size changes correctly.
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`depth-and-3d`](../../../.claude/skills/depth-and-3d/SKILL.md) — invoke it with
-`/depth-and-3d` or copy it into your own project's `.claude/skills/` directory.
+[`forge-depth-and-3d`](../../../.claude/skills/forge-depth-and-3d/SKILL.md) — invoke it with
+`/forge-depth-and-3d` or copy it into your own project's `.claude/skills/` directory.
 It distils the depth buffer, MVP pipeline, and 3D rendering patterns from this
 lesson into a reusable reference.
 

@@ -249,7 +249,7 @@ python scripts/run.py 13
 ## AI skill
 
 This lesson distills into the
-[`/instanced-rendering`](../../../.claude/skills/instanced-rendering/SKILL.md)
+[`/forge-instanced-rendering`](../../../.claude/skills/forge-instanced-rendering/SKILL.md)
 skill. Use it when you need to draw many copies of a mesh efficiently — forests,
 particle systems, city blocks, or any scene with repeated geometry.
 

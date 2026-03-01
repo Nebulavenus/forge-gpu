@@ -159,7 +159,7 @@ python scripts/run.py 19
 ## AI skill
 
 The debug drawing pattern is captured as a reusable Claude Code skill in
-`.claude/skills/debug-lines/SKILL.md`.  Use `/debug-lines` to add immediate-mode
+`.claude/skills/forge-debug-lines/SKILL.md`.  Use `/forge-debug-lines` to add immediate-mode
 debug drawing to any SDL GPU project.
 
 ## Exercises

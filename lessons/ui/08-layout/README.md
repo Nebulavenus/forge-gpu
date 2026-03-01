@@ -320,8 +320,8 @@ build\lessons\ui\08-layout\Debug\08-layout.exe
 
 ## AI skill
 
-The **[auto-widget-layout](../../../.claude/skills/auto-widget-layout/SKILL.md)**
-skill (`/auto-widget-layout`) teaches Claude the layout pattern from this
+The **[forge-auto-widget-layout](../../../.claude/skills/forge-auto-widget-layout/SKILL.md)**
+skill (`/forge-auto-widget-layout`) teaches Claude the layout pattern from this
 lesson. Use it in your own projects to add automatic widget positioning with
 vertical/horizontal stacking, padding, spacing, and nesting.
 

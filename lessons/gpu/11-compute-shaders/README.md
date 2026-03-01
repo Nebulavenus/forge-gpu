@@ -241,9 +241,9 @@ python scripts/run.py 11
 ## AI skill
 
 This lesson has a corresponding Claude Code skill:
-[compute-shaders](../../../.claude/skills/compute-shaders/SKILL.md)
+[forge-compute-shaders](../../../.claude/skills/forge-compute-shaders/SKILL.md)
 
-Use `/compute-shaders` to set up a compute pipeline in your own project.
+Use `/forge-compute-shaders` to set up a compute pipeline in your own project.
 
 ## Exercises
 

@@ -260,8 +260,8 @@ Then run the executable from the build directory (assets are copied automaticall
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/normal-maps/SKILL.md`](../../../.claude/skills/normal-maps/SKILL.md).
-Invoke it with `/normal-maps` to add normal mapping to your own SDL GPU
+[`.claude/skills/forge-normal-maps/SKILL.md`](../../../.claude/skills/forge-normal-maps/SKILL.md).
+Invoke it with `/forge-normal-maps` to add normal mapping to your own SDL GPU
 project. You can copy the skill into your project's `.claude/skills/`
 directory for use with Claude Code.
 

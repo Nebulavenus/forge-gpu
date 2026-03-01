@@ -195,9 +195,9 @@ python scripts/run.py 07
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/camera-and-input/SKILL.md`](../../../.claude/skills/camera-and-input/SKILL.md).
+[`.claude/skills/forge-camera-and-input/SKILL.md`](../../../.claude/skills/forge-camera-and-input/SKILL.md).
 
-Invoke it with `/camera-and-input` in Claude Code, or copy it into your own
+Invoke it with `/forge-camera-and-input` in Claude Code, or copy it into your own
 project's `.claude/skills/` directory.
 
 ## Exercises

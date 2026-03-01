@@ -234,8 +234,8 @@ build\lessons\gpu\24-gobo-spotlight\Debug\24-gobo-spotlight.exe
 
 This lesson's pattern is available as a reusable Claude Code skill:
 
-- **Skill file**: [`.claude/skills/gobo-spotlight/SKILL.md`](../../../.claude/skills/gobo-spotlight/SKILL.md)
-- **Invoke**: `/gobo-spotlight`
+- **Skill file**: [`.claude/skills/forge-gobo-spotlight/SKILL.md`](../../../.claude/skills/forge-gobo-spotlight/SKILL.md)
+- **Invoke**: `/forge-gobo-spotlight`
 
 You can copy this skill into your own project's `.claude/skills/` directory
 to use the same pattern with Claude Code.

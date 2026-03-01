@@ -213,8 +213,8 @@ This produces six 1024x1024 PNG files (px, nx, py, ny, pz, nz) matching the
 
 ## AI skill
 
-See [.claude/skills/environment-mapping/SKILL.md](/.claude/skills/environment-mapping/SKILL.md)
-for a reusable pattern distilled from this lesson.  Invoke with `/environment-mapping`.
+See [.claude/skills/forge-environment-mapping/SKILL.md](../../../.claude/skills/forge-environment-mapping/SKILL.md)
+for a reusable pattern distilled from this lesson.  Invoke with `/forge-environment-mapping`.
 
 ## Exercises
 

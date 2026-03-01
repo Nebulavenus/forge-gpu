@@ -262,8 +262,8 @@ python scripts/compile_shaders.py 22
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/bloom/SKILL.md`](../../../.claude/skills/bloom/SKILL.md).
-Invoke it with `/bloom` or copy it into your own project to let Claude
+[`.claude/skills/forge-bloom/SKILL.md`](../../../.claude/skills/forge-bloom/SKILL.md).
+Invoke it with `/forge-bloom` or copy it into your own project to let Claude
 add Jimenez dual-filter bloom to any SDL GPU application.
 
 ## Exercises

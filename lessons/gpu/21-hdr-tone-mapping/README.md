@@ -211,8 +211,8 @@ This lesson uses:
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/hdr-tone-mapping/SKILL.md`](../../../.claude/skills/hdr-tone-mapping/SKILL.md).
-Invoke it with `/hdr-tone-mapping` to add HDR rendering and tone mapping to
+[`.claude/skills/forge-hdr-tone-mapping/SKILL.md`](../../../.claude/skills/forge-hdr-tone-mapping/SKILL.md).
+Invoke it with `/forge-hdr-tone-mapping` to add HDR rendering and tone mapping to
 your own SDL GPU project.
 
 ## Exercises

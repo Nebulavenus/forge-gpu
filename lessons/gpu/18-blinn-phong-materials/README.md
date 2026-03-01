@@ -167,8 +167,8 @@ python scripts/run.py 18
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/blinn-phong-materials/SKILL.md`](../../../.claude/skills/blinn-phong-materials/SKILL.md).
-Invoke it with `/blinn-phong-materials` to add per-material Blinn-Phong lighting
+[`.claude/skills/forge-blinn-phong-materials/SKILL.md`](../../../.claude/skills/forge-blinn-phong-materials/SKILL.md).
+Invoke it with `/forge-blinn-phong-materials` to add per-material Blinn-Phong lighting
 to any SDL GPU project.  Copy the skill into your own project to use it with
 Claude.
 

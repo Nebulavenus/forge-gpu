@@ -487,9 +487,9 @@ This lesson uses concepts from several math lessons:
 ## AI skill
 
 This lesson's patterns are distilled into a reusable Claude Code skill:
-[`.claude/skills/basic-lighting/SKILL.md`](../../../.claude/skills/basic-lighting/SKILL.md)
+[`.claude/skills/forge-basic-lighting/SKILL.md`](../../../.claude/skills/forge-basic-lighting/SKILL.md)
 
-Use `/basic-lighting` in Claude Code to apply Blinn-Phong lighting to any
+Use `/forge-basic-lighting` in Claude Code to apply Blinn-Phong lighting to any
 SDL3 GPU project — the skill includes uniform layouts, shader templates,
 and common mistakes to avoid. You can copy the skill file into your own
 project's `.claude/skills/` directory.

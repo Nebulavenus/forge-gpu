@@ -652,7 +652,7 @@ cmake --build build --config Debug --target 29-screen-space-reflections
 
 ## AI skill
 
-The [`/screen-space-reflections`](../../../.claude/skills/screen-space-reflections/)
+The [`/forge-screen-space-reflections`](../../../.claude/skills/forge-screen-space-reflections/SKILL.md)
 skill automates adding SSR to an SDL GPU project. It sets up the G-buffer
 extension (world-space position target), the SSR ray march pass, and the
 composite blending — following the same patterns established in this lesson.

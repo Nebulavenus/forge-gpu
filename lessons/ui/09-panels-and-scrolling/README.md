@@ -265,7 +265,7 @@ current directory. Pre-generated PNG versions are in `assets/`.
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`ui-lesson`](../../../.claude/skills/ui-lesson/SKILL.md) -- invoke it to
+[`dev-ui-lesson`](../../../.claude/skills/dev-ui-lesson/SKILL.md) -- invoke it to
 scaffold new UI lessons following the same structure and conventions.
 
 ## What's next

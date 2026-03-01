@@ -12,11 +12,11 @@ commit with a descriptive message, and open a pull request.
 This skill is for **non-lesson** changes — library updates, skill additions,
 CI fixes, config changes, common/ module work, test updates, etc.
 
-**For lesson PRs, use `/publish-lesson` instead.** That skill validates
+**For lesson PRs, use `/dev-publish-lesson` instead.** That skill validates
 lesson-specific structure (README sections, screenshot, shader compilation,
 skill file, CMakeLists integration) and follows the lesson commit/PR format.
 If the changes are primarily a new or updated lesson under `lessons/`, use
-`/publish-lesson`.
+`/dev-publish-lesson`.
 
 **When to use this skill:**
 

@@ -239,8 +239,8 @@ build\lessons\gpu\23-point-light-shadows\Debug\23-point-light-shadows.exe
 
 This lesson's pattern is available as a reusable Claude Code skill:
 
-- **Skill file**: [`.claude/skills/point-light-shadows/SKILL.md`](../../../.claude/skills/point-light-shadows/SKILL.md)
-- **Invoke**: `/point-light-shadows`
+- **Skill file**: [`.claude/skills/forge-point-light-shadows/SKILL.md`](../../../.claude/skills/forge-point-light-shadows/SKILL.md)
+- **Invoke**: `/forge-point-light-shadows`
 
 You can copy this skill into your own project's `.claude/skills/` directory
 to use the same pattern with Claude Code.

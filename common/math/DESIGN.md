@@ -327,7 +327,7 @@ static inline float vec3_dot(vec3 a, vec3 b)
 - The lesson also **adds the implementation to `forge_math.h`**
 - Cross-references: math lesson → GPU lessons using it, GPU lesson → math lesson explaining it
 
-Use `/math-lesson` skill to create a new math lesson + update library.
+Use `/dev-math-lesson` skill to create a new math lesson + update library.
 
 ## Constants
 

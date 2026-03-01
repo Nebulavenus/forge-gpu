@@ -544,7 +544,7 @@ a piece of the system that produces the vertex and index data drawn here:
 
 ## AI skill
 
-The [`/ui-rendering`](../../../.claude/skills/ui-rendering/SKILL.md) skill
+The [`/forge-ui-rendering`](../../../.claude/skills/forge-ui-rendering/SKILL.md) skill
 automates adding a GPU-rendered immediate-mode UI to an SDL application.
 It covers atlas upload, pipeline creation, dynamic buffer streaming, and the
 per-frame render loop.

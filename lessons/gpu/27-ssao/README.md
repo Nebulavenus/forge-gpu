@@ -622,8 +622,8 @@ cmake --build build --config Debug --target 27-ssao
 
 ## AI skill
 
-The [`ssao` skill](../../../.claude/skills/ssao/SKILL.md) can add SSAO to any
-SDL3 GPU project — invoke it with `/ssao` in Claude Code.
+The [`forge-ssao` skill](../../../.claude/skills/forge-ssao/SKILL.md) can add SSAO to any
+SDL3 GPU project — invoke it with `/forge-ssao` in Claude Code.
 
 ## What's next
 

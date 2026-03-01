@@ -233,7 +233,7 @@ python scripts/run.py 20
 
 ## AI skill
 
-See [`.claude/skills/linear-fog/SKILL.md`](../../../.claude/skills/linear-fog/SKILL.md)
+See [`.claude/skills/forge-linear-fog/SKILL.md`](../../../.claude/skills/forge-linear-fog/SKILL.md)
 for a reusable Claude Code skill that adds distance fog to any SDL GPU project.
 
 ## What's next

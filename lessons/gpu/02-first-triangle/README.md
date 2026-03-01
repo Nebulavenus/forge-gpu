@@ -509,8 +509,8 @@ Check your terminal — the program logs which graphics backend SDL chose
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`first-triangle`](../../../.claude/skills/first-triangle/SKILL.md) — invoke it
-with `/first-triangle` or copy it into your own project's `.claude/skills/`
+[`forge-first-triangle`](../../../.claude/skills/forge-first-triangle/SKILL.md) — invoke it
+with `/forge-first-triangle` or copy it into your own project's `.claude/skills/`
 directory. It distils the vertex buffer, shader, and pipeline patterns from
 this lesson into a reusable reference that AI assistants can follow.
 

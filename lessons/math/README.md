@@ -126,10 +126,10 @@ The math library is **standalone** — no SDL or GPU dependencies. Use it anywhe
 
 Need a math operation that doesn't exist yet?
 
-Use the `/math-lesson` skill (or ask Claude to use it):
+Use the `/dev-math-lesson` skill (or ask Claude to use it):
 
 ```bash
-/math-lesson 02 quaternions "Quaternion rotations and slerp"
+/dev-math-lesson 02 quaternions "Quaternion rotations and slerp"
 ```
 
 This creates:
@@ -138,7 +138,7 @@ This creates:
 - Implementation in `forge_math.h`
 - Documentation and cross-references
 
-See [.claude/skills/math-lesson/](../../.claude/skills/math-lesson/) for details.
+See [.claude/skills/dev-math-lesson/](../../.claude/skills/dev-math-lesson/) for details.
 
 ## Exercises
 

@@ -64,7 +64,7 @@ concept with the respect it deserves.
 
 - **Never commit directly to `main`.** All changes go through pull requests.
 - Create a feature branch, commit there, push, and open a PR with `gh pr create`.
-- Use the **/publish-lesson** skill for lesson PRs — it handles branch + PR creation.
+- Use the **/dev-publish-lesson** skill for lesson PRs — it handles branch + PR creation.
 
 ## Project Structure
 
@@ -123,7 +123,7 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Introduce API calls one at a time with context
 - **Use the math library** — no bespoke math in GPU code
 - Link to relevant math lessons for theory
-- **Use diagrams** — use **/create-diagram** to generate matplotlib visuals
+- **Use diagrams** — use **/dev-create-diagram** to generate matplotlib visuals
   for geometric, mathematical, or data-flow concepts. Never use ASCII art
   diagrams in lesson READMEs; proper diagrams are more readable and match the
   project's visual identity.
@@ -132,21 +132,21 @@ after any HLSL change — the C build does not auto-detect shader changes.
 
 ### Engine lessons (lessons/engine/)
 
-- Use **/engine-lesson** skill to scaffold
+- Use **/dev-engine-lesson** skill to scaffold
 - Focus on practical engineering: build systems, C, debugging, project structure
 - Show common errors and how to diagnose them
 - Cross-reference GPU and math lessons where relevant
 
 ### Math lessons (lessons/math/)
 
-- Use **/math-lesson** skill to scaffold + update library
+- Use **/dev-math-lesson** skill to scaffold + update library
 - Small, focused program demonstrating one concept
 - Add implementation to `common/math/` with extensive inline docs
 - Cross-reference GPU lessons that use this math
 
 ### UI lessons (lessons/ui/)
 
-- Use **/ui-lesson** skill to scaffold
+- Use **/dev-ui-lesson** skill to scaffold
 - Build an immediate-mode UI system — fonts, text, layout, controls
 - **No GPU code** — lessons produce textures, vertices, indices, and UVs
 - [GPU Lesson 28](lessons/gpu/28-ui-rendering/) renders the UI data on the GPU
@@ -157,7 +157,7 @@ after any HLSL change — the C build does not auto-detect shader changes.
 ### Math library usage
 
 GPU lessons and real projects should always use `common/math/`. When you need
-a function that doesn't exist yet, use **/math-lesson** to add it (creates
+a function that doesn't exist yet, use **/dev-math-lesson** to add it (creates
 lesson + updates library + documents the concept).
 
 ## Skills

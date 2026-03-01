@@ -357,8 +357,8 @@ This lesson uses:
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/cascaded-shadow-maps/SKILL.md`](../../../.claude/skills/cascaded-shadow-maps/SKILL.md).
-Invoke it with `/cascaded-shadow-maps` to add shadow mapping to your own
+[`.claude/skills/forge-cascaded-shadow-maps/SKILL.md`](../../../.claude/skills/forge-cascaded-shadow-maps/SKILL.md).
+Invoke it with `/forge-cascaded-shadow-maps` to add shadow mapping to your own
 project.  You can copy the skill file into your project's `.claude/skills/`
 directory.
 

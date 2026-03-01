@@ -183,34 +183,34 @@ the same pattern. Use these to build projects quickly:
 
 **Available skills:**
 
-- **`/sdl-gpu-setup`** — Scaffold a new SDL3 GPU application
-- **`/first-triangle`** — Add vertex rendering with shaders
-- **`/uniforms-and-motion`** — Pass per-frame data to shaders
-- **`/textures-and-samplers`** — Load images, create textures/samplers, draw textured geometry
-- **`/mipmaps`** — Mipmapped textures, trilinear filtering, LOD control
-- **`/depth-and-3d`** — Depth buffer, MVP pipeline, 3D rendering
-- **`/camera-and-input`** — First-person camera, keyboard/mouse input, delta time
-- **`/mesh-loading`** — Load OBJ models, textured mesh rendering
-- **`/scene-loading`** — Load glTF scenes with multi-material rendering
-- **`/basic-lighting`** — Blinn-Phong ambient + diffuse + specular lighting
-- **`/compute-shaders`** — Compute pipelines, storage textures, dispatch groups
-- **`/shader-grid`** — Procedural anti-aliased grid with screen-space derivatives
-- **`/instanced-rendering`** — Draw repeated geometry with per-instance buffers
-- **`/environment-mapping`** — Cube map skybox and reflective surfaces
-- **`/cascaded-shadow-maps`** — Cascaded shadow maps with PCF soft shadows
-- **`/blending`** — Alpha blending, alpha testing, additive blending
-- **`/normal-maps`** — Tangent-space normal mapping with TBN matrix
-- **`/blinn-phong-materials`** — Per-material Blinn-Phong lighting
-- **`/debug-lines`** — Immediate-mode debug line drawing
-- **`/linear-fog`** — Depth-based distance fog (linear, exponential)
-- **`/hdr-tone-mapping`** — HDR rendering with Reinhard/ACES tone mapping
-- **`/bloom`** — Jimenez dual-filter bloom with Karis averaging
-- **`/point-light-shadows`** — Omnidirectional point light shadows
-- **`/gobo-spotlight`** — Projected-texture gobo spotlight
-- **`/shader-noise`** — GPU noise functions (hash, Perlin, fBm, domain warp)
-- **`/procedural-sky`** — Physically-based procedural atmospheric scattering
-- **`/ssao`** — Screen-space ambient occlusion
-- **`/ui-rendering`** — Immediate-mode UI on GPU with font atlas and dynamic buffers
+- **`/forge-sdl-gpu-setup`** — Scaffold a new SDL3 GPU application
+- **`/forge-first-triangle`** — Add vertex rendering with shaders
+- **`/forge-uniforms-and-motion`** — Pass per-frame data to shaders
+- **`/forge-textures-and-samplers`** — Load images, create textures/samplers, draw textured geometry
+- **`/forge-mipmaps`** — Mipmapped textures, trilinear filtering, LOD control
+- **`/forge-depth-and-3d`** — Depth buffer, MVP pipeline, 3D rendering
+- **`/forge-camera-and-input`** — First-person camera, keyboard/mouse input, delta time
+- **`/forge-mesh-loading`** — Load OBJ models, textured mesh rendering
+- **`/forge-scene-loading`** — Load glTF scenes with multi-material rendering
+- **`/forge-basic-lighting`** — Blinn-Phong ambient + diffuse + specular lighting
+- **`/forge-compute-shaders`** — Compute pipelines, storage textures, dispatch groups
+- **`/forge-shader-grid`** — Procedural anti-aliased grid with screen-space derivatives
+- **`/forge-instanced-rendering`** — Draw repeated geometry with per-instance buffers
+- **`/forge-environment-mapping`** — Cube map skybox and reflective surfaces
+- **`/forge-cascaded-shadow-maps`** — Cascaded shadow maps with PCF soft shadows
+- **`/forge-blending`** — Alpha blending, alpha testing, additive blending
+- **`/forge-normal-maps`** — Tangent-space normal mapping with TBN matrix
+- **`/forge-blinn-phong-materials`** — Per-material Blinn-Phong lighting
+- **`/forge-debug-lines`** — Immediate-mode debug line drawing
+- **`/forge-linear-fog`** — Depth-based distance fog (linear, exponential)
+- **`/forge-hdr-tone-mapping`** — HDR rendering with Reinhard/ACES tone mapping
+- **`/forge-bloom`** — Jimenez dual-filter bloom with Karis averaging
+- **`/forge-point-light-shadows`** — Omnidirectional point light shadows
+- **`/forge-gobo-spotlight`** — Projected-texture gobo spotlight
+- **`/forge-shader-noise`** — GPU noise functions (hash, Perlin, fBm, domain warp)
+- **`/forge-procedural-sky`** — Physically-based procedural atmospheric scattering
+- **`/forge-ssao`** — Screen-space ambient occlusion
+- **`/forge-ui-rendering`** — Immediate-mode UI on GPU with font atlas and dynamic buffers
 
 **How to use:**
 

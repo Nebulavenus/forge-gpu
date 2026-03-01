@@ -97,4 +97,4 @@ This separation keeps the UI logic testable and renderer-agnostic.
 
 ## Adding new lessons
 
-Use the `/ui-lesson` skill to scaffold a new UI lesson with all required files.
+Use the `/dev-ui-lesson` skill to scaffold a new UI lesson with all required files.

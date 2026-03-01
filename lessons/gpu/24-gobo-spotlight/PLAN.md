@@ -138,11 +138,11 @@ loading custom PNG gobos.
 
 ## Status
 
-- [x] Directory scaffolded (`/start-lesson`)
+- [x] Directory scaffolded (`/dev-start-lesson`)
 - [x] Scene building (main.c, shaders)
 - [x] New concept implemented
-- [x] README written (`/create-lesson`)
-- [x] Skill file created (`/create-lesson`)
+- [x] README written (`/dev-create-lesson`)
+- [x] Skill file created (`/dev-create-lesson`)
 - [x] Screenshot captured
-- [ ] Final pass (`/final-pass`)
-- [ ] Published (`/publish-lesson`)
+- [ ] Final pass (`/dev-final-pass`)
+- [ ] Published (`/dev-publish-lesson`)

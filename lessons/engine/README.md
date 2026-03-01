@@ -174,10 +174,10 @@ Engine lessons support the GPU and math curriculum:
 
 ## Adding New Engine Lessons
 
-Use the `/engine-lesson` skill:
+Use the `/dev-engine-lesson` skill:
 
 ```bash
-/engine-lesson 01 cmake-fundamentals "CMake targets, properties, and linking"
+/dev-engine-lesson 01 cmake-fundamentals "CMake targets, properties, and linking"
 ```
 
 This creates:
@@ -186,7 +186,7 @@ This creates:
 - README with explanation and common errors
 - Cross-references to GPU/math lessons
 
-See [.claude/skills/engine-lesson/](../../.claude/skills/engine-lesson/) for
+See [.claude/skills/dev-engine-lesson/](../../.claude/skills/dev-engine-lesson/) for
 details.
 
 ---

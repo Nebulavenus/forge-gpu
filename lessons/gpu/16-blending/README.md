@@ -280,8 +280,8 @@ python scripts/run.py 16
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/blending/SKILL.md`](../../../.claude/skills/blending/SKILL.md).
-Invoke it with `/blending` to add alpha blending, alpha testing, or additive
+[`.claude/skills/forge-blending/SKILL.md`](../../../.claude/skills/forge-blending/SKILL.md).
+Invoke it with `/forge-blending` to add alpha blending, alpha testing, or additive
 blending to your SDL GPU project. Copy the skill into your own project's
 `.claude/skills/` directory to use it with Claude.
 

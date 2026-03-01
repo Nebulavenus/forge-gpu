@@ -263,7 +263,7 @@ mat4 rotation = mat4_rotate_z(FORGE_PI / 4.0f);
 ```
 
 Every function has a corresponding math lesson explaining the concept. When you
-need new math functionality, use the `/math-lesson` skill.
+need new math functionality, use the `/dev-math-lesson` skill.
 
 ### OBJ Parser (`common/obj/`)
 
@@ -537,10 +537,10 @@ forge-gpu/
 │   ├── raster/            CPU rasterizer tests
 │   └── ui/                UI library tests (TTF parser, immediate-mode context)
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
-│   ├── math-lesson/       Add math concept + lesson + update library
-│   ├── ui-lesson/         Add UI lesson (fonts, text, controls)
-│   ├── new-lesson/        Create new GPU lesson
-│   ├── sdl-gpu-setup/     Scaffold SDL3 GPU application
+│   ├── dev-math-lesson/   Add math concept + lesson + update library
+│   ├── dev-ui-lesson/     Add UI lesson (fonts, text, controls)
+│   ├── dev-new-lesson/    Create new GPU lesson
+│   ├── forge-sdl-gpu-setup/ Scaffold SDL3 GPU application
 │   └── ...
 ├── scripts/               Helper scripts (run, setup, shader compilation)
 ├── third_party/SDL/       SDL3 source (submodule, for reference)
@@ -570,44 +570,44 @@ project to enable Claude to build games and tools with you.
 
 | Skill | Invoke with | What it does |
 |-------|-------------|--------------|
-| [sdl-gpu-setup](.claude/skills/sdl-gpu-setup/SKILL.md) | `/sdl-gpu-setup` | Scaffold SDL3 GPU app with window, swapchain, render loop |
-| [first-triangle](.claude/skills/first-triangle/SKILL.md) | `/first-triangle` | Add vertex buffers, shaders, pipeline — draw colored geometry |
-| [uniforms-and-motion](.claude/skills/uniforms-and-motion/SKILL.md) | `/uniforms-and-motion` | Pass data to shaders with push uniforms, animate geometry |
-| [textures-and-samplers](.claude/skills/textures-and-samplers/SKILL.md) | `/textures-and-samplers` | Load images, create GPU textures/samplers, draw textured geometry |
-| [mipmaps](.claude/skills/mipmaps/SKILL.md) | `/mipmaps` | Create mipmapped textures, trilinear filtering, LOD control |
-| [depth-and-3d](.claude/skills/depth-and-3d/SKILL.md) | `/depth-and-3d` | Depth buffer, MVP pipeline, 3D rendering, back-face culling |
-| [camera-and-input](.claude/skills/camera-and-input/SKILL.md) | `/camera-and-input` | First-person camera, keyboard/mouse input, delta time |
-| [mesh-loading](.claude/skills/mesh-loading/SKILL.md) | `/mesh-loading` | Load OBJ models, textured mesh rendering, file-based textures |
-| [scene-loading](.claude/skills/scene-loading/SKILL.md) | `/scene-loading` | Load glTF scenes, multi-material meshes, scene hierarchy, indexed rendering |
-| [basic-lighting](.claude/skills/basic-lighting/SKILL.md) | `/basic-lighting` | Blinn-Phong lighting, ambient/diffuse/specular, normal transformation |
-| [compute-shaders](.claude/skills/compute-shaders/SKILL.md) | `/compute-shaders` | Compute pipelines, storage textures, dispatch, compute-then-render pattern |
-| [shader-grid](.claude/skills/shader-grid/SKILL.md) | `/shader-grid` | Procedural grid, anti-aliased lines with fwidth/smoothstep, multiple pipelines |
-| [instanced-rendering](.claude/skills/instanced-rendering/SKILL.md) | `/instanced-rendering` | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
-| [environment-mapping](.claude/skills/environment-mapping/SKILL.md) | `/environment-mapping` | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
-| [blending](.claude/skills/blending/SKILL.md) | `/blending` | Alpha blending, alpha testing, blend state configuration, transparency sorting |
-| [cascaded-shadow-maps](.claude/skills/cascaded-shadow-maps/SKILL.md) | `/cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
-| [bloom](.claude/skills/bloom/SKILL.md) | `/bloom` | Jimenez dual-filter bloom, 13-tap downsample, Karis averaging, tent-filter upsample, additive blending |
-| [point-light-shadows](.claude/skills/point-light-shadows/SKILL.md) | `/point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
-| [gobo-spotlight](.claude/skills/gobo-spotlight/SKILL.md) | `/gobo-spotlight` | Projected-texture spotlight, cone falloff, gobo pattern projection, single 2D shadow map |
-| [shader-noise](.claude/skills/shader-noise/SKILL.md) | `/shader-noise` | GPU noise functions (hash, value, Perlin, fBm, domain warping), procedural textures, dithering |
-| [ssao](.claude/skills/ssao/SKILL.md) | `/ssao` | Screen-space ambient occlusion, hemisphere kernel sampling, depth reconstruction, noise rotation, blur pass, AO compositing |
-| [auto-widget-layout](.claude/skills/auto-widget-layout/SKILL.md) | `/auto-widget-layout` | Automatic widget layout with vertical/horizontal stacking, padding, spacing, and nested layouts |
+| [forge-sdl-gpu-setup](.claude/skills/forge-sdl-gpu-setup/SKILL.md) | `/forge-sdl-gpu-setup` | Scaffold SDL3 GPU app with window, swapchain, render loop |
+| [forge-first-triangle](.claude/skills/forge-first-triangle/SKILL.md) | `/forge-first-triangle` | Add vertex buffers, shaders, pipeline — draw colored geometry |
+| [forge-uniforms-and-motion](.claude/skills/forge-uniforms-and-motion/SKILL.md) | `/forge-uniforms-and-motion` | Pass data to shaders with push uniforms, animate geometry |
+| [forge-textures-and-samplers](.claude/skills/forge-textures-and-samplers/SKILL.md) | `/forge-textures-and-samplers` | Load images, create GPU textures/samplers, draw textured geometry |
+| [forge-mipmaps](.claude/skills/forge-mipmaps/SKILL.md) | `/forge-mipmaps` | Create mipmapped textures, trilinear filtering, LOD control |
+| [forge-depth-and-3d](.claude/skills/forge-depth-and-3d/SKILL.md) | `/forge-depth-and-3d` | Depth buffer, MVP pipeline, 3D rendering, back-face culling |
+| [forge-camera-and-input](.claude/skills/forge-camera-and-input/SKILL.md) | `/forge-camera-and-input` | First-person camera, keyboard/mouse input, delta time |
+| [forge-mesh-loading](.claude/skills/forge-mesh-loading/SKILL.md) | `/forge-mesh-loading` | Load OBJ models, textured mesh rendering, file-based textures |
+| [forge-scene-loading](.claude/skills/forge-scene-loading/SKILL.md) | `/forge-scene-loading` | Load glTF scenes, multi-material meshes, scene hierarchy, indexed rendering |
+| [forge-basic-lighting](.claude/skills/forge-basic-lighting/SKILL.md) | `/forge-basic-lighting` | Blinn-Phong lighting, ambient/diffuse/specular, normal transformation |
+| [forge-compute-shaders](.claude/skills/forge-compute-shaders/SKILL.md) | `/forge-compute-shaders` | Compute pipelines, storage textures, dispatch, compute-then-render pattern |
+| [forge-shader-grid](.claude/skills/forge-shader-grid/SKILL.md) | `/forge-shader-grid` | Procedural grid, anti-aliased lines with fwidth/smoothstep, multiple pipelines |
+| [forge-instanced-rendering](.claude/skills/forge-instanced-rendering/SKILL.md) | `/forge-instanced-rendering` | Instance buffers, per-instance transforms, multi-model scenes, efficient draw calls |
+| [forge-environment-mapping](.claude/skills/forge-environment-mapping/SKILL.md) | `/forge-environment-mapping` | Cube map textures, skybox rendering, environment reflections, multi-pipeline render pass |
+| [forge-blending](.claude/skills/forge-blending/SKILL.md) | `/forge-blending` | Alpha blending, alpha testing, blend state configuration, transparency sorting |
+| [forge-cascaded-shadow-maps](.claude/skills/forge-cascaded-shadow-maps/SKILL.md) | `/forge-cascaded-shadow-maps` | Shadow mapping, cascade frustum splitting, PCF soft shadows, depth-only passes |
+| [forge-bloom](.claude/skills/forge-bloom/SKILL.md) | `/forge-bloom` | Jimenez dual-filter bloom, 13-tap downsample, Karis averaging, tent-filter upsample, additive blending |
+| [forge-point-light-shadows](.claude/skills/forge-point-light-shadows/SKILL.md) | `/forge-point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
+| [forge-gobo-spotlight](.claude/skills/forge-gobo-spotlight/SKILL.md) | `/forge-gobo-spotlight` | Projected-texture spotlight, cone falloff, gobo pattern projection, single 2D shadow map |
+| [forge-shader-noise](.claude/skills/forge-shader-noise/SKILL.md) | `/forge-shader-noise` | GPU noise functions (hash, value, Perlin, fBm, domain warping), procedural textures, dithering |
+| [forge-ssao](.claude/skills/forge-ssao/SKILL.md) | `/forge-ssao` | Screen-space ambient occlusion, hemisphere kernel sampling, depth reconstruction, noise rotation, blur pass, AO compositing |
+| [forge-auto-widget-layout](.claude/skills/forge-auto-widget-layout/SKILL.md) | `/forge-auto-widget-layout` | Automatic widget layout with vertical/horizontal stacking, padding, spacing, and nested layouts |
 
 ### Development skills (used within this repo)
 
 | Skill | Invoke with | What it does |
 |-------|-------------|--------------|
-| [math-lesson](.claude/skills/math-lesson/SKILL.md) | `/math-lesson` | Add math concept: lesson + program + update library |
-| [engine-lesson](.claude/skills/engine-lesson/SKILL.md) | `/engine-lesson` | Add engine lesson: build systems, C, debugging, project structure |
-| [new-lesson](.claude/skills/new-lesson/SKILL.md) | `/new-lesson` | Scaffold a new GPU lesson with all required files |
-| [ui-lesson](.claude/skills/ui-lesson/SKILL.md) | `/ui-lesson` | Add UI lesson: fonts, text, immediate-mode controls |
-| [publish-lesson](.claude/skills/publish-lesson/SKILL.md) | `/publish-lesson` | Validate, commit, and PR a completed lesson |
+| [dev-math-lesson](.claude/skills/dev-math-lesson/SKILL.md) | `/dev-math-lesson` | Add math concept: lesson + program + update library |
+| [dev-engine-lesson](.claude/skills/dev-engine-lesson/SKILL.md) | `/dev-engine-lesson` | Add engine lesson: build systems, C, debugging, project structure |
+| [dev-new-lesson](.claude/skills/dev-new-lesson/SKILL.md) | `/dev-new-lesson` | Scaffold a new GPU lesson with all required files |
+| [dev-ui-lesson](.claude/skills/dev-ui-lesson/SKILL.md) | `/dev-ui-lesson` | Add UI lesson: fonts, text, immediate-mode controls |
+| [dev-publish-lesson](.claude/skills/dev-publish-lesson/SKILL.md) | `/dev-publish-lesson` | Validate, commit, and PR a completed lesson |
 
 **How to use:**
 
 1. Copy `.claude/skills/` into your project root
-2. Tell Claude: *"use the sdl-gpu-setup skill to create an SDL GPU application"*
-3. Or just type `/sdl-gpu-setup` in the chat
+2. Tell Claude: *"use the forge-sdl-gpu-setup skill to create an SDL GPU application"*
+3. Or just type `/forge-sdl-gpu-setup` in the chat
 4. Claude can also invoke skills automatically when relevant
 
 **Philosophy:** Skills teach AI agents the same patterns you learned from
@@ -627,7 +627,7 @@ This project is designed for exploration with an AI assistant. Using
 
 **While building:**
 
-- *"Use the sdl-gpu-setup skill to create an SDL GPU application"*
+- *"Use the forge-sdl-gpu-setup skill to create an SDL GPU application"*
 - *"Add a rotating quad using the math library"*
 - *"Help me add textures to my renderer"*
 

@@ -317,11 +317,11 @@ In forge-gpu lessons:
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`ui-lesson`](../../../.claude/skills/ui-lesson/SKILL.md) -- invoke it to
+[`dev-ui-lesson`](../../../.claude/skills/dev-ui-lesson/SKILL.md) -- invoke it to
 scaffold new UI lessons following the same structure and conventions.
 
 A dedicated skill for draggable windows is available:
-[`draggable-windows`](../../../.claude/skills/draggable-windows/SKILL.md) --
+[`forge-draggable-windows`](../../../.claude/skills/forge-draggable-windows/SKILL.md) --
 invoke it to add draggable, z-ordered windows to any `ForgeUiContext`
 application.
 

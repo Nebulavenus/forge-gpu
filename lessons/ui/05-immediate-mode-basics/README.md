@@ -407,7 +407,7 @@ repository root so it can find the font file at
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`ui-lesson`](../../../.claude/skills/ui-lesson/SKILL.md) — invoke it to
+[`dev-ui-lesson`](../../../.claude/skills/dev-ui-lesson/SKILL.md) — invoke it to
 scaffold new UI lessons covering font parsing, rasterization, atlas packing,
 text layout, and interactive controls.
 

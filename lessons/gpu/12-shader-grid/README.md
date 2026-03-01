@@ -239,7 +239,7 @@ python scripts/run.py 12
 
 ## AI skill
 
-This lesson distills into the [`/shader-grid`](../../../.claude/skills/shader-grid/SKILL.md)
+This lesson distills into the [`/forge-shader-grid`](../../../.claude/skills/forge-shader-grid/SKILL.md)
 skill. Use it when you need a procedural ground grid, debug visualization
 plane, or anti-aliased procedural patterns in your SDL3 GPU project.
 

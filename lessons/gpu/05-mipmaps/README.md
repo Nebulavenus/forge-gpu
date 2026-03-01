@@ -140,8 +140,8 @@ checkerboard pattern — trilinear is smooth, no-mipmaps is a mess.
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`mipmaps`](../../../.claude/skills/mipmaps/SKILL.md) — invoke it with
-`/mipmaps` or copy it into your own project's `.claude/skills/` directory.
+[`forge-mipmaps`](../../../.claude/skills/forge-mipmaps/SKILL.md) — invoke it with
+`/forge-mipmaps` or copy it into your own project's `.claude/skills/` directory.
 It distils the mipmap creation, sampler configuration, and procedural texture
 patterns from this lesson into a reusable reference.
 

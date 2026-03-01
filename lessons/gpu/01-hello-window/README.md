@@ -517,8 +517,8 @@ backend SDL chose (Vulkan, D3D12, or Metal) — check your terminal output.
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`sdl-gpu-setup`](../../../.claude/skills/sdl-gpu-setup/SKILL.md) — invoke it
-with `/sdl-gpu-setup` or copy it into your own project's `.claude/skills/`
+[`forge-sdl-gpu-setup`](../../../.claude/skills/forge-sdl-gpu-setup/SKILL.md) — invoke it
+with `/forge-sdl-gpu-setup` or copy it into your own project's `.claude/skills/`
 directory. It distils the setup pattern from this lesson into a reusable
 reference that AI assistants can follow.
 

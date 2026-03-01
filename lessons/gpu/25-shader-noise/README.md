@@ -220,9 +220,9 @@ python scripts/run.py 25
 ## AI skill
 
 The matching skill
-[`.claude/skills/shader-noise/SKILL.md`](../../../.claude/skills/shader-noise/SKILL.md)
+[`.claude/skills/forge-shader-noise/SKILL.md`](../../../.claude/skills/forge-shader-noise/SKILL.md)
 teaches AI agents to add GPU noise to any SDL3 project. Invoke with
-`/shader-noise` or copy it into your own project.
+`/forge-shader-noise` or copy it into your own project.
 
 ## What's next
 

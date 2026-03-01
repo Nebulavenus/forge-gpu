@@ -252,14 +252,14 @@ See how these functions are used in real code:
 2. **Header-only** — Just include `forge_math.h`, no build config needed
 3. **Well-documented** — Every function explains what, why, and where it's used
 4. **No dependencies** — Works in any C project, not just SDL GPU
-5. **Extensible** — Add new operations via `/math-lesson` skill
+5. **Extensible** — Add new operations via `/dev-math-lesson` skill
 
 ## Adding New Math
 
 Need a function that doesn't exist yet?
 
 1. **Check the lessons** — The concept might already be implemented
-2. **Use `/math-lesson` skill** — Creates a lesson + updates the library
+2. **Use `/dev-math-lesson` skill** — Creates a lesson + updates the library
 3. **Or add manually** — Follow the documentation style in `forge_math.h`
 
 Every new math operation should have:

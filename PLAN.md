@@ -9,7 +9,7 @@ Infrastructure that supports all lessons:
 - [x] **Math library** — `common/math/forge_math.h` (vectors, matrices, documented, tested)
 - [x] **Math lessons** — `lessons/math/` with standalone programs teaching concepts
 - [x] **Test suite** — Automated tests for math library (CTest integration)
-- [x] **Skills** — `/math-lesson`, `/new-lesson`, etc. for AI-assisted development
+- [x] **Skills** — `/dev-math-lesson`, `/dev-new-lesson`, etc. for AI-assisted development
 
 ## GPU Lessons
 

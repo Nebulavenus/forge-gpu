@@ -253,7 +253,7 @@ repository, licensed under
 ## AI skill
 
 The patterns from this lesson are distilled into a reusable Claude Code skill:
-[`.claude/skills/scene-loading/SKILL.md`](../../../.claude/skills/scene-loading/SKILL.md)
+[`.claude/skills/forge-scene-loading/SKILL.md`](../../../.claude/skills/forge-scene-loading/SKILL.md)
 
 ## What's next
 

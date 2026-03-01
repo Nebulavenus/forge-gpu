@@ -571,9 +571,9 @@ cmake --build build --config Debug --target 26-procedural-sky
 
 ## AI skill
 
-The [procedural-sky skill](../../../.claude/skills/procedural-sky/SKILL.md)
+The [forge-procedural-sky skill](../../../.claude/skills/forge-procedural-sky/SKILL.md)
 teaches Claude how to add atmospheric scattering to any SDL GPU project.
-Invoke it with `/procedural-sky` in Claude Code.
+Invoke it with `/forge-procedural-sky` in Claude Code.
 
 ## What's next
 

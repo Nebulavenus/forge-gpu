@@ -218,8 +218,8 @@ build\lessons\gpu\04-textures-and-samplers\Debug\04-textures-and-samplers.exe
 ## AI skill
 
 This lesson has a matching Claude Code skill:
-[`textures-and-samplers`](../../../.claude/skills/textures-and-samplers/SKILL.md) —
-invoke it with `/textures-and-samplers` or copy it into your own project's
+[`forge-textures-and-samplers`](../../../.claude/skills/forge-textures-and-samplers/SKILL.md) —
+invoke it with `/forge-textures-and-samplers` or copy it into your own project's
 `.claude/skills/` directory. It distils the texture loading, sampler creation,
 and UV mapping patterns from this lesson into a reusable reference.
 
