@@ -54,10 +54,10 @@
 #define WINDOW_WIDTH  1280
 #define WINDOW_HEIGHT 720
 
-/* Clear color -- matches the project theme background (#1a1a2e). */
-#define CLEAR_R 0.10f
-#define CLEAR_G 0.10f
-#define CLEAR_B 0.18f
+/* Clear color — matches lesson 01 (near-black). */
+#define CLEAR_R 0.02f
+#define CLEAR_G 0.02f
+#define CLEAR_B 0.03f
 #define CLEAR_A 1.0f
 
 /* Font asset path (relative to executable, same as all UI lessons). */
@@ -101,11 +101,14 @@
 #define TEXT_INPUT_HEIGHT    32.0f
 
 /* Demo widget IDs (unique non-zero integers). */
+/* Widget IDs must not collide with the window's internal IDs.
+ * forge_ui_wctx_window_begin reserves id+1 (scrollbar) and id+2
+ * (collapse toggle), so content widgets must start at id+3 or higher. */
 #define DEMO_WINDOW_ID      100
-#define BUTTON_ID           101
-#define CHECKBOX_ID         102
-#define SLIDER_ID           103
-#define TEXT_INPUT_ID       104
+#define BUTTON_ID           200
+#define CHECKBOX_ID         201
+#define SLIDER_ID           202
+#define TEXT_INPUT_ID       203
 
 /* Demo slider range. */
 #define SLIDER_MIN 0.0f
@@ -118,14 +121,15 @@
 /* Text input backing buffer size. */
 #define TEXT_INPUT_BUF_SIZE 128
 
-/* Label colors — theme text (#e0e0f0) and dim text (#8888aa). */
-#define TITLE_LABEL_R  0.88f
-#define TITLE_LABEL_G  0.88f
-#define TITLE_LABEL_B  0.94f
+/* Label colors — title uses accent cyan (#4fc3f7) for emphasis,
+ * info uses theme dim text (#8888aa) for secondary content. */
+#define TITLE_LABEL_R  0.310f
+#define TITLE_LABEL_G  0.765f
+#define TITLE_LABEL_B  0.969f
 #define TITLE_LABEL_A  1.00f
-#define INFO_LABEL_R   0.60f
-#define INFO_LABEL_G   0.60f
-#define INFO_LABEL_B   0.72f
+#define INFO_LABEL_R   0.533f
+#define INFO_LABEL_G   0.533f
+#define INFO_LABEL_B   0.667f
 #define INFO_LABEL_A   1.00f
 
 /* Cursor blink timing (in milliseconds). */
