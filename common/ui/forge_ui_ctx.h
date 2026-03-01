@@ -57,28 +57,28 @@
 
 /* ── Button style ───────────────────────────────────────────────────────── */
 
-/* Button appearance varies with interaction state.  These default colors
- * provide a clear visual distinction between normal, hovered, and pressed
- * states.  All values are RGBA floats in [0, 1]. */
-#define FORGE_UI_BTN_NORMAL_R   0.25f
-#define FORGE_UI_BTN_NORMAL_G   0.25f
-#define FORGE_UI_BTN_NORMAL_B   0.30f
+/* Button appearance varies with interaction state.  Colors follow the
+ * project's dark blue-gray theme (#1a1a2e background, #4fc3f7 accent).
+ * All values are RGBA floats in [0, 1]. */
+#define FORGE_UI_BTN_NORMAL_R   0.22f
+#define FORGE_UI_BTN_NORMAL_G   0.22f
+#define FORGE_UI_BTN_NORMAL_B   0.36f
 #define FORGE_UI_BTN_NORMAL_A   1.00f
 
-#define FORGE_UI_BTN_HOT_R      0.35f
-#define FORGE_UI_BTN_HOT_G      0.35f
-#define FORGE_UI_BTN_HOT_B      0.42f
+#define FORGE_UI_BTN_HOT_R      0.30f
+#define FORGE_UI_BTN_HOT_G      0.30f
+#define FORGE_UI_BTN_HOT_B      0.48f
 #define FORGE_UI_BTN_HOT_A      1.00f
 
-#define FORGE_UI_BTN_ACTIVE_R   0.18f
-#define FORGE_UI_BTN_ACTIVE_G   0.18f
-#define FORGE_UI_BTN_ACTIVE_B   0.22f
+#define FORGE_UI_BTN_ACTIVE_R   0.15f
+#define FORGE_UI_BTN_ACTIVE_G   0.15f
+#define FORGE_UI_BTN_ACTIVE_B   0.26f
 #define FORGE_UI_BTN_ACTIVE_A   1.00f
 
-/* Default button text color (near-white) */
-#define FORGE_UI_BTN_TEXT_R     0.95f
-#define FORGE_UI_BTN_TEXT_G     0.95f
-#define FORGE_UI_BTN_TEXT_B     0.95f
+/* Default button text color — matches theme text #e0e0f0 */
+#define FORGE_UI_BTN_TEXT_R     0.88f
+#define FORGE_UI_BTN_TEXT_G     0.88f
+#define FORGE_UI_BTN_TEXT_B     0.94f
 #define FORGE_UI_BTN_TEXT_A     1.00f
 
 /* ── Checkbox style ────────────────────────────────────────────────────── */
@@ -90,20 +90,20 @@
 #define FORGE_UI_CB_INNER_PAD     3.0f  /* padding between box edge and check fill */
 #define FORGE_UI_CB_LABEL_GAP     8.0f  /* horizontal gap between box and label */
 
-/* Box outline colors by state (RGBA floats in [0, 1]) */
-#define FORGE_UI_CB_NORMAL_R    0.30f
-#define FORGE_UI_CB_NORMAL_G    0.30f
-#define FORGE_UI_CB_NORMAL_B    0.35f
+/* Box outline colors by state — themed blue-gray (RGBA floats in [0, 1]) */
+#define FORGE_UI_CB_NORMAL_R    0.25f
+#define FORGE_UI_CB_NORMAL_G    0.25f
+#define FORGE_UI_CB_NORMAL_B    0.40f
 #define FORGE_UI_CB_NORMAL_A    1.00f
 
-#define FORGE_UI_CB_HOT_R       0.40f
-#define FORGE_UI_CB_HOT_G       0.40f
-#define FORGE_UI_CB_HOT_B       0.48f
+#define FORGE_UI_CB_HOT_R       0.35f
+#define FORGE_UI_CB_HOT_G       0.35f
+#define FORGE_UI_CB_HOT_B       0.52f
 #define FORGE_UI_CB_HOT_A       1.00f
 
-#define FORGE_UI_CB_ACTIVE_R    0.22f
-#define FORGE_UI_CB_ACTIVE_G    0.22f
-#define FORGE_UI_CB_ACTIVE_B    0.26f
+#define FORGE_UI_CB_ACTIVE_R    0.18f
+#define FORGE_UI_CB_ACTIVE_G    0.18f
+#define FORGE_UI_CB_ACTIVE_B    0.30f
 #define FORGE_UI_CB_ACTIVE_A    1.00f
 
 /* Inner fill color when checked (accent cyan) */
@@ -112,10 +112,10 @@
 #define FORGE_UI_CB_CHECK_B     0.97f
 #define FORGE_UI_CB_CHECK_A     1.00f
 
-/* Checkbox label text color (near-white, matches button text) */
-#define FORGE_UI_CB_TEXT_R      0.95f
-#define FORGE_UI_CB_TEXT_G      0.95f
-#define FORGE_UI_CB_TEXT_B      0.95f
+/* Checkbox label text color — matches theme text #e0e0f0 */
+#define FORGE_UI_CB_TEXT_R      0.88f
+#define FORGE_UI_CB_TEXT_G      0.88f
+#define FORGE_UI_CB_TEXT_B      0.94f
 #define FORGE_UI_CB_TEXT_A      1.00f
 
 /* ── Slider style ──────────────────────────────────────────────────────── */
@@ -129,22 +129,22 @@
 #define FORGE_UI_SL_THUMB_WIDTH   12.0f   /* thumb rectangle width */
 #define FORGE_UI_SL_THUMB_HEIGHT  22.0f   /* thumb rectangle height */
 
-/* Track background color (dark gray) */
-#define FORGE_UI_SL_TRACK_R     0.30f
-#define FORGE_UI_SL_TRACK_G     0.30f
-#define FORGE_UI_SL_TRACK_B     0.35f
+/* Track background color — themed blue-gray */
+#define FORGE_UI_SL_TRACK_R     0.24f
+#define FORGE_UI_SL_TRACK_G     0.24f
+#define FORGE_UI_SL_TRACK_B     0.38f
 #define FORGE_UI_SL_TRACK_A     1.00f
 
 /* Thumb color varies with interaction state to give visual feedback
  * during drag: normal (idle), hot (cursor hovering), active (dragging). */
-#define FORGE_UI_SL_NORMAL_R    0.50f
-#define FORGE_UI_SL_NORMAL_G    0.50f
+#define FORGE_UI_SL_NORMAL_R    0.42f
+#define FORGE_UI_SL_NORMAL_G    0.42f
 #define FORGE_UI_SL_NORMAL_B    0.58f
 #define FORGE_UI_SL_NORMAL_A    1.00f
 
-#define FORGE_UI_SL_HOT_R       0.60f
-#define FORGE_UI_SL_HOT_G       0.60f
-#define FORGE_UI_SL_HOT_B       0.72f
+#define FORGE_UI_SL_HOT_R       0.50f
+#define FORGE_UI_SL_HOT_G       0.50f
+#define FORGE_UI_SL_HOT_B       0.68f
 #define FORGE_UI_SL_HOT_A       1.00f
 
 #define FORGE_UI_SL_ACTIVE_R    0.31f
@@ -162,20 +162,20 @@
 #define FORGE_UI_TI_CURSOR_WIDTH  2.0f   /* cursor bar width in pixels */
 #define FORGE_UI_TI_BORDER_WIDTH  1.0f   /* focused border edge width in pixels */
 
-/* Background colors by state (RGBA floats in [0, 1]) */
-#define FORGE_UI_TI_NORMAL_R   0.15f   /* unfocused: dark */
-#define FORGE_UI_TI_NORMAL_G   0.15f
-#define FORGE_UI_TI_NORMAL_B   0.18f
+/* Background colors by state — themed blue-gray (RGBA floats in [0, 1]) */
+#define FORGE_UI_TI_NORMAL_R   0.11f   /* unfocused: dark */
+#define FORGE_UI_TI_NORMAL_G   0.11f
+#define FORGE_UI_TI_NORMAL_B   0.20f
 #define FORGE_UI_TI_NORMAL_A   1.00f
 
-#define FORGE_UI_TI_HOT_R      0.20f   /* hovered (unfocused): subtle highlight */
-#define FORGE_UI_TI_HOT_G      0.20f
-#define FORGE_UI_TI_HOT_B      0.24f
+#define FORGE_UI_TI_HOT_R      0.16f   /* hovered (unfocused): subtle highlight */
+#define FORGE_UI_TI_HOT_G      0.16f
+#define FORGE_UI_TI_HOT_B      0.28f
 #define FORGE_UI_TI_HOT_A      1.00f
 
-#define FORGE_UI_TI_FOCUSED_R  0.18f   /* focused: medium */
-#define FORGE_UI_TI_FOCUSED_G  0.18f
-#define FORGE_UI_TI_FOCUSED_B  0.22f
+#define FORGE_UI_TI_FOCUSED_R  0.14f   /* focused: medium */
+#define FORGE_UI_TI_FOCUSED_G  0.14f
+#define FORGE_UI_TI_FOCUSED_B  0.25f
 #define FORGE_UI_TI_FOCUSED_A  1.00f
 
 /* Border color when focused (accent cyan, matches check/slider active) */
@@ -190,10 +190,10 @@
 #define FORGE_UI_TI_CURSOR_B   0.97f
 #define FORGE_UI_TI_CURSOR_A   1.00f
 
-/* Text color (near-white, matches other widget text) */
-#define FORGE_UI_TI_TEXT_R     0.95f
-#define FORGE_UI_TI_TEXT_G     0.95f
-#define FORGE_UI_TI_TEXT_B     0.95f
+/* Text color — matches theme text #e0e0f0 */
+#define FORGE_UI_TI_TEXT_R     0.88f
+#define FORGE_UI_TI_TEXT_G     0.88f
+#define FORGE_UI_TI_TEXT_B     0.94f
 #define FORGE_UI_TI_TEXT_A     1.00f
 
 /* ── Layout constants ───────────────────────────────────────────────────── */
@@ -210,22 +210,22 @@
 #define FORGE_UI_PANEL_TITLE_HEIGHT    30.0f
 #define FORGE_UI_PANEL_PADDING         10.0f
 
-/* Panel background RGBA (dark blue-gray) */
-#define FORGE_UI_PANEL_BG_R     0.14f
-#define FORGE_UI_PANEL_BG_G     0.14f
-#define FORGE_UI_PANEL_BG_B     0.18f
+/* Panel background RGBA — based on theme surface, darker for contrast */
+#define FORGE_UI_PANEL_BG_R     0.12f
+#define FORGE_UI_PANEL_BG_G     0.12f
+#define FORGE_UI_PANEL_BG_B     0.22f
 #define FORGE_UI_PANEL_BG_A     1.00f
 
-/* Title bar background RGBA (slightly lighter) */
-#define FORGE_UI_PANEL_TITLE_BG_R   0.18f
-#define FORGE_UI_PANEL_TITLE_BG_G   0.18f
-#define FORGE_UI_PANEL_TITLE_BG_B   0.24f
+/* Title bar background RGBA — based on theme grid, slightly lighter */
+#define FORGE_UI_PANEL_TITLE_BG_R   0.16f
+#define FORGE_UI_PANEL_TITLE_BG_G   0.16f
+#define FORGE_UI_PANEL_TITLE_BG_B   0.28f
 #define FORGE_UI_PANEL_TITLE_BG_A   1.00f
 
-/* Title bar text color (near-white) */
-#define FORGE_UI_PANEL_TITLE_TEXT_R  0.90f
-#define FORGE_UI_PANEL_TITLE_TEXT_G  0.90f
-#define FORGE_UI_PANEL_TITLE_TEXT_B  0.95f
+/* Title bar text color — matches theme text #e0e0f0 */
+#define FORGE_UI_PANEL_TITLE_TEXT_R  0.88f
+#define FORGE_UI_PANEL_TITLE_TEXT_G  0.88f
+#define FORGE_UI_PANEL_TITLE_TEXT_B  0.94f
 #define FORGE_UI_PANEL_TITLE_TEXT_A  1.00f
 
 /* ── Scrollbar style ───────────────────────────────────────────────────── */
@@ -233,21 +233,21 @@
 #define FORGE_UI_SCROLLBAR_WIDTH        10.0f  /* scrollbar track width (pixels) */
 #define FORGE_UI_SCROLLBAR_MIN_THUMB    20.0f  /* minimum thumb height (pixels) */
 
-/* Scrollbar track RGBA */
-#define FORGE_UI_SB_TRACK_R    0.10f
-#define FORGE_UI_SB_TRACK_G    0.10f
-#define FORGE_UI_SB_TRACK_B    0.14f
+/* Scrollbar track RGBA — themed dark blue-gray */
+#define FORGE_UI_SB_TRACK_R    0.08f
+#define FORGE_UI_SB_TRACK_G    0.08f
+#define FORGE_UI_SB_TRACK_B    0.16f
 #define FORGE_UI_SB_TRACK_A    1.00f
 
-/* Scrollbar thumb RGBA by state */
-#define FORGE_UI_SB_NORMAL_R   0.35f
-#define FORGE_UI_SB_NORMAL_G   0.35f
-#define FORGE_UI_SB_NORMAL_B   0.42f
+/* Scrollbar thumb RGBA by state — themed blue-gray */
+#define FORGE_UI_SB_NORMAL_R   0.28f
+#define FORGE_UI_SB_NORMAL_G   0.28f
+#define FORGE_UI_SB_NORMAL_B   0.44f
 #define FORGE_UI_SB_NORMAL_A   1.00f
 
-#define FORGE_UI_SB_HOT_R      0.45f
-#define FORGE_UI_SB_HOT_G      0.45f
-#define FORGE_UI_SB_HOT_B      0.55f
+#define FORGE_UI_SB_HOT_R      0.38f
+#define FORGE_UI_SB_HOT_G      0.38f
+#define FORGE_UI_SB_HOT_B      0.56f
 #define FORGE_UI_SB_HOT_A      1.00f
 
 #define FORGE_UI_SB_ACTIVE_R   0.31f

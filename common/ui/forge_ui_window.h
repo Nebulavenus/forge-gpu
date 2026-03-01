@@ -83,34 +83,34 @@
 #define FORGE_UI_WIN_TOGGLE_SIZE     10.0f  /* triangle side length */
 #define FORGE_UI_WIN_TOGGLE_PAD       8.0f  /* padding from left edge */
 
-/* Window background RGBA (matches panel for visual consistency) */
-#define FORGE_UI_WIN_BG_R     0.14f
-#define FORGE_UI_WIN_BG_G     0.14f
-#define FORGE_UI_WIN_BG_B     0.18f
+/* Window background RGBA — based on theme surface, matches panel */
+#define FORGE_UI_WIN_BG_R     0.12f
+#define FORGE_UI_WIN_BG_G     0.12f
+#define FORGE_UI_WIN_BG_B     0.22f
 #define FORGE_UI_WIN_BG_A     1.00f
 
-/* Title bar background RGBA (matches panel title bar) */
-#define FORGE_UI_WIN_TITLE_BG_R   0.18f
-#define FORGE_UI_WIN_TITLE_BG_G   0.18f
-#define FORGE_UI_WIN_TITLE_BG_B   0.24f
+/* Title bar background RGBA — based on theme grid, matches panel */
+#define FORGE_UI_WIN_TITLE_BG_R   0.16f
+#define FORGE_UI_WIN_TITLE_BG_G   0.16f
+#define FORGE_UI_WIN_TITLE_BG_B   0.28f
 #define FORGE_UI_WIN_TITLE_BG_A   1.00f
 
-/* Title bar text color (near-white) */
-#define FORGE_UI_WIN_TITLE_TEXT_R  0.90f
-#define FORGE_UI_WIN_TITLE_TEXT_G  0.90f
-#define FORGE_UI_WIN_TITLE_TEXT_B  0.95f
+/* Title bar text color — matches theme text #e0e0f0 */
+#define FORGE_UI_WIN_TITLE_TEXT_R  0.88f
+#define FORGE_UI_WIN_TITLE_TEXT_G  0.88f
+#define FORGE_UI_WIN_TITLE_TEXT_B  0.94f
 #define FORGE_UI_WIN_TITLE_TEXT_A  1.00f
 
-/* Collapse toggle color (dim until hovered) */
-#define FORGE_UI_WIN_TOGGLE_R      0.60f
-#define FORGE_UI_WIN_TOGGLE_G      0.60f
-#define FORGE_UI_WIN_TOGGLE_B      0.68f
+/* Collapse toggle color — matches theme dim text #8888aa */
+#define FORGE_UI_WIN_TOGGLE_R      0.53f
+#define FORGE_UI_WIN_TOGGLE_G      0.53f
+#define FORGE_UI_WIN_TOGGLE_B      0.67f
 #define FORGE_UI_WIN_TOGGLE_A      1.00f
 
 /* Collapse toggle hover color (brighter when the title bar is hot) */
-#define FORGE_UI_WIN_TOGGLE_HOT_R  0.80f
-#define FORGE_UI_WIN_TOGGLE_HOT_G  0.80f
-#define FORGE_UI_WIN_TOGGLE_HOT_B  0.90f
+#define FORGE_UI_WIN_TOGGLE_HOT_R  0.75f
+#define FORGE_UI_WIN_TOGGLE_HOT_G  0.75f
+#define FORGE_UI_WIN_TOGGLE_HOT_B  0.88f
 #define FORGE_UI_WIN_TOGGLE_HOT_A  1.00f
 
 /* Extra padding around the collapse toggle triangle to make the click

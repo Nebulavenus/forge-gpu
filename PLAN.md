@@ -60,35 +60,36 @@ Infrastructure that supports all lessons:
 ### Screen-Space Effects
 
 - [x] **Lesson 27 — SSAO** — Screen-space ambient occlusion; sampling hemisphere kernel in view space; depth buffer reconstruction; random rotation via noise texture; blur pass for smooth results; combining AO factor with lighting (depends on Lesson 21 for render-to-texture pattern)
-- [ ] **Lesson 28 — Screen-Space Reflections (SSR)** — Ray marching against the depth buffer in screen space; hierarchical tracing for performance; handling misses and fallback to environment map; combining SSR with existing reflections from Lesson 14
+- [x] **Lesson 28 — UI Rendering** — Rendering the immediate-mode UI system (forge_ui_ctx.h, forge_ui_window.h) on the GPU; single draw call with alpha blending; R8_UNORM font atlas upload; white-pixel technique for solid rectangles; orthographic projection; dynamic vertex/index buffer streaming with power-of-two growth; project theme colors (dark blue-gray palette from `_common.py`)
+- [ ] **Lesson 29 — Screen-Space Reflections (SSR)** — Ray marching against the depth buffer in screen space; hierarchical tracing for performance; handling misses and fallback to environment map; combining SSR with existing reflections from Lesson 14
 
 ### Reflections
 
-- [ ] **Lesson 29 — Planar Reflections** — Rendering the scene from a mirrored camera; oblique near-plane clipping to prevent geometry behind the mirror from appearing; reflection texture compositing; application to water surfaces and mirrors
+- [ ] **Lesson 30 — Planar Reflections** — Rendering the scene from a mirrored camera; oblique near-plane clipping to prevent geometry behind the mirror from appearing; reflection texture compositing; application to water surfaces and mirrors
 
 ### Animation
 
-- [ ] **Lesson 30 — Transform Animations** — Keyframe interpolation for translation, rotation (slerp), and scale; animation clips with timestamps; playing, blending, and looping animations; loading animation data from glTF
-- [ ] **Lesson 31 — Skinning Animations** — Skeletal animation with joint hierarchies; bind-pose inverse matrices; vertex skinning with joint indices and weights (4 joints per vertex); computing the skin matrix in the vertex shader; loading skinned meshes from glTF
+- [ ] **Lesson 31 — Transform Animations** — Keyframe interpolation for translation, rotation (slerp), and scale; animation clips with timestamps; playing, blending, and looping animations; loading animation data from glTF
+- [ ] **Lesson 32 — Skinning Animations** — Skeletal animation with joint hierarchies; bind-pose inverse matrices; vertex skinning with joint indices and weights (4 joints per vertex); computing the skin matrix in the vertex shader; loading skinned meshes from glTF
 
 ### Advanced Rendering
 
-- [ ] **Lesson 32 — Vertex Pulling** — Programmable vertex fetch using storage buffers instead of vertex input; raw buffer access in the vertex shader; decoupling vertex layout from pipeline input state; use cases — flexible vertex formats, mesh compression, compute-to-vertex pipelines
-- [ ] **Lesson 33 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
-- [ ] **Lesson 34 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on Lessons 11 and 16)
-- [ ] **Lesson 35 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
+- [ ] **Lesson 33 — Vertex Pulling** — Programmable vertex fetch using storage buffers instead of vertex input; raw buffer access in the vertex shader; decoupling vertex layout from pipeline input state; use cases — flexible vertex formats, mesh compression, compute-to-vertex pipelines
+- [ ] **Lesson 34 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
+- [ ] **Lesson 35 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on Lessons 11 and 16)
+- [ ] **Lesson 36 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 
 ### Advanced Materials & Effects
 
-- [ ] **Lesson 36 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
-- [ ] **Lesson 37 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
-- [ ] **Lesson 38 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
+- [ ] **Lesson 37 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
+- [ ] **Lesson 38 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
+- [ ] **Lesson 39 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
 
 ### Volumetric & Terrain
 
-- [ ] **Lesson 39 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
-- [ ] **Lesson 40 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 35)
-- [ ] **Lesson 41 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
+- [ ] **Lesson 40 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
+- [ ] **Lesson 41 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 35)
+- [ ] **Lesson 42 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
 ## UI Lessons
 

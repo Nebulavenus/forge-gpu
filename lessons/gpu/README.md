@@ -49,6 +49,7 @@ portable C interface.
 | 25 | [Shader Noise](25-shader-noise/) | Hash functions, value/Perlin noise, fBm, domain warping | [Hash Functions](../math/12-hash-functions/), [Gradient Noise](../math/13-gradient-noise/) |
 | 26 | [Procedural Sky (Hillaire)](26-procedural-sky/) | Atmospheric scattering, Rayleigh/Mie, LUT transmittance | — |
 | 27 | [SSAO](27-ssao/) | Screen-space ambient occlusion, G-buffer, hemisphere sampling | [Blue Noise](../math/14-blue-noise-sequences/) |
+| 28 | [UI Rendering](28-ui-rendering/) | Immediate-mode UI on GPU, font atlas, alpha blending, dynamic buffers | [Vectors](../math/01-vectors/), [Matrices](../math/05-matrices/) |
 
 ## Prerequisites
 
@@ -209,6 +210,7 @@ the same pattern. Use these to build projects quickly:
 - **`/shader-noise`** — GPU noise functions (hash, Perlin, fBm, domain warp)
 - **`/procedural-sky`** — Physically-based procedural atmospheric scattering
 - **`/ssao`** — Screen-space ambient occlusion
+- **`/ui-rendering`** — Immediate-mode UI on GPU with font atlas and dynamic buffers
 
 **How to use:**
 
@@ -297,8 +299,8 @@ GPU programming has a learning curve, but these lessons make it manageable.
 
 ## What's Next?
 
-After completing the current 27 lessons, you'll have the skills to build
-real-time 3D applications with lighting, shadows, post-processing, and
+After completing the current 28 lessons, you'll have the skills to build
+real-time 3D applications with lighting, shadows, post-processing, UI, and
 procedural content. Use the skills to build your own projects, or extend
 the lessons with new techniques.
 

@@ -191,6 +191,39 @@ a plain block and the submit runs unconditionally.
 #endif
 ```
 
+## Headless capture (no GPU)
+
+On servers without a display or GPU hardware, screenshots can be captured
+using **lavapipe** (Mesa's CPU-based Vulkan driver) and **Xvfb** (a virtual
+X11 display).
+
+### Prerequisites
+
+```bash
+apt install mesa-vulkan-drivers xvfb
+```
+
+### Usage
+
+Pass `--headless` to the capture script:
+
+```bash
+python scripts/capture_lesson.py lessons/gpu/<lesson-dir> --headless
+```
+
+**Auto-detection:** When `DISPLAY` is not set (typical on CI or remote
+servers), the script automatically enables headless mode if both `xvfb-run`
+and the lavapipe ICD file are available. No flag needed.
+
+### How it works
+
+- **Lavapipe** implements the Vulkan API entirely on the CPU — no GPU
+  hardware required. The environment variables `VK_ICD_FILENAMES` and
+  `VK_DRIVER_FILES` point SDL's Vulkan backend at the lavapipe driver.
+- **Xvfb** provides a virtual X11 display so SDL can create a window without
+  a physical monitor. The script uses `xvfb-run -a` to allocate a free
+  display automatically.
+
 ## Capture script options
 
 | Flag | Default | Description |
@@ -198,6 +231,7 @@ a plain block and the submit runs unconditionally.
 | `--capture-frame N` | 5 | Which frame to start capturing |
 | `--no-update-readme` | off | Skip README placeholder replacement |
 | `--build` | auto | Force rebuild before capturing |
+| `--headless` | auto | Use lavapipe + Xvfb (auto-detected when no `DISPLAY`) |
 
 ## Output locations
 
@@ -224,3 +258,9 @@ dimensions, verify the lesson's `WINDOW_WIDTH`/`WINDOW_HEIGHT` defines.
   pass `--build` to the capture script.
 - **Wrong colors:** The capture uses the swapchain's sRGB format. If the
   lesson does not set `SDR_LINEAR`, colors may look washed out.
+- **Headless: "lavapipe ICD not found":** Install Mesa's Vulkan drivers with
+  `apt install mesa-vulkan-drivers`. The script looks for the ICD file at
+  `/usr/share/vulkan/icd.d/lvp_icd.json`.
+- **Headless: "xvfb-run not found":** Install Xvfb with `apt install xvfb`.
+- **Headless: visual differences:** Lavapipe is a software renderer. Colors
+  and anti-aliasing may differ slightly from hardware GPU output.

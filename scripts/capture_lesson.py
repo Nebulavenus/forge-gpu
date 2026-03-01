@@ -16,6 +16,7 @@ Options:
     --capture-frame N    Frame to start capturing (default: 5)
     --no-update-readme   Skip updating the lesson README
     --build              Build the lesson before capturing (default: auto-detect)
+    --headless           Use lavapipe + Xvfb for headless capture (auto-detected)
 """
 
 import argparse
@@ -80,15 +81,52 @@ def build_lesson(target_name):
     return True
 
 
-def capture_screenshot(exe_path, output_bmp, capture_frame):
+LAVAPIPE_ICD = "/usr/share/vulkan/icd.d/lvp_icd.json"
+
+
+def _should_use_headless(explicit):
+    """Decide whether to use headless mode (lavapipe + Xvfb).
+
+    Returns True when explicitly requested or when auto-detected: no DISPLAY
+    environment variable and both xvfb-run and the lavapipe ICD are available.
+    """
+    if explicit:
+        return True
+    if os.environ.get("DISPLAY"):
+        return False
+    return shutil.which("xvfb-run") and os.path.isfile(LAVAPIPE_ICD)
+
+
+def capture_screenshot(exe_path, output_bmp, capture_frame, headless=False):
     """Run the lesson and capture a single frame."""
     exe_path = os.path.abspath(exe_path)
-    print(f"Capturing screenshot (frame {capture_frame})...")
+    headless = _should_use_headless(headless)
+
+    cmd = [exe_path, "--screenshot", output_bmp, "--capture-frame", str(capture_frame)]
+    env = os.environ.copy()
+
+    if headless:
+        if not os.path.isfile(LAVAPIPE_ICD):
+            print(f"Error: lavapipe ICD not found at {LAVAPIPE_ICD}")
+            print("Install with: apt install mesa-vulkan-drivers")
+            return False
+        if not shutil.which("xvfb-run"):
+            print("Error: xvfb-run not found on PATH")
+            print("Install with: apt install xvfb")
+            return False
+        env["VK_ICD_FILENAMES"] = LAVAPIPE_ICD
+        env["VK_DRIVER_FILES"] = LAVAPIPE_ICD
+        cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1280x720x24"] + cmd
+        print(f"Capturing screenshot headless via lavapipe (frame {capture_frame})...")
+    else:
+        print(f"Capturing screenshot (frame {capture_frame})...")
+
     result = subprocess.run(
-        [exe_path, "--screenshot", output_bmp, "--capture-frame", str(capture_frame)],
+        cmd,
         capture_output=True,
         text=True,
         timeout=30,
+        env=env,
     )
     if result.returncode != 0:
         print(f"Capture failed (exit code {result.returncode})")
@@ -163,6 +201,11 @@ def main():
     parser.add_argument(
         "--build", action="store_true", help="Build the lesson before capturing"
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Use lavapipe + Xvfb for headless capture (auto-detected when DISPLAY is unset)",
+    )
     args = parser.parse_args()
 
     # Derive target name from lesson directory
@@ -193,7 +236,7 @@ def main():
 
     # Capture single frame
     bmp_path = os.path.join(assets_dir, "_capture.bmp")
-    if not capture_screenshot(exe_path, bmp_path, args.capture_frame):
+    if not capture_screenshot(exe_path, bmp_path, args.capture_frame, args.headless):
         sys.exit(1)
 
     # Convert BMP to PNG

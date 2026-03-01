@@ -3,7 +3,7 @@
 A set of lessons covering real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
 Four learning tracks that progress from a blank window to shadow maps,
-bloom, SSAO, and procedural skies — with tested libraries and AI skills
+bloom, SSAO, procedural skies, and GPU-rendered UI — with tested libraries and AI skills
 you can use in your own projects.
 
 ## Overview
@@ -29,10 +29,10 @@ with AI when they understand what they're building.
 
 ### GPU Lessons (lessons/gpu/)
 
-The core rendering track. Start with a triangle, end with screen-space
-ambient occlusion. Every lesson is a standalone C program introducing one
-SDL GPU concept: pipelines, textures, depth buffers, lighting, shadows,
-compute shaders, HDR, and more.
+The core rendering track. Start with a triangle, end with GPU-rendered UI.
+Every lesson is a standalone C program introducing one SDL GPU concept:
+pipelines, textures, depth buffers, lighting, shadows, compute shaders,
+HDR, post-processing, and UI rendering.
 
 <table>
 <tr>
@@ -159,6 +159,12 @@ compute shaders, HDR, and more.
 <td align="center">
 <a href="lessons/gpu/27-ssao/"><img src="lessons/gpu/27-ssao/assets/screenshot.png" width="200" alt="SSAO" /></a><br />
 <b>27</b> — SSAO
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/28-ui-rendering/"><img src="lessons/gpu/28-ui-rendering/assets/screenshot.png" width="200" alt="UI Rendering" /></a><br />
+<b>28</b> — UI Rendering
 </td>
 </tr>
 </table>
