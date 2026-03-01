@@ -50,6 +50,17 @@ sampling the depth buffer at each step. When the ray's depth matches the
 stored depth, a hit is detected and the corresponding scene color is used as
 the reflection.
 
+The name "screen-space" refers to *where* the algorithm searches for hits —
+the 2D buffers (depth, color, normals) that the camera already rendered. The
+ray march itself runs in **view space**: at each step the shader advances a
+3D point along the reflection direction and projects it back to screen UV to
+sample the depth buffer. The alternative — marching directly in screen space
+by stepping pixel-by-pixel along the projected ray (DDA traversal with a
+hierarchical Z-buffer) — gives more uniform sampling density but is
+significantly more complex. Both approaches are "screen-space reflections"
+because they share the same core property: the reflection can only show what
+is already on screen.
+
 The key trade-off: SSR can only reflect geometry that is visible on screen.
 Anything behind the camera, occluded by another object, or outside the
 viewport cannot contribute to reflections. This makes SSR a complement to
@@ -329,14 +340,147 @@ The intersection test has two conditions:
   falsely "hit" a distant surface on the other side. The thickness parameter
   defines the maximum acceptable depth difference for a valid hit.
 
+### Self-intersection guard
+
+A reflected ray starts at the surface it bounced from. At shallow viewing
+angles the first few march steps stay very close to that surface — close enough
+that the depth comparison registers a false hit against the originating geometry
+itself. This produces speckled, noisy reflections where the floor "reflects
+itself."
+
+![Self-intersection guard](assets/self_intersection.png)
+
+The fix is to skip depth comparisons until the ray has traveled a minimum
+distance from its origin. In this lesson the guard distance is 0.3 view-space
+units (two steps at the default 0.15 step size):
+
+```hlsl
+/* Skip early steps to avoid self-intersection — the ray can
+ * false-hit the surface it started from at shallow angles. */
+if (traveled < SSR_MIN_TRAVEL)
+    continue;
+```
+
+The ray still advances during skipped steps (maintaining consistent spacing),
+but no hit test runs until it has cleared the originating surface. This
+eliminates self-reflection noise without affecting legitimate nearby
+reflections.
+
+### Binary search refinement
+
+The linear ray march advances in fixed 0.15-unit steps. When it detects a
+hit (the ray passes behind a surface), the true intersection lies somewhere
+within the last step — up to 0.15 units of error. For curved surfaces like a
+headlight, this coarse snap distorts the reflected shape.
+
+Binary search refinement narrows the interval between the last "in front"
+position and the first "behind" position. Each iteration halves the error, so
+8 steps give approximately 256 times the precision of the linear step alone
+(0.15 / 256 = 0.0006 view-space units):
+
+```hlsl
+float3 refine_lo = prev_pos;   /* last position in front of surface */
+float3 refine_hi = ray_pos;    /* first position behind surface     */
+
+for (int j = 0; j < SSR_REFINE_STEPS; j++)
+{
+    float3 mid = (refine_lo + refine_hi) * 0.5;
+    float  mid_diff = /* depth comparison at mid */;
+
+    if (mid_diff > 0.0)
+        refine_hi = mid;   /* still behind — narrow upper bound */
+    else
+        refine_lo = mid;   /* in front — narrow lower bound     */
+}
+```
+
+This is the same binary search principle used in root-finding algorithms
+(bisection method). The linear march provides a coarse bracket; the binary
+search refines it to sub-pixel accuracy without increasing the step count.
+
+### Back-face fade
+
+A surface can only appear in a reflection if its normal faces *toward* the
+reflecting surface. Consider a truck on a reflective floor: the floor's
+reflected ray goes upward, and the truck's roof normal also points upward.
+Since both face the same direction, the roof is physically impossible to see
+in the floor's reflection — only the truck's underside (normal pointing down)
+could appear.
+
+SSR can only sample what the camera sees, so the ray's depth-buffer hit may
+land on a surface whose normal faces the wrong way. The back-face fade
+detects this by checking `dot(reflect_dir, hit_normal)`:
+
+- **dot < 0** — the hit surface faces toward the reflection (valid)
+- **dot > 0** — the hit surface faces away from the reflection (impossible)
+
+```hlsl
+float facing = dot(reflect_dir, hit_normal);
+float backface_fade = 1.0 - smoothstep(0.0, 0.25, facing);
+```
+
+Rather than a hard cutoff (which creates visible holes at certain viewing
+angles), the `smoothstep` provides a gentle ramp from full reflection at
+`dot = 0` to fully rejected at `dot = 0.25`.
+
+### Reflection resolution
+
+The SSR pass samples the scene color texture, which is the same resolution as
+the window. So the reflection color is full-resolution — there is no
+downsampling.
+
+What makes reflections *appear* lower resolution is the **step size**. Each
+linear march step jumps 0.15 view-space units. When projected to screen
+space, that jump can skip multiple pixels, especially at grazing angles or
+for nearby surfaces. The ray is blind between steps — it can only detect
+geometry at the positions it actually samples.
+
+Binary search refinement improves precision at the hit point (narrowing the
+last step interval to sub-pixel accuracy), but it does not fill in the gaps
+between steps. To increase the apparent resolution of reflections:
+
+- **Decrease `step_size`** — finer marching, but reduces range unless
+  `max_steps` also increases.
+- **Increase `max_steps`** — covers the same distance with finer steps, but
+  costs more GPU time per pixel.
+- **March in screen space instead of view space** — step by a fixed number of
+  pixels so the sampling density is uniform regardless of depth. Production
+  engines typically use this approach (hierarchical Z-buffer tracing), but it
+  is significantly more complex to implement.
+
+The current setup (128 steps at 0.15 = 19.2 units with binary refinement)
+balances quality and simplicity for a learning project.
+
+### Ray jittering
+
+Even with binary refinement, adjacent floor pixels march along the same
+regular grid (0.15, 0.30, 0.45 ...). When an angled surface like a truck
+hood crosses the reflection, neighbouring pixels snap to different grid
+positions, producing visible staircase artifacts.
+
+The fix is to add a per-pixel random offset in [0, step_size) to the ray's
+starting position. This randomises the step grid so neighbouring pixels no
+longer march in lock-step — the staircase becomes noise, which is far less
+noticeable:
+
+```hlsl
+float jitter = interleaved_gradient_noise(clip_pos.xy) * step_size;
+float3 ray_pos = view_pos + reflect_dir * jitter;
+```
+
+Interleaved gradient noise (Jimenez 2014) is a cheap, deterministic hash with
+blue-noise-like spectral properties — the same function used for dithering in
+[Lesson 25 (Shader Noise)](../25-shader-noise/) and sample rotation in
+[Lesson 27 (SSAO)](../27-ssao/).
+
 ### Tuning parameters
 
-| Parameter | Typical value | Effect |
-|-----------|---------------|--------|
-| `max_steps` | 64 | Number of ray march steps. More steps = higher quality but slower. |
-| `max_distance` | 50.0 | Maximum world-space distance the ray can travel. |
-| `thickness` | 0.5 | Depth slab thickness for hit acceptance. |
-| `step_size` | max_distance / max_steps | Distance between consecutive samples. |
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `max_steps` | 128 | Number of ray march steps. More steps = longer reach and finer detail. |
+| `step_size` | 0.15 | View-space distance per step. Effective reach is `min(max_steps * step_size, max_distance)` — currently min(19.2, 20.0) = 19.2 units. |
+| `max_distance` | 20.0 | Hard cap on view-space ray travel. The ray stops when it exceeds this distance even if steps remain. |
+| `thickness` | 0.15 | Depth slab tolerance for hit acceptance. Smaller = tighter hits, less stretching. |
 
 ## Edge fadeout
 
@@ -537,11 +681,10 @@ approach with diffuse bounces instead of specular reflections.
 
 ## Exercises
 
-1. **Binary search refinement.** After the linear ray march finds an
-   approximate hit, add a binary search phase: bisect the interval between the
-   last non-intersecting step and the first intersecting step 4-8 times to
-   pinpoint the exact intersection. Compare the reflection quality before and
-   after — binary refinement reduces stair-step artifacts on angled surfaces.
+1. **Refinement step count.** The lesson uses 8 binary search iterations after
+   the linear hit. Try reducing to 2 or 4 and increasing to 12 or 16 — observe
+   how reflection quality changes on curved surfaces (tires, headlights).
+   At what point do additional iterations stop producing visible improvement?
 
 2. **Hierarchical ray marching.** Instead of uniform step sizes, start with
    large steps and halve the step size when the ray gets close to a surface

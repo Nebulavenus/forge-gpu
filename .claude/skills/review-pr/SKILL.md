@@ -77,6 +77,43 @@ If the "Markdown Lint" check failed:
 
 6. **Exit and wait for checks to re-run** — user should invoke `/review-pr` again after checks pass
 
+### 1.7. Check for paused CodeRabbit reviews
+
+After checks pass, check whether CodeRabbit has paused its reviews (this happens
+when many commits are pushed in rapid succession). Fetch the PR's general comments
+and look at the **first** comment from `coderabbitai[bot]`:
+
+```bash
+gh api repos/{owner}/{repo}/issues/{pr-number}/comments \
+  | jq '[.[] | select(.user.login == "coderabbitai[bot]")][0].body' -r \
+  | head -20
+```
+
+**If the comment body contains "Reviews paused":**
+
+- Report to the user: "CodeRabbit reviews are paused due to rapid commits."
+- Post **two** comments — one to do a full review, one to resume future reviews:
+
+  ```bash
+  gh pr comment <pr-number> --body "@coderabbitai full review"
+  gh pr comment <pr-number> --body "@coderabbitai resume reviews"
+  ```
+
+- Exit with message: "Requested CodeRabbit full review and resumed reviews.
+  Run this skill again when the review completes."
+- DO NOT proceed to fetch review comments — CodeRabbit hasn't reviewed yet
+
+**If the comment body contains "Currently processing new changes":**
+
+- Report to the user: "CodeRabbit is currently processing new changes."
+- Exit with message: "CodeRabbit is still reviewing. Run this skill again when
+  the review completes."
+- DO NOT proceed to fetch review comments — CodeRabbit hasn't finished yet
+
+**If reviews are not paused and not processing:**
+
+- Proceed to step 2
+
 ### 2. Fetch review comments
 
 **Important:** Inline review comments (the "tasks" users see in the GitHub UI)
@@ -156,17 +193,23 @@ How should I handle this?
 
 Use AskUserQuestion with options:
 
-- "Implement" - Make the code changes, commit, push
+- "Implement" - Make the code changes (do NOT commit/push yet — batch all changes)
 - "Respond and resolve" - Ask user for response text, post comment, resolve conversation
 - "Skip" - Move to next feedback
 
+**Important: Batch all changes into a single commit+push.** Do NOT commit and
+push after each individual feedback item. Process ALL feedback first, make all
+code changes, then do one commit and one push at the end. Pushing multiple
+times in quick succession causes CodeRabbit to pause reviews, which creates
+a frustrating loop of re-triggering and waiting.
+
 ### 5. After implementing changes
 
-If any code changes were made:
+After processing ALL feedback items, if any code changes were made:
 
-- Stage changes
-- Create commit: "Address PR feedback: [summary]"
-- Push to the PR branch
+- Stage all changed files
+- Create a single commit: "Address PR feedback: [summary of all changes]"
+- Push once to the PR branch
 - Re-run checks with `gh pr checks` (don't wait, just show status)
 - Exit with: "Changes pushed. Run this skill again after checks complete."
 
@@ -268,6 +311,7 @@ gh pr merge <pr-number> --squash --delete-branch
 - Always show the user what will be changed before making code modifications
 - Use the same commit message format as publish-lesson (with Co-Authored-By line)
 - **The "X out of Y pending tasks"** shown in GitHub UI are the unresolved review comment threads—fetch them via `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments`
+- **CodeRabbit paused/processing reviews:** When many commits are pushed quickly, CodeRabbit pauses reviews and adds "Reviews paused" to its initial PR comment. It may also show "Currently processing new changes" while actively re-reviewing. Always check for both statuses before fetching review comments — if paused, post both `@coderabbitai full review` AND `@coderabbitai resume reviews` (the second is needed to unpause future reviews); if processing, wait for it to finish. In either case, exit and tell the user to re-run the skill later.
 - **CodeRabbit auto-resolution:** CodeRabbit automatically resolves conversations when it detects the suggested fix was implemented in a new commit. Let it auto-resolve; only ask it to resolve manually if it doesn't detect your fix after re-review.
 - **Reply to comment threads:** Always use `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies` to reply to specific review comments. This keeps conversations threaded. Do NOT use `gh pr comment` for replies—it creates unthreaded general comments.
   - **Common mistake:** Forgetting to include the PR number in the path (e.g., `repos/{owner}/{repo}/pulls/comments/{id}/replies` won't work—must be `pulls/{pr-number}/comments/{id}/replies`)

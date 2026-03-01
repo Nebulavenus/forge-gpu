@@ -109,10 +109,10 @@
 #define LIGHT_DISTANCE    20.0f
 
 /* SSR parameters. */
-#define SSR_MAX_DISTANCE 20.0f
-#define SSR_STEP_SIZE    0.05f
-#define SSR_MAX_STEPS    128
-#define SSR_THICKNESS       0.3f
+#define SSR_MAX_DISTANCE    20.0f  /* max view-space ray travel (units)    */
+#define SSR_STEP_SIZE       0.15f  /* view-space distance per march step   */
+#define SSR_MAX_STEPS       128    /* max iterations (128*0.15 = 19.2 max) */
+#define SSR_THICKNESS       0.15f  /* depth tolerance for hit detection    */
 #define SSR_REFLECTION_STR  0.8f   /* global reflection blend strength   */
 #define GRID_REFLECTIVITY   0.9f   /* how reflective the grid floor is   */
 

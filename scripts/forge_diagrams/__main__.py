@@ -88,6 +88,7 @@ from .gpu_diagrams import (
     diagram_ssr_gbuffer_layout,
     diagram_ssr_ray_march,
     diagram_ssr_render_pipeline,
+    diagram_ssr_self_intersection,
     diagram_sun_limb_darkening,
     diagram_sun_transmittance,
     diagram_tangent_space,
@@ -393,6 +394,7 @@ DIAGRAMS = {
         ("render_pipeline.png", diagram_ssr_render_pipeline),
         ("ray_march.png", diagram_ssr_ray_march),
         ("gbuffer_layout.png", diagram_ssr_gbuffer_layout),
+        ("self_intersection.png", diagram_ssr_self_intersection),
     ],
     "ui/01": [
         ("ttf_file_structure.png", diagram_ttf_file_structure),

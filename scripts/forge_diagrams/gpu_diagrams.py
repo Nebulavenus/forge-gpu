@@ -10454,3 +10454,209 @@ def diagram_ssr_gbuffer_layout():
 
     fig.tight_layout()
     save(fig, "gpu/29-screen-space-reflections", "gbuffer_layout.png")
+
+
+# ===================================================================
+# GPU Lesson 29 — SSR Self-Intersection Guard
+# ===================================================================
+
+
+def diagram_ssr_self_intersection():
+    """Visualise why SSR needs a minimum-travel guard to avoid self-hits."""
+    stroke = [pe.withStroke(linewidth=3, foreground=STYLE["bg"])]
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=(12, 4.5), facecolor=STYLE["bg"],
+        gridspec_kw={"wspace": 0.35},
+    )
+
+    for ax in axes:
+        ax.set_facecolor(STYLE["bg"])
+        ax.set_xlim(-0.5, 10.5)
+        ax.set_ylim(-1.0, 5.5)
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+    # -----------------------------------------------------------------
+    # Shared geometry: a flat floor surface and a vertical wall
+    # -----------------------------------------------------------------
+    def _draw_scene(ax):
+        # Floor surface
+        ax.plot([-0.5, 10.5], [0.0, 0.0], color=STYLE["axis"], lw=2.5, zorder=3)
+        ax.fill_between([-0.5, 10.5], -1.0, 0.0,
+                        color=STYLE["surface"], alpha=0.6, zorder=1)
+        ax.text(1.0, -0.5, "Reflective floor (depth buffer)",
+                color=STYLE["text_dim"], fontsize=8, ha="left",
+                path_effects=stroke, zorder=10)
+
+        # Wall / object
+        wall_x = 7.0
+        ax.plot([wall_x, wall_x], [0.0, 4.5], color=STYLE["axis"], lw=2.5, zorder=3)
+        ax.fill_betweenx([0.0, 4.5], wall_x, 10.5,
+                         color=STYLE["surface"], alpha=0.6, zorder=1)
+        ax.text(8.5, 2.5, "Object", color=STYLE["text_dim"], fontsize=10,
+                ha="center", va="center", path_effects=stroke, zorder=10)
+
+    # -----------------------------------------------------------------
+    # Panel A: WITHOUT guard — self-hit on first step
+    # -----------------------------------------------------------------
+    ax_a = axes[0]
+    _draw_scene(ax_a)
+    ax_a.set_title("Without self-intersection guard",
+                   color=STYLE["accent2"], fontsize=11, fontweight="bold", pad=10)
+
+    # Ray origin on the floor
+    origin = np.array([2.0, 0.0])
+    # Reflected direction (shallow angle upward)
+    r_dir = np.array([0.85, 0.25])
+    r_dir = r_dir / np.linalg.norm(r_dir)
+
+    # Surface normal
+    ax_a.annotate("", xy=(origin[0], origin[1] + 1.2),
+                  xytext=origin,
+                  arrowprops={"arrowstyle": "->,head_width=0.2,head_length=0.12",
+                              "color": STYLE["accent3"], "lw": 2.0},
+                  zorder=6)
+    ax_a.text(origin[0] - 0.35, origin[1] + 0.7, "N",
+              color=STYLE["accent3"], fontsize=11, fontweight="bold",
+              ha="center", path_effects=stroke, zorder=10)
+
+    # Draw ray steps — first one is very close to surface and false-hits
+    step_size = 0.6
+    wall_x = 7.0
+    travel_to_wall = (wall_x - origin[0]) / r_dir[0]
+    n_steps = int(np.ceil(travel_to_wall / step_size)) + 1
+    steps = [origin + r_dir * step_size * (i + 1) for i in range(n_steps)]
+
+    # Step 1 is close to floor — false hit
+    false_hit = steps[0]
+    # Draw dashed ray up to false hit only
+    ax_a.plot([origin[0], false_hit[0]], [origin[1], false_hit[1]],
+              "--", color=STYLE["accent1"], lw=1.2, alpha=0.5, zorder=4)
+
+    # Step dots — only first one shown (it's a false hit)
+    ax_a.plot(false_hit[0], false_hit[1], "o",
+              color=STYLE["accent2"], markersize=10, zorder=8)
+
+    # Depth comparison line from step to floor
+    ax_a.plot([false_hit[0], false_hit[0]], [false_hit[1], 0.0],
+              ":", color=STYLE["accent2"], lw=1.5, alpha=0.8, zorder=4)
+    ax_a.plot(false_hit[0], 0.0, "s",
+              color=STYLE["accent2"], markersize=5, zorder=5)
+
+    # Label: false hit
+    ax_a.text(false_hit[0] + 0.3, false_hit[1] + 0.3, "False hit!",
+              color=STYLE["accent2"], fontsize=11, fontweight="bold",
+              ha="left", path_effects=stroke, zorder=10)
+
+    # Small annotation showing the tiny depth diff
+    ax_a.annotate("", xy=(false_hit[0] + 0.15, false_hit[1]),
+                  xytext=(false_hit[0] + 0.15, 0.0),
+                  arrowprops={"arrowstyle": "<->", "color": STYLE["warn"], "lw": 1.2},
+                  zorder=7)
+    ax_a.text(false_hit[0] + 0.5, false_hit[1] / 2, "tiny\ndepth\ndiff",
+              color=STYLE["warn"], fontsize=7, ha="left", va="center",
+              path_effects=stroke, zorder=10)
+
+    # Show where the ray SHOULD have gone (ghosted)
+    for sp in steps[1:5]:
+        ax_a.plot(sp[0], sp[1], "o", color=STYLE["text_dim"],
+                  markersize=4, alpha=0.3, zorder=4)
+    ax_a.text(5.5, 2.5, "Missed\n(ray stopped\ntoo early)",
+              color=STYLE["text_dim"], fontsize=9, ha="center", va="center",
+              style="italic", path_effects=stroke, zorder=10)
+
+    # -----------------------------------------------------------------
+    # Panel B: WITH guard — skips early steps, finds correct hit
+    # -----------------------------------------------------------------
+    ax_b = axes[1]
+    _draw_scene(ax_b)
+    ax_b.set_title("With self-intersection guard",
+                   color=STYLE["accent3"], fontsize=11, fontweight="bold", pad=10)
+
+    # Same origin and direction
+    ax_b.annotate("", xy=(origin[0], origin[1] + 1.2),
+                  xytext=origin,
+                  arrowprops={"arrowstyle": "->,head_width=0.2,head_length=0.12",
+                              "color": STYLE["accent3"], "lw": 2.0},
+                  zorder=6)
+    ax_b.text(origin[0] - 0.35, origin[1] + 0.7, "N",
+              color=STYLE["accent3"], fontsize=11, fontweight="bold",
+              ha="center", path_effects=stroke, zorder=10)
+
+    # Draw all steps — first 2 are skipped (guard zone), then marching
+    guard_steps = 2  # steps within SSR_MIN_TRAVEL
+    hit_step = None
+
+    for i, sp in enumerate(steps):
+        if sp[0] >= 7.0:
+            hit_step = i
+            break
+
+        if i < guard_steps:
+            # Skipped steps — dimmed, with "skip" marker
+            ax_b.plot(sp[0], sp[1], "o", color=STYLE["text_dim"],
+                      markersize=6, alpha=0.4, zorder=6)
+            ax_b.plot(sp[0], sp[1], "x", color=STYLE["accent2"],
+                      markersize=8, markeredgewidth=2.0, alpha=0.7, zorder=7)
+        else:
+            # Active steps — normal color
+            ax_b.plot(sp[0], sp[1], "o", color=STYLE["accent1"],
+                      markersize=6, zorder=8)
+            # Depth comparison line
+            ax_b.plot([sp[0], sp[0]], [sp[1], 0.0],
+                      ":", color=STYLE["text_dim"], lw=1.0, alpha=0.3, zorder=4)
+
+    # Draw ray line up to hit point (only show wall hit if a step reached it)
+    if hit_step is not None:
+        t_wall = (wall_x - origin[0]) / r_dir[0]
+        hit_on_wall = origin + r_dir * t_wall
+
+        ax_b.plot([origin[0], hit_on_wall[0]], [origin[1], hit_on_wall[1]],
+                  "--", color=STYLE["accent1"], lw=1.2, alpha=0.5, zorder=4)
+
+        # Hit marker on wall
+        ax_b.plot(hit_on_wall[0], hit_on_wall[1], "o",
+                  color=STYLE["accent2"], markersize=10, zorder=8)
+        ax_b.plot(hit_on_wall[0], hit_on_wall[1], "o",
+                  color=STYLE["accent2"], markersize=16, markerfacecolor="none",
+                  markeredgewidth=2.5, zorder=9)
+        ax_b.text(hit_on_wall[0] - 0.4, hit_on_wall[1] + 0.4, "Correct hit!",
+                  color=STYLE["accent2"], fontsize=11, fontweight="bold",
+                  ha="right", path_effects=stroke, zorder=10)
+    else:
+        # No step reached the wall — draw the full ray with a "miss" label
+        last = steps[-1]
+        ax_b.plot([origin[0], last[0]], [origin[1], last[1]],
+                  "--", color=STYLE["accent1"], lw=1.2, alpha=0.5, zorder=4)
+        ax_b.text(last[0] + 0.3, last[1], "No hit",
+                  color=STYLE["text_dim"], fontsize=9, style="italic",
+                  path_effects=stroke, zorder=10)
+
+    # Guard zone bracket
+    guard_end = origin + r_dir * step_size * guard_steps
+    ax_b.annotate("", xy=(guard_end[0], -0.6),
+                  xytext=(origin[0], -0.6),
+                  arrowprops={"arrowstyle": "<->", "color": STYLE["accent4"], "lw": 1.5},
+                  zorder=7)
+    ax_b.text((origin[0] + guard_end[0]) / 2, -0.85,
+              "Guard zone\n(no hit test)",
+              color=STYLE["accent4"], fontsize=8, fontweight="bold",
+              ha="center", va="top", path_effects=stroke, zorder=10)
+
+    # Legend
+    legend_items = [
+        ("x", STYLE["accent2"], "Skipped (guard)"),
+        ("o", STYLE["accent1"], "Active step"),
+        ("o", STYLE["accent2"], "Hit detected"),
+    ]
+    lx, ly = 0.0, 5.2
+    for marker, color, label in legend_items:
+        ax_b.plot(lx, ly, marker, color=color, markersize=6, zorder=8)
+        ax_b.text(lx + 0.3, ly, label, color=color, fontsize=8,
+                  fontweight="bold", ha="left", va="center",
+                  path_effects=stroke, zorder=10)
+        ly -= 0.5
+
+    fig.tight_layout()
+    save(fig, "gpu/29-screen-space-reflections", "self_intersection.png")
