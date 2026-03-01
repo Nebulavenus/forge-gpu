@@ -1,42 +1,10 @@
 # UI Track — Upcoming Lessons
 
-## Lesson 11: Widget ID System
+## ~~Lesson 11: Widget ID System~~ (Done)
 
-**Problem:** The current ID system requires callers to manually assign unique
-integer IDs to every widget.  Windows internally reserve `id+1` (scrollbar) and
-`id+2` (collapse toggle), creating invisible collision zones that cause
-hard-to-debug input bugs (see issue #151 — checkbox toggling failed because its
-ID collided with the window's collapse toggle).
-
-**Goals:**
-
-- Replace manual integer IDs with automatic ID generation
-- Eliminate the hidden `id+1`, `id+2` reservation pattern
-- Support hierarchical scoping so widgets inside different windows/panels
-  cannot collide regardless of user-chosen IDs
-- Maintain IMGUI simplicity — no registration, no cleanup
-
-**Approach — hashed string IDs with scope stacking:**
-
-1. Introduce `forge_ui_push_id(ctx, name)` / `forge_ui_pop_id(ctx)` that push
-   a scope onto an ID stack.  Windows and panels call push/pop automatically.
-2. Widget IDs are computed as `hash(scope_stack + local_name)` using FNV-1a,
-   producing a uint32 that is virtually collision-free.
-3. Callers pass string labels instead of integers:
-   `forge_ui_ctx_button(ctx, "OK", rect)` instead of
-   `forge_ui_ctx_button(ctx, 42, rect)`.
-4. For widgets that share a label (e.g. two "Delete" buttons), callers
-   can append `##suffix`: `"Delete##item_1"`, `"Delete##item_2"`.
-5. Window internals use `push_id("__scrollbar")` / `push_id("__toggle")`
-   inside their own scope — no leaked ID arithmetic.
-
-**Lesson structure:**
-
-- Explain the collision problem with the old integer system
-- Introduce FNV-1a hashing and the `##` separator convention
-- Implement the ID stack in `forge_ui_ctx.h`
-- Migrate all existing widgets to the new system
-- Show before/after: old code with manual IDs vs new code with labels
+Implemented in [lessons/ui/11-widget-id-system/](11-widget-id-system/).
+Replaced manual integer IDs with FNV-1a hashed string labels and hierarchical
+scope stacking.  All existing lessons and tests migrated to the new API.
 
 ## Lesson 12: Theming and Color System
 

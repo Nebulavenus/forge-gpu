@@ -149,7 +149,7 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Use **/ui-lesson** skill to scaffold
 - Build an immediate-mode UI system — fonts, text, layout, controls
 - **No GPU code** — lessons produce textures, vertices, indices, and UVs
-- A separate GPU lesson will render the UI data
+- [GPU Lesson 28](lessons/gpu/28-ui-rendering/) renders the UI data on the GPU
 - Add reusable types and functions to `common/ui/` as the track grows
 - Cross-reference math lessons (vectors, rects) and engine lessons (memory,
   structs) where relevant

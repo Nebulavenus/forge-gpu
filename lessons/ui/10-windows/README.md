@@ -269,7 +269,7 @@ forge_ui_ctx_begin(&ctx, mouse_x, mouse_y, mouse_down);
 forge_ui_wctx_begin(&wctx);
 
 /* Declare windows and their contents */
-if (forge_ui_wctx_window_begin(&wctx, 100, "My Window", &win_state)) {
+if (forge_ui_wctx_window_begin(&wctx, "My Window", &win_state)) {
     forge_ui_ctx_label_layout(wctx.ctx, "Hello", 26.0f, 0.9f, 0.9f, 0.9f, 1.0f);
     forge_ui_wctx_window_end(&wctx);
 }
@@ -340,9 +340,9 @@ build\lessons\ui\10-windows\Debug\10-windows.exe
 
 ## What's next
 
-- **[UI Lesson 11 -- Game UI](../11-game-ui/)** (planned) -- applying windows
-  and panels to game-specific UI patterns such as inventory screens, dialogue
-  boxes, and HUDs
+- **[UI Lesson 11 -- Widget ID System](../11-widget-id-system/)** -- replacing
+  manual integer IDs with FNV-1a hashed string labels and hierarchical scope
+  stacking, eliminating the hidden id+1/id+2 collision problem
 
 ## Exercises
 
@@ -367,8 +367,8 @@ build\lessons\ui\10-windows\Debug\10-windows.exe
 
 - [UI Lesson 09 — Panels and Scrolling](../09-panels-and-scrolling/) — the
   panel infrastructure that windows extend
-- [UI Lesson 11 — Game UI](../11-game-ui/) — applying windows and panels to
-  game-specific UI patterns (planned)
+- [UI Lesson 11 — Widget ID System](../11-widget-id-system/) — FNV-1a hashed
+  string IDs, the `##` separator, and hierarchical scope stacking
 - [Casey Muratori — Immediate-Mode Graphical User Interfaces (2005)](https://caseymuratori.com/blog_0001) —
   the foundational talk on immediate-mode UI
 - [Dear ImGui](https://github.com/ocornut/imgui) — a production

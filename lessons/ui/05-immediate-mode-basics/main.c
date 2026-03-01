@@ -97,15 +97,6 @@ typedef struct FrameInput {
     const char *description;  /* what this frame demonstrates (for logging) */
 } FrameInput;
 
-/* ── Helper: state name for logging ──────────────────────────────────────── */
-
-static const char *state_name(const ForgeUiContext *ctx, Uint32 id)
-{
-    if (ctx->active == id) return "ACTIVE (pressed)";
-    if (ctx->hot == id)    return "HOT (hovered)";
-    return "normal";
-}
-
 /* ── Helper: render a frame's draw data to BMP ───────────────────────────── */
 
 static bool render_frame_bmp(const char *path,
@@ -238,10 +229,6 @@ int main(int argc, char *argv[])
     }
 
     /* ── Define button layout ─────────────────────────────────────────── */
-    /* Widget IDs: non-zero integers chosen by the application.
-     * In a real application these could be hashed from strings or
-     * generated from a counter. */
-    const Uint32 btn_ids[BUTTON_COUNT] = { 1, 2, 3 };
     const char *btn_labels[BUTTON_COUNT] = { "Start", "Options", "Quit" };
 
     float btn_x = MARGIN;
@@ -322,8 +309,8 @@ int main(int argc, char *argv[])
         /* Buttons */
         bool clicked[BUTTON_COUNT];
         for (int i = 0; i < BUTTON_COUNT; i++) {
-            clicked[i] = forge_ui_ctx_button(&ctx, btn_ids[i],
-                                              btn_labels[i], btn_rects[i]);
+            clicked[i] = forge_ui_ctx_button(&ctx, btn_labels[i],
+                                              btn_rects[i]);
         }
 
         /* Status label showing which button was clicked */
@@ -353,10 +340,9 @@ int main(int argc, char *argv[])
         SDL_Log("    hot    = %u", (unsigned)ctx.hot);
         SDL_Log("    active = %u", (unsigned)ctx.active);
         for (int i = 0; i < BUTTON_COUNT; i++) {
-            SDL_Log("    Button '%s' (id=%u): %s%s",
-                    btn_labels[i], (unsigned)btn_ids[i],
-                    state_name(&ctx, btn_ids[i]),
-                    clicked[i] ? " -> CLICKED" : "");
+            SDL_Log("    Button '%s': %s",
+                    btn_labels[i],
+                    clicked[i] ? "CLICKED" : "normal");
         }
         SDL_Log("  Draw data: %d vertices, %d indices (%d triangles)",
                 ctx.vertex_count, ctx.index_count, ctx.index_count / 3);

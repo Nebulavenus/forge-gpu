@@ -100,16 +100,6 @@
 #define SLIDER_HEIGHT       30.0f
 #define TEXT_INPUT_HEIGHT    32.0f
 
-/* Demo widget IDs (unique non-zero integers). */
-/* Widget IDs must not collide with the window's internal IDs.
- * forge_ui_wctx_window_begin reserves id+1 (scrollbar) and id+2
- * (collapse toggle), so content widgets must start at id+3 or higher. */
-#define DEMO_WINDOW_ID      100
-#define BUTTON_ID           200
-#define CHECKBOX_ID         201
-#define SLIDER_ID           202
-#define TEXT_INPUT_ID       203
-
 /* Demo slider range. */
 #define SLIDER_MIN 0.0f
 #define SLIDER_MAX 1.0f
@@ -844,7 +834,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* ── Demo window with widgets ─────────────────────────────── */
 
-    if (forge_ui_wctx_window_begin(&state->ui_wctx, DEMO_WINDOW_ID,
+    if (forge_ui_wctx_window_begin(&state->ui_wctx,
                                     "UI Demo", &state->demo_window)) {
 
         /* Title label. */
@@ -864,19 +854,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                   INFO_LABEL_B, INFO_LABEL_A);
 
         /* Button: increments click counter on each press. */
-        if (forge_ui_ctx_button_layout(&state->ui_ctx, BUTTON_ID,
+        if (forge_ui_ctx_button_layout(&state->ui_ctx,
                                        "Click me", BUTTON_HEIGHT)) {
             state->click_count++;
         }
 
         /* Checkbox: toggles a boolean option. */
-        forge_ui_ctx_checkbox_layout(&state->ui_ctx, CHECKBOX_ID,
+        forge_ui_ctx_checkbox_layout(&state->ui_ctx,
                                      "Toggle option",
                                      &state->checkbox_value,
                                      CHECKBOX_HEIGHT);
 
         /* Slider: adjustable value between SLIDER_MIN and SLIDER_MAX. */
-        forge_ui_ctx_slider_layout(&state->ui_ctx, SLIDER_ID,
+        forge_ui_ctx_slider_layout(&state->ui_ctx, "##slider",
                                    &state->slider_value,
                                    SLIDER_MIN, SLIDER_MAX,
                                    SLIDER_HEIGHT);
@@ -900,7 +890,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         bool cursor_visible =
             ((ticks / CURSOR_BLINK_INTERVAL_MS) % 2) == 0;
 
-        forge_ui_ctx_text_input(&state->ui_ctx, TEXT_INPUT_ID,
+        forge_ui_ctx_text_input(&state->ui_ctx, "##text_input",
                                 &state->text_input, ti_rect,
                                 cursor_visible);
 

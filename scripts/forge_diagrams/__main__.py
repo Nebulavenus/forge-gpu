@@ -170,6 +170,8 @@ from .ui_diagrams import (
     diagram_hit_testing,
     diagram_horizontal_vs_vertical,
     diagram_hot_active_state_machine,
+    diagram_id_collision,
+    diagram_id_scope_stack,
     diagram_input_routing_overlap,
     diagram_keyboard_input_flow,
     diagram_layout_cursor_model,
@@ -468,6 +470,10 @@ DIAGRAMS = {
         ("window_state_persistence.png", diagram_window_state_persistence),
         ("window_vs_panel_comparison.png", diagram_window_vs_panel_comparison),
     ],
+    "ui/11": [
+        ("id_collision.png", diagram_id_collision),
+        ("id_scope_stack.png", diagram_id_scope_stack),
+    ],
 }
 
 # Full lesson directory names for display
@@ -515,6 +521,7 @@ LESSON_NAMES = {
     "ui/08": "ui/08-layout",
     "ui/09": "ui/09-panels-and-scrolling",
     "ui/10": "ui/10-windows",
+    "ui/11": "ui/11-widget-id-system",
 }
 
 

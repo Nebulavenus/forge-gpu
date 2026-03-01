@@ -118,11 +118,12 @@ vertices, indices, UVs) with no GPU dependency.
 - [x] **UI Lesson 08 — Layout System** — Automatic horizontal and vertical stacking; padding and spacing; ForgeUiLayout cursor model; layout stack with push/pop nesting; layout_next() for automatic widget positioning; layout-aware widget variants
 - [x] **UI Lesson 09 — Panels and Scrolling** — Fixed-position containers with clipping and vertical scroll; axis-aligned rect clipping with UV remapping; scroll offset in the layout system; interactive scrollbar with proportional thumb; mouse wheel input
 - [x] **UI Lesson 10 — Windows** — Draggable panels with title bars; z-ordering (bring-to-front on click); collapse/expand; move interaction; builds on layout (Lesson 08) and clipping (Lesson 09)
+- [x] **UI Lesson 11 — Widget ID System** — FNV-1a hashed string IDs, `##` separator for display vs identity, hierarchical scope stacking with push_id/pop_id, automatic scoping in panels and windows, collision-free widget identification
 
 ### Application Patterns
 
-- [ ] **UI Lesson 11 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
-- [ ] **UI Lesson 12 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
+- [ ] **UI Lesson 12 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
+- [ ] **UI Lesson 13 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
 
 ## Engine Lessons
 

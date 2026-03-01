@@ -41,7 +41,7 @@
  *   // Each frame:
  *   forge_ui_ctx_begin(&ctx, mouse_x, mouse_y, mouse_down);
  *   forge_ui_wctx_begin(&wctx);
- *   if (forge_ui_wctx_window_begin(&wctx, 100, "My Window", &win)) {
+ *   if (forge_ui_wctx_window_begin(&wctx, "My Window", &win)) {
  *       forge_ui_ctx_label_layout(wctx.ctx, "Hello", 26.0f, 0.9f, 0.9f, 0.9f, 1.0f);
  *       forge_ui_wctx_window_end(&wctx);
  *   }
@@ -240,16 +240,15 @@ static inline void forge_ui_wctx_end(ForgeUiWindowContext *wctx);
  * dragging and z-ordering, and if not collapsed set up clipping
  * and layout for child widgets.
  *
- * id:    unique non-zero widget ID less than UINT32_MAX-1 (scrollbar
- *        uses id+1, collapse toggle uses id+2)
- * title: text displayed in the title bar
+ * title: text displayed in the title bar; also used as the window's
+ *        widget ID via FNV-1a hash and pushes a scope for child IDs.
+ *        Supports "##" separator for disambiguation.
  * state: pointer to application-owned ForgeUiWindowState
  *
  * Returns true if the window is expanded (caller should declare
  * child widgets and call window_end).  Returns false if collapsed
  * or validation fails (caller must NOT call window_end). */
 static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
-                                                Uint32 id,
                                                 const char *title,
                                                 ForgeUiWindowState *state);
 
@@ -592,16 +591,19 @@ static inline void forge_ui_win__redirect_to_window(
 }
 
 static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
-                                                Uint32 id,
                                                 const char *title,
                                                 ForgeUiWindowState *state)
 {
     if (!wctx || !wctx->ctx || !wctx->ctx->atlas ||
-        !state || id == FORGE_UI_ID_NONE) {
+        !state || !title || title[0] == '\0') {
+        SDL_Log("forge_ui_wctx_window_begin: NULL or invalid argument");
         return false;
     }
 
     ForgeUiContext *ctx = wctx->ctx;
+
+    /* Compute the window's own ID from the title string */
+    Uint32 id = forge_ui_hash_id(ctx, title);
 
     /* ── Reject if too many windows ────────────────────────────────────── */
     if (wctx->window_count >= FORGE_UI_WINDOW_MAX) {
@@ -620,12 +622,6 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     if (ctx->_panel_active) {
         SDL_Log("forge_ui_wctx_window_begin: a panel is already active "
                 "(close it with panel_end before opening a window)");
-        return false;
-    }
-
-    /* ── The scrollbar uses id+1, collapse toggle uses id+2 ────────────── */
-    if (id >= UINT32_MAX - 1) {
-        SDL_Log("forge_ui_wctx_window_begin: id must be < UINT32_MAX-1");
         return false;
     }
 
@@ -652,6 +648,19 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
 
     /* ── Redirect context output to this window's draw list ────────────── */
     forge_ui_win__redirect_to_window(wctx, widx);
+
+    /* ── Push ID scope so child widget IDs are scoped under this window ── */
+    if (!forge_ui_push_id(ctx, title)) {
+        SDL_Log("forge_ui_wctx_window_begin: id scope push failed");
+        ctx->_keyboard_input_suppressed = false;
+        forge_ui_win__restore_from_window(wctx);
+        entry->vertex_count = 0;
+        entry->index_count = 0;
+        entry->id = FORGE_UI_ID_NONE;
+        entry->state = NULL;
+        wctx->window_count--;
+        return false;
+    }
 
     /* ── Determine if this window can receive input ────────────────────── */
     /* A window receives input only if it is the hovered window (topmost
@@ -709,8 +718,10 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
         }
     }
 
-    /* ── Collapse toggle button (id+2) ─────────────────────────────────── */
-    Uint32 toggle_id = id + 2;
+    /* ── Collapse toggle button ───────────────────────────────────────── */
+    /* The \xff prefix is a non-printable byte that cannot appear in
+     * user label strings, preventing collisions with user widget names. */
+    Uint32 toggle_id = forge_ui_hash_id(ctx, "\xff__toggle");
     float toggle_cx = state->rect.x + FORGE_UI_WIN_TOGGLE_PAD
                       + FORGE_UI_WIN_TOGGLE_SIZE * 0.5f;
     float toggle_cy = state->rect.y + FORGE_UI_WIN_TITLE_HEIGHT * 0.5f;
@@ -822,16 +833,24 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
         }
     }
 
-    /* ── Draw title text (offset to the right of the toggle) ───────────── */
+    /* ── Draw title text (offset to the right of the toggle, strip ##) ── */
     if (title && title[0] != '\0') {
-        ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, title, NULL);
+        const char *disp_end = forge_ui__display_end(title);
+        int disp_len = (int)(disp_end - title);
+        char disp_buf[256];
+        if (disp_len >= (int)sizeof(disp_buf))
+            disp_len = (int)sizeof(disp_buf) - 1;
+        SDL_memcpy(disp_buf, title, (size_t)disp_len);
+        disp_buf[disp_len] = '\0';
+
+        ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, disp_buf, NULL);
         float ascender_px = forge_ui__ascender_px(ctx->atlas);
         float title_text_x = state->rect.x + FORGE_UI_WIN_TOGGLE_PAD
                              + FORGE_UI_WIN_TOGGLE_SIZE + FORGE_UI_WIN_TOGGLE_PAD;
         float title_text_y = state->rect.y
                              + (FORGE_UI_WIN_TITLE_HEIGHT - m.height) * 0.5f
                              + ascender_px;
-        forge_ui_ctx_label(ctx, title, title_text_x, title_text_y,
+        forge_ui_ctx_label(ctx, disp_buf, title_text_x, title_text_y,
                            FORGE_UI_WIN_TITLE_TEXT_R, FORGE_UI_WIN_TITLE_TEXT_G,
                            FORGE_UI_WIN_TITLE_TEXT_B, FORGE_UI_WIN_TITLE_TEXT_A);
     }
@@ -839,6 +858,7 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     /* ── If collapsed, we're done: restore buffers and return false ─────── */
     if (state->collapsed) {
         ctx->_keyboard_input_suppressed = false;
+        forge_ui_pop_id(ctx);  /* undo the push from above */
         forge_ui_win__restore_from_window(wctx);
         return false;
     }
@@ -887,6 +907,7 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
         ctx->_panel.id = FORGE_UI_ID_NONE;
         ctx->_panel.scroll_y = NULL;
         ctx->_keyboard_input_suppressed = false;
+        forge_ui_pop_id(ctx);  /* undo the push from above */
         forge_ui_win__restore_from_window(wctx);
         /* Undo registration: discard partial draw data so wctx_end
          * does not render a half-constructed window. */
@@ -926,6 +947,7 @@ static inline void forge_ui_wctx_window_end(ForgeUiWindowContext *wctx)
                 "(missing window_begin?)");
         ctx->has_clip = false;
         ctx->_keyboard_input_suppressed = false;
+        if (ctx->id_stack_depth > 0) forge_ui_pop_id(ctx);
         int widx = wctx->active_window_idx;
         wctx->window_entries[widx].vertex_count = 0;
         wctx->window_entries[widx].index_count = 0;

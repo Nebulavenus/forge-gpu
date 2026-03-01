@@ -127,6 +127,7 @@ add_subdirectory(lessons/ui/07-text-input)
 add_subdirectory(lessons/ui/08-layout)
 add_subdirectory(lessons/ui/09-panels-and-scrolling)
 add_subdirectory(lessons/ui/10-windows)
+add_subdirectory(lessons/ui/11-widget-id-system)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

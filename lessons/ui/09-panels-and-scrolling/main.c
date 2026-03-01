@@ -72,15 +72,6 @@
 #define CHECKBOX_HEIGHT   28.0f   /* height of each checkbox row */
 #define LABEL_HEIGHT      26.0f   /* height of each label row */
 
-/* ── Widget IDs ──────────────────────────────────────────────────────────── */
-/* Left panel: ID 10, scrollbar thumb ID 11 (panel_id + 1) */
-#define ID_LEFT_PANEL       10
-/* Checkbox IDs: 20-29 for 10 checkboxes */
-#define ID_CB_BASE          20
-
-/* Right panel: ID 40, scrollbar thumb ID 41 */
-#define ID_RIGHT_PANEL      40
-
 /* ── Number of checkboxes in the left panel ──────────────────────────────── */
 #define CHECKBOX_COUNT      10
 
@@ -206,12 +197,11 @@ static void declare_panels(ForgeUiContext *ctx,
     ForgeUiRect left_rect = {
         LEFT_PANEL_X, LEFT_PANEL_Y, LEFT_PANEL_W, LEFT_PANEL_H
     };
-    if (forge_ui_ctx_panel_begin(ctx, ID_LEFT_PANEL, "Graphics Settings",
+    if (forge_ui_ctx_panel_begin(ctx, "Graphics Settings",
                                   left_rect, left_scroll_y)) {
         for (int i = 0; i < CHECKBOX_COUNT; i++) {
             (void)forge_ui_ctx_checkbox_layout(
-                ctx, (Uint32)(ID_CB_BASE + i),
-                checkbox_labels[i],
+                ctx, checkbox_labels[i],
                 &checkboxes[i], CHECKBOX_HEIGHT);
         }
         forge_ui_ctx_panel_end(ctx);
@@ -221,7 +211,7 @@ static void declare_panels(ForgeUiContext *ctx,
     ForgeUiRect right_rect = {
         RIGHT_PANEL_X, RIGHT_PANEL_Y, RIGHT_PANEL_W, RIGHT_PANEL_H
     };
-    if (forge_ui_ctx_panel_begin(ctx, ID_RIGHT_PANEL, "System Info",
+    if (forge_ui_ctx_panel_begin(ctx, "System Info",
                                   right_rect, right_scroll_y)) {
         forge_ui_ctx_label_layout(ctx, "GPU: Integrated",
                                    LABEL_HEIGHT,

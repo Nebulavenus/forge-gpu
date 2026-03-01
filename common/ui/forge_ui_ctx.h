@@ -10,8 +10,9 @@
  *   - ForgeUiContext holds per-frame input state (mouse position, button)
  *     and the two persistence IDs: hot (mouse is hovering) and active
  *     (mouse is pressing).
- *   - Widget IDs are simple integers chosen by the caller -- the context
- *     does not allocate or manage IDs.
+ *   - Widget IDs are FNV-1a hashes of string labels combined with a
+ *     hierarchical scope seed.  The "##" separator lets callers
+ *     distinguish widgets with identical display text.
  *   - Labels emit textured quads for each character using forge_ui_text_layout.
  *   - Buttons emit a solid-colored background rectangle (using the atlas
  *     white_uv region) plus centered text, and return true on click.
@@ -27,7 +28,7 @@
  *
  *   // Each frame:
  *   forge_ui_ctx_begin(&ctx, mouse_x, mouse_y, mouse_down);
- *   if (forge_ui_ctx_button(&ctx, 1, "Click me", rect)) { ... }
+ *   if (forge_ui_ctx_button(&ctx, "Click me", rect)) { ... }
  *   forge_ui_ctx_label(&ctx, "Hello", x, y, r, g, b, a);
  *   forge_ui_ctx_end(&ctx);
  *
@@ -40,6 +41,7 @@
 #define FORGE_UI_CTX_H
 
 #include <math.h>
+#include <string.h>
 #include <SDL3/SDL.h>
 #include "forge_ui.h"
 
@@ -54,6 +56,11 @@
 /* No widget is hot or active.  Zero is reserved as the null ID -- callers
  * must use non-zero IDs for their widgets. */
 #define FORGE_UI_ID_NONE  0
+
+/* Maximum nesting depth for the ID seed stack.  8 levels is enough for
+ * most UI hierarchies (e.g. window > panel > row > widget).  The stack
+ * is bounds-checked at runtime with SDL_Log on overflow/underflow. */
+#define FORGE_UI_ID_STACK_MAX_DEPTH  8
 
 /* ── Button style ───────────────────────────────────────────────────────── */
 
@@ -322,7 +329,7 @@ typedef struct ForgeUiPanel {
     ForgeUiRect  content_rect;   /* inner bounds after title bar and padding */
     float       *scroll_y;       /* pointer to caller's scroll offset */
     float        content_height; /* total height of child widgets (set by panel_end) */
-    Uint32       id;             /* widget ID for the panel (scrollbar uses id+1) */
+    Uint32       id;             /* widget ID hash (for pre-clamp matching across frames) */
 } ForgeUiPanel;
 
 /* Application-owned text input state.
@@ -449,6 +456,16 @@ typedef struct ForgeUiContext {
     ForgeUiLayout layout_stack[FORGE_UI_LAYOUT_MAX_DEPTH];
     int           layout_depth;  /* number of active layouts on the stack */
 
+    /* ID seed stack — hierarchical scoping for widget IDs.
+     *
+     * forge_ui_push_id() hashes a scope name with the current seed and
+     * pushes the result.  All subsequent forge_ui_hash_id() calls use
+     * the top-of-stack seed, so identically-labeled widgets in different
+     * scopes produce different IDs.  Panels and windows push/pop
+     * automatically. */
+    Uint32 id_seed_stack[FORGE_UI_ID_STACK_MAX_DEPTH];
+    int    id_stack_depth;  /* number of active seeds on the stack */
+
     /* Draw data -- accumulated across all widget calls during a frame.
      * Each widget appends its quads to these buffers.  At frame end the
      * caller uploads the entire batch to the GPU (or software rasterizer)
@@ -493,11 +510,11 @@ static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
 /* Draw a button with a background rectangle and centered text label.
  * Returns true on the frame the button is clicked (mouse released over it).
  *
- * id:   unique non-zero identifier for this widget
- * text: button label
+ * text: button label (also used as widget ID via FNV-1a hash).
+ *       Use "##suffix" to share display text: "Save##file" displays
+ *       "Save" but hashes "##file" for a unique ID.
  * rect: bounding rectangle in screen pixels */
 static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
-                                       Uint32 id,
                                        const char *text,
                                        ForgeUiRect rect);
 
@@ -514,12 +531,11 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
  * a filled inner square when *value is true (accent color), and the
  * label text positioned to the right of the box.
  *
- * id:    unique non-zero identifier for this widget
- * label: text drawn to the right of the checkbox box
+ * label: text drawn to the right of the checkbox box (also used as
+ *        widget ID via FNV-1a hash; supports "##" separator)
  * value: pointer to the boolean state (toggled on click)
  * rect:  bounding rectangle for the entire widget (box + label area) */
 static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
-                                          Uint32 id,
                                           const char *label,
                                           bool *value,
                                           ForgeUiRect rect);
@@ -545,13 +561,14 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
  * Draw elements: a thin horizontal track rect (white_uv), a thumb rect
  * that slides along the track (white_uv, color varies by state).
  *
- * id:      unique non-zero identifier for this widget
+ * label:   widget label used as ID via FNV-1a hash (not displayed;
+ *          supports "##" separator)
  * value:   pointer to the float value (updated during drag)
  * min_val: minimum value (left edge of track)
  * max_val: maximum value (right edge of track), must be > min_val
  * rect:    bounding rectangle for the slider track/thumb area */
 static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
-                                        Uint32 id,
+                                        const char *label,
                                         float *value,
                                         float min_val, float max_val,
                                         ForgeUiRect rect);
@@ -597,12 +614,13 @@ static inline void forge_ui_ctx_set_keyboard(ForgeUiContext *ctx,
  * (thin 2px-wide rect) whose x position is computed by measuring the
  * substring buffer[0..cursor].
  *
- * id:             unique non-zero identifier for this widget
+ * label:          widget label used as ID via FNV-1a hash (not displayed;
+ *                 supports "##" separator, e.g. "##username")
  * state:          pointer to application-owned ForgeUiTextInputState
  * rect:           bounding rectangle in screen pixels
  * cursor_visible: false to hide the cursor bar (for blink animation) */
 static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
-                                            Uint32 id,
+                                            const char *label,
                                             ForgeUiTextInputState *state,
                                             ForgeUiRect rect,
                                             bool cursor_visible);
@@ -658,20 +676,18 @@ static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
 
 /* Button placed by the current layout.  Returns true on click. */
 static inline bool forge_ui_ctx_button_layout(ForgeUiContext *ctx,
-                                               Uint32 id,
                                                const char *text,
                                                float size);
 
 /* Checkbox placed by the current layout.  Returns true on toggle. */
 static inline bool forge_ui_ctx_checkbox_layout(ForgeUiContext *ctx,
-                                                 Uint32 id,
                                                  const char *label,
                                                  bool *value,
                                                  float size);
 
 /* Slider placed by the current layout.  Returns true on value change. */
 static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
-                                               Uint32 id,
+                                               const char *label,
                                                float *value,
                                                float min_val, float max_val,
                                                float size);
@@ -682,21 +698,20 @@ static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
  * push a vertical layout for child widgets.  The caller declares widgets
  * between panel_begin and panel_end.
  *
- * id:        unique non-zero widget ID (scrollbar thumb uses id+1)
- * title:     text displayed in the title bar (centered)
+ * title:     text displayed in the title bar (centered); also used as
+ *            widget ID via FNV-1a hash and pushes a scope for child IDs
  * rect:      outer bounds of the panel in screen pixels
  * scroll_y:  pointer to the caller's scroll offset (persists across frames)
  *
  * Returns false without drawing if validation fails: NULL ctx/atlas/scroll_y,
- * nested panel (one already active), id == FORGE_UI_ID_NONE or UINT32_MAX,
- * non-finite rect origin, or non-positive rect dimensions.
+ * nested panel (one already active), non-finite rect origin, or
+ * non-positive rect dimensions.
  *
  * On false the caller must NOT call panel_end.  In the nested-panel case
  * an outer panel is still active, and calling panel_end would close that
  * outer panel instead of the rejected one.  Only call panel_end after
  * panel_begin returns true. */
 static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
-                                             Uint32 id,
                                              const char *title,
                                              ForgeUiRect rect,
                                              float *scroll_y);
@@ -738,6 +753,115 @@ static inline bool forge_ui__widget_mouse_over(const ForgeUiContext *ctx,
         !forge_ui__rect_contains(ctx->clip_rect, ctx->mouse_x, ctx->mouse_y))
         return false;
     return true;
+}
+
+/* ── ID hashing helpers ─────────────────────────────────────────────────── */
+
+#define FORGE_UI_FNV_OFFSET_BASIS 0x811c9dc5u  /* FNV-1a 32-bit offset basis */
+#define FORGE_UI_FNV_PRIME        0x01000193u  /* FNV-1a 32-bit prime        */
+
+/* FNV-1a hash of a null-terminated string, seeded with `seed`.
+ * FNV-1a is a fast, non-cryptographic hash with good avalanche properties.
+ * The standard FNV offset basis is FORGE_UI_FNV_OFFSET_BASIS; when scoping
+ * is active, the caller passes the parent scope's hash as the seed instead. */
+static inline Uint32 forge_ui__fnv1a(const char *str, Uint32 seed)
+{
+    if (!str) return seed;
+    Uint32 hash = seed;
+    for (const char *p = str; *p != '\0'; p++) {
+        hash ^= (Uint32)(unsigned char)*p;
+        hash *= FORGE_UI_FNV_PRIME;
+    }
+    return hash;
+}
+
+/* Compute a widget ID by hashing the label with the current scope seed.
+ *
+ * The "##" separator convention:
+ *   - "Save"       → hashes full string "Save"
+ *   - "Save##file" → hashes "##file" only (display text is "Save")
+ *
+ * The result is combined with the current top-of-stack seed so that
+ * identically-labeled widgets in different scopes produce different IDs.
+ *
+ * Zero guard: if the hash equals FORGE_UI_ID_NONE (0), return 1. */
+static inline Uint32 forge_ui_hash_id(const ForgeUiContext *ctx,
+                                       const char *label)
+{
+    if (!label || label[0] == '\0') return 1;
+
+    /* Find ## separator — hash the ## portion if present */
+    const char *sep = SDL_strstr(label, "##");
+    const char *id_str = sep ? sep : label;
+
+    /* Use top-of-stack seed, or FNV offset basis if stack is empty */
+    Uint32 seed = FORGE_UI_FNV_OFFSET_BASIS;
+    if (ctx && ctx->id_stack_depth > 0) {
+        seed = ctx->id_seed_stack[ctx->id_stack_depth - 1];
+    }
+
+    Uint32 hash = forge_ui__fnv1a(id_str, seed);
+    if (hash == FORGE_UI_ID_NONE) hash = 1;
+    return hash;
+}
+
+/* Return a pointer to the end of display text in a label.
+ * If the label contains "##", returns a pointer to the "##".
+ * Otherwise returns a pointer to the null terminator.
+ * The caller can compute display length as (result - label). */
+static inline const char *forge_ui__display_end(const char *label)
+{
+    if (!label) return label;
+    const char *sep = SDL_strstr(label, "##");
+    return sep ? sep : (label + SDL_strlen(label));
+}
+
+/* Push a named scope onto the ID seed stack.  All subsequent hash_id
+ * calls will incorporate this scope's seed, so identically-labeled
+ * widgets in different scopes produce different IDs.
+ *
+ * Panels and windows call this automatically; callers use it to
+ * disambiguate repeated widget groups (e.g. list items). */
+static inline bool forge_ui_push_id(ForgeUiContext *ctx, const char *name)
+{
+    if (!ctx) return false;
+    if (ctx->id_stack_depth >= FORGE_UI_ID_STACK_MAX_DEPTH) {
+        SDL_Log("forge_ui_push_id: stack overflow (depth=%d, max=%d)",
+                ctx->id_stack_depth, FORGE_UI_ID_STACK_MAX_DEPTH);
+        return false;
+    }
+
+    /* Hash the scope name with the current seed to produce the new seed */
+    Uint32 parent_seed = FORGE_UI_FNV_OFFSET_BASIS;
+    if (ctx->id_stack_depth > 0) {
+        parent_seed = ctx->id_seed_stack[ctx->id_stack_depth - 1];
+    }
+
+    const char *scope_name = (name && name[0] != '\0') ? name : "";
+    /* Apply the same ## identity extraction as forge_ui_hash_id:
+     * if "Label##id" is passed, hash only "##id" so scope seeds
+     * remain stable when only display text changes. */
+    const char *sep = SDL_strstr(scope_name, "##");
+    if (sep) scope_name = sep;
+    if (scope_name[0] == '\0') {
+        SDL_Log("forge_ui_push_id: empty scope name has no effect on IDs");
+    }
+    ctx->id_seed_stack[ctx->id_stack_depth] =
+        forge_ui__fnv1a(scope_name, parent_seed);
+    ctx->id_stack_depth++;
+    return true;
+}
+
+/* Pop the current scope from the ID seed stack. */
+static inline void forge_ui_pop_id(ForgeUiContext *ctx)
+{
+    if (!ctx) return;
+    if (ctx->id_stack_depth <= 0) {
+        SDL_Log("forge_ui_pop_id: stack underflow (depth=%d)",
+                ctx->id_stack_depth);
+        return;
+    }
+    ctx->id_stack_depth--;
 }
 
 /* Ensure vertex buffer has room for `count` more vertices. */
@@ -1073,6 +1197,7 @@ static inline void forge_ui_ctx_free(ForgeUiContext *ctx)
     ctx->next_hot = FORGE_UI_ID_NONE;
     ctx->focused = FORGE_UI_ID_NONE;
     ctx->layout_depth = 0;
+    ctx->id_stack_depth = 0;
     ctx->scroll_delta = 0.0f;
     ctx->has_clip = false;
     ctx->_panel_active = false;
@@ -1130,6 +1255,13 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
                 "(unmatched push/pop last frame)", ctx->layout_depth);
     }
     ctx->layout_depth = 0;
+
+    /* Reset ID seed stack for this frame. */
+    if (ctx->id_stack_depth != 0) {
+        SDL_Log("forge_ui_ctx_begin: id_stack_depth=%d at frame start "
+                "(unmatched push_id/pop_id last frame)", ctx->id_stack_depth);
+    }
+    ctx->id_stack_depth = 0;
 
     /* Reset draw buffers (keep allocated memory) */
     ctx->vertex_count = 0;
@@ -1193,6 +1325,9 @@ static inline void forge_ui_ctx_end(ForgeUiContext *ctx)
         if (ctx->layout_depth > 0) {
             forge_ui_ctx_layout_pop(ctx);
         }
+        if (ctx->id_stack_depth > 0) {
+            forge_ui_pop_id(ctx);
+        }
     }
 
     /* Check for unmatched layout push/pop.  A non-zero depth here means
@@ -1210,6 +1345,7 @@ static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
                                       float r, float g, float b, float a)
 {
     if (!ctx || !text || !ctx->atlas) return;
+    if (!isfinite(x) || !isfinite(y)) return;
 
     ForgeUiTextOpts opts = { 0.0f, FORGE_UI_TEXT_ALIGN_LEFT, r, g, b, a };
     ForgeUiTextLayout layout;
@@ -1220,11 +1356,13 @@ static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
 }
 
 static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
-                                       Uint32 id,
                                        const char *text,
                                        ForgeUiRect rect)
 {
-    if (!ctx || !ctx->atlas || !text || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !text || text[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    Uint32 id = forge_ui_hash_id(ctx, text);
 
     bool clicked = false;
 
@@ -1284,9 +1422,18 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
     /* ── Emit background rectangle ────────────────────────────────────── */
     forge_ui__emit_rect(ctx, rect, bg_r, bg_g, bg_b, bg_a);
 
+    /* ── Extract display text (strip ## suffix if present) ────────────── */
+    const char *disp_end = forge_ui__display_end(text);
+    int disp_len = (int)(disp_end - text);
+    char disp_buf[256];
+    if (disp_len >= (int)sizeof(disp_buf))
+        disp_len = (int)sizeof(disp_buf) - 1;
+    SDL_memcpy(disp_buf, text, (size_t)disp_len);
+    disp_buf[disp_len] = '\0';
+
     /* ── Emit centered text label ─────────────────────────────────────── */
     /* Measure text to compute centering offsets */
-    ForgeUiTextMetrics metrics = forge_ui_text_measure(ctx->atlas, text, NULL);
+    ForgeUiTextMetrics metrics = forge_ui_text_measure(ctx->atlas, disp_buf, NULL);
 
     /* Center the text within the button rectangle.
      * Horizontal: offset by half the difference between rect width and text width.
@@ -1296,7 +1443,7 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
     float text_x = rect.x + (rect.w - metrics.width) * 0.5f;
     float text_y = rect.y + (rect.h - metrics.height) * 0.5f + ascender_px;
 
-    forge_ui_ctx_label(ctx, text, text_x, text_y,
+    forge_ui_ctx_label(ctx, disp_buf, text_x, text_y,
                        FORGE_UI_BTN_TEXT_R, FORGE_UI_BTN_TEXT_G,
                        FORGE_UI_BTN_TEXT_B, FORGE_UI_BTN_TEXT_A);
 
@@ -1304,12 +1451,14 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
 }
 
 static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
-                                          Uint32 id,
                                           const char *label,
                                           bool *value,
                                           ForgeUiRect rect)
 {
-    if (!ctx || !ctx->atlas || !label || !value || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !label || !value || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    Uint32 id = forge_ui_hash_id(ctx, label);
 
     bool toggled = false;
 
@@ -1379,6 +1528,15 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
                             FORGE_UI_CB_CHECK_B, FORGE_UI_CB_CHECK_A);
     }
 
+    /* ── Extract display text (strip ## suffix if present) ────────────── */
+    const char *disp_end = forge_ui__display_end(label);
+    int disp_len = (int)(disp_end - label);
+    char disp_buf[256];
+    if (disp_len >= (int)sizeof(disp_buf))
+        disp_len = (int)sizeof(disp_buf) - 1;
+    SDL_memcpy(disp_buf, label, (size_t)disp_len);
+    disp_buf[disp_len] = '\0';
+
     /* ── Label baseline alignment ────────────────────────────────────── */
     /* The font origin is at the baseline, not the top of the em square.
      * Offset by the ascender so text sits visually centered in the rect. */
@@ -1388,7 +1546,7 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
     float label_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f
                     + ascender_px;
 
-    forge_ui_ctx_label(ctx, label, label_x, label_y,
+    forge_ui_ctx_label(ctx, disp_buf, label_x, label_y,
                        FORGE_UI_CB_TEXT_R, FORGE_UI_CB_TEXT_G,
                        FORGE_UI_CB_TEXT_B, FORGE_UI_CB_TEXT_A);
 
@@ -1396,12 +1554,18 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
 }
 
 static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
-                                        Uint32 id,
+                                        const char *label,
                                         float *value,
                                         float min_val, float max_val,
                                         ForgeUiRect rect)
 {
-    if (!ctx || !ctx->atlas || !value || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    /* Sanitize *value: NaN/Inf would poison the thumb position and
+     * propagate into vertex data.  Clamp to min_val as a safe default. */
+    if (!isfinite(*value)) *value = min_val;
+    Uint32 id = forge_ui_hash_id(ctx, label);
     if (!(max_val > min_val)) return false;  /* also rejects NaN */
 
     bool changed = false;
@@ -1446,8 +1610,8 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
         if (track_w > 0.0f) {
             t = (ctx->mouse_x - track_x) / track_w;
         }
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
+        if (!(t >= 0.0f)) t = 0.0f;  /* NaN-safe: NaN fails >= */
+        if (!(t <= 1.0f)) t = 1.0f;
         float new_val = min_val + t * (max_val - min_val);
         if (new_val != *value) {
             *value = new_val;
@@ -1467,8 +1631,8 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     /* Use the canonical *value (not the drag t) so the thumb reflects any
      * clamping or quantization the caller may apply between frames. */
     float t = (*value - min_val) / (max_val - min_val);
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
+    if (!(t >= 0.0f)) t = 0.0f;  /* NaN-safe: NaN fails >= */
+    if (!(t <= 1.0f)) t = 1.0f;
 
     /* ── Track — thin bar so the thumb visually protrudes above/below ── */
     float track_draw_y = rect.y + (rect.h - FORGE_UI_SL_TRACK_HEIGHT) * 0.5f;
@@ -1527,13 +1691,16 @@ static inline void forge_ui_ctx_set_keyboard(ForgeUiContext *ctx,
 }
 
 static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
-                                            Uint32 id,
+                                            const char *label,
                                             ForgeUiTextInputState *state,
                                             ForgeUiRect rect,
                                             bool cursor_visible)
 {
     if (!ctx || !ctx->atlas || !state || !state->buffer
-        || id == FORGE_UI_ID_NONE) return false;
+        || !label || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    Uint32 id = forge_ui_hash_id(ctx, label);
 
     /* Validate state invariants to prevent out-of-bounds access.
      * The application owns these fields; reject if they violate the
@@ -1769,6 +1936,12 @@ static inline bool forge_ui_ctx_layout_push(ForgeUiContext *ctx,
         return false;
     }
 
+    /* Reject NaN/Inf in rect fields */
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) {
+        return false;
+    }
+
     /* Reject NaN/Inf in padding and spacing; clamp negatives to 0 */
     if (isnan(padding) || isinf(padding)) padding = 0.0f;
     if (isnan(spacing) || isinf(spacing)) spacing = 0.0f;
@@ -1908,52 +2081,50 @@ static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
 }
 
 static inline bool forge_ui_ctx_button_layout(ForgeUiContext *ctx,
-                                               Uint32 id,
                                                const char *text,
                                                float size)
 {
     /* Validate all params before calling layout_next so we don't
      * advance the cursor for a widget that will fail to draw. */
-    if (!ctx || !ctx->atlas || !text || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !text || text[0] == '\0') return false;
     if (ctx->layout_depth <= 0) return false;  /* no active layout — no-op */
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
-    return forge_ui_ctx_button(ctx, id, text, rect);
+    return forge_ui_ctx_button(ctx, text, rect);
 }
 
 static inline bool forge_ui_ctx_checkbox_layout(ForgeUiContext *ctx,
-                                                 Uint32 id,
                                                  const char *label,
                                                  bool *value,
                                                  float size)
 {
-    if (!ctx || !ctx->atlas || !label || !value || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !label || !value || label[0] == '\0') return false;
     if (ctx->layout_depth <= 0) return false;  /* no active layout — no-op */
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
-    return forge_ui_ctx_checkbox(ctx, id, label, value, rect);
+    return forge_ui_ctx_checkbox(ctx, label, value, rect);
 }
 
 static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
-                                               Uint32 id,
+                                               const char *label,
                                                float *value,
                                                float min_val, float max_val,
                                                float size)
 {
-    if (!ctx || !ctx->atlas || !value || id == FORGE_UI_ID_NONE) return false;
+    if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
     if (ctx->layout_depth <= 0) return false;  /* no active layout — no-op */
     if (!(max_val > min_val)) return false;  /* also rejects NaN */
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
-    return forge_ui_ctx_slider(ctx, id, value, min_val, max_val, rect);
+    return forge_ui_ctx_slider(ctx, label, value, min_val, max_val, rect);
 }
 
 /* ── Panel implementation ───────────────────────────────────────────────── */
 
 static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
-                                             Uint32 id,
                                              const char *title,
                                              ForgeUiRect rect,
                                              float *scroll_y)
 {
-    if (!ctx || !ctx->atlas || id == FORGE_UI_ID_NONE || !scroll_y) return false;
+    if (!ctx || !ctx->atlas || !title || title[0] == '\0' || !scroll_y)
+        return false;
 
     /* Reject nested panels -- only one panel may be active at a time.
      * Opening a second panel would overwrite the first's state, corrupt
@@ -1964,14 +2135,8 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
         return false;
     }
 
-    /* The scrollbar uses id+1; reject UINT32_MAX to prevent wrapping to
-     * FORGE_UI_ID_NONE (the null sentinel), which would break the
-     * hot/active state machine for the scrollbar thumb. */
-    if (id >= UINT32_MAX) {
-        SDL_Log("forge_ui_ctx_panel_begin: id must be < UINT32_MAX "
-                "(scrollbar uses id+1)");
-        return false;
-    }
+    /* Compute the panel's own ID from the title string */
+    Uint32 id = forge_ui_hash_id(ctx, title);
 
     /* Reject non-finite origin.  NaN or ±Inf in rect.x/rect.y would
      * propagate into every vertex position, clip rect, and content area
@@ -2012,14 +2177,22 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
                         FORGE_UI_PANEL_TITLE_BG_R, FORGE_UI_PANEL_TITLE_BG_G,
                         FORGE_UI_PANEL_TITLE_BG_B, FORGE_UI_PANEL_TITLE_BG_A);
 
-    /* Center the title text in the title bar */
+    /* Center the title text in the title bar (strip ## suffix) */
     if (title && title[0] != '\0') {
-        ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, title, NULL);
+        const char *disp_end = forge_ui__display_end(title);
+        int disp_len = (int)(disp_end - title);
+        char disp_buf[256];
+        if (disp_len >= (int)sizeof(disp_buf))
+            disp_len = (int)sizeof(disp_buf) - 1;
+        SDL_memcpy(disp_buf, title, (size_t)disp_len);
+        disp_buf[disp_len] = '\0';
+
+        ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, disp_buf, NULL);
         float ascender_px = forge_ui__ascender_px(ctx->atlas);
         float tx = rect.x + (rect.w - m.width) * 0.5f;
         float ty = rect.y + (FORGE_UI_PANEL_TITLE_HEIGHT - m.height) * 0.5f
                    + ascender_px;
-        forge_ui_ctx_label(ctx, title, tx, ty,
+        forge_ui_ctx_label(ctx, disp_buf, tx, ty,
                            FORGE_UI_PANEL_TITLE_TEXT_R, FORGE_UI_PANEL_TITLE_TEXT_G,
                            FORGE_UI_PANEL_TITLE_TEXT_B, FORGE_UI_PANEL_TITLE_TEXT_A);
     }
@@ -2075,6 +2248,16 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
      * frame's value is needed for the pre-clamp above; panel_end will
      * overwrite it with this frame's measured height. */
 
+    /* ── Push ID scope so child widgets are scoped under this panel ──── */
+    if (!forge_ui_push_id(ctx, title)) {
+        SDL_Log("forge_ui_ctx_panel_begin: id scope push failed");
+        ctx->has_clip = false;
+        ctx->_panel_active = false;
+        ctx->_panel.id = FORGE_UI_ID_NONE;
+        ctx->_panel.scroll_y = NULL;
+        return false;
+    }
+
     /* ── Apply mouse wheel scrolling ──────────────────────────────────── */
     /* Validate scroll_delta: a NaN or ±Inf delta (from a corrupt input
      * event or driver bug) would make *scroll_y non-finite, poisoning
@@ -2107,6 +2290,7 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
          * next frame does not match against a panel that never completed. */
         ctx->_panel.id = FORGE_UI_ID_NONE;
         ctx->_panel.scroll_y = NULL;
+        forge_ui_pop_id(ctx);  /* undo the push_id from above */
         return false;
     }
 
@@ -2156,8 +2340,14 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     if (!(*scroll_y >= 0.0f)) *scroll_y = 0.0f;
 
     /* ── Draw scrollbar (only if content overflows AND track is usable) ── */
-    if (content_h <= visible_h) return;
-    if (visible_h < 1.0f) return;  /* track too small to be useful */
+    if (content_h <= visible_h) {
+        forge_ui_pop_id(ctx);  /* pop the scope pushed by panel_begin */
+        return;
+    }
+    if (visible_h < 1.0f) {
+        forge_ui_pop_id(ctx);  /* pop the scope pushed by panel_begin */
+        return;
+    }
 
     ForgeUiRect cr = ctx->_panel.content_rect;
     float track_x = ctx->_panel.rect.x + ctx->_panel.rect.w
@@ -2184,7 +2374,10 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     float thumb_y = track_y + t * thumb_range;
 
     ForgeUiRect thumb_rect = { track_x, thumb_y, track_w, thumb_h };
-    Uint32 sb_id = ctx->_panel.id + 1;
+    /* Compute scrollbar ID within the panel's scope.  The \xff prefix
+     * is a non-printable byte that cannot appear in user label strings,
+     * preventing collisions with user-chosen widget names. */
+    Uint32 sb_id = forge_ui_hash_id(ctx, "\xff__scrollbar");
 
     /* ── Scrollbar thumb interaction (same drag pattern as slider) ────── */
     bool thumb_over = forge_ui__rect_contains(thumb_rect,
@@ -2232,6 +2425,9 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     thumb_y = track_y + t * thumb_range;
     thumb_rect = (ForgeUiRect){ track_x, thumb_y, track_w, thumb_h };
     forge_ui__emit_rect(ctx, thumb_rect, th_r, th_g, th_b, th_a);
+
+    /* ── Pop the ID scope pushed by panel_begin ────────────────────────── */
+    forge_ui_pop_id(ctx);
 }
 
 #endif /* FORGE_UI_CTX_H */

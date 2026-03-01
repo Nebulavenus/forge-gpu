@@ -102,20 +102,7 @@
 #define DRAG_OFFSET_X  150.0f    /* horizontal drag displacement (pixels) */
 #define DRAG_OFFSET_Y   80.0f    /* vertical drag displacement (pixels) */
 
-/* ── Widget IDs ──────────────────────────────────────────────────────────── */
-/* Settings window: ID 100, scrollbar 101, collapse toggle 102 */
-#define ID_SETTINGS_WIN     100
-/* Status window: ID 200, scrollbar 201, collapse toggle 202 */
-#define ID_STATUS_WIN       200
-/* Info window: ID 300, scrollbar 301, collapse toggle 302 */
-#define ID_INFO_WIN         300
-
-/* Checkbox IDs: 110-114 for 5 checkboxes */
-#define ID_CB_BASE          110
 #define CHECKBOX_COUNT      5
-
-/* Slider ID */
-#define ID_SLIDER           120
 
 /* ── Label colors ────────────────────────────────────────────────────────── */
 #define LABEL_R         0.80f
@@ -222,21 +209,20 @@ static void declare_windows(ForgeUiWindowContext *wctx,
     ForgeUiContext *ctx = wctx->ctx;
 
     /* ── Settings window: checkboxes + slider ────────────────────────── */
-    if (forge_ui_wctx_window_begin(wctx, ID_SETTINGS_WIN, "Settings",
+    if (forge_ui_wctx_window_begin(wctx, "Settings",
                                     settings_win)) {
         for (int i = 0; i < CHECKBOX_COUNT; i++) {
             (void)forge_ui_ctx_checkbox_layout(
-                ctx, (Uint32)(ID_CB_BASE + i),
-                checkbox_labels[i],
+                ctx, checkbox_labels[i],
                 &checkboxes[i], CHECKBOX_HEIGHT);
         }
         (void)forge_ui_ctx_slider_layout(
-            ctx, ID_SLIDER, slider_val, SLIDER_MIN, SLIDER_MAX, SLIDER_HEIGHT);
+            ctx, "##settings_slider", slider_val, SLIDER_MIN, SLIDER_MAX, SLIDER_HEIGHT);
         forge_ui_wctx_window_end(wctx);
     }
 
     /* ── Status window: labels showing current values ────────────────── */
-    if (forge_ui_wctx_window_begin(wctx, ID_STATUS_WIN, "Status",
+    if (forge_ui_wctx_window_begin(wctx, "Status",
                                     status_win)) {
         static char buf[128];
 
@@ -264,7 +250,7 @@ static void declare_windows(ForgeUiWindowContext *wctx,
     }
 
     /* ── Info window: scrollable text content ────────────────────────── */
-    if (forge_ui_wctx_window_begin(wctx, ID_INFO_WIN, "Info",
+    if (forge_ui_wctx_window_begin(wctx, "Info",
                                     info_win)) {
         forge_ui_ctx_label_layout(ctx, "Welcome to forge-gpu!",
                                    LABEL_HEIGHT,

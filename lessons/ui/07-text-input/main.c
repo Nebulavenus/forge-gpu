@@ -66,12 +66,6 @@
 /* ── Text input buffer size ──────────────────────────────────────────────── */
 #define TEXT_BUF_SIZE  128      /* maximum bytes per text input (including '\0') */
 
-/* ── Widget IDs ──────────────────────────────────────────────────────────── */
-/* Each interactive widget needs a unique non-zero ID for the hot/active
- * and focus state machines. */
-#define TI_USERNAME_ID   1
-#define TI_EMAIL_ID      2
-
 /* ── Background clear color (dark slate, same as lessons 05-06) ──────────── */
 #define BG_CLEAR_R      0.08f
 #define BG_CLEAR_G      0.08f
@@ -422,7 +416,7 @@ int main(int argc, char *argv[])
         /* Username text input (this is the field we interact with) */
         bool cursor_visible = (blink_counter % BLINK_PERIOD) < BLINK_ON_FRAMES;
         bool username_changed = forge_ui_ctx_text_input(
-            &ctx, TI_USERNAME_ID, &username_state, username_rect,
+            &ctx, "##username", &username_state, username_rect,
             cursor_visible);
 
         /* "Email:" label */
@@ -434,13 +428,14 @@ int main(int argc, char *argv[])
         /* Email text input (never focused in this demo -- shows
          * the unfocused visual state for comparison) */
         forge_ui_ctx_text_input(
-            &ctx, TI_EMAIL_ID, &email_state, email_rect,
+            &ctx, "##email", &email_state, email_rect,
             cursor_visible);
 
         /* Status label */
         const char *status = "Click a field to start typing";
         static char status_buf[128];
-        if (ctx.focused == TI_USERNAME_ID) {
+        Uint32 username_id = forge_ui_hash_id(&ctx, "##username");
+        if (ctx.focused == username_id) {
             SDL_snprintf(status_buf, sizeof(status_buf),
                          "Username: \"%s\"  cursor=%d  len=%d",
                          username_state.buffer,

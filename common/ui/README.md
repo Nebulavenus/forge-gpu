@@ -125,16 +125,23 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   frame: reset draw data, update input state
 - **`forge_ui_ctx_end(ctx)`** -- End a frame: resolve hot/active widget state
 - **`forge_ui_ctx_label(ctx, text, x, y, r, g, b, a)`** -- Draw a text label
-- **`forge_ui_ctx_button(ctx, id, text, rect)`** -- Draw a button. Returns
-  `true` on click
-- **`forge_ui_ctx_checkbox(ctx, id, label, value, rect)`** -- Draw a checkbox.
+- **`forge_ui_hash_id(ctx, label)`** -- Hash a string label with the current
+  scope seed (FNV-1a). Returns a `Uint32` widget ID
+- **`forge_ui_push_id(ctx, name)`** -- Push a named scope onto the ID stack.
+  Returns `true` on success, `false` if the stack is full (max 8 levels).
+  Subsequent `hash_id` calls use the new scope as their seed
+- **`forge_ui_pop_id(ctx)`** -- Pop the current scope from the ID stack
+- **`forge_ui_ctx_button(ctx, text, rect)`** -- Draw a button. Returns
+  `true` on click. The `text` label doubles as the widget ID (hashed
+  automatically). Use `"Label##suffix"` to disambiguate
+- **`forge_ui_ctx_checkbox(ctx, label, value, rect)`** -- Draw a checkbox.
   Returns `true` when toggled (flips `*value`)
-- **`forge_ui_ctx_slider(ctx, id, value, min_val, max_val, rect)`** -- Draw a
-  horizontal slider. Returns `true` when the value changes
+- **`forge_ui_ctx_slider(ctx, label, value, min_val, max_val, rect)`** --
+  Draw a horizontal slider. Returns `true` when the value changes
 - **`forge_ui_ctx_set_keyboard(ctx, text_input, ...)`** -- Pass keyboard input
   state for the current frame
-- **`forge_ui_ctx_text_input(ctx, id, state, rect, cursor_visible)`** -- Draw
-  a text input field with cursor and keyboard editing
+- **`forge_ui_ctx_text_input(ctx, label, state, rect, cursor_visible)`** --
+  Draw a text input field with cursor and keyboard editing
 - **`forge_ui_ctx_layout_push(ctx, rect, direction, padding, spacing)`** --
   Push a layout region onto the layout stack
 - **`forge_ui_ctx_layout_pop(ctx)`** -- Pop the current layout and return to
@@ -143,13 +150,13 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   from the current layout, advancing the cursor
 - **`forge_ui_ctx_label_layout(ctx, text, size, r, g, b, a)`** -- Label
   placed by the current layout
-- **`forge_ui_ctx_button_layout(ctx, id, text, size)`** -- Button placed
+- **`forge_ui_ctx_button_layout(ctx, text, size)`** -- Button placed
   by the current layout
-- **`forge_ui_ctx_checkbox_layout(ctx, id, label, value, size)`** -- Checkbox
+- **`forge_ui_ctx_checkbox_layout(ctx, label, value, size)`** -- Checkbox
   placed by the current layout
-- **`forge_ui_ctx_slider_layout(ctx, id, value, min, max, size)`** -- Slider
-  placed by the current layout
-- **`forge_ui_ctx_panel_begin(ctx, id, title, rect, scroll_y)`** -- Begin a
+- **`forge_ui_ctx_slider_layout(ctx, label, value, min, max, size)`** --
+  Slider placed by the current layout
+- **`forge_ui_ctx_panel_begin(ctx, title, rect, scroll_y)`** -- Begin a
   panel: draw background and title bar, set clip rect, push layout for
   child widgets. Returns `true` on success
 - **`forge_ui_ctx_panel_end(ctx)`** -- End a panel: compute content overflow,
@@ -166,7 +173,7 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - **`forge_ui_wctx_end(wctx)`** -- End the frame: sort window draw lists by
   z_order and append to the main context buffers in back-to-front order. Call
   before `forge_ui_ctx_end()`
-- **`forge_ui_wctx_window_begin(wctx, id, title, state)`** -- Begin a window:
+- **`forge_ui_wctx_window_begin(wctx, title, state)`** -- Begin a window:
   draw title bar with collapse toggle, process dragging and z-ordering. Returns
   `true` if expanded (caller declares child widgets and calls window_end).
   Returns `false` if collapsed (caller must NOT call window_end)
@@ -259,6 +266,8 @@ These are intentional simplifications for a learning library:
   Panels with clipping, scrolling, and interactive scrollbar
 - [`lessons/ui/10-windows/`](../../lessons/ui/10-windows/) -- Draggable windows
   with z-ordering, collapse toggle, and deferred draw ordering
+- [`lessons/ui/11-widget-id-system/`](../../lessons/ui/11-widget-id-system/) --
+  FNV-1a hashed string IDs with hierarchical scope stacking
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

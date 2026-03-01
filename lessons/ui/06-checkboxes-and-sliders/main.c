@@ -67,13 +67,6 @@
 #define SL_MAX         100.0f   /* maximum volume */
 #define SL_INITIAL      50.0f   /* initial volume value */
 
-/* ── Widget IDs ──────────────────────────────────────────────────────────── */
-/* Each interactive widget needs a unique non-zero ID for the hot/active
- * state machine.  In a real application these could be generated from
- * hashed strings or a counter. */
-#define CB_AUDIO_ID      1
-#define SL_VOLUME_ID     2
-
 /* ── Background clear color (dark slate, same as lesson 05) ──────────────── */
 #define BG_CLEAR_R      0.08f
 #define BG_CLEAR_G      0.08f
@@ -115,15 +108,6 @@ typedef struct FrameInput {
     bool  mouse_down;         /* true if the primary button is held this frame */
     const char *description;  /* what this frame demonstrates (for logging) */
 } FrameInput;
-
-/* ── Helper: state name for logging ──────────────────────────────────────── */
-
-static const char *state_name(const ForgeUiContext *ctx, Uint32 id)
-{
-    if (ctx->active == id) return "ACTIVE (pressed)";
-    if (ctx->hot == id)    return "HOT (hovered)";
-    return "normal";
-}
 
 /* ── Helper: render a frame's draw data to BMP ───────────────────────────── */
 
@@ -363,7 +347,7 @@ int main(int argc, char *argv[])
 
         /* Checkbox: "Enable Audio" */
         bool cb_toggled = forge_ui_ctx_checkbox(
-            &ctx, CB_AUDIO_ID, "Enable Audio", &audio_enabled, cb_rect);
+            &ctx, "Enable Audio", &audio_enabled, cb_rect);
 
         /* Slider name label: "Volume:" */
         forge_ui_ctx_label(&ctx, "Volume:", MARGIN, sl_label_y,
@@ -371,7 +355,7 @@ int main(int argc, char *argv[])
 
         /* Slider: volume control */
         bool sl_changed = forge_ui_ctx_slider(
-            &ctx, SL_VOLUME_ID, &volume, SL_MIN, SL_MAX, sl_rect);
+            &ctx, "##volume", &volume, SL_MIN, SL_MAX, sl_rect);
 
         /* Value label: show current slider value to the right of the track.
          * This is the "optional value label" draw element -- we format the
@@ -407,12 +391,10 @@ int main(int argc, char *argv[])
         SDL_Log("  State after frame:");
         SDL_Log("    hot    = %u", (unsigned)ctx.hot);
         SDL_Log("    active = %u", (unsigned)ctx.active);
-        SDL_Log("    Checkbox (id=%u): %s  value=%s%s",
-                (unsigned)CB_AUDIO_ID, state_name(&ctx, CB_AUDIO_ID),
+        SDL_Log("    Checkbox: value=%s%s",
                 audio_enabled ? "true" : "false",
                 cb_toggled ? " -> TOGGLED" : "");
-        SDL_Log("    Slider  (id=%u): %s  value=%.1f%s",
-                (unsigned)SL_VOLUME_ID, state_name(&ctx, SL_VOLUME_ID),
+        SDL_Log("    Slider: value=%.1f%s",
                 (double)volume,
                 sl_changed ? " -> CHANGED" : "");
         SDL_Log("  Draw data: %d vertices, %d indices (%d triangles)",
