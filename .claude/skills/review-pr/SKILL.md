@@ -223,11 +223,31 @@ After processing ALL feedback items, if any code changes were made:
 
 ### 6. Check if ready to merge
 
-Use `gh pr view <pr-number> --json reviewDecision,statusCheckRollup` to verify:
+Check two things: the PR-level review decision AND individual reviews.
 
-- All conversations are resolved
+```bash
+# PR-level decision (may lag behind individual reviews)
+gh pr view <pr-number> --json reviewDecision,statusCheckRollup
+
+# Individual reviews — check the LATEST review from each reviewer
+gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
+  | jq '[.[] | {user: .user.login, state: .state, date: .submitted_at}]
+        | group_by(.user)
+        | map(sort_by(.date) | last)'
+```
+
+**Important:** `reviewDecision` can show `CHANGES_REQUESTED` even after a
+reviewer has submitted a newer `APPROVED` review. This happens because GitHub
+tracks the *earliest unresolved* review, not the latest. Always check the
+latest review from each reviewer — if their most recent review is `APPROVED`,
+the PR is approved regardless of what `reviewDecision` says.
+
+Verify:
+
 - All status checks pass
-- PR has approval (reviewDecision = "APPROVED")
+- The latest review from each reviewer is `APPROVED` (or `COMMENTED` — only
+  `CHANGES_REQUESTED` blocks)
+- No unresolved conversations that need action
 
 **If not ready:**
 
