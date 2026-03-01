@@ -146,6 +146,49 @@ Parse and categorize feedback by:
 
 **Present ALL comments to the user** sorted by severity (Major → Minor → Nitpick) so security/critical issues are addressed first.
 
+#### 2b. Check review bodies for duplicate and nitpick comments
+
+**Critical:** CodeRabbit embeds additional feedback directly in **review
+bodies** — not as separate inline comment threads. These appear in collapsible
+sections titled "Duplicate comments" and "Nitpick comments" within the review.
+They do NOT create their own threads, so they will be missed if you only fetch
+inline comments.
+
+Fetch review bodies from CodeRabbit:
+
+```bash
+gh api --paginate repos/{owner}/{repo}/pulls/{pr-number}/reviews \
+  | jq -s 'add
+    | map(select(.user.login == "coderabbitai[bot]"))
+    | sort_by(.submitted_at)
+    | map({id: .id, state: .state, body: .body, date: .submitted_at})'
+```
+
+**Look for these sections in the review body:**
+
+- `♻️ Duplicate comments` — Issues raised previously that CodeRabbit still
+  considers unresolved after re-review. These are NOT resolved just because
+  the original thread was addressed — CodeRabbit is saying the fix was
+  incomplete or the issue persists. **Treat these as active feedback.**
+- `🧹 Nitpick comments` — Low-severity suggestions that didn't warrant a
+  blocking review thread. Still present them to the user.
+
+**For each duplicate/nitpick comment found:**
+
+- Extract the file path, line numbers, severity, and description
+- Include the suggested patch if present
+- Add it to the feedback summary alongside inline comments
+- **Do not dismiss duplicate comments** — they indicate CodeRabbit re-reviewed
+  and still found the issue. The fix from the previous round was likely
+  incomplete.
+
+**When a review body contains duplicate comments but no new inline threads:**
+
+- The review state will be `COMMENTED` (not `CHANGES_REQUESTED`)
+- The inline comment threads from the previous round may be auto-resolved
+- But the duplicate section means there is still work to do — do NOT skip
+  to the merge step just because all threads show as resolved
+
 ### 3. Present feedback summary
 
 **Sort comments by severity:** Major → Minor → Nitpick/Style, so critical issues (especially security) are addressed first.
@@ -333,6 +376,7 @@ gh pr merge <pr-number> --squash --delete-branch
 - **The "X out of Y pending tasks"** shown in GitHub UI are the unresolved review comment threads—fetch them via `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments`
 - **CodeRabbit paused/processing reviews:** When many commits are pushed quickly, CodeRabbit pauses reviews and adds "Reviews paused" to its initial PR comment. It may also show "Currently processing new changes" while actively re-reviewing. Always check for both statuses before fetching review comments — if paused, post both `@coderabbitai full review` AND `@coderabbitai resume reviews` (the second is needed to unpause future reviews); if processing, wait for it to finish. In either case, exit and tell the user to re-run the skill later.
 - **CodeRabbit auto-resolution:** CodeRabbit automatically resolves conversations when it detects the suggested fix was implemented in a new commit. Let it auto-resolve; only ask it to resolve manually if it doesn't detect your fix after re-review.
+- **CodeRabbit duplicate comments:** When CodeRabbit re-reviews after a fix, it may move previously unresolved issues into a "Duplicate comments" section in the review body instead of creating new inline threads. These are NOT resolved — they indicate the fix was incomplete. Always check the latest review body for `♻️ Duplicate comments` and `🧹 Nitpick comments` sections and treat them as active feedback requiring action.
 - **Reply to comment threads:** Always use `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies` to reply to specific review comments. This keeps conversations threaded. Do NOT use `gh pr comment` for replies—it creates unthreaded general comments.
   - **Common mistake:** Forgetting to include the PR number in the path (e.g., `repos/{owner}/{repo}/pulls/comments/{id}/replies` won't work—must be `pulls/{pr-number}/comments/{id}/replies`)
 
