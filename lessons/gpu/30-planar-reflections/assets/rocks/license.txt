@@ -1,0 +1,11 @@
+Model Information:
+* title:	Low Poly Rock Cliffs
+* source:	https://sketchfab.com/3d-models/low-poly-rock-cliffs-f43822b6eead40a2b977e8d0fa8ec757
+* author:	navebackwards (https://sketchfab.com/navebackwards)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Low Poly Rock Cliffs" (https://sketchfab.com/3d-models/low-poly-rock-cliffs-f43822b6eead40a2b977e8d0fa8ec757) by navebackwards (https://sketchfab.com/navebackwards) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

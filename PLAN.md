@@ -65,7 +65,7 @@ Infrastructure that supports all lessons:
 
 ### Reflections
 
-- [ ] **Lesson 30 — Planar Reflections** — Rendering the scene from a mirrored camera; oblique near-plane clipping to prevent geometry behind the mirror from appearing; reflection texture compositing; application to water surfaces and mirrors
+- [x] **Lesson 30 — Planar Reflections** — Rendering the scene from a mirrored camera; oblique near-plane clipping to prevent geometry behind the mirror from appearing; reflection texture compositing; application to water surfaces and mirrors
 
 ### Animation
 

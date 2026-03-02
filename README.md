@@ -170,6 +170,10 @@ HDR, post-processing, and UI rendering.
 <a href="lessons/gpu/29-screen-space-reflections/"><img src="lessons/gpu/29-screen-space-reflections/assets/screenshot.png" width="200" alt="Screen-Space Reflections" /></a><br />
 <b>29</b> — Screen-Space Reflections
 </td>
+<td align="center">
+<a href="lessons/gpu/30-planar-reflections/"><img src="lessons/gpu/30-planar-reflections/assets/screenshot.png" width="200" alt="Planar Reflections" /></a><br />
+<b>30</b> — Planar Reflections
+</td>
 </tr>
 </table>
 
@@ -511,7 +515,10 @@ forge-gpu/
 │       ├── 24-gobo-spotlight/
 │       ├── 25-shader-noise/
 │       ├── 26-procedural-sky/
-│       └── 27-ssao/
+│       ├── 27-ssao/
+│       ├── 28-ui-rendering/
+│       ├── 29-screen-space-reflections/
+│       └── 30-planar-reflections/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
