@@ -14,13 +14,14 @@
  *   5. Composite pass — combines scene color with AO factor
  *
  * Controls:
- *   1                       — AO only (default for screenshot)
+ *   1                       — AO only (default)
  *   2                       — Full render with AO applied
  *   3                       — Full render without AO (comparison)
  *   D                       — Toggle IGN dithering (ON by default)
  *   WASD / Space / LShift   — Move camera
  *   Mouse                   — Look around
  *   Escape                  — Release mouse / quit
+ *   --display-mode N        — Set initial display mode (0/1/2)
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -1195,6 +1196,26 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->use_ign_jitter   = true;
     state->use_dither       = true;
 
+    /* Parse --display-mode N from command line (0=AO only, 1=with AO, 2=no AO). */
+    for (int i = 1; i < argc; i++) {
+        if (SDL_strcmp(argv[i], "--display-mode") == 0) {
+            if (i + 1 >= argc) {
+                SDL_Log("Missing value for --display-mode (expected 0, 1, or 2)");
+                break;
+            }
+            char *end = NULL;
+            long parsed = SDL_strtol(argv[i + 1], &end, 10);
+            if (!end || *end != '\0' ||
+                parsed < MODE_AO_ONLY || parsed > MODE_NO_AO) {
+                SDL_Log("Invalid --display-mode '%s' (expected 0, 1, or 2)",
+                        argv[i + 1]);
+            } else {
+                state->display_mode = (int)parsed;
+            }
+            i++;
+        }
+    }
+
     /* Set appstate early so SDL_AppQuit can clean up on init failure. */
     *appstate = state;
 
@@ -1206,9 +1227,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             goto init_fail;
         }
     }
-#else
-    (void)argc;
-    (void)argv;
 #endif
 
     /* ── White placeholder texture ──────────────────────────────── */

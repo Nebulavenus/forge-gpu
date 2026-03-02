@@ -157,7 +157,7 @@ HDR, post-processing, and UI rendering.
 <b>26</b> — Procedural Sky
 </td>
 <td align="center">
-<a href="lessons/gpu/27-ssao/"><img src="lessons/gpu/27-ssao/assets/screenshot.png" width="200" alt="SSAO" /></a><br />
+<a href="lessons/gpu/27-ssao/"><img src="lessons/gpu/27-ssao/assets/screenshot_with_ao.png" width="200" alt="SSAO" /></a><br />
 <b>27</b> — SSAO
 </td>
 </tr>

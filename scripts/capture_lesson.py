@@ -97,12 +97,16 @@ def _should_use_headless(explicit):
     return shutil.which("xvfb-run") and os.path.isfile(LAVAPIPE_ICD)
 
 
-def capture_screenshot(exe_path, output_bmp, capture_frame, headless=False):
+def capture_screenshot(
+    exe_path, output_bmp, capture_frame, headless=False, extra_args=None
+):
     """Run the lesson and capture a single frame."""
     exe_path = os.path.abspath(exe_path)
     headless = _should_use_headless(headless)
 
     cmd = [exe_path, "--screenshot", output_bmp, "--capture-frame", str(capture_frame)]
+    if extra_args:
+        cmd.extend(extra_args)
     env = os.environ.copy()
 
     if headless:
@@ -206,6 +210,12 @@ def main():
         action="store_true",
         help="Use lavapipe + Xvfb for headless capture (auto-detected when DISPLAY is unset)",
     )
+    parser.add_argument(
+        "--exe-args",
+        nargs=argparse.REMAINDER,
+        default=[],
+        help="Extra arguments passed to the lesson executable (e.g. --display-mode 1)",
+    )
     args = parser.parse_args()
 
     # Derive target name from lesson directory
@@ -236,7 +246,9 @@ def main():
 
     # Capture single frame
     bmp_path = os.path.join(assets_dir, "_capture.bmp")
-    if not capture_screenshot(exe_path, bmp_path, args.capture_frame, args.headless):
+    if not capture_screenshot(
+        exe_path, bmp_path, args.capture_frame, args.headless, args.exe_args
+    ):
         sys.exit(1)
 
     # Convert BMP to PNG

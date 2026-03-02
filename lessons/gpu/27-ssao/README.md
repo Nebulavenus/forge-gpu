@@ -30,12 +30,17 @@ expensive global illumination.
 
 ## Result
 
-![SSAO](assets/screenshot.png)
+| Full render with SSAO | Full render without SSAO | AO only |
+|:---:|:---:|:---:|
+| ![With SSAO](assets/screenshot_with_ao.png) | ![Without SSAO](assets/screenshot_no_ao.png) | ![AO only](assets/screenshot_ao_only.png) |
 
-The screenshot shows the AO-only view: white means fully lit, dark regions
-show where nearby geometry occludes ambient light. Notice the darkening in
+The left image shows the final composited result — ambient occlusion darkens
 crevices where box faces meet, along the base where objects contact the floor,
-and in the interior spaces of the truck model.
+and in the interior spaces of the truck model. The center image shows the same
+scene without SSAO for comparison — notice how flat and ungrounded the geometry
+looks without contact darkening. The right image shows the raw occlusion
+factor: white means fully lit, dark regions show where nearby geometry blocks
+ambient light.
 
 ## Key concepts
 
@@ -582,7 +587,9 @@ lessons/gpu/27-ssao/
 │   └── composite.frag.hlsl        # Scene color × AO; mode switching
 ├── shaders/compiled/              # SPIRV + DXIL + C headers
 └── assets/
-    └── screenshot.png
+    ├── screenshot_with_ao.png
+    ├── screenshot_no_ao.png
+    └── screenshot_ao_only.png
 ```
 
 ### Key data flow
