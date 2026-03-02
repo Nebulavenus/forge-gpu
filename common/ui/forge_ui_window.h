@@ -482,7 +482,8 @@ static inline void forge_ui_wctx_begin(ForgeUiWindowContext *wctx)
              * their full (hidden) content area that blocks input to
              * windows behind them. */
             if (wctx->window_entries[i].state->collapsed) {
-                r.h = FORGE_UI_WIN_TITLE_HEIGHT;
+                r.h = FORGE_UI_SCALED(wctx->ctx,
+                                      wctx->ctx->spacing.title_bar_height);
             }
             wctx->prev_window_rects[i] = r;
             wctx->prev_window_z_orders[i] = wctx->window_entries[i].state->z_order;
@@ -685,10 +686,17 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
         }
     }
 
+    /* ── Compute scaled window dimensions ──────────────────────────────── */
+    float win_title_h  = FORGE_UI_SCALED(ctx, ctx->spacing.title_bar_height);
+    float win_pad      = FORGE_UI_SCALED(ctx, ctx->spacing.panel_padding);
+    float win_toggle_s = FORGE_UI_SCALED(ctx, FORGE_UI_WIN_TOGGLE_SIZE);
+    float win_toggle_p = FORGE_UI_SCALED(ctx, FORGE_UI_WIN_TOGGLE_PAD);
+    float win_toggle_hp = FORGE_UI_SCALED(ctx, FORGE_UI_WIN_TOGGLE_HIT_PAD);
+
     /* ── Title bar geometry ────────────────────────────────────────────── */
     ForgeUiRect title_rect = {
         state->rect.x, state->rect.y,
-        state->rect.w, FORGE_UI_WIN_TITLE_HEIGHT
+        state->rect.w, win_title_h
     };
 
     /* ── Hit test: title bar ───────────────────────────────────────────── */
@@ -701,7 +709,7 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
      * area does not intercept clicks meant for windows behind. */
     ForgeUiRect hit_rect = state->rect;
     if (state->collapsed) {
-        hit_rect.h = FORGE_UI_WIN_TITLE_HEIGHT;
+        hit_rect.h = win_title_h;
     }
     bool window_over = can_receive_input &&
                        forge_ui__rect_contains(hit_rect,
@@ -722,17 +730,17 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     /* The \xff prefix is a non-printable byte that cannot appear in
      * user label strings, preventing collisions with user widget names. */
     Uint32 toggle_id = forge_ui_hash_id(ctx, "\xff__toggle");
-    float toggle_cx = state->rect.x + FORGE_UI_WIN_TOGGLE_PAD
-                      + FORGE_UI_WIN_TOGGLE_SIZE * 0.5f;
-    float toggle_cy = state->rect.y + FORGE_UI_WIN_TITLE_HEIGHT * 0.5f;
-    float half = FORGE_UI_WIN_TOGGLE_SIZE * 0.5f;
+    float toggle_cx = state->rect.x + win_toggle_p
+                      + win_toggle_s * 0.5f;
+    float toggle_cy = state->rect.y + win_title_h * 0.5f;
+    float half = win_toggle_s * 0.5f;
 
     /* Toggle hit rect (generous click target around the triangle) */
     ForgeUiRect toggle_hit_rect = {
-        toggle_cx - half - FORGE_UI_WIN_TOGGLE_HIT_PAD,
-        toggle_cy - half - FORGE_UI_WIN_TOGGLE_HIT_PAD,
-        FORGE_UI_WIN_TOGGLE_SIZE + FORGE_UI_WIN_TOGGLE_HIT_PAD * 2.0f,
-        FORGE_UI_WIN_TOGGLE_SIZE + FORGE_UI_WIN_TOGGLE_HIT_PAD * 2.0f
+        toggle_cx - half - win_toggle_hp,
+        toggle_cy - half - win_toggle_hp,
+        win_toggle_s + win_toggle_hp * 2.0f,
+        win_toggle_s + win_toggle_hp * 2.0f
     };
 
     bool toggle_over = can_receive_input &&
@@ -781,7 +789,7 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     /* Recalculate title_rect after potential drag */
     title_rect = (ForgeUiRect){
         state->rect.x, state->rect.y,
-        state->rect.w, FORGE_UI_WIN_TITLE_HEIGHT
+        state->rect.w, win_title_h
     };
 
     if (!state->collapsed) {
@@ -799,9 +807,9 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     /* ── Draw collapse toggle triangle ─────────────────────────────────── */
     {
         /* Recalculate toggle center after potential drag */
-        toggle_cx = state->rect.x + FORGE_UI_WIN_TOGGLE_PAD
-                    + FORGE_UI_WIN_TOGGLE_SIZE * 0.5f;
-        toggle_cy = state->rect.y + FORGE_UI_WIN_TITLE_HEIGHT * 0.5f;
+        toggle_cx = state->rect.x + win_toggle_p
+                    + win_toggle_s * 0.5f;
+        toggle_cy = state->rect.y + win_title_h * 0.5f;
 
         float tr, tg, tb, ta;
         if (ctx->hot == toggle_id || ctx->active == toggle_id) {
@@ -845,10 +853,10 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
 
         ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, disp_buf, NULL);
         float ascender_px = forge_ui__ascender_px(ctx->atlas);
-        float title_text_x = state->rect.x + FORGE_UI_WIN_TOGGLE_PAD
-                             + FORGE_UI_WIN_TOGGLE_SIZE + FORGE_UI_WIN_TOGGLE_PAD;
+        float title_text_x = state->rect.x + win_toggle_p
+                             + win_toggle_s + win_toggle_p;
         float title_text_y = state->rect.y
-                             + (FORGE_UI_WIN_TITLE_HEIGHT - m.height) * 0.5f
+                             + (win_title_h - m.height) * 0.5f
                              + ascender_px;
         forge_ui_ctx_label(ctx, disp_buf, title_text_x, title_text_y,
                            FORGE_UI_WIN_TITLE_TEXT_R, FORGE_UI_WIN_TITLE_TEXT_G,
@@ -864,12 +872,12 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     }
 
     /* ── Compute content area (same as panel) ──────────────────────────── */
-    float pad = FORGE_UI_WIN_PADDING;
+    float win_sb_w = FORGE_UI_SCALED(ctx, ctx->spacing.scrollbar_width);
     ForgeUiRect content = {
-        state->rect.x + pad,
-        state->rect.y + FORGE_UI_WIN_TITLE_HEIGHT + pad,
-        state->rect.w - 2.0f * pad - FORGE_UI_SCROLLBAR_WIDTH,
-        state->rect.h - FORGE_UI_WIN_TITLE_HEIGHT - 2.0f * pad
+        state->rect.x + win_pad,
+        state->rect.y + win_title_h + win_pad,
+        state->rect.w - 2.0f * win_pad - win_sb_w,
+        state->rect.h - win_title_h - 2.0f * win_pad
     };
     if (content.w < 0.0f) content.w = 0.0f;
     if (content.h < 0.0f) content.h = 0.0f;
@@ -898,14 +906,21 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     ctx->_panel.id = id;
     ctx->_panel_active = true;
 
+    /* Pass FORGE_UI_LAYOUT_EXPLICIT_ZERO for padding so layout_push
+     * treats it as explicit zero (no default substitution) — the
+     * content rect already accounts for window padding.  Spacing
+     * uses the themed item_spacing. */
     if (!forge_ui_ctx_layout_push(ctx, content,
                                    FORGE_UI_LAYOUT_VERTICAL,
-                                   0.0f, FORGE_UI_WIN_CONTENT_SPACING)) {
+                                   FORGE_UI_LAYOUT_EXPLICIT_ZERO,
+                                   FORGE_UI_SCALED(ctx, ctx->spacing.item_spacing))) {
         SDL_Log("forge_ui_wctx_window_begin: layout_push failed");
         ctx->has_clip = false;
         ctx->_panel_active = false;
         ctx->_panel.id = FORGE_UI_ID_NONE;
         ctx->_panel.scroll_y = NULL;
+        SDL_memset(&ctx->_panel.rect, 0, sizeof(ctx->_panel.rect));
+        SDL_memset(&ctx->_panel.content_rect, 0, sizeof(ctx->_panel.content_rect));
         ctx->_keyboard_input_suppressed = false;
         forge_ui_pop_id(ctx);  /* undo the push from above */
         forge_ui_win__restore_from_window(wctx);
@@ -953,7 +968,7 @@ static inline void forge_ui_wctx_window_end(ForgeUiWindowContext *wctx)
         wctx->window_entries[widx].index_count = 0;
         wctx->window_entries[widx].id = FORGE_UI_ID_NONE;
         wctx->window_entries[widx].state = NULL;
-        wctx->window_count--;
+        if (wctx->window_count > 0) wctx->window_count--;
         /* Restore main context buffers directly instead of calling
          * restore_from_window, which would (a) fail its idx >= window_count
          * guard now that window_count has been decremented, and (b) overwrite

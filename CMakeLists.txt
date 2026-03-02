@@ -128,6 +128,7 @@ add_subdirectory(lessons/ui/08-layout)
 add_subdirectory(lessons/ui/09-panels-and-scrolling)
 add_subdirectory(lessons/ui/10-windows)
 add_subdirectory(lessons/ui/11-widget-id-system)
+add_subdirectory(lessons/ui/12-font-scaling-and-spacing)
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)

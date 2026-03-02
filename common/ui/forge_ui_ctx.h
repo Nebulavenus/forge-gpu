@@ -57,6 +57,12 @@
  * must use non-zero IDs for their widgets. */
 #define FORGE_UI_ID_NONE  0
 
+/* Layout sentinel: pass as padding to forge_ui_ctx_layout_push to request
+ * explicit zero padding (no themed default substitution).  Positive values
+ * override the themed default; zero uses the themed default; this negative
+ * sentinel is clamped to 0 internally but skips the "use theme" path. */
+#define FORGE_UI_LAYOUT_EXPLICIT_ZERO  -1.0f
+
 /* Maximum nesting depth for the ID seed stack.  8 levels is enough for
  * most UI hierarchies (e.g. window > panel > row > widget).  The stack
  * is bounds-checked at runtime with SDL_Log on overflow/underflow. */
@@ -66,15 +72,16 @@
 
 /* Button appearance varies with interaction state.  Colors follow the
  * project's dark blue-gray theme (#1a1a2e background, #4fc3f7 accent).
- * All values are RGBA floats in [0, 1]. */
-#define FORGE_UI_BTN_NORMAL_R   0.145f
-#define FORGE_UI_BTN_NORMAL_G   0.176f
-#define FORGE_UI_BTN_NORMAL_B   0.290f
+ * Button normal is ~30% brighter than panel BG so it stands out as an
+ * interactive element.  All values are RGBA floats in [0, 1]. */
+#define FORGE_UI_BTN_NORMAL_R   0.180f
+#define FORGE_UI_BTN_NORMAL_G   0.216f
+#define FORGE_UI_BTN_NORMAL_B   0.353f
 #define FORGE_UI_BTN_NORMAL_A   1.00f
 
-#define FORGE_UI_BTN_HOT_R      0.180f
-#define FORGE_UI_BTN_HOT_G      0.220f
-#define FORGE_UI_BTN_HOT_B      0.376f
+#define FORGE_UI_BTN_HOT_R      0.224f
+#define FORGE_UI_BTN_HOT_G      0.271f
+#define FORGE_UI_BTN_HOT_B      0.427f
 #define FORGE_UI_BTN_HOT_A      1.00f
 
 #define FORGE_UI_BTN_ACTIVE_R   0.102f
@@ -97,20 +104,26 @@
 #define FORGE_UI_CB_INNER_PAD     3.0f  /* padding between box edge and check fill */
 #define FORGE_UI_CB_LABEL_GAP     8.0f  /* horizontal gap between box and label */
 
-/* Box outline colors by state — themed dark navy (RGBA floats in [0, 1]) */
-#define FORGE_UI_CB_NORMAL_R    0.165f
-#define FORGE_UI_CB_NORMAL_G    0.200f
-#define FORGE_UI_CB_NORMAL_B    0.314f
+/* General widget padding.  Used as the default inset inside widget
+ * backgrounds (button text from edges, etc.) and as the base value for
+ * ForgeUiSpacing.widget_padding. */
+#define FORGE_UI_WIDGET_PADDING  10.0f
+
+/* Box outline colors by state — brighter than panel BG so the unchecked
+ * box is clearly visible against the panel body.  (RGBA floats in [0, 1]) */
+#define FORGE_UI_CB_NORMAL_R    0.204f
+#define FORGE_UI_CB_NORMAL_G    0.247f
+#define FORGE_UI_CB_NORMAL_B    0.392f
 #define FORGE_UI_CB_NORMAL_A    1.00f
 
-#define FORGE_UI_CB_HOT_R       0.227f
-#define FORGE_UI_CB_HOT_G       0.290f
-#define FORGE_UI_CB_HOT_B       0.416f
+#define FORGE_UI_CB_HOT_R       0.267f
+#define FORGE_UI_CB_HOT_G       0.329f
+#define FORGE_UI_CB_HOT_B       0.475f
 #define FORGE_UI_CB_HOT_A       1.00f
 
-#define FORGE_UI_CB_ACTIVE_R    0.118f
-#define FORGE_UI_CB_ACTIVE_G    0.157f
-#define FORGE_UI_CB_ACTIVE_B    0.259f
+#define FORGE_UI_CB_ACTIVE_R    0.145f
+#define FORGE_UI_CB_ACTIVE_G    0.180f
+#define FORGE_UI_CB_ACTIVE_B    0.298f
 #define FORGE_UI_CB_ACTIVE_A    1.00f
 
 /* Inner fill color when checked (accent cyan #4fc3f7) */
@@ -136,10 +149,11 @@
 #define FORGE_UI_SL_THUMB_WIDTH   12.0f   /* thumb rectangle width */
 #define FORGE_UI_SL_THUMB_HEIGHT  22.0f   /* thumb rectangle height */
 
-/* Track background color — themed dark navy */
-#define FORGE_UI_SL_TRACK_R     0.145f
-#define FORGE_UI_SL_TRACK_G     0.176f
-#define FORGE_UI_SL_TRACK_B     0.290f
+/* Track background color — brighter than panel BG so the slider rail
+ * is visible inside the panel body. */
+#define FORGE_UI_SL_TRACK_R     0.180f
+#define FORGE_UI_SL_TRACK_G     0.216f
+#define FORGE_UI_SL_TRACK_B     0.353f
 #define FORGE_UI_SL_TRACK_A     1.00f
 
 /* Thumb color varies with interaction state to give visual feedback
@@ -165,7 +179,7 @@
  * edge so characters are readable near the border.  The cursor bar is
  * thin (2 px) to mimic a standard text insertion caret.  The border is
  * 1 px to provide a focused-state indicator without obscuring content. */
-#define FORGE_UI_TI_PADDING       6.0f   /* left padding in pixels before text starts */
+#define FORGE_UI_TI_PADDING       8.0f   /* left padding in pixels before text starts */
 #define FORGE_UI_TI_CURSOR_WIDTH  2.0f   /* cursor bar width in pixels */
 #define FORGE_UI_TI_BORDER_WIDTH  1.0f   /* focused border edge width in pixels */
 
@@ -214,8 +228,8 @@
 /* ── Panel style ───────────────────────────────────────────────────────── */
 
 /* Title bar height and content padding (pixels) */
-#define FORGE_UI_PANEL_TITLE_HEIGHT    30.0f
-#define FORGE_UI_PANEL_PADDING         10.0f
+#define FORGE_UI_PANEL_TITLE_HEIGHT    36.0f
+#define FORGE_UI_PANEL_PADDING         12.0f
 
 /* Panel background RGBA — dark navy, lighter than app bg for contrast */
 #define FORGE_UI_PANEL_BG_R     0.118f
@@ -223,10 +237,11 @@
 #define FORGE_UI_PANEL_BG_B     0.282f
 #define FORGE_UI_PANEL_BG_A     1.00f
 
-/* Title bar background RGBA — brighter navy to distinguish from body */
-#define FORGE_UI_PANEL_TITLE_BG_R   0.145f
-#define FORGE_UI_PANEL_TITLE_BG_G   0.188f
-#define FORGE_UI_PANEL_TITLE_BG_B   0.314f
+/* Title bar background RGBA — notably brighter than panel BG so the
+ * header is the most prominent chrome element.  ~45% brighter. */
+#define FORGE_UI_PANEL_TITLE_BG_R   0.200f
+#define FORGE_UI_PANEL_TITLE_BG_G   0.243f
+#define FORGE_UI_PANEL_TITLE_BG_B   0.400f
 #define FORGE_UI_PANEL_TITLE_BG_A   1.00f
 
 /* Title bar text color — matches theme text #e0e0f0 */
@@ -265,12 +280,23 @@
 /* ── Panel content layout ──────────────────────────────────────────────── */
 
 /* Vertical spacing between child widgets inside a panel (pixels) */
-#define FORGE_UI_PANEL_CONTENT_SPACING  8.0f
+#define FORGE_UI_PANEL_CONTENT_SPACING 10.0f
 
 /* ── Scroll speed ──────────────────────────────────────────────────────── */
 
 /* Pixels scrolled per unit of mouse wheel delta */
 #define FORGE_UI_SCROLL_SPEED  30.0f
+
+/* ── Scaling and spacing ───────────────────────────────────────────────── */
+
+/* Multiply a base spacing value by the context's global scale factor.
+ * All dimension-related spacing values are stored unscaled in
+ * ForgeUiSpacing; this macro applies the global scale at use time.
+ *
+ * Example:
+ *   float box = FORGE_UI_SCALED(ctx, ctx->spacing.checkbox_box_size);
+ *   float pad = FORGE_UI_SCALED(ctx, FORGE_UI_CB_INNER_PAD); */
+#define FORGE_UI_SCALED(ctx, value) ((value) * (ctx)->scale)
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -317,6 +343,28 @@ typedef struct ForgeUiLayout {
     float                    remaining_h;  /* height left for more widgets */
     int                      item_count;   /* widgets placed so far (for spacing) */
 } ForgeUiLayout;
+
+/* Spacing constants for consistent widget layout.
+ *
+ * All values are base (unscaled) floats.  Use FORGE_UI_SCALED(ctx, value)
+ * to apply the context's global scale factor at draw time.
+ *
+ * These defaults are initialized by forge_ui_ctx_init and can be
+ * overridden by the application before the first frame.  The original
+ * #define constants remain as the default base values; widgets read
+ * from this struct (scaled) at draw time rather than the defines. */
+typedef struct ForgeUiSpacing {
+    float widget_padding;      /* px (unscaled, >0): inset inside widget backgrounds (default 10.0) */
+    float item_spacing;        /* px (unscaled, >=0): vertical or horizontal gap between consecutive widgets (default 10.0) */
+    float panel_padding;       /* px (unscaled, >=0): inset inside panel content areas (default 12.0) */
+    float title_bar_height;    /* px (unscaled, >0): panel/window title bar height (default 36.0) */
+    float checkbox_box_size;   /* px (unscaled, >0): checkbox square side length (default 18.0) */
+    float slider_thumb_width;  /* px (unscaled, >0): slider thumb rectangle width (default 12.0) */
+    float slider_thumb_height; /* px (unscaled, >0): slider thumb rectangle height (default 22.0) */
+    float slider_track_height; /* px (unscaled, >0): slider thin track bar height (default 4.0) */
+    float text_input_padding;  /* px (unscaled, >=0): left padding before text in text input (default 8.0) */
+    float scrollbar_width;     /* px (unscaled, >0): scrollbar track width (default 10.0) */
+} ForgeUiSpacing;
 
 /* Panel state used internally by panel_begin/panel_end.
  *
@@ -478,6 +526,32 @@ typedef struct ForgeUiContext {
     Uint32        *indices;         /* dynamically growing index buffer */
     int            index_count;     /* number of indices emitted this frame */
     int            index_capacity;  /* allocated size of index buffer */
+
+    /* ── Scale and spacing ──────────────────────────────────────────────── */
+
+    /* Global UI scale factor (default 1.0, must be >0 and finite).
+     * Multiplies all widget dimensions, font pixel height, padding, and
+     * spacing.  Set once before building the atlas; the atlas pixel_height
+     * should be base_pixel_height * scale.  The atlas must be rebuilt when
+     * scale changes — this is an explicit application responsibility.
+     * forge_ui_ctx_begin resets invalid values (<=0, NaN, Inf) to 1.0. */
+    float scale;
+
+    /* Unscaled design font size in pixels (e.g. 16.0, must be >0).
+     * Stored so the application can rebuild the atlas at a different scale
+     * without losing the original design size.  Set by forge_ui_ctx_init
+     * from atlas->pixel_height. */
+    float base_pixel_height;
+
+    /* base_pixel_height * scale in pixels — precomputed during init.
+     * Read-only after init; update by rebuilding the context at the
+     * new scale. */
+    float scaled_pixel_height;
+
+    /* Base (unscaled) spacing constants.  Initialized with sensible
+     * defaults by forge_ui_ctx_init; can be overridden by the application
+     * before the first frame for custom themes. */
+    ForgeUiSpacing spacing;
 } ForgeUiContext;
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
@@ -631,8 +705,14 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
  *
  * rect:      the rectangular area this layout occupies
  * direction: FORGE_UI_LAYOUT_VERTICAL or FORGE_UI_LAYOUT_HORIZONTAL
- * padding:   inset from all four edges of rect (pixels); clamped to >= 0
- * spacing:   gap between consecutive widgets (pixels); clamped to >= 0
+ * padding:   inset from all four edges of rect (pixels).
+ *            0 = use themed default (ctx->spacing.widget_padding * scale).
+ *            negative = explicit zero (no padding).
+ *            positive = use as-is.
+ * spacing:   gap between consecutive widgets (pixels).
+ *            0 = use themed default (ctx->spacing.item_spacing * scale).
+ *            negative = explicit zero (no spacing).
+ *            positive = use as-is.
  *
  * The cursor starts at (rect.x + padding, rect.y + padding).  Available
  * space is (rect.w - 2*padding) wide and (rect.h - 2*padding) tall.
@@ -668,7 +748,7 @@ static inline ForgeUiRect forge_ui_ctx_layout_next(ForgeUiContext *ctx,
  * horizontal layouts. */
 
 /* Label placed by the current layout.  size is the widget height (vertical)
- * or width (horizontal).  Text color uses the same defaults as buttons. */
+ * or width (horizontal).  The caller provides explicit RGBA text color. */
 static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
                                               const char *text,
                                               float size,
@@ -791,7 +871,7 @@ static inline Uint32 forge_ui_hash_id(const ForgeUiContext *ctx,
     if (!label || label[0] == '\0') return 1;
 
     /* Find ## separator — hash the ## portion if present */
-    const char *sep = SDL_strstr(label, "##");
+    const char *sep = strstr(label, "##");
     const char *id_str = sep ? sep : label;
 
     /* Use top-of-stack seed, or FNV offset basis if stack is empty */
@@ -812,8 +892,8 @@ static inline Uint32 forge_ui_hash_id(const ForgeUiContext *ctx,
 static inline const char *forge_ui__display_end(const char *label)
 {
     if (!label) return label;
-    const char *sep = SDL_strstr(label, "##");
-    return sep ? sep : (label + SDL_strlen(label));
+    const char *sep = strstr(label, "##");
+    return sep ? sep : (label + strlen(label));
 }
 
 /* Push a named scope onto the ID seed stack.  All subsequent hash_id
@@ -841,7 +921,7 @@ static inline bool forge_ui_push_id(ForgeUiContext *ctx, const char *name)
     /* Apply the same ## identity extraction as forge_ui_hash_id:
      * if "Label##id" is passed, hash only "##id" so scope seeds
      * remain stable when only display text changes. */
-    const char *sep = SDL_strstr(scope_name, "##");
+    const char *sep = strstr(scope_name, "##");
     if (sep) scope_name = sep;
     if (scope_name[0] == '\0') {
         SDL_Log("forge_ui_push_id: empty scope name has no effect on IDs");
@@ -1116,9 +1196,10 @@ static inline void forge_ui__emit_border(ForgeUiContext *ctx,
                                           float r, float g, float b, float a)
 {
     if (!ctx) return;
-    /* Reject degenerate borders: width must be positive and must fit
-     * within half the rect dimension to avoid inverted geometry. */
-    if (border_w <= 0.0f) return;
+    /* Reject degenerate borders: width must be positive, finite, and must
+     * fit within half the rect dimension to avoid inverted geometry.
+     * NaN fails the > 0 check (NaN > 0 is false). */
+    if (!(border_w > 0.0f)) return;
     if (border_w > rect.w * 0.5f || border_w > rect.h * 0.5f) return;
 
     /* Top edge — full width so corners are covered by the horizontal edges */
@@ -1176,6 +1257,39 @@ static inline bool forge_ui_ctx_init(ForgeUiContext *ctx,
         ctx->vertices = NULL;
         return false;
     }
+
+    /* Validate atlas pixel_height: zero, negative, NaN, or Inf would
+     * propagate through all text positioning via forge_ui__ascender_px. */
+    if (!isfinite(atlas->pixel_height) || atlas->pixel_height <= 0.0f) {
+        SDL_Log("forge_ui_ctx_init: atlas pixel_height must be positive "
+                "and finite (got %.2f)", (double)atlas->pixel_height);
+        SDL_free(ctx->indices);
+        ctx->indices = NULL;
+        SDL_free(ctx->vertices);
+        ctx->vertices = NULL;
+        return false;
+    }
+
+    /* Scale defaults to 1.0 (no scaling).  The application can set
+     * ctx->scale before the first frame to apply global DPI scaling.
+     * The atlas must be built at base_pixel_height * scale. */
+    ctx->scale = 1.0f;
+    ctx->base_pixel_height = atlas->pixel_height;
+    ctx->scaled_pixel_height = atlas->pixel_height;
+
+    /* Default spacing values (unscaled).  These match the original
+     * hardcoded defines so existing applications look identical at
+     * scale 1.0. */
+    ctx->spacing.widget_padding      = FORGE_UI_WIDGET_PADDING;         /* 10.0 */
+    ctx->spacing.item_spacing        = FORGE_UI_PANEL_CONTENT_SPACING; /* 10.0 */
+    ctx->spacing.panel_padding       = FORGE_UI_PANEL_PADDING;         /* 12.0 */
+    ctx->spacing.title_bar_height    = FORGE_UI_PANEL_TITLE_HEIGHT;    /* 36.0 */
+    ctx->spacing.checkbox_box_size   = FORGE_UI_CB_BOX_SIZE;           /* 18.0 */
+    ctx->spacing.slider_thumb_width  = FORGE_UI_SL_THUMB_WIDTH;        /* 12.0 */
+    ctx->spacing.slider_thumb_height = FORGE_UI_SL_THUMB_HEIGHT;       /* 22.0 */
+    ctx->spacing.slider_track_height = FORGE_UI_SL_TRACK_HEIGHT;       /* 4.0 */
+    ctx->spacing.text_input_padding  = FORGE_UI_TI_PADDING;            /* 8.0 */
+    ctx->spacing.scrollbar_width     = FORGE_UI_SCROLLBAR_WIDTH;       /* 10.0 */
 
     return true;
 }
@@ -1241,12 +1355,50 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
      * window_begin call) can receive keyboard input normally. */
     ctx->_keyboard_input_suppressed = false;
 
+    /* Validate scale: NaN, Inf, zero, or negative would corrupt all
+     * widget dimensions through FORGE_UI_SCALED.  Clamp to 1.0. */
+    if (!isfinite(ctx->scale) || ctx->scale <= 0.0f) {
+        SDL_Log("forge_ui_ctx_begin: invalid scale %.4f, resetting to 1.0",
+                (double)ctx->scale);
+        ctx->scale = 1.0f;
+    }
+
+    /* Validate spacing fields: NaN, Inf, or negative values would produce
+     * corrupt geometry (inverted rects, infinite positions).  Clamp each
+     * field to its compiled default.  This catches accidental corruption
+     * from uninitialised memory or bad arithmetic. */
+    {
+        struct { float *field; float fallback; const char *name; } checks[] = {
+            { &ctx->spacing.widget_padding,    FORGE_UI_WIDGET_PADDING,        "widget_padding" },
+            { &ctx->spacing.item_spacing,      FORGE_UI_PANEL_CONTENT_SPACING, "item_spacing" },
+            { &ctx->spacing.panel_padding,     FORGE_UI_PANEL_PADDING,         "panel_padding" },
+            { &ctx->spacing.title_bar_height,  FORGE_UI_PANEL_TITLE_HEIGHT,    "title_bar_height" },
+            { &ctx->spacing.checkbox_box_size, FORGE_UI_CB_BOX_SIZE,           "checkbox_box_size" },
+            { &ctx->spacing.slider_thumb_width,  FORGE_UI_SL_THUMB_WIDTH,      "slider_thumb_width" },
+            { &ctx->spacing.slider_thumb_height, FORGE_UI_SL_THUMB_HEIGHT,     "slider_thumb_height" },
+            { &ctx->spacing.slider_track_height, FORGE_UI_SL_TRACK_HEIGHT,     "slider_track_height" },
+            { &ctx->spacing.text_input_padding,  FORGE_UI_TI_PADDING,          "text_input_padding" },
+            { &ctx->spacing.scrollbar_width,     FORGE_UI_SCROLLBAR_WIDTH,     "scrollbar_width" },
+        };
+        for (int i = 0; i < (int)(sizeof(checks) / sizeof(checks[0])); i++) {
+            if (!isfinite(*checks[i].field) || *checks[i].field < 0.0f) {
+                SDL_Log("forge_ui_ctx_begin: invalid spacing.%s = %.4f, "
+                        "resetting to %.1f",
+                        checks[i].name, (double)*checks[i].field,
+                        (double)checks[i].fallback);
+                *checks[i].field = checks[i].fallback;
+            }
+        }
+    }
+
     /* Reset scroll and panel state for this frame.  The caller sets
      * scroll_delta after begin if mouse wheel input is available. */
     ctx->scroll_delta = 0.0f;
     ctx->has_clip = false;
     ctx->_panel_active = false;
     ctx->_panel.scroll_y = NULL;
+    SDL_memset(&ctx->_panel.rect, 0, sizeof(ctx->_panel.rect));
+    SDL_memset(&ctx->_panel.content_rect, 0, sizeof(ctx->_panel.content_rect));
 
     /* Reset layout stack for this frame.  Warn if the previous frame had
      * unmatched push/pop calls -- this is a programming error. */
@@ -1505,11 +1657,13 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
         box_b = FORGE_UI_CB_NORMAL_B;  box_a = FORGE_UI_CB_NORMAL_A;
     }
 
+    /* ── Compute scaled checkbox dimensions ──────────────────────────── */
+    float cb_size = FORGE_UI_SCALED(ctx, ctx->spacing.checkbox_box_size);
+
     /* ── Compute box position (vertically centered in widget rect) ────── */
     float box_x = rect.x;
-    float box_y = rect.y + (rect.h - FORGE_UI_CB_BOX_SIZE) * 0.5f;
-    ForgeUiRect box_rect = { box_x, box_y,
-                             FORGE_UI_CB_BOX_SIZE, FORGE_UI_CB_BOX_SIZE };
+    float box_y = rect.y + (rect.h - cb_size) * 0.5f;
+    ForgeUiRect box_rect = { box_x, box_y, cb_size, cb_size };
 
     /* ── Outer box — border with hover feedback via box color ────────── */
     forge_ui__emit_rect(ctx, box_rect, box_r, box_g, box_b, box_a);
@@ -1517,11 +1671,12 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
     /* ── Inner fill — solid rect rather than a glyph keeps the renderer
      *    purely quad-based with no dedicated checkmark in the atlas ──── */
     if (*value) {
+        float cb_inner = FORGE_UI_SCALED(ctx, FORGE_UI_CB_INNER_PAD);
         ForgeUiRect inner = {
-            box_x + FORGE_UI_CB_INNER_PAD,
-            box_y + FORGE_UI_CB_INNER_PAD,
-            FORGE_UI_CB_BOX_SIZE - 2.0f * FORGE_UI_CB_INNER_PAD,
-            FORGE_UI_CB_BOX_SIZE - 2.0f * FORGE_UI_CB_INNER_PAD
+            box_x + cb_inner,
+            box_y + cb_inner,
+            cb_size - 2.0f * cb_inner,
+            cb_size - 2.0f * cb_inner
         };
         forge_ui__emit_rect(ctx, inner,
                             FORGE_UI_CB_CHECK_R, FORGE_UI_CB_CHECK_G,
@@ -1542,7 +1697,7 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
      * Offset by the ascender so text sits visually centered in the rect. */
     float ascender_px = forge_ui__ascender_px(ctx->atlas);
 
-    float label_x = box_x + FORGE_UI_CB_BOX_SIZE + FORGE_UI_CB_LABEL_GAP;
+    float label_x = box_x + cb_size + FORGE_UI_SCALED(ctx, ctx->spacing.widget_padding);
     float label_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f
                     + ascender_px;
 
@@ -1589,14 +1744,19 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
         ctx->active = id;
     }
 
+    /* ── Compute scaled slider dimensions ─────────────────────────────── */
+    float sl_thumb_w = FORGE_UI_SCALED(ctx, ctx->spacing.slider_thumb_width);
+    float sl_thumb_h = FORGE_UI_SCALED(ctx, ctx->spacing.slider_thumb_height);
+    float sl_track_h = FORGE_UI_SCALED(ctx, ctx->spacing.slider_track_height);
+
     /* ── Effective track geometry ─────────────────────────────────────── */
     /* The thumb center can travel from half a thumb width inside the left
      * edge to half a thumb width inside the right edge.  This keeps the
      * thumb fully within the widget rect at both extremes.  Clamp to
      * zero so a rect narrower than the thumb does not produce a negative
      * range. */
-    float track_x = rect.x + FORGE_UI_SL_THUMB_WIDTH * 0.5f;
-    float track_w = rect.w - FORGE_UI_SL_THUMB_WIDTH;
+    float track_x = rect.x + sl_thumb_w * 0.5f;
+    float track_w = rect.w - sl_thumb_w;
     if (track_w < 0.0f) track_w = 0.0f;
 
     /* ── Value update while active (drag interaction) ─────────────────── */
@@ -1635,9 +1795,9 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     if (!(t <= 1.0f)) t = 1.0f;
 
     /* ── Track — thin bar so the thumb visually protrudes above/below ── */
-    float track_draw_y = rect.y + (rect.h - FORGE_UI_SL_TRACK_HEIGHT) * 0.5f;
+    float track_draw_y = rect.y + (rect.h - sl_track_h) * 0.5f;
     ForgeUiRect track_rect = { rect.x, track_draw_y,
-                               rect.w, FORGE_UI_SL_TRACK_HEIGHT };
+                               rect.w, sl_track_h };
     forge_ui__emit_rect(ctx, track_rect,
                         FORGE_UI_SL_TRACK_R, FORGE_UI_SL_TRACK_G,
                         FORGE_UI_SL_TRACK_B, FORGE_UI_SL_TRACK_A);
@@ -1659,11 +1819,10 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     /* The thumb center is at track_x + t * track_w.  Subtract half the
      * thumb width to get the left edge. */
     float thumb_cx = track_x + t * track_w;
-    float thumb_x = thumb_cx - FORGE_UI_SL_THUMB_WIDTH * 0.5f;
-    float thumb_y = rect.y + (rect.h - FORGE_UI_SL_THUMB_HEIGHT) * 0.5f;
+    float thumb_x = thumb_cx - sl_thumb_w * 0.5f;
+    float thumb_y = rect.y + (rect.h - sl_thumb_h) * 0.5f;
     ForgeUiRect thumb_rect = { thumb_x, thumb_y,
-                               FORGE_UI_SL_THUMB_WIDTH,
-                               FORGE_UI_SL_THUMB_HEIGHT };
+                               sl_thumb_w, sl_thumb_h };
     forge_ui__emit_rect(ctx, thumb_rect, th_r, th_g, th_b, th_a);
 
     return changed;
@@ -1796,7 +1955,7 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
          * at the cursor position.  Trailing bytes shift right to make
          * room, then the new bytes are written at cursor. */
         if (!did_edit && ctx->text_input && ctx->text_input[0] != '\0') {
-            size_t raw_len = SDL_strlen(ctx->text_input);
+            size_t raw_len = strlen(ctx->text_input);
             /* Guard: reject input longer than the buffer can ever hold.
              * Cast is safe because capacity > 0 (validated above). */
             if (raw_len <= (size_t)(state->capacity - 1)) {
@@ -1855,7 +2014,7 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
 
     /* ── Emit focused border (accent outline drawn on top of bg) ─────── */
     if (is_focused) {
-        forge_ui__emit_border(ctx, rect, FORGE_UI_TI_BORDER_WIDTH,
+        forge_ui__emit_border(ctx, rect, FORGE_UI_SCALED(ctx, FORGE_UI_TI_BORDER_WIDTH),
                               FORGE_UI_TI_BORDER_R, FORGE_UI_TI_BORDER_G,
                               FORGE_UI_TI_BORDER_B, FORGE_UI_TI_BORDER_A);
     }
@@ -1869,10 +2028,13 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
     float text_top_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f;
     float baseline_y = text_top_y + ascender_px;
 
+    /* ── Compute scaled text input padding ────────────────────────────── */
+    float ti_pad = FORGE_UI_SCALED(ctx, ctx->spacing.text_input_padding);
+
     /* ── Emit text quads ─────────────────────────────────────────────── */
     if (state->length > 0) {
         forge_ui_ctx_label(ctx, state->buffer,
-                           rect.x + FORGE_UI_TI_PADDING, baseline_y,
+                           rect.x + ti_pad, baseline_y,
                            FORGE_UI_TI_TEXT_R, FORGE_UI_TI_TEXT_G,
                            FORGE_UI_TI_TEXT_B, FORGE_UI_TI_TEXT_A);
     }
@@ -1883,7 +2045,7 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
      * pen_x advance, which is the exact pixel offset where the cursor
      * should appear. */
     if (is_focused && cursor_visible) {
-        float cursor_x = rect.x + FORGE_UI_TI_PADDING;
+        float cursor_x = rect.x + ti_pad;
         if (state->cursor > 0 && state->length > 0) {
             /* Temporarily null-terminate at cursor so forge_ui_text_measure
              * measures only the substring before the insertion point */
@@ -1897,7 +2059,8 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
 
         ForgeUiRect cursor_rect = {
             cursor_x, text_top_y,
-            FORGE_UI_TI_CURSOR_WIDTH, ctx->atlas->pixel_height
+            FORGE_UI_SCALED(ctx, FORGE_UI_TI_CURSOR_WIDTH),
+            ctx->atlas->pixel_height
         };
         forge_ui__emit_rect(ctx, cursor_rect,
                             FORGE_UI_TI_CURSOR_R, FORGE_UI_TI_CURSOR_G,
@@ -1942,11 +2105,23 @@ static inline bool forge_ui_ctx_layout_push(ForgeUiContext *ctx,
         return false;
     }
 
-    /* Reject NaN/Inf in padding and spacing; clamp negatives to 0 */
+    /* Substitute themed defaults when the caller passes 0, meaning
+     * "use the standard spacing".  A value < 0 is treated as "explicit
+     * zero" — clamped to 0 without default substitution.  This lets
+     * internal code (panel_begin, window_begin) opt out of defaults
+     * by passing a negative value. */
     if (isnan(padding) || isinf(padding)) padding = 0.0f;
     if (isnan(spacing) || isinf(spacing)) spacing = 0.0f;
-    if (padding < 0.0f) padding = 0.0f;
-    if (spacing < 0.0f) spacing = 0.0f;
+    if (padding == 0.0f) {
+        padding = FORGE_UI_SCALED(ctx, ctx->spacing.widget_padding);
+    } else if (padding < 0.0f) {
+        padding = 0.0f;
+    }
+    if (spacing == 0.0f) {
+        spacing = FORGE_UI_SCALED(ctx, ctx->spacing.item_spacing);
+    } else if (spacing < 0.0f) {
+        spacing = 0.0f;
+    }
 
     ForgeUiLayout *layout = &ctx->layout_stack[ctx->layout_depth];
     layout->rect       = rect;
@@ -2168,17 +2343,23 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
                         FORGE_UI_PANEL_BG_R, FORGE_UI_PANEL_BG_G,
                         FORGE_UI_PANEL_BG_B, FORGE_UI_PANEL_BG_A);
 
+    /* ── Compute scaled panel dimensions ─────────────────────────────── */
+    float title_bar_h = FORGE_UI_SCALED(ctx, ctx->spacing.title_bar_height);
+    float panel_pad   = FORGE_UI_SCALED(ctx, ctx->spacing.panel_padding);
+    float sb_w        = FORGE_UI_SCALED(ctx, ctx->spacing.scrollbar_width);
+
     /* ── Draw title bar ───────────────────────────────────────────────── */
     ForgeUiRect title_rect = {
         rect.x, rect.y,
-        rect.w, FORGE_UI_PANEL_TITLE_HEIGHT
+        rect.w, title_bar_h
     };
     forge_ui__emit_rect(ctx, title_rect,
                         FORGE_UI_PANEL_TITLE_BG_R, FORGE_UI_PANEL_TITLE_BG_G,
                         FORGE_UI_PANEL_TITLE_BG_B, FORGE_UI_PANEL_TITLE_BG_A);
 
-    /* Center the title text in the title bar (strip ## suffix) */
-    if (title && title[0] != '\0') {
+    /* Center the title text in the title bar (strip ## suffix).
+     * title is guaranteed non-NULL and non-empty by the guard at entry. */
+    {
         const char *disp_end = forge_ui__display_end(title);
         int disp_len = (int)(disp_end - title);
         char disp_buf[256];
@@ -2190,7 +2371,7 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
         ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, disp_buf, NULL);
         float ascender_px = forge_ui__ascender_px(ctx->atlas);
         float tx = rect.x + (rect.w - m.width) * 0.5f;
-        float ty = rect.y + (FORGE_UI_PANEL_TITLE_HEIGHT - m.height) * 0.5f
+        float ty = rect.y + (title_bar_h - m.height) * 0.5f
                    + ascender_px;
         forge_ui_ctx_label(ctx, disp_buf, tx, ty,
                            FORGE_UI_PANEL_TITLE_TEXT_R, FORGE_UI_PANEL_TITLE_TEXT_G,
@@ -2198,12 +2379,11 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
     }
 
     /* ── Compute content area ─────────────────────────────────────────── */
-    float pad = FORGE_UI_PANEL_PADDING;
     ForgeUiRect content = {
-        rect.x + pad,
-        rect.y + FORGE_UI_PANEL_TITLE_HEIGHT + pad,
-        rect.w - 2.0f * pad - FORGE_UI_SCROLLBAR_WIDTH,
-        rect.h - FORGE_UI_PANEL_TITLE_HEIGHT - 2.0f * pad
+        rect.x + panel_pad,
+        rect.y + title_bar_h + panel_pad,
+        rect.w - 2.0f * panel_pad - sb_w,
+        rect.h - title_bar_h - 2.0f * panel_pad
     };
     if (content.w < 0.0f) content.w = 0.0f;
     if (content.h < 0.0f) content.h = 0.0f;
@@ -2255,6 +2435,8 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
         ctx->_panel_active = false;
         ctx->_panel.id = FORGE_UI_ID_NONE;
         ctx->_panel.scroll_y = NULL;
+        SDL_memset(&ctx->_panel.rect, 0, sizeof(ctx->_panel.rect));
+        SDL_memset(&ctx->_panel.content_rect, 0, sizeof(ctx->_panel.content_rect));
         return false;
     }
 
@@ -2280,9 +2462,14 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
     /* ── Push a vertical layout (no extra padding, 8px spacing between
      *    child widgets) so children fill the content width and stack
      *    downward with consistent gaps. ───────────────────────────────── */
+    /* Pass FORGE_UI_LAYOUT_EXPLICIT_ZERO for padding so layout_push
+     * treats it as explicit zero (no default substitution) — the
+     * content rect already accounts for panel padding.  Spacing uses
+     * the themed item_spacing. */
     if (!forge_ui_ctx_layout_push(ctx, content,
                                    FORGE_UI_LAYOUT_VERTICAL,
-                                   0.0f, FORGE_UI_PANEL_CONTENT_SPACING)) {
+                                   FORGE_UI_LAYOUT_EXPLICIT_ZERO,
+                                   FORGE_UI_SCALED(ctx, ctx->spacing.item_spacing))) {
         SDL_Log("forge_ui_ctx_panel_begin: layout_push failed (stack full?)");
         ctx->has_clip = false;
         ctx->_panel_active = false;
@@ -2290,6 +2477,8 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
          * next frame does not match against a panel that never completed. */
         ctx->_panel.id = FORGE_UI_ID_NONE;
         ctx->_panel.scroll_y = NULL;
+        SDL_memset(&ctx->_panel.rect, 0, sizeof(ctx->_panel.rect));
+        SDL_memset(&ctx->_panel.content_rect, 0, sizeof(ctx->_panel.content_rect));
         forge_ui_pop_id(ctx);  /* undo the push_id from above */
         return false;
     }
@@ -2350,11 +2539,13 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     }
 
     ForgeUiRect cr = ctx->_panel.content_rect;
+    float sb_w = FORGE_UI_SCALED(ctx, ctx->spacing.scrollbar_width);
+    float p_pad = FORGE_UI_SCALED(ctx, ctx->spacing.panel_padding);
     float track_x = ctx->_panel.rect.x + ctx->_panel.rect.w
-                     - FORGE_UI_PANEL_PADDING - FORGE_UI_SCROLLBAR_WIDTH;
+                     - p_pad - sb_w;
     float track_y = cr.y;
     float track_h = cr.h;
-    float track_w = FORGE_UI_SCROLLBAR_WIDTH;
+    float track_w = sb_w;
 
     /* Track background */
     ForgeUiRect track_rect = { track_x, track_y, track_w, track_h };
@@ -2365,8 +2556,9 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     /* Thumb geometry — proportional height, clamped to [MIN_THUMB, track_h]
      * so the thumb never overflows the track even on very short panels. */
     float thumb_h = track_h * visible_h / content_h;
-    if (thumb_h < FORGE_UI_SCROLLBAR_MIN_THUMB)
-        thumb_h = FORGE_UI_SCROLLBAR_MIN_THUMB;
+    float min_thumb = FORGE_UI_SCALED(ctx, FORGE_UI_SCROLLBAR_MIN_THUMB);
+    if (thumb_h < min_thumb)
+        thumb_h = min_thumb;
     if (thumb_h > track_h)
         thumb_h = track_h;
     float thumb_range = track_h - thumb_h;

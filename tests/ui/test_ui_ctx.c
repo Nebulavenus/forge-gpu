@@ -3283,7 +3283,7 @@ static void test_layout_pop_returns_true(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect r = { 0, 0, 100, 100 };
-    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
     bool ok = forge_ui_ctx_layout_pop(&ctx);
     ASSERT_TRUE(ok);
     ASSERT_EQ_INT(ctx.layout_depth, 0);
@@ -3337,13 +3337,13 @@ static void test_layout_push_overflow(void)
     ForgeUiRect r = { 0, 0, 100, 100 };
     /* Push up to max depth */
     for (int i = 0; i < FORGE_UI_LAYOUT_MAX_DEPTH; i++) {
-        bool ok = forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+        bool ok = forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
         ASSERT_TRUE(ok);
     }
     ASSERT_EQ_INT(ctx.layout_depth, FORGE_UI_LAYOUT_MAX_DEPTH);
 
     /* One more should fail */
-    bool overflow = forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    bool overflow = forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
     ASSERT_TRUE(!overflow);
     ASSERT_EQ_INT(ctx.layout_depth, FORGE_UI_LAYOUT_MAX_DEPTH);
 
@@ -3365,10 +3365,10 @@ static void test_layout_nested_push_pop(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect r = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
     ASSERT_EQ_INT(ctx.layout_depth, 1);
 
-    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_HORIZONTAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_HORIZONTAL, -1, -1);
     ASSERT_EQ_INT(ctx.layout_depth, 2);
 
     forge_ui_ctx_layout_pop(&ctx);
@@ -3490,10 +3490,10 @@ static void test_layout_remaining_after_last_widget(void)
     ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
-    /* 100px tall area, 0 padding, 10px spacing */
+    /* 100px tall area, explicit 0 padding, 10px spacing */
     ForgeUiRect area = { 0, 0, 100, 100 };
     forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL,
-                             0.0f, 10.0f);
+                             -1.0f, 10.0f);
 
     /* Place one 30px widget */
     forge_ui_ctx_layout_next(&ctx, 30.0f);
@@ -3570,7 +3570,7 @@ static void test_layout_next_negative_size_clamped(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 100, 100 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     ForgeUiRect r = forge_ui_ctx_layout_next(&ctx, -50.0f);
     ASSERT_NEAR(r.h, 0.0f, 0.001f);  /* negative size clamped to 0 */
@@ -3592,7 +3592,7 @@ static void test_layout_push_tiny_rect_no_negative_remaining(void)
 
     /* Rect smaller than 2*padding → inner space is 0, not negative */
     ForgeUiRect area = { 0, 0, 10, 10 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 20.0f, 0.0f);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 20.0f, -1.0f);
 
     ForgeUiLayout *layout = &ctx.layout_stack[0];
     ASSERT_NEAR(layout->remaining_w, 0.0f, 0.001f);
@@ -3616,7 +3616,7 @@ static void test_layout_begin_resets_depth(void)
     /* First frame: push without pop (intentional mismatch) */
     forge_ui_ctx_begin(&ctx, 0, 0, false);
     ForgeUiRect r = { 0, 0, 100, 100 };
-    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
     /* Note: no pop — this is the bug scenario being tested */
     forge_ui_ctx_end(&ctx);  /* end will log a warning */
 
@@ -3638,7 +3638,7 @@ static void test_layout_free_resets_depth(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect r = { 0, 0, 100, 100 };
-    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, r, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
     /* Free without popping */
     forge_ui_ctx_end(&ctx);  /* logs warning */
     forge_ui_ctx_free(&ctx);
@@ -3657,7 +3657,7 @@ static void test_button_layout_null_text(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     /* NULL text should fail without advancing cursor */
     bool clicked = forge_ui_ctx_button_layout(&ctx, NULL, 30.0f);
@@ -3682,7 +3682,7 @@ static void test_button_layout_empty_text(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     bool clicked = forge_ui_ctx_button_layout(&ctx, "", 30.0f);
     ASSERT_TRUE(!clicked);
@@ -3705,7 +3705,7 @@ static void test_checkbox_layout_null_value(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     bool toggled = forge_ui_ctx_checkbox_layout(&ctx, "Test", NULL, 30.0f);
     ASSERT_TRUE(!toggled);
@@ -3728,7 +3728,7 @@ static void test_checkbox_layout_null_label(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     bool val = true;
     bool toggled = forge_ui_ctx_checkbox_layout(&ctx, NULL, &val, 30.0f);
@@ -3749,7 +3749,7 @@ static void test_slider_layout_null_value(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     bool changed = forge_ui_ctx_slider_layout(&ctx, "##slider", NULL,
                                                0.0f, 100.0f, 30.0f);
@@ -3773,7 +3773,7 @@ static void test_slider_layout_invalid_range(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     float val = 50.0f;
     /* min == max: invalid range */
@@ -3803,7 +3803,7 @@ static void test_label_layout_emits_draw_data(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 10, 20, 200, 100 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     forge_ui_ctx_label_layout(&ctx, "Hi", 30.0f, 1, 1, 1, 1);
     ASSERT_TRUE(ctx.vertex_count > 0);
@@ -3852,7 +3852,7 @@ static void test_layout_no_spacing_before_first_widget(void)
 
     /* Large spacing to make a gap obvious if misapplied */
     ForgeUiRect area = { 0, 0, 100, 100 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 50.0f);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, 50.0f);
 
     ForgeUiRect r1 = forge_ui_ctx_layout_next(&ctx, 10.0f);
     /* First widget should be at y=0, not y=50 */
@@ -3873,7 +3873,7 @@ static void test_layout_spacing_between_widgets(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 100, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 10.0f);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, 10.0f);
 
     ForgeUiRect r1 = forge_ui_ctx_layout_next(&ctx, 20.0f);
     ForgeUiRect r2 = forge_ui_ctx_layout_next(&ctx, 20.0f);
@@ -3904,7 +3904,7 @@ static void test_layout_horizontal_spacing(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 300, 50 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_HORIZONTAL, 0, 10.0f);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_HORIZONTAL, -1, 10.0f);
 
     ForgeUiRect r1 = forge_ui_ctx_layout_next(&ctx, 40.0f);
     ForgeUiRect r2 = forge_ui_ctx_layout_next(&ctx, 60.0f);
@@ -3933,7 +3933,7 @@ static void test_layout_item_count(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
 
     ForgeUiRect area = { 0, 0, 200, 200 };
-    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, 0, 0);
+    forge_ui_ctx_layout_push(&ctx, area, FORGE_UI_LAYOUT_VERTICAL, -1, -1);
 
     ASSERT_EQ_INT(ctx.layout_stack[0].item_count, 0);
     forge_ui_ctx_layout_next(&ctx, 10.0f);
@@ -5934,6 +5934,201 @@ static void test_layout_push_inf_rect_rejected(void)
     forge_ui_ctx_free(&ctx);
 }
 
+/* ── Scale and spacing validation (Phase 2 audit) ────────────────────────── */
+
+#define TEST_SCALE_PANEL_X       10.0f
+#define TEST_SCALE_PANEL_Y       10.0f
+#define TEST_SCALE_PANEL_W      300.0f
+#define TEST_SCALE_PANEL_H      200.0f
+
+static void test_begin_resets_zero_scale(void)
+{
+    TEST("begin: zero scale is reset to 1.0");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    ctx.scale = 0.0f;
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_NEAR(ctx.scale, 1.0f, 0.001f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_begin_resets_negative_scale(void)
+{
+    TEST("begin: negative scale is reset to 1.0");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    ctx.scale = -2.0f;
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_NEAR(ctx.scale, 1.0f, 0.001f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_begin_resets_nan_scale(void)
+{
+    TEST("begin: NaN scale is reset to 1.0");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    ctx.scale = NAN;
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_NEAR(ctx.scale, 1.0f, 0.001f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_begin_resets_inf_scale(void)
+{
+    TEST("begin: Inf scale is reset to 1.0");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    ctx.scale = INFINITY;
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_NEAR(ctx.scale, 1.0f, 0.001f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_begin_preserves_valid_scale(void)
+{
+    TEST("begin: valid scale (1.5) is preserved");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    ctx.scale = 1.5f;
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_NEAR(ctx.scale, 1.5f, 0.001f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_init_zero_pixel_height_rejected(void)
+{
+    TEST("init: atlas with pixel_height=0 is rejected");
+    ForgeUiFontAtlas fake;
+    SDL_memset(&fake, 0, sizeof(fake));
+    fake.pixel_height = 0.0f;
+    fake.units_per_em = 1000;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(!forge_ui_ctx_init(&ctx, &fake));
+}
+
+static void test_init_nan_pixel_height_rejected(void)
+{
+    TEST("init: atlas with pixel_height=NaN is rejected");
+    ForgeUiFontAtlas fake;
+    SDL_memset(&fake, 0, sizeof(fake));
+    fake.pixel_height = NAN;
+    fake.units_per_em = 1000;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(!forge_ui_ctx_init(&ctx, &fake));
+}
+
+static void test_init_inf_pixel_height_rejected(void)
+{
+    TEST("init: atlas with pixel_height=Inf is rejected");
+    ForgeUiFontAtlas fake;
+    SDL_memset(&fake, 0, sizeof(fake));
+    fake.pixel_height = INFINITY;
+    fake.units_per_em = 1000;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(!forge_ui_ctx_init(&ctx, &fake));
+}
+
+static void test_init_negative_pixel_height_rejected(void)
+{
+    TEST("init: atlas with pixel_height=-16 is rejected");
+    ForgeUiFontAtlas fake;
+    SDL_memset(&fake, 0, sizeof(fake));
+    fake.pixel_height = -16.0f;
+    fake.units_per_em = 1000;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(!forge_ui_ctx_init(&ctx, &fake));
+}
+
+/* ── State cleanup on early return (Phase 2 audit) ───────────────────────── */
+
+static void test_panel_begin_failure_clears_panel_rect(void)
+{
+    TEST("panel_begin: push_id failure zeroes _panel.rect and content_rect");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+
+    /* Fill the ID stack to force push_id failure */
+    for (int i = 0; i < FORGE_UI_ID_STACK_MAX_DEPTH; i++) {
+        forge_ui_push_id(&ctx, "x");
+    }
+
+    float scroll = 0.0f;
+    ForgeUiRect rect = { TEST_SCALE_PANEL_X, TEST_SCALE_PANEL_Y,
+                         TEST_SCALE_PANEL_W, TEST_SCALE_PANEL_H };
+    /* panel_begin should fail because push_id will overflow */
+    ASSERT_TRUE(!forge_ui_ctx_panel_begin(&ctx, "Panel", rect, &scroll));
+
+    /* _panel.rect should be zeroed */
+    ASSERT_NEAR(ctx._panel.rect.x, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx._panel.rect.y, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx._panel.rect.w, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx._panel.rect.h, 0.0f, 0.001f);
+    ASSERT_TRUE(!ctx._panel_active);
+    ASSERT_TRUE(ctx._panel.scroll_y == NULL);
+
+    /* Pop the ID stack entries we pushed */
+    for (int i = 0; i < FORGE_UI_ID_STACK_MAX_DEPTH; i++) {
+        forge_ui_pop_id(&ctx);
+    }
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_ctx_begin_zeroes_panel_geometry(void)
+{
+    TEST("ctx_begin: zeroes _panel.rect and content_rect from previous frame");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    /* Frame 1: open a panel so _panel.rect gets written */
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    float scroll = 0.0f;
+    ForgeUiRect rect = { TEST_SCALE_PANEL_X, TEST_SCALE_PANEL_Y,
+                         TEST_SCALE_PANEL_W, TEST_SCALE_PANEL_H };
+    ASSERT_TRUE(forge_ui_ctx_panel_begin(&ctx, "MyPanel", rect, &scroll));
+    forge_ui_ctx_panel_end(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 2: after begin, panel geometry should be zeroed */
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ASSERT_NEAR(ctx._panel.rect.x, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx._panel.rect.y, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx._panel.content_rect.x, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx._panel.content_rect.y, 0.0f, 0.001f);
+    ASSERT_TRUE(!ctx._panel_active);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_emit_border_nan_width_rejected(void)
+{
+    TEST("emit_border: NaN border_w is rejected (no vertices)");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect rect = { 10.0f, 10.0f, 100.0f, 50.0f };
+    forge_ui__emit_border(&ctx, rect, NAN, 1, 1, 1, 1);
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -6318,6 +6513,22 @@ int main(int argc, char *argv[])
     /* Audit fix: button ## separator */
     test_button_separator_display_text();
     test_button_separator_different_ids();
+
+    /* Scale and spacing validation (Phase 2 audit) */
+    test_begin_resets_zero_scale();
+    test_begin_resets_negative_scale();
+    test_begin_resets_nan_scale();
+    test_begin_resets_inf_scale();
+    test_begin_preserves_valid_scale();
+    test_init_zero_pixel_height_rejected();
+    test_init_nan_pixel_height_rejected();
+    test_init_inf_pixel_height_rejected();
+    test_init_negative_pixel_height_rejected();
+
+    /* State cleanup on early return (Phase 2 audit) */
+    test_panel_begin_failure_clears_panel_rect();
+    test_ctx_begin_zeroes_panel_geometry();
+    test_emit_border_nan_width_rejected();
 
     /* NaN/Inf validation */
     test_label_nan_x_rejected();

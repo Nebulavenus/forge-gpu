@@ -62,9 +62,17 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   cursor position, remaining space
 - **`ForgeUiPanel`** -- Panel container: outer rect, content rect, scroll
   offset pointer, computed content height, and widget ID
+- **`ForgeUiSpacing`** -- Themed spacing defaults: widget padding, item spacing,
+  panel padding, title bar height, checkbox box size, slider dimensions,
+  text input padding, and scrollbar width (all in logical pixels, scaled via
+  `FORGE_UI_SCALED`)
+- **`FORGE_UI_SCALED(ctx, value)`** -- Macro that multiplies a logical pixel
+  value by the context's current scale factor (`ctx->scale`). Use for all
+  spacing and sizing constants to support DPI-independent layout
 - **`ForgeUiContext`** -- Immediate-mode UI context: holds mouse input, the
   hot/active widget IDs, font atlas reference, layout stack, clip rect,
-  panel state, and dynamic vertex/index buffers
+  panel state, dynamic vertex/index buffers, and scaling state (`scale`,
+  `base_pixel_height`, `scaled_pixel_height`, `spacing`)
 
 ### Types -- Windows (forge_ui_window.h)
 
@@ -268,6 +276,8 @@ These are intentional simplifications for a learning library:
   with z-ordering, collapse toggle, and deferred draw ordering
 - [`lessons/ui/11-widget-id-system/`](../../lessons/ui/11-widget-id-system/) --
   FNV-1a hashed string IDs with hierarchical scope stacking
+- [`lessons/ui/12-font-scaling-and-spacing/`](../../lessons/ui/12-font-scaling-and-spacing/) --
+  Global scale factor, spacing struct, and DPI-independent layout
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

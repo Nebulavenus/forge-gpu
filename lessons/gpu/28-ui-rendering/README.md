@@ -67,12 +67,12 @@ glyphs are anti-aliased via alpha blending against the font atlas.
 - [Lesson 16 — Blending](../16-blending/) (alpha blend state configuration,
   the blend equation, painter's algorithm)
 - [UI Lesson 01 — TTF Parsing](../../ui/01-ttf-parsing/) through
-  [UI Lesson 11 — Widget ID System](../../ui/11-widget-id-system/) (the full
-  immediate-mode UI stack that this lesson renders)
+  [UI Lesson 12 — Font Scaling and Spacing](../../ui/12-font-scaling-and-spacing/)
+  (the full immediate-mode UI stack that this lesson renders)
 
 ## The UI data contract
 
-The forge-gpu UI library (built across UI Lessons 01–11) is entirely
+The forge-gpu UI library (built across UI Lessons 01–12) is entirely
 CPU-side. It parses fonts, rasterizes glyphs into an atlas, and generates
 draw data every frame — but never touches the GPU. This lesson is where that
 data reaches the screen.
@@ -523,6 +523,9 @@ a piece of the system that produces the vertex and index data drawn here:
   z-ordering, collapse, and the `ForgeUiWindowContext` used here
 - [UI Lesson 11 — Widget ID System](../../ui/11-widget-id-system/) — FNV-1a
   hashed string IDs, the `##` separator, and hierarchical scope stacking
+- [UI Lesson 12 — Font Scaling and Spacing](../../ui/12-font-scaling-and-spacing/)
+  — global scale factor, `ForgeUiSpacing` struct, and `FORGE_UI_SCALED` macro
+  for DPI-independent widget dimensions
 
 ### GPU lessons
 
@@ -568,12 +571,15 @@ per-frame render loop.
    draw call into one draw call per clipped region. Compare the visual result
    with the vertex-clipped approach and measure the draw call count increase.
 
-4. **Render at high DPI.** Query the window's display scale with
-   `SDL_GetWindowDisplayScale` and multiply the font size passed to
-   `forge_ui_atlas_build` by that factor. Rebuild the atlas at the scaled
-   size and adjust the orthographic projection to use pixel dimensions from
-   `SDL_GetWindowSizeInPixels`. Observe how text sharpness improves on
-   high-DPI displays.
+4. **Render at high DPI.** Use the scale system from
+   [UI Lesson 12 — Font Scaling and Spacing](../../ui/12-font-scaling-and-spacing/):
+   query `SDL_GetWindowDisplayScale`, set `ctx.scale` to that value, and
+   rebuild the atlas at `ATLAS_PIXEL_HEIGHT * scale`. Set
+   `ctx.base_pixel_height` and `ctx.scaled_pixel_height` so the context
+   tracks both sizes. Use pixel dimensions from
+   `SDL_GetWindowSizeInPixels` for the orthographic projection. All widget
+   dimensions scale automatically through `FORGE_UI_SCALED`. Observe how
+   text sharpness improves on high-DPI displays.
 
 5. **Add texture icons.** Extend the atlas to include small icon images
    alongside the font glyphs. Modify the atlas builder to pack a 16x16 icon

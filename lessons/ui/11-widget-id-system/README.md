@@ -222,3 +222,9 @@ showing two windows with identically-labeled checkboxes operating independently.
 3. **Hash collision search**: Write a test that hashes millions of random
    strings and counts FNV-1a collisions.  How does the collision rate compare
    to the theoretical rate for a 32-bit hash (birthday bound at ~77K items)?
+
+## What's next
+
+[UI Lesson 12 — Font Scaling and Spacing](../12-font-scaling-and-spacing/) introduces
+a global scale factor and consistent spacing system, making the entire UI
+readable at any DPI without hardcoded pixel values.
