@@ -63,8 +63,10 @@
 /* Font asset path (relative to executable, same as all UI lessons). */
 #define FONT_PATH "assets/fonts/liberation_mono/LiberationMono-Regular.ttf"
 
-/* Atlas build parameters. */
-#define ATLAS_PIXEL_HEIGHT 32.0f  /* glyph rasterization height in pixels */
+/* Atlas build parameters.  16px is the standard base design size used across
+ * the UI lessons (see UI Lesson 12 -- Font Scaling and Spacing).  At 1280x720
+ * this gives well-proportioned text with room for widget padding. */
+#define ATLAS_PIXEL_HEIGHT 16.0f  /* glyph rasterization height in pixels */
 #define ATLAS_PADDING      1      /* pixel padding between packed glyphs  */
 #define ASCII_START        32     /* first printable ASCII codepoint      */
 #define ASCII_END          126    /* last printable ASCII codepoint       */
@@ -675,6 +677,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_Log("forge_ui_ctx_init failed");
         goto init_fail;
     }
+
+    /* Configure the scale system (UI Lesson 12).  scale = 1.0 means the
+     * atlas was built at the base design size; FORGE_UI_SCALED will use
+     * the spacing defaults (widget_padding 10px, item_spacing 10px, etc.)
+     * without modification.  Setting base/scaled pixel height enables
+     * the context to rebuild the atlas if the scale changes later. */
+    state->ui_ctx.scale              = 1.0f;
+    state->ui_ctx.base_pixel_height  = ATLAS_PIXEL_HEIGHT;
+    state->ui_ctx.scaled_pixel_height = ATLAS_PIXEL_HEIGHT;
 
     if (!forge_ui_wctx_init(&state->ui_wctx, &state->ui_ctx)) {
         SDL_Log("forge_ui_wctx_init failed");
