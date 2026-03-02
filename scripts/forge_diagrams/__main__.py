@@ -149,10 +149,12 @@ from .math_diagrams import (
     diagram_white_noise_comparison,
 )
 from .ui_diagrams import (
+    diagram_adjacent_pair_matrix,
     diagram_antialiasing_comparison,
     diagram_atlas_rebuild_at_scale,
     diagram_baseline_metrics,
     diagram_before_after_spacing,
+    diagram_before_after_theming,
     diagram_button_draw_data,
     diagram_character_deletion,
     diagram_character_insertion,
@@ -161,6 +163,7 @@ from .ui_diagrams import (
     diagram_clip_rect_operation,
     diagram_collapse_toggle,
     diagram_contour_reconstruction,
+    diagram_contrast_ratio_scale,
     diagram_cursor_positioning,
     diagram_declare_then_draw,
     diagram_deferred_draw_pipeline,
@@ -199,10 +202,14 @@ from .ui_diagrams import (
     diagram_slider_value_mapping,
     diagram_spacing_anatomy,
     diagram_spacing_struct_overview,
+    diagram_srgb_linearization_curve,
     diagram_text_input_anatomy,
+    diagram_theme_color_slots,
+    diagram_theme_slot_mapping,
     diagram_ttf_file_structure,
     diagram_uv_coordinates,
     diagram_uv_remap_on_clip,
+    diagram_wcag_contrast_formula,
     diagram_widget_interaction_comparison,
     diagram_winding_direction,
     diagram_window_anatomy,
@@ -488,6 +495,15 @@ DIAGRAMS = {
         ("before_after_spacing.png", diagram_before_after_spacing),
         ("scaled_dimensions_formula.png", diagram_scaled_dimensions_formula),
     ],
+    "ui/13": [
+        ("theme_color_slots.png", diagram_theme_color_slots),
+        ("wcag_contrast_formula.png", diagram_wcag_contrast_formula),
+        ("contrast_ratio_scale.png", diagram_contrast_ratio_scale),
+        ("srgb_linearization_curve.png", diagram_srgb_linearization_curve),
+        ("theme_slot_mapping.png", diagram_theme_slot_mapping),
+        ("adjacent_pair_matrix.png", diagram_adjacent_pair_matrix),
+        ("before_after_theming.png", diagram_before_after_theming),
+    ],
 }
 
 # Full lesson directory names for display
@@ -537,6 +553,7 @@ LESSON_NAMES = {
     "ui/10": "ui/10-windows",
     "ui/11": "ui/11-widget-id-system",
     "ui/12": "ui/12-font-scaling-and-spacing",
+    "ui/13": "ui/13-theming-and-color-system",
 }
 
 

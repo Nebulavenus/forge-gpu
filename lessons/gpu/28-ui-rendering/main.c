@@ -113,17 +113,6 @@
 /* Text input backing buffer size. */
 #define TEXT_INPUT_BUF_SIZE 128
 
-/* Label colors — title uses accent cyan (#4fc3f7) for emphasis,
- * info uses theme dim text (#8888aa) for secondary content. */
-#define TITLE_LABEL_R  0.310f
-#define TITLE_LABEL_G  0.765f
-#define TITLE_LABEL_B  0.969f
-#define TITLE_LABEL_A  1.00f
-#define INFO_LABEL_R   0.533f
-#define INFO_LABEL_G   0.533f
-#define INFO_LABEL_B   0.667f
-#define INFO_LABEL_A   1.00f
-
 /* Cursor blink timing (in milliseconds). */
 #define CURSOR_BLINK_INTERVAL_MS 530  /* half-period: on for 530ms, off for 530ms */
 
@@ -848,21 +837,25 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (forge_ui_wctx_window_begin(&state->ui_wctx,
                                     "UI Demo", &state->demo_window)) {
 
-        /* Title label. */
-        forge_ui_ctx_label_layout(&state->ui_ctx, "Hello, GPU UI!",
+        /* Title label (accent color from theme). */
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Hello, GPU UI!",
                                   LABEL_HEIGHT,
-                                  TITLE_LABEL_R, TITLE_LABEL_G,
-                                  TITLE_LABEL_B, TITLE_LABEL_A);
+                                  state->ui_ctx.theme.accent.r,
+                                  state->ui_ctx.theme.accent.g,
+                                  state->ui_ctx.theme.accent.b,
+                                  state->ui_ctx.theme.accent.a);
 
         /* Click counter label -- shows how many times the button has
          * been pressed, demonstrating persistent widget state. */
         char click_label[LABEL_BUF_SIZE];
         SDL_snprintf(click_label, sizeof(click_label),
                      "Clicks: %d", state->click_count);
-        forge_ui_ctx_label_layout(&state->ui_ctx, click_label,
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, click_label,
                                   LABEL_HEIGHT,
-                                  INFO_LABEL_R, INFO_LABEL_G,
-                                  INFO_LABEL_B, INFO_LABEL_A);
+                                  state->ui_ctx.theme.text_dim.r,
+                                  state->ui_ctx.theme.text_dim.g,
+                                  state->ui_ctx.theme.text_dim.b,
+                                  state->ui_ctx.theme.text_dim.a);
 
         /* Button: increments click counter on each press. */
         if (forge_ui_ctx_button_layout(&state->ui_ctx,
@@ -886,10 +879,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         char slider_label[LABEL_BUF_SIZE];
         SDL_snprintf(slider_label, sizeof(slider_label),
                      "Value: %.2f", (double)state->slider_value);
-        forge_ui_ctx_label_layout(&state->ui_ctx, slider_label,
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, slider_label,
                                   LABEL_HEIGHT,
-                                  INFO_LABEL_R, INFO_LABEL_G,
-                                  INFO_LABEL_B, INFO_LABEL_A);
+                                  state->ui_ctx.theme.text_dim.r,
+                                  state->ui_ctx.theme.text_dim.g,
+                                  state->ui_ctx.theme.text_dim.b,
+                                  state->ui_ctx.theme.text_dim.a);
 
         /* Text input: editable single-line field with blinking cursor. */
         ForgeUiRect ti_rect = forge_ui_ctx_layout_next(&state->ui_ctx,

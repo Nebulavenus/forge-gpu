@@ -241,6 +241,7 @@ vertices, indices, UVs) with no GPU dependency.
 | 10 | [Windows](lessons/ui/10-windows/) | ForgeUiWindowState (rect, scroll_y, collapsed, z_order), title bar dragging with grab offset, click-to-front z-ordering, collapse/expand toggle, deferred per-window draw lists, z-aware input routing |
 | 11 | [Widget ID System](lessons/ui/11-widget-id-system/) | FNV-1a hashed string IDs, `##` separator for display vs identity, hierarchical scope stacking with push_id/pop_id, automatic scoping in panels and windows, collision-free widget identification |
 | 12 | [Font Scaling and Spacing](lessons/ui/12-font-scaling-and-spacing/) | Global scale factor, ForgeUiSpacing struct, FORGE_UI_SCALED macro, atlas rebuild at different scales, themed spacing defaults |
+| 13 | [Theming and Color System](lessons/ui/13-theming-and-color-system/) | ForgeUiColor and ForgeUiTheme structs, centralized color palette, WCAG 2.1 contrast ratio math (sRGB linearization, relative luminance), programmatic accessibility validation, theme slot-to-widget mapping |
 
 See [lessons/ui/README.md](lessons/ui/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.

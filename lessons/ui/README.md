@@ -57,6 +57,7 @@ earlier ones. Reusable code moves into the shared UI library at
 | 10 | [Windows](10-windows/) | ForgeUiWindowState (rect, scroll_y, collapsed, z_order), title bar dragging with grab offset, click-to-front z-ordering, collapse/expand toggle, deferred per-window draw lists, z-aware input routing |
 | 11 | [Widget ID System](11-widget-id-system/) | FNV-1a hashed string IDs, `##` separator for display vs identity, hierarchical scope stacking with push_id/pop_id, automatic scoping in panels and windows, collision-free widget identification |
 | 12 | [Font Scaling and Spacing](12-font-scaling-and-spacing/) | Global scale factor, ForgeUiSpacing struct, FORGE_UI_SCALED macro, atlas rebuild at different scales, themed spacing defaults |
+| 13 | [Theming and Color System](13-theming-and-color-system/) | ForgeUiColor and ForgeUiTheme structs, centralized color palette, WCAG 2.1 contrast ratio math (sRGB linearization, relative luminance), programmatic accessibility validation, theme slot-to-widget mapping |
 
 ## Building
 

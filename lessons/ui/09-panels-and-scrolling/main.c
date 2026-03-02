@@ -75,11 +75,16 @@
 /* ── Number of checkboxes in the left panel ──────────────────────────────── */
 #define CHECKBOX_COUNT      10
 
-/* ── Label colors ────────────────────────────────────────────────────────── */
-#define LABEL_R         0.80f
-#define LABEL_G         0.85f
-#define LABEL_B         0.90f
-#define LABEL_A         1.00f
+/* ── Label colors (RGBA, float) ─────────────────────────────────────────── */
+#define INFO_LABEL_R    0.80f  /* light blue-grey for informational content text */
+#define INFO_LABEL_G    0.85f
+#define INFO_LABEL_B    0.90f
+#define INFO_LABEL_A    1.00f
+
+#define STATUS_LABEL_R  0.90f  /* warm yellow for status text */
+#define STATUS_LABEL_G  0.90f
+#define STATUS_LABEL_B  0.60f
+#define STATUS_LABEL_A  1.00f
 
 /* ── Background clear color (dark slate) ─────────────────────────────────── */
 #define BG_CLEAR_R      0.08f
@@ -101,12 +106,6 @@
 #define CURSOR_DOT_G    220
 #define CURSOR_DOT_B     50
 #define CURSOR_DOT_A    255
-
-/* ── Status label color (warm gold) ──────────────────────────────────────── */
-#define STATUS_R        0.90f
-#define STATUS_G        0.90f
-#define STATUS_B        0.60f
-#define STATUS_A        1.00f
 
 /* ── Simulated frame input ───────────────────────────────────────────────── */
 
@@ -213,18 +212,22 @@ static void declare_panels(ForgeUiContext *ctx,
     };
     if (forge_ui_ctx_panel_begin(ctx, "System Info",
                                   right_rect, right_scroll_y)) {
-        forge_ui_ctx_label_layout(ctx, "GPU: Integrated",
+        forge_ui_ctx_label_colored_layout(ctx, "GPU: Integrated",
                                    LABEL_HEIGHT,
-                                   LABEL_R, LABEL_G, LABEL_B, LABEL_A);
-        forge_ui_ctx_label_layout(ctx, "API: Vulkan 1.3",
+                                   INFO_LABEL_R, INFO_LABEL_G,
+                                   INFO_LABEL_B, INFO_LABEL_A);
+        forge_ui_ctx_label_colored_layout(ctx, "API: Vulkan 1.3",
                                    LABEL_HEIGHT,
-                                   LABEL_R, LABEL_G, LABEL_B, LABEL_A);
-        forge_ui_ctx_label_layout(ctx, "Resolution: 1920x1080",
+                                   INFO_LABEL_R, INFO_LABEL_G,
+                                   INFO_LABEL_B, INFO_LABEL_A);
+        forge_ui_ctx_label_colored_layout(ctx, "Resolution: 1920x1080",
                                    LABEL_HEIGHT,
-                                   LABEL_R, LABEL_G, LABEL_B, LABEL_A);
-        forge_ui_ctx_label_layout(ctx, "FPS: 60",
+                                   INFO_LABEL_R, INFO_LABEL_G,
+                                   INFO_LABEL_B, INFO_LABEL_A);
+        forge_ui_ctx_label_colored_layout(ctx, "FPS: 60",
                                    LABEL_HEIGHT,
-                                   LABEL_R, LABEL_G, LABEL_B, LABEL_A);
+                                   INFO_LABEL_R, INFO_LABEL_G,
+                                   INFO_LABEL_B, INFO_LABEL_A);
         forge_ui_ctx_panel_end(ctx);
     }
 }
@@ -413,10 +416,11 @@ int main(int argc, char *argv[])
                          (double)left_scroll_y,
                          (double)approx_max_scroll);
 
-            forge_ui_ctx_label(&ctx, status_buf,
+            forge_ui_ctx_label_colored(&ctx, status_buf,
                                LEFT_PANEL_X,
                                LEFT_PANEL_Y + LEFT_PANEL_H + STATUS_LABEL_GAP + ascender_px,
-                               STATUS_R, STATUS_G, STATUS_B, STATUS_A);
+                               STATUS_LABEL_R, STATUS_LABEL_G,
+                               STATUS_LABEL_B, STATUS_LABEL_A);
         }
 
         forge_ui_ctx_end(&ctx);

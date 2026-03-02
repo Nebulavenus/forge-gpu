@@ -278,8 +278,17 @@ three-scale comparison and the spacing override comparison.
    scales 0.5 through 3.0 in 0.25 increments, rebuilding the atlas each time.
    Output one BMP per scale and verify all dimensions grow proportionally.
 
+## What's next
+
+[UI Lesson 13 — Theming and Color System](../13-theming-and-color-system/)
+centralizes the ~50 hardcoded color `#define` constants into a single
+`ForgeUiTheme` struct with 14 semantic slots.  It also teaches WCAG 2.1
+contrast ratio math and programmatic accessibility validation.
+
 ## Further reading
 
+- [UI Lesson 13 — Theming and Color System](../13-theming-and-color-system/)
+  centralizes widget colors into a theme struct with contrast validation
 - [UI Lesson 03 — Font Atlas](../03-font-atlas/) explains atlas building and
   why glyph bitmaps must be rasterized at the target pixel height
 - [UI Lesson 08 — Layout](../08-layout/) covers the layout system that now

@@ -66,29 +66,27 @@
 /* ── Text input buffer size ──────────────────────────────────────────────── */
 #define TEXT_BUF_SIZE  128      /* maximum bytes per text input (including '\0') */
 
+/* ── Label colors (RGBA, float) ─────────────────────────────────────────── */
+#define TITLE_LABEL_R   0.70f  /* soft blue-white for title text */
+#define TITLE_LABEL_G   0.80f
+#define TITLE_LABEL_B   0.90f
+#define TITLE_LABEL_A   1.00f
+
+#define FIELD_LABEL_R   0.65f  /* dim grey for field labels (e.g. "Username:") */
+#define FIELD_LABEL_G   0.65f
+#define FIELD_LABEL_B   0.70f
+#define FIELD_LABEL_A   1.00f
+
+#define STATUS_LABEL_R  0.90f  /* warm yellow for status text */
+#define STATUS_LABEL_G  0.90f
+#define STATUS_LABEL_B  0.60f
+#define STATUS_LABEL_A  1.00f
+
 /* ── Background clear color (dark slate, same as lessons 05-06) ──────────── */
 #define BG_CLEAR_R      0.08f
 #define BG_CLEAR_G      0.08f
 #define BG_CLEAR_B      0.12f
 #define BG_CLEAR_A      1.00f
-
-/* ── Title label color (soft blue-gray) ──────────────────────────────────── */
-#define TITLE_R         0.70f
-#define TITLE_G         0.80f
-#define TITLE_B         0.90f
-#define TITLE_A         1.00f
-
-/* ── Field label color (dim gray) ────────────────────────────────────────── */
-#define FIELD_LABEL_R   0.65f
-#define FIELD_LABEL_G   0.65f
-#define FIELD_LABEL_B   0.70f
-#define FIELD_LABEL_A   1.00f
-
-/* ── Status label color (warm gold) ──────────────────────────────────────── */
-#define STATUS_R        0.90f
-#define STATUS_G        0.90f
-#define STATUS_B        0.60f
-#define STATUS_A        1.00f
 
 /* ── Mouse cursor dot ────────────────────────────────────────────────────── */
 #define CURSOR_DOT_RADIUS_SQ  5   /* squared pixel radius for circular shape */
@@ -403,12 +401,13 @@ int main(int argc, char *argv[])
         /* ── Declare widgets ──────────────────────────────────────────── */
 
         /* Title label */
-        forge_ui_ctx_label(&ctx, "Text Input",
+        forge_ui_ctx_label_colored(&ctx, "Text Input",
                            MARGIN, MARGIN + ascender_px,
-                           TITLE_R, TITLE_G, TITLE_B, TITLE_A);
+                           TITLE_LABEL_R, TITLE_LABEL_G,
+                           TITLE_LABEL_B, TITLE_LABEL_A);
 
         /* "Username:" label */
-        forge_ui_ctx_label(&ctx, "Username:",
+        forge_ui_ctx_label_colored(&ctx, "Username:",
                            MARGIN, username_label_y,
                            FIELD_LABEL_R, FIELD_LABEL_G,
                            FIELD_LABEL_B, FIELD_LABEL_A);
@@ -420,7 +419,7 @@ int main(int argc, char *argv[])
             cursor_visible);
 
         /* "Email:" label */
-        forge_ui_ctx_label(&ctx, "Email:",
+        forge_ui_ctx_label_colored(&ctx, "Email:",
                            MARGIN, email_label_y,
                            FIELD_LABEL_R, FIELD_LABEL_G,
                            FIELD_LABEL_B, FIELD_LABEL_A);
@@ -449,8 +448,9 @@ int main(int argc, char *argv[])
             status = status_buf;
         }
 
-        forge_ui_ctx_label(&ctx, status, MARGIN, status_y + ascender_px,
-                           STATUS_R, STATUS_G, STATUS_B, STATUS_A);
+        forge_ui_ctx_label_colored(&ctx, status, MARGIN, status_y + ascender_px,
+                           STATUS_LABEL_R, STATUS_LABEL_G,
+                           STATUS_LABEL_B, STATUS_LABEL_A);
 
         /* End frame: finalize hot/active/focus transitions */
         forge_ui_ctx_end(&ctx);

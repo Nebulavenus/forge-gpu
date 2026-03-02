@@ -29,7 +29,7 @@
  *   // Each frame:
  *   forge_ui_ctx_begin(&ctx, mouse_x, mouse_y, mouse_down);
  *   if (forge_ui_ctx_button(&ctx, "Click me", rect)) { ... }
- *   forge_ui_ctx_label(&ctx, "Hello", x, y, r, g, b, a);
+ *   forge_ui_ctx_label(&ctx, "Hello", x, y);
  *   forge_ui_ctx_end(&ctx);
  *
  *   // Use ctx.vertices, ctx.vertex_count, ctx.indices, ctx.index_count
@@ -43,6 +43,7 @@
 #include <math.h>
 #include <string.h>
 #include <SDL3/SDL.h>
+#include "forge_ui_theme.h"
 #include "forge_ui.h"
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
@@ -68,33 +69,6 @@
  * is bounds-checked at runtime with SDL_Log on overflow/underflow. */
 #define FORGE_UI_ID_STACK_MAX_DEPTH  8
 
-/* ── Button style ───────────────────────────────────────────────────────── */
-
-/* Button appearance varies with interaction state.  Colors follow the
- * project's dark blue-gray theme (#1a1a2e background, #4fc3f7 accent).
- * Button normal is ~30% brighter than panel BG so it stands out as an
- * interactive element.  All values are RGBA floats in [0, 1]. */
-#define FORGE_UI_BTN_NORMAL_R   0.180f
-#define FORGE_UI_BTN_NORMAL_G   0.216f
-#define FORGE_UI_BTN_NORMAL_B   0.353f
-#define FORGE_UI_BTN_NORMAL_A   1.00f
-
-#define FORGE_UI_BTN_HOT_R      0.224f
-#define FORGE_UI_BTN_HOT_G      0.271f
-#define FORGE_UI_BTN_HOT_B      0.427f
-#define FORGE_UI_BTN_HOT_A      1.00f
-
-#define FORGE_UI_BTN_ACTIVE_R   0.102f
-#define FORGE_UI_BTN_ACTIVE_G   0.125f
-#define FORGE_UI_BTN_ACTIVE_B   0.220f
-#define FORGE_UI_BTN_ACTIVE_A   1.00f
-
-/* Default button text color — matches theme text #e0e0f0 */
-#define FORGE_UI_BTN_TEXT_R     0.878f
-#define FORGE_UI_BTN_TEXT_G     0.878f
-#define FORGE_UI_BTN_TEXT_B     0.941f
-#define FORGE_UI_BTN_TEXT_A     1.00f
-
 /* ── Checkbox style ────────────────────────────────────────────────────── */
 
 /* Checkbox box dimensions.  The box is a square drawn at the left edge
@@ -109,35 +83,6 @@
  * ForgeUiSpacing.widget_padding. */
 #define FORGE_UI_WIDGET_PADDING  10.0f
 
-/* Box outline colors by state — brighter than panel BG so the unchecked
- * box is clearly visible against the panel body.  (RGBA floats in [0, 1]) */
-#define FORGE_UI_CB_NORMAL_R    0.204f
-#define FORGE_UI_CB_NORMAL_G    0.247f
-#define FORGE_UI_CB_NORMAL_B    0.392f
-#define FORGE_UI_CB_NORMAL_A    1.00f
-
-#define FORGE_UI_CB_HOT_R       0.267f
-#define FORGE_UI_CB_HOT_G       0.329f
-#define FORGE_UI_CB_HOT_B       0.475f
-#define FORGE_UI_CB_HOT_A       1.00f
-
-#define FORGE_UI_CB_ACTIVE_R    0.145f
-#define FORGE_UI_CB_ACTIVE_G    0.180f
-#define FORGE_UI_CB_ACTIVE_B    0.298f
-#define FORGE_UI_CB_ACTIVE_A    1.00f
-
-/* Inner fill color when checked (accent cyan #4fc3f7) */
-#define FORGE_UI_CB_CHECK_R     0.310f
-#define FORGE_UI_CB_CHECK_G     0.765f
-#define FORGE_UI_CB_CHECK_B     0.969f
-#define FORGE_UI_CB_CHECK_A     1.00f
-
-/* Checkbox label text color — matches theme text #e0e0f0 */
-#define FORGE_UI_CB_TEXT_R      0.878f
-#define FORGE_UI_CB_TEXT_G      0.878f
-#define FORGE_UI_CB_TEXT_B      0.941f
-#define FORGE_UI_CB_TEXT_A      1.00f
-
 /* ── Slider style ──────────────────────────────────────────────────────── */
 
 /* Slider track and thumb dimensions.  The track is a thin horizontal bar
@@ -149,30 +94,6 @@
 #define FORGE_UI_SL_THUMB_WIDTH   12.0f   /* thumb rectangle width */
 #define FORGE_UI_SL_THUMB_HEIGHT  22.0f   /* thumb rectangle height */
 
-/* Track background color — brighter than panel BG so the slider rail
- * is visible inside the panel body. */
-#define FORGE_UI_SL_TRACK_R     0.180f
-#define FORGE_UI_SL_TRACK_G     0.216f
-#define FORGE_UI_SL_TRACK_B     0.353f
-#define FORGE_UI_SL_TRACK_A     1.00f
-
-/* Thumb color varies with interaction state to give visual feedback
- * during drag: normal (idle), hot (cursor hovering), active (dragging). */
-#define FORGE_UI_SL_NORMAL_R    0.353f
-#define FORGE_UI_SL_NORMAL_G    0.416f
-#define FORGE_UI_SL_NORMAL_B    0.533f
-#define FORGE_UI_SL_NORMAL_A    1.00f
-
-#define FORGE_UI_SL_HOT_R       0.416f
-#define FORGE_UI_SL_HOT_G       0.478f
-#define FORGE_UI_SL_HOT_B       0.604f
-#define FORGE_UI_SL_HOT_A       1.00f
-
-#define FORGE_UI_SL_ACTIVE_R    0.310f
-#define FORGE_UI_SL_ACTIVE_G    0.765f
-#define FORGE_UI_SL_ACTIVE_B    0.969f
-#define FORGE_UI_SL_ACTIVE_A    1.00f
-
 /* ── Text input style ─────────────────────────────────────────────────── */
 
 /* Text input layout dimensions.  Padding keeps text away from the field
@@ -182,40 +103,6 @@
 #define FORGE_UI_TI_PADDING       8.0f   /* left padding in pixels before text starts */
 #define FORGE_UI_TI_CURSOR_WIDTH  2.0f   /* cursor bar width in pixels */
 #define FORGE_UI_TI_BORDER_WIDTH  1.0f   /* focused border edge width in pixels */
-
-/* Background colors by state — themed dark navy (RGBA floats in [0, 1]) */
-#define FORGE_UI_TI_NORMAL_R   0.078f   /* unfocused: deep dark */
-#define FORGE_UI_TI_NORMAL_G   0.094f
-#define FORGE_UI_TI_NORMAL_B   0.157f
-#define FORGE_UI_TI_NORMAL_A   1.00f
-
-#define FORGE_UI_TI_HOT_R      0.102f   /* hovered (unfocused): subtle highlight */
-#define FORGE_UI_TI_HOT_G      0.133f
-#define FORGE_UI_TI_HOT_B      0.220f
-#define FORGE_UI_TI_HOT_A      1.00f
-
-#define FORGE_UI_TI_FOCUSED_R  0.094f   /* focused: blue tint */
-#define FORGE_UI_TI_FOCUSED_G  0.125f
-#define FORGE_UI_TI_FOCUSED_B  0.251f
-#define FORGE_UI_TI_FOCUSED_A  1.00f
-
-/* Border color when focused (accent cyan #4fc3f7) */
-#define FORGE_UI_TI_BORDER_R   0.310f
-#define FORGE_UI_TI_BORDER_G   0.765f
-#define FORGE_UI_TI_BORDER_B   0.969f
-#define FORGE_UI_TI_BORDER_A   1.00f
-
-/* Cursor bar color (accent cyan #4fc3f7) */
-#define FORGE_UI_TI_CURSOR_R   0.310f
-#define FORGE_UI_TI_CURSOR_G   0.765f
-#define FORGE_UI_TI_CURSOR_B   0.969f
-#define FORGE_UI_TI_CURSOR_A   1.00f
-
-/* Text color — matches theme text #e0e0f0 */
-#define FORGE_UI_TI_TEXT_R     0.878f
-#define FORGE_UI_TI_TEXT_G     0.878f
-#define FORGE_UI_TI_TEXT_B     0.941f
-#define FORGE_UI_TI_TEXT_A     1.00f
 
 /* ── Layout constants ───────────────────────────────────────────────────── */
 
@@ -231,51 +118,10 @@
 #define FORGE_UI_PANEL_TITLE_HEIGHT    36.0f
 #define FORGE_UI_PANEL_PADDING         12.0f
 
-/* Panel background RGBA — dark navy, lighter than app bg for contrast */
-#define FORGE_UI_PANEL_BG_R     0.118f
-#define FORGE_UI_PANEL_BG_G     0.165f
-#define FORGE_UI_PANEL_BG_B     0.282f
-#define FORGE_UI_PANEL_BG_A     1.00f
-
-/* Title bar background RGBA — notably brighter than panel BG so the
- * header is the most prominent chrome element.  ~45% brighter. */
-#define FORGE_UI_PANEL_TITLE_BG_R   0.200f
-#define FORGE_UI_PANEL_TITLE_BG_G   0.243f
-#define FORGE_UI_PANEL_TITLE_BG_B   0.400f
-#define FORGE_UI_PANEL_TITLE_BG_A   1.00f
-
-/* Title bar text color — matches theme text #e0e0f0 */
-#define FORGE_UI_PANEL_TITLE_TEXT_R  0.878f
-#define FORGE_UI_PANEL_TITLE_TEXT_G  0.878f
-#define FORGE_UI_PANEL_TITLE_TEXT_B  0.941f
-#define FORGE_UI_PANEL_TITLE_TEXT_A  1.00f
-
 /* ── Scrollbar style ───────────────────────────────────────────────────── */
 
 #define FORGE_UI_SCROLLBAR_WIDTH        10.0f  /* scrollbar track width (pixels) */
 #define FORGE_UI_SCROLLBAR_MIN_THUMB    20.0f  /* minimum thumb height (pixels) */
-
-/* Scrollbar track RGBA — themed deep dark navy */
-#define FORGE_UI_SB_TRACK_R    0.055f
-#define FORGE_UI_SB_TRACK_G    0.063f
-#define FORGE_UI_SB_TRACK_B    0.125f
-#define FORGE_UI_SB_TRACK_A    1.00f
-
-/* Scrollbar thumb RGBA by state — themed navy blue */
-#define FORGE_UI_SB_NORMAL_R   0.227f
-#define FORGE_UI_SB_NORMAL_G   0.271f
-#define FORGE_UI_SB_NORMAL_B   0.408f
-#define FORGE_UI_SB_NORMAL_A   1.00f
-
-#define FORGE_UI_SB_HOT_R      0.290f
-#define FORGE_UI_SB_HOT_G      0.345f
-#define FORGE_UI_SB_HOT_B      0.471f
-#define FORGE_UI_SB_HOT_A      1.00f
-
-#define FORGE_UI_SB_ACTIVE_R   0.310f
-#define FORGE_UI_SB_ACTIVE_G   0.765f
-#define FORGE_UI_SB_ACTIVE_B   0.969f
-#define FORGE_UI_SB_ACTIVE_A   1.00f
 
 /* ── Panel content layout ──────────────────────────────────────────────── */
 
@@ -552,6 +398,12 @@ typedef struct ForgeUiContext {
      * defaults by forge_ui_ctx_init; can be overridden by the application
      * before the first frame for custom themes. */
     ForgeUiSpacing spacing;
+
+    /* Centralized color theme.  All widget colors are derived from this
+     * struct at draw time.  Set by forge_ui_ctx_init to the default theme;
+     * can be overridden with forge_ui_ctx_set_theme(), which returns false
+     * if the context is NULL or any color component is outside [0, 1]. */
+    ForgeUiTheme theme;
 } ForgeUiContext;
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
@@ -574,12 +426,18 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
  * Call this once after all widget calls. */
 static inline void forge_ui_ctx_end(ForgeUiContext *ctx);
 
-/* Draw a text label at (x, y) with the given color.
+/* Draw a text label at (x, y) with an explicit color.
+ * The y coordinate is the baseline.  Does not participate in hit testing. */
+static inline void forge_ui_ctx_label_colored(ForgeUiContext *ctx,
+                                               const char *text,
+                                               float x, float y,
+                                               float r, float g, float b, float a);
+
+/* Draw a text label at (x, y) using the theme's primary text color.
  * The y coordinate is the baseline.  Does not participate in hit testing. */
 static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
                                       const char *text,
-                                      float x, float y,
-                                      float r, float g, float b, float a);
+                                      float x, float y);
 
 /* Draw a button with a background rectangle and centered text label.
  * Returns true on the frame the button is clicked (mouse released over it).
@@ -747,12 +605,18 @@ static inline ForgeUiRect forge_ui_ctx_layout_next(ForgeUiContext *ctx,
  * The size parameter means height in vertical layouts or width in
  * horizontal layouts. */
 
-/* Label placed by the current layout.  size is the widget height (vertical)
- * or width (horizontal).  The caller provides explicit RGBA text color. */
+/* Label placed by the current layout with an explicit RGBA text color.
+ * size is the widget height (vertical) or width (horizontal). */
+static inline void forge_ui_ctx_label_colored_layout(ForgeUiContext *ctx,
+                                                      const char *text,
+                                                      float size,
+                                                      float r, float g, float b, float a);
+
+/* Label placed by the current layout using the theme's primary text color.
+ * size is the widget height (vertical) or width (horizontal). */
 static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
                                               const char *text,
-                                              float size,
-                                              float r, float g, float b, float a);
+                                              float size);
 
 /* Button placed by the current layout.  Returns true on click. */
 static inline bool forge_ui_ctx_button_layout(ForgeUiContext *ctx,
@@ -817,6 +681,7 @@ static inline bool forge_ui__rect_contains(ForgeUiRect rect,
 static inline float forge_ui__ascender_px(const ForgeUiFontAtlas *atlas)
 {
     if (!atlas || atlas->units_per_em == 0) return 0.0f;
+    if (!isfinite(atlas->pixel_height)) return 0.0f;
     float scale = atlas->pixel_height / (float)atlas->units_per_em;
     return (float)atlas->ascender * scale;
 }
@@ -1291,6 +1156,9 @@ static inline bool forge_ui_ctx_init(ForgeUiContext *ctx,
     ctx->spacing.text_input_padding  = FORGE_UI_TI_PADDING;            /* 8.0 */
     ctx->spacing.scrollbar_width     = FORGE_UI_SCROLLBAR_WIDTH;       /* 10.0 */
 
+    /* Default theme — canonical dark palette from the diagram STYLE dict */
+    ctx->theme = forge_ui_theme_default();
+
     return true;
 }
 
@@ -1491,13 +1359,20 @@ static inline void forge_ui_ctx_end(ForgeUiContext *ctx)
     }
 }
 
-static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
-                                      const char *text,
-                                      float x, float y,
-                                      float r, float g, float b, float a)
+static inline void forge_ui_ctx_label_colored(ForgeUiContext *ctx,
+                                               const char *text,
+                                               float x, float y,
+                                               float r, float g, float b, float a)
 {
     if (!ctx || !text || !ctx->atlas) return;
     if (!isfinite(x) || !isfinite(y)) return;
+    if (!isfinite(r) || !isfinite(g) || !isfinite(b) || !isfinite(a)) return;
+
+    /* Clamp to valid [0, 1] range to prevent invalid vertex color data */
+    if (r < 0.0f) r = 0.0f; else if (r > 1.0f) r = 1.0f;
+    if (g < 0.0f) g = 0.0f; else if (g > 1.0f) g = 1.0f;
+    if (b < 0.0f) b = 0.0f; else if (b > 1.0f) b = 1.0f;
+    if (a < 0.0f) a = 0.0f; else if (a > 1.0f) a = 1.0f;
 
     ForgeUiTextOpts opts = { 0.0f, FORGE_UI_TEXT_ALIGN_LEFT, r, g, b, a };
     ForgeUiTextLayout layout;
@@ -1505,6 +1380,40 @@ static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
         forge_ui__emit_text_layout(ctx, &layout);
         forge_ui_text_layout_free(&layout);
     }
+}
+
+static inline void forge_ui_ctx_label(ForgeUiContext *ctx,
+                                      const char *text,
+                                      float x, float y)
+{
+    if (!ctx) return;
+    forge_ui_ctx_label_colored(ctx, text, x, y,
+                               ctx->theme.text.r, ctx->theme.text.g,
+                               ctx->theme.text.b, ctx->theme.text.a);
+}
+
+/* ── Internal: interaction-state color selection ─────────────────────── */
+
+/* Return the surface color for a widget's current interaction state.
+ * Centralizes the active/hot/normal branching repeated in button,
+ * checkbox, and text input widgets. */
+static inline ForgeUiColor forge_ui__surface_color(const ForgeUiContext *ctx,
+                                                    Uint32 id)
+{
+    if (ctx->active == id) return ctx->theme.surface_active;
+    if (ctx->hot    == id) return ctx->theme.surface_hot;
+    return ctx->theme.surface;
+}
+
+/* Return the accent color for a widget's current interaction state.
+ * Used by slider thumbs and scrollbar thumbs where the color series
+ * is accent (active) → accent_hot (hovered) → surface_hot (idle). */
+static inline ForgeUiColor forge_ui__accent_color(const ForgeUiContext *ctx,
+                                                   Uint32 id)
+{
+    if (ctx->active == id) return ctx->theme.accent;
+    if (ctx->hot    == id) return ctx->theme.accent_hot;
+    return ctx->theme.surface_hot;
 }
 
 static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
@@ -1550,29 +1459,10 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
     }
 
     /* ── Choose background color based on state ───────────────────────── */
-    float bg_r, bg_g, bg_b, bg_a;
-    if (ctx->active == id) {
-        /* Pressed state -- darker to give visual feedback */
-        bg_r = FORGE_UI_BTN_ACTIVE_R;
-        bg_g = FORGE_UI_BTN_ACTIVE_G;
-        bg_b = FORGE_UI_BTN_ACTIVE_B;
-        bg_a = FORGE_UI_BTN_ACTIVE_A;
-    } else if (ctx->hot == id) {
-        /* Hovered state -- lighter to indicate interactivity */
-        bg_r = FORGE_UI_BTN_HOT_R;
-        bg_g = FORGE_UI_BTN_HOT_G;
-        bg_b = FORGE_UI_BTN_HOT_B;
-        bg_a = FORGE_UI_BTN_HOT_A;
-    } else {
-        /* Normal state */
-        bg_r = FORGE_UI_BTN_NORMAL_R;
-        bg_g = FORGE_UI_BTN_NORMAL_G;
-        bg_b = FORGE_UI_BTN_NORMAL_B;
-        bg_a = FORGE_UI_BTN_NORMAL_A;
-    }
+    ForgeUiColor bg = forge_ui__surface_color(ctx, id);
 
     /* ── Emit background rectangle ────────────────────────────────────── */
-    forge_ui__emit_rect(ctx, rect, bg_r, bg_g, bg_b, bg_a);
+    forge_ui__emit_rect(ctx, rect, bg.r, bg.g, bg.b, bg.a);
 
     /* ── Extract display text (strip ## suffix if present) ────────────── */
     const char *disp_end = forge_ui__display_end(text);
@@ -1595,9 +1485,7 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
     float text_x = rect.x + (rect.w - metrics.width) * 0.5f;
     float text_y = rect.y + (rect.h - metrics.height) * 0.5f + ascender_px;
 
-    forge_ui_ctx_label(ctx, disp_buf, text_x, text_y,
-                       FORGE_UI_BTN_TEXT_R, FORGE_UI_BTN_TEXT_G,
-                       FORGE_UI_BTN_TEXT_B, FORGE_UI_BTN_TEXT_A);
+    forge_ui_ctx_label(ctx, disp_buf, text_x, text_y);
 
     return clicked;
 }
@@ -1645,17 +1533,7 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
     }
 
     /* ── Box color reflects interaction state ─────────────────────────── */
-    float box_r, box_g, box_b, box_a;
-    if (ctx->active == id) {
-        box_r = FORGE_UI_CB_ACTIVE_R;  box_g = FORGE_UI_CB_ACTIVE_G;
-        box_b = FORGE_UI_CB_ACTIVE_B;  box_a = FORGE_UI_CB_ACTIVE_A;
-    } else if (ctx->hot == id) {
-        box_r = FORGE_UI_CB_HOT_R;  box_g = FORGE_UI_CB_HOT_G;
-        box_b = FORGE_UI_CB_HOT_B;  box_a = FORGE_UI_CB_HOT_A;
-    } else {
-        box_r = FORGE_UI_CB_NORMAL_R;  box_g = FORGE_UI_CB_NORMAL_G;
-        box_b = FORGE_UI_CB_NORMAL_B;  box_a = FORGE_UI_CB_NORMAL_A;
-    }
+    ForgeUiColor box_c = forge_ui__surface_color(ctx, id);
 
     /* ── Compute scaled checkbox dimensions ──────────────────────────── */
     float cb_size = FORGE_UI_SCALED(ctx, ctx->spacing.checkbox_box_size);
@@ -1666,7 +1544,7 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
     ForgeUiRect box_rect = { box_x, box_y, cb_size, cb_size };
 
     /* ── Outer box — border with hover feedback via box color ────────── */
-    forge_ui__emit_rect(ctx, box_rect, box_r, box_g, box_b, box_a);
+    forge_ui__emit_rect(ctx, box_rect, box_c.r, box_c.g, box_c.b, box_c.a);
 
     /* ── Inner fill — solid rect rather than a glyph keeps the renderer
      *    purely quad-based with no dedicated checkmark in the atlas ──── */
@@ -1679,8 +1557,8 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
             cb_size - 2.0f * cb_inner
         };
         forge_ui__emit_rect(ctx, inner,
-                            FORGE_UI_CB_CHECK_R, FORGE_UI_CB_CHECK_G,
-                            FORGE_UI_CB_CHECK_B, FORGE_UI_CB_CHECK_A);
+                            ctx->theme.accent.r, ctx->theme.accent.g,
+                            ctx->theme.accent.b, ctx->theme.accent.a);
     }
 
     /* ── Extract display text (strip ## suffix if present) ────────────── */
@@ -1701,9 +1579,7 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
     float label_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f
                     + ascender_px;
 
-    forge_ui_ctx_label(ctx, disp_buf, label_x, label_y,
-                       FORGE_UI_CB_TEXT_R, FORGE_UI_CB_TEXT_G,
-                       FORGE_UI_CB_TEXT_B, FORGE_UI_CB_TEXT_A);
+    forge_ui_ctx_label(ctx, disp_buf, label_x, label_y);
 
     return toggled;
 }
@@ -1717,11 +1593,12 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
     if (!isfinite(rect.x) || !isfinite(rect.y) ||
         !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!(max_val > min_val)) return false;  /* also rejects equal */
     /* Sanitize *value: NaN/Inf would poison the thumb position and
      * propagate into vertex data.  Clamp to min_val as a safe default. */
     if (!isfinite(*value)) *value = min_val;
     Uint32 id = forge_ui_hash_id(ctx, label);
-    if (!(max_val > min_val)) return false;  /* also rejects NaN */
 
     bool changed = false;
 
@@ -1799,21 +1676,11 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     ForgeUiRect track_rect = { rect.x, track_draw_y,
                                rect.w, sl_track_h };
     forge_ui__emit_rect(ctx, track_rect,
-                        FORGE_UI_SL_TRACK_R, FORGE_UI_SL_TRACK_G,
-                        FORGE_UI_SL_TRACK_B, FORGE_UI_SL_TRACK_A);
+                        ctx->theme.border.r, ctx->theme.border.g,
+                        ctx->theme.border.b, ctx->theme.border.a);
 
     /* ── Choose thumb color based on state ────────────────────────────── */
-    float th_r, th_g, th_b, th_a;
-    if (ctx->active == id) {
-        th_r = FORGE_UI_SL_ACTIVE_R;  th_g = FORGE_UI_SL_ACTIVE_G;
-        th_b = FORGE_UI_SL_ACTIVE_B;  th_a = FORGE_UI_SL_ACTIVE_A;
-    } else if (ctx->hot == id) {
-        th_r = FORGE_UI_SL_HOT_R;  th_g = FORGE_UI_SL_HOT_G;
-        th_b = FORGE_UI_SL_HOT_B;  th_a = FORGE_UI_SL_HOT_A;
-    } else {
-        th_r = FORGE_UI_SL_NORMAL_R;  th_g = FORGE_UI_SL_NORMAL_G;
-        th_b = FORGE_UI_SL_NORMAL_B;  th_a = FORGE_UI_SL_NORMAL_A;
-    }
+    ForgeUiColor th_c = forge_ui__accent_color(ctx, id);
 
     /* ── Emit thumb rectangle ─────────────────────────────────────────── */
     /* The thumb center is at track_x + t * track_w.  Subtract half the
@@ -1823,7 +1690,7 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     float thumb_y = rect.y + (rect.h - sl_thumb_h) * 0.5f;
     ForgeUiRect thumb_rect = { thumb_x, thumb_y,
                                sl_thumb_w, sl_thumb_h };
-    forge_ui__emit_rect(ctx, thumb_rect, th_r, th_g, th_b, th_a);
+    forge_ui__emit_rect(ctx, thumb_rect, th_c.r, th_c.g, th_c.b, th_c.a);
 
     return changed;
 }
@@ -1999,14 +1866,14 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
     /* ── Choose background color based on state ──────────────────────── */
     float bg_r, bg_g, bg_b, bg_a;
     if (is_focused) {
-        bg_r = FORGE_UI_TI_FOCUSED_R;  bg_g = FORGE_UI_TI_FOCUSED_G;
-        bg_b = FORGE_UI_TI_FOCUSED_B;  bg_a = FORGE_UI_TI_FOCUSED_A;
+        bg_r = ctx->theme.surface_active.r;  bg_g = ctx->theme.surface_active.g;
+        bg_b = ctx->theme.surface_active.b;  bg_a = ctx->theme.surface_active.a;
     } else if (ctx->hot == id) {
-        bg_r = FORGE_UI_TI_HOT_R;  bg_g = FORGE_UI_TI_HOT_G;
-        bg_b = FORGE_UI_TI_HOT_B;  bg_a = FORGE_UI_TI_HOT_A;
+        bg_r = ctx->theme.surface_hot.r;  bg_g = ctx->theme.surface_hot.g;
+        bg_b = ctx->theme.surface_hot.b;  bg_a = ctx->theme.surface_hot.a;
     } else {
-        bg_r = FORGE_UI_TI_NORMAL_R;  bg_g = FORGE_UI_TI_NORMAL_G;
-        bg_b = FORGE_UI_TI_NORMAL_B;  bg_a = FORGE_UI_TI_NORMAL_A;
+        bg_r = ctx->theme.surface.r;  bg_g = ctx->theme.surface.g;
+        bg_b = ctx->theme.surface.b;  bg_a = ctx->theme.surface.a;
     }
 
     /* ── Emit background rectangle ───────────────────────────────────── */
@@ -2015,8 +1882,8 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
     /* ── Emit focused border (accent outline drawn on top of bg) ─────── */
     if (is_focused) {
         forge_ui__emit_border(ctx, rect, FORGE_UI_SCALED(ctx, FORGE_UI_TI_BORDER_WIDTH),
-                              FORGE_UI_TI_BORDER_R, FORGE_UI_TI_BORDER_G,
-                              FORGE_UI_TI_BORDER_B, FORGE_UI_TI_BORDER_A);
+                              ctx->theme.border_focused.r, ctx->theme.border_focused.g,
+                              ctx->theme.border_focused.b, ctx->theme.border_focused.a);
     }
 
     /* ── Compute font metrics for baseline positioning ───────────────── */
@@ -2034,9 +1901,7 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
     /* ── Emit text quads ─────────────────────────────────────────────── */
     if (state->length > 0) {
         forge_ui_ctx_label(ctx, state->buffer,
-                           rect.x + ti_pad, baseline_y,
-                           FORGE_UI_TI_TEXT_R, FORGE_UI_TI_TEXT_G,
-                           FORGE_UI_TI_TEXT_B, FORGE_UI_TI_TEXT_A);
+                           rect.x + ti_pad, baseline_y);
     }
 
     /* ── Emit cursor bar ─────────────────────────────────────────────── */
@@ -2063,8 +1928,8 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
             ctx->atlas->pixel_height
         };
         forge_ui__emit_rect(ctx, cursor_rect,
-                            FORGE_UI_TI_CURSOR_R, FORGE_UI_TI_CURSOR_G,
-                            FORGE_UI_TI_CURSOR_B, FORGE_UI_TI_CURSOR_A);
+                            ctx->theme.cursor.r, ctx->theme.cursor.g,
+                            ctx->theme.cursor.b, ctx->theme.cursor.a);
     }
 
     return content_changed;
@@ -2236,10 +2101,10 @@ static inline ForgeUiRect forge_ui_ctx_layout_next(ForgeUiContext *ctx,
 
 /* ── Layout-aware widget implementations ───────────────────────────────── */
 
-static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
-                                              const char *text,
-                                              float size,
-                                              float r, float g, float b, float a)
+static inline void forge_ui_ctx_label_colored_layout(ForgeUiContext *ctx,
+                                                      const char *text,
+                                                      float size,
+                                                      float r, float g, float b, float a)
 {
     if (!ctx || !text || !ctx->atlas) return;
     if (ctx->layout_depth <= 0) return;  /* no active layout — no-op */
@@ -2252,7 +2117,17 @@ static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
     float text_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f
                    + ascender_px;
 
-    forge_ui_ctx_label(ctx, text, rect.x, text_y, r, g, b, a);
+    forge_ui_ctx_label_colored(ctx, text, rect.x, text_y, r, g, b, a);
+}
+
+static inline void forge_ui_ctx_label_layout(ForgeUiContext *ctx,
+                                              const char *text,
+                                              float size)
+{
+    if (!ctx) return;
+    forge_ui_ctx_label_colored_layout(ctx, text, size,
+                                       ctx->theme.text.r, ctx->theme.text.g,
+                                       ctx->theme.text.b, ctx->theme.text.a);
 }
 
 static inline bool forge_ui_ctx_button_layout(ForgeUiContext *ctx,
@@ -2286,7 +2161,8 @@ static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
     if (ctx->layout_depth <= 0) return false;  /* no active layout — no-op */
-    if (!(max_val > min_val)) return false;  /* also rejects NaN */
+    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!(max_val > min_val)) return false;  /* also rejects equal */
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_slider(ctx, label, value, min_val, max_val, rect);
 }
@@ -2340,8 +2216,8 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
 
     /* ── Draw panel background ────────────────────────────────────────── */
     forge_ui__emit_rect(ctx, rect,
-                        FORGE_UI_PANEL_BG_R, FORGE_UI_PANEL_BG_G,
-                        FORGE_UI_PANEL_BG_B, FORGE_UI_PANEL_BG_A);
+                        ctx->theme.bg.r, ctx->theme.bg.g,
+                        ctx->theme.bg.b, ctx->theme.bg.a);
 
     /* ── Compute scaled panel dimensions ─────────────────────────────── */
     float title_bar_h = FORGE_UI_SCALED(ctx, ctx->spacing.title_bar_height);
@@ -2354,8 +2230,8 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
         rect.w, title_bar_h
     };
     forge_ui__emit_rect(ctx, title_rect,
-                        FORGE_UI_PANEL_TITLE_BG_R, FORGE_UI_PANEL_TITLE_BG_G,
-                        FORGE_UI_PANEL_TITLE_BG_B, FORGE_UI_PANEL_TITLE_BG_A);
+                        ctx->theme.title_bar.r, ctx->theme.title_bar.g,
+                        ctx->theme.title_bar.b, ctx->theme.title_bar.a);
 
     /* Center the title text in the title bar (strip ## suffix).
      * title is guaranteed non-NULL and non-empty by the guard at entry. */
@@ -2373,9 +2249,9 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
         float tx = rect.x + (rect.w - m.width) * 0.5f;
         float ty = rect.y + (title_bar_h - m.height) * 0.5f
                    + ascender_px;
-        forge_ui_ctx_label(ctx, disp_buf, tx, ty,
-                           FORGE_UI_PANEL_TITLE_TEXT_R, FORGE_UI_PANEL_TITLE_TEXT_G,
-                           FORGE_UI_PANEL_TITLE_TEXT_B, FORGE_UI_PANEL_TITLE_TEXT_A);
+        forge_ui_ctx_label_colored(ctx, disp_buf, tx, ty,
+                                    ctx->theme.title_bar_text.r, ctx->theme.title_bar_text.g,
+                                    ctx->theme.title_bar_text.b, ctx->theme.title_bar_text.a);
     }
 
     /* ── Compute content area ─────────────────────────────────────────── */
@@ -2502,7 +2378,7 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     if (ctx->layout_depth > 0) {
         float cursor_now = ctx->layout_stack[ctx->layout_depth - 1].cursor_y;
         content_h = cursor_now - ctx->_panel_content_start_y;
-        if (content_h < 0.0f) content_h = 0.0f;
+        if (!isfinite(content_h) || content_h < 0.0f) content_h = 0.0f;
     }
     ctx->_panel.content_height = content_h;
 
@@ -2550,8 +2426,8 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     /* Track background */
     ForgeUiRect track_rect = { track_x, track_y, track_w, track_h };
     forge_ui__emit_rect(ctx, track_rect,
-                        FORGE_UI_SB_TRACK_R, FORGE_UI_SB_TRACK_G,
-                        FORGE_UI_SB_TRACK_B, FORGE_UI_SB_TRACK_A);
+                        ctx->theme.scrollbar_track.r, ctx->theme.scrollbar_track.g,
+                        ctx->theme.scrollbar_track.b, ctx->theme.scrollbar_track.a);
 
     /* Thumb geometry — proportional height, clamped to [MIN_THUMB, track_h]
      * so the thumb never overflows the track even on very short panels. */
@@ -2600,26 +2476,48 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     }
 
     /* ── Choose thumb color by state ──────────────────────────────────── */
-    float th_r, th_g, th_b, th_a;
-    if (ctx->active == sb_id) {
-        th_r = FORGE_UI_SB_ACTIVE_R;  th_g = FORGE_UI_SB_ACTIVE_G;
-        th_b = FORGE_UI_SB_ACTIVE_B;  th_a = FORGE_UI_SB_ACTIVE_A;
-    } else if (ctx->hot == sb_id) {
-        th_r = FORGE_UI_SB_HOT_R;  th_g = FORGE_UI_SB_HOT_G;
-        th_b = FORGE_UI_SB_HOT_B;  th_a = FORGE_UI_SB_HOT_A;
-    } else {
-        th_r = FORGE_UI_SB_NORMAL_R;  th_g = FORGE_UI_SB_NORMAL_G;
-        th_b = FORGE_UI_SB_NORMAL_B;  th_a = FORGE_UI_SB_NORMAL_A;
-    }
+    ForgeUiColor th_c = forge_ui__accent_color(ctx, sb_id);
 
     /* Recompute thumb_y after potential drag update */
     t = (max_scroll > 0.0f) ? *scroll_y / max_scroll : 0.0f;
     thumb_y = track_y + t * thumb_range;
     thumb_rect = (ForgeUiRect){ track_x, thumb_y, track_w, thumb_h };
-    forge_ui__emit_rect(ctx, thumb_rect, th_r, th_g, th_b, th_a);
+    forge_ui__emit_rect(ctx, thumb_rect, th_c.r, th_c.g, th_c.b, th_c.a);
 
     /* ── Pop the ID scope pushed by panel_begin ────────────────────────── */
     forge_ui_pop_id(ctx);
+}
+
+/* ── Theme setter (declared in forge_ui_theme.h) ───────────────────────── */
+
+/* Return true if a single color has finite components in [0, 1]. */
+static inline bool forge_ui__color_valid(const ForgeUiColor *c)
+{
+    return c
+        && c->r >= 0.0f && c->r <= 1.0f
+        && c->g >= 0.0f && c->g <= 1.0f
+        && c->b >= 0.0f && c->b <= 1.0f
+        && c->a >= 0.0f && c->a <= 1.0f;
+}
+
+static inline bool forge_ui_ctx_set_theme(struct ForgeUiContext *ctx,
+                                           ForgeUiTheme theme)
+{
+    if (!ctx) return false;
+
+    /* Validate every color slot — reject NaN, Inf, and out-of-range. */
+    const ForgeUiColor *slots[] = {
+        &theme.bg,  &theme.surface,  &theme.surface_hot,  &theme.surface_active,
+        &theme.title_bar,  &theme.title_bar_text,  &theme.text,  &theme.text_dim,
+        &theme.accent,  &theme.accent_hot,  &theme.border,  &theme.border_focused,
+        &theme.scrollbar_track,  &theme.cursor,
+    };
+    for (int i = 0; i < (int)(sizeof(slots) / sizeof(slots[0])); i++) {
+        if (!forge_ui__color_valid(slots[i])) return false;
+    }
+
+    ctx->theme = theme;
+    return true;
 }
 
 #endif /* FORGE_UI_CTX_H */

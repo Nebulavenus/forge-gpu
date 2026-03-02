@@ -51,6 +51,14 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - **`ForgeUiTextMetrics`** -- Text measurement: width, height, line count
   (no vertex generation)
 
+### Types -- Theming (forge_ui_theme.h)
+
+- **`ForgeUiColor`** -- RGBA color as four floats (`float r, g, b, a`)
+- **`ForgeUiTheme`** -- Centralized color palette with 14 semantic slots:
+  `bg`, `surface`, `surface_hot`, `surface_active`, `title_bar`,
+  `title_bar_text`, `text`, `text_dim`, `accent`, `accent_hot`, `border`,
+  `border_focused`, `scrollbar_track`, `cursor`
+
 ### Types -- Immediate-Mode UI (forge_ui_ctx.h)
 
 - **`ForgeUiRect`** -- Simple rectangle (x, y, w, h) for widget bounds
@@ -71,8 +79,9 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   spacing and sizing constants to support DPI-independent layout
 - **`ForgeUiContext`** -- Immediate-mode UI context: holds mouse input, the
   hot/active widget IDs, font atlas reference, layout stack, clip rect,
-  panel state, dynamic vertex/index buffers, and scaling state (`scale`,
-  `base_pixel_height`, `scaled_pixel_height`, `spacing`)
+  panel state, dynamic vertex/index buffers, scaling state (`scale`,
+  `base_pixel_height`, `scaled_pixel_height`, `spacing`), and theme
+  (`ForgeUiTheme`)
 
 ### Types -- Windows (forge_ui_window.h)
 
@@ -132,7 +141,10 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - **`forge_ui_ctx_begin(ctx, mouse_x, mouse_y, mouse_down)`** -- Begin a
   frame: reset draw data, update input state
 - **`forge_ui_ctx_end(ctx)`** -- End a frame: resolve hot/active widget state
-- **`forge_ui_ctx_label(ctx, text, x, y, r, g, b, a)`** -- Draw a text label
+- **`forge_ui_ctx_label(ctx, text, x, y)`** -- Draw a text label using the
+  theme's text color
+- **`forge_ui_ctx_label_colored(ctx, text, x, y, r, g, b, a)`** -- Draw a
+  text label with an explicit RGBA color
 - **`forge_ui_hash_id(ctx, label)`** -- Hash a string label with the current
   scope seed (FNV-1a). Returns a `Uint32` widget ID
 - **`forge_ui_push_id(ctx, name)`** -- Push a named scope onto the ID stack.
@@ -156,8 +168,10 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   the parent
 - **`forge_ui_ctx_layout_next(ctx, size)`** -- Return the next widget rect
   from the current layout, advancing the cursor
-- **`forge_ui_ctx_label_layout(ctx, text, size, r, g, b, a)`** -- Label
-  placed by the current layout
+- **`forge_ui_ctx_label_layout(ctx, text, size)`** -- Label placed by the
+  current layout using the theme's text color
+- **`forge_ui_ctx_label_colored_layout(ctx, text, size, r, g, b, a)`** --
+  Label placed by the current layout with an explicit RGBA color
 - **`forge_ui_ctx_button_layout(ctx, text, size)`** -- Button placed
   by the current layout
 - **`forge_ui_ctx_checkbox_layout(ctx, label, value, size)`** -- Checkbox
@@ -169,6 +183,23 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   child widgets. Returns `true` on success
 - **`forge_ui_ctx_panel_end(ctx)`** -- End a panel: compute content overflow,
   draw scrollbar if needed, clear clip rect
+
+### Functions -- Theming (forge_ui_theme.h)
+
+- **`forge_ui_theme_default()`** -- Return the default dark theme with all 14
+  color slots populated (derived from the matplotlib STYLE dict)
+- **`forge_ui_theme_relative_luminance(r, g, b)`** -- Compute WCAG 2.1
+  relative luminance from sRGB color components (applies piecewise
+  linearization and CIE 1931 weights)
+- **`forge_ui_theme_contrast_ratio(r1, g1, b1, r2, g2, b2)`** -- Compute
+  WCAG 2.1 contrast ratio between two sRGB colors (range 1.0 to 21.0)
+- **`forge_ui_theme_validate(theme)`** -- Validate all 17 adjacent color pairs
+  in a theme against WCAG AA contrast ratios: 4.5:1 (SC 1.4.3) for text pairs,
+  3.0:1 (SC 1.4.11) for non-text UI components. Returns the number of failing
+  pairs (0 means all pass), or -1 if `theme` is NULL
+- **`forge_ui_ctx_set_theme(ctx, theme)`** -- Apply a new theme to a UI
+  context. Validates that all color components are in [0, 1]. Returns `true` on
+  success, `false` if `ctx` is NULL or any color is out of range
 
 ### Functions -- Windows (forge_ui_window.h)
 
@@ -278,6 +309,8 @@ These are intentional simplifications for a learning library:
   FNV-1a hashed string IDs with hierarchical scope stacking
 - [`lessons/ui/12-font-scaling-and-spacing/`](../../lessons/ui/12-font-scaling-and-spacing/) --
   Global scale factor, spacing struct, and DPI-independent layout
+- [`lessons/ui/13-theming-and-color-system/`](../../lessons/ui/13-theming-and-color-system/) --
+  Centralized color palette, WCAG contrast validation, theme slot mapping
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

@@ -380,6 +380,14 @@ respect while keeping it accessible.
 - Show common pitfalls — off-by-one in glyph rects, incorrect UV coordinates,
   missing kerning
 
+### Theming
+
+All generated UI code must use `ctx->theme` color slots for widget rendering.
+Never hardcode color float literals (e.g. `0.878f, 0.878f, 0.941f, 1.0f`) —
+use the appropriate theme field instead (e.g. `ctx->theme.text`). The
+`forge_ui_theme_validate()` contrast check is run as part of the test suite
+and new themes or color changes must pass all contrast pairs.
+
 ### Code style
 
 Follow the same conventions as all forge-gpu code:

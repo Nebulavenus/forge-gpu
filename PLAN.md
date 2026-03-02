@@ -120,10 +120,13 @@ vertices, indices, UVs) with no GPU dependency.
 - [x] **UI Lesson 10 — Windows** — Draggable panels with title bars; z-ordering (bring-to-front on click); collapse/expand; move interaction; builds on layout (Lesson 08) and clipping (Lesson 09)
 - [x] **UI Lesson 11 — Widget ID System** — FNV-1a hashed string IDs, `##` separator for display vs identity, hierarchical scope stacking with push_id/pop_id, automatic scoping in panels and windows, collision-free widget identification
 
+- [x] **UI Lesson 12 — Font Scaling and Spacing** — Global scale factor, ForgeUiSpacing struct, FORGE_UI_SCALED macro, atlas rebuild at different scales, themed spacing defaults
+- [x] **UI Lesson 13 — Theming and Color System** — ForgeUiColor and ForgeUiTheme structs, centralized color palette from STYLE dict, WCAG 2.1 contrast ratio math, programmatic accessibility validation, theme slot-to-widget mapping
+
 ### Application Patterns
 
-- [ ] **UI Lesson 12 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
-- [ ] **UI Lesson 13 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
+- [ ] **UI Lesson 14 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
+- [ ] **UI Lesson 15 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
 
 ## Engine Lessons
 

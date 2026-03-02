@@ -52,12 +52,6 @@
 #define BG_B  0.32f
 #define BG_A  1.0f
 
-/* Label text color — theme text #e0e0f0 */
-#define TEXT_R  0.878f
-#define TEXT_G  0.878f
-#define TEXT_B  0.941f
-#define TEXT_A  1.00f
-
 /* Accent label color — theme cyan #4fc3f7 */
 #define ACCENT_R  0.310f
 #define ACCENT_G  0.765f
@@ -92,7 +86,7 @@ static void render_settings_panel(ForgeUiContext *ctx,
     }
 
     /* Title label */
-    forge_ui_ctx_label_layout(ctx, "Settings", LABEL_ROW_HEIGHT * ctx->scale,
+    forge_ui_ctx_label_colored_layout(ctx, "Settings", LABEL_ROW_HEIGHT * ctx->scale,
                               ACCENT_R, ACCENT_G, ACCENT_B, ACCENT_A);
 
     /* Two checkboxes */
@@ -196,7 +190,7 @@ static bool render_frame_scales(ForgeRasterBuffer *fb,
         forge_ui_ctx_begin(ctx, -1.0f, -1.0f, false);
 
         /* Scale label above the panel */
-        forge_ui_ctx_label(ctx, titles[i],
+        forge_ui_ctx_label_colored(ctx, titles[i],
                            panel_rect.x, panel_rect.y - LABEL_PANEL_GAP,
                            ACCENT_R, ACCENT_G, ACCENT_B, ACCENT_A);
 
@@ -277,7 +271,7 @@ static bool render_frame_spacing(ForgeRasterBuffer *fb,
 
         forge_ui_ctx_begin(ctx, -1.0f, -1.0f, false);
 
-        forge_ui_ctx_label(ctx, "Spacious (2x padding)",
+        forge_ui_ctx_label_colored(ctx, "Spacious (2x padding)",
                            panel_rect.x, panel_rect.y - LABEL_PANEL_GAP,
                            ACCENT_R, ACCENT_G, ACCENT_B, ACCENT_A);
 
@@ -314,7 +308,7 @@ static bool render_frame_spacing(ForgeRasterBuffer *fb,
 
         forge_ui_ctx_begin(ctx, -1.0f, -1.0f, false);
 
-        forge_ui_ctx_label(ctx, "Compact (0.5x padding)",
+        forge_ui_ctx_label_colored(ctx, "Compact (0.5x padding)",
                            panel_rect.x, panel_rect.y - LABEL_PANEL_GAP,
                            ACCENT_R, ACCENT_G, ACCENT_B, ACCENT_A);
 

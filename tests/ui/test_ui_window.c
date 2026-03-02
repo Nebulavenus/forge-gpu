@@ -132,10 +132,6 @@ static int fail_count = 0;
 
 /* Label rendering */
 #define TEST_LABEL_PX     24
-#define TEST_LABEL_R      0.9f
-#define TEST_LABEL_G      0.9f
-#define TEST_LABEL_B      0.9f
-#define TEST_LABEL_A      1.0f
 
 /* Drag test */
 #define TEST_DRAG_PRESS_X 150.0f   /* title bar center: 50 + 200*0.5 */
@@ -403,7 +399,7 @@ static void test_window_begin_zero_width(void)
     ASSERT_TRUE(forge_ui_wctx_init(&wctx, &ctx));
 
     ForgeUiWindowState ws = {
-        .rect = { 10, 10, 0, 200 }, .z_order = 0
+        .rect = { TEST_WIN_X, TEST_WIN_Y, 0, TEST_WIN_H }, .z_order = 0
     };
 
     forge_ui_ctx_begin(&ctx, 0, 0, false);
@@ -426,7 +422,7 @@ static void test_window_begin_nan_x(void)
     ASSERT_TRUE(forge_ui_wctx_init(&wctx, &ctx));
 
     ForgeUiWindowState ws = {
-        .rect = { NAN, 10, 200, 200 }, .z_order = 0
+        .rect = { NAN, TEST_WIN_Y, TEST_WIN_W, TEST_WIN_H }, .z_order = 0
     };
 
     forge_ui_ctx_begin(&ctx, 0, 0, false);
@@ -449,7 +445,7 @@ static void test_window_begin_inf_y(void)
     ASSERT_TRUE(forge_ui_wctx_init(&wctx, &ctx));
 
     ForgeUiWindowState ws = {
-        .rect = { 10, INFINITY, 200, 200 }, .z_order = 0
+        .rect = { TEST_WIN_X, INFINITY, TEST_WIN_W, TEST_WIN_H }, .z_order = 0
     };
 
     forge_ui_ctx_begin(&ctx, 0, 0, false);
@@ -472,7 +468,7 @@ static void test_window_begin_nan_width(void)
     ASSERT_TRUE(forge_ui_wctx_init(&wctx, &ctx));
 
     ForgeUiWindowState ws = {
-        .rect = { 10, 10, NAN, 200 }, .z_order = 0
+        .rect = { TEST_WIN_X, TEST_WIN_Y, NAN, TEST_WIN_H }, .z_order = 0
     };
 
     forge_ui_ctx_begin(&ctx, 0, 0, false);
@@ -538,9 +534,7 @@ static void test_window_emits_draw_data(void)
     bool opened = forge_ui_wctx_window_begin(&wctx, "Test Window", &ws);
     ASSERT_TRUE(opened);
     if (opened) {
-        forge_ui_ctx_label_layout(wctx.ctx, "Hello", TEST_LABEL_PX,
-                                   TEST_LABEL_R, TEST_LABEL_G,
-                                   TEST_LABEL_B, TEST_LABEL_A);
+        forge_ui_ctx_label_layout(wctx.ctx, "Hello", TEST_LABEL_PX);
         forge_ui_wctx_window_end(&wctx);
     }
 
@@ -609,9 +603,7 @@ static void test_window_collapsed_still_renders_title_bar(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
     forge_ui_wctx_begin(&wctx);
     if (forge_ui_wctx_window_begin(&wctx, "Win", &ws)) {
-        forge_ui_ctx_label_layout(wctx.ctx, "Label", TEST_LABEL_PX,
-                                   TEST_LABEL_R, TEST_LABEL_G,
-                                   TEST_LABEL_B, TEST_LABEL_A);
+        forge_ui_ctx_label_layout(wctx.ctx, "Label", TEST_LABEL_PX);
         forge_ui_wctx_window_end(&wctx);
     }
     forge_ui_wctx_end(&wctx);
@@ -629,9 +621,7 @@ static void test_window_collapsed_still_renders_title_bar(void)
     forge_ui_ctx_begin(&ctx, 0, 0, false);
     forge_ui_wctx_begin(&wctx);
     if (forge_ui_wctx_window_begin(&wctx, "Win", &ws)) {
-        forge_ui_ctx_label_layout(wctx.ctx, "Label", TEST_LABEL_PX,
-                                   TEST_LABEL_R, TEST_LABEL_G,
-                                   TEST_LABEL_B, TEST_LABEL_A);
+        forge_ui_ctx_label_layout(wctx.ctx, "Label", TEST_LABEL_PX);
         forge_ui_wctx_window_end(&wctx);
     }
     forge_ui_wctx_end(&wctx);
@@ -774,15 +764,11 @@ static void test_deferred_draw_z_order(void)
     forge_ui_wctx_begin(&wctx);
 
     if (forge_ui_wctx_window_begin(&wctx, "Front", &w1)) {
-        forge_ui_ctx_label_layout(wctx.ctx, "Front", TEST_LABEL_PX,
-                                   TEST_LABEL_R, TEST_LABEL_G,
-                                   TEST_LABEL_B, TEST_LABEL_A);
+        forge_ui_ctx_label_layout(wctx.ctx, "Front", TEST_LABEL_PX);
         forge_ui_wctx_window_end(&wctx);
     }
     if (forge_ui_wctx_window_begin(&wctx, "Back", &w2)) {
-        forge_ui_ctx_label_layout(wctx.ctx, "Back", TEST_LABEL_PX,
-                                   TEST_LABEL_R, TEST_LABEL_G,
-                                   TEST_LABEL_B, TEST_LABEL_A);
+        forge_ui_ctx_label_layout(wctx.ctx, "Back", TEST_LABEL_PX);
         forge_ui_wctx_window_end(&wctx);
     }
 

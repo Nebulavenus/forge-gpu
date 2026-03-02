@@ -42,7 +42,7 @@
  *   forge_ui_ctx_begin(&ctx, mouse_x, mouse_y, mouse_down);
  *   forge_ui_wctx_begin(&wctx);
  *   if (forge_ui_wctx_window_begin(&wctx, "My Window", &win)) {
- *       forge_ui_ctx_label_layout(wctx.ctx, "Hello", 26.0f, 0.9f, 0.9f, 0.9f, 1.0f);
+ *       forge_ui_ctx_label_layout(wctx.ctx, "Hello", 26.0f);
  *       forge_ui_wctx_window_end(&wctx);
  *   }
  *   forge_ui_wctx_end(&wctx);
@@ -82,39 +82,6 @@
 /* Collapse toggle triangle dimensions */
 #define FORGE_UI_WIN_TOGGLE_SIZE     10.0f  /* triangle side length */
 #define FORGE_UI_WIN_TOGGLE_PAD       8.0f  /* padding from left edge */
-
-/* Window background RGBA — notably lighter and bluer than the application
- * clear color so windows visually pop.  G > R shifts hue from purple
- * toward blue. */
-#define FORGE_UI_WIN_BG_R     0.125f
-#define FORGE_UI_WIN_BG_G     0.157f
-#define FORGE_UI_WIN_BG_B     0.298f
-#define FORGE_UI_WIN_BG_A     1.00f
-
-/* Title bar background RGBA — slightly lighter than window body with
- * a blue-dominant tint to anchor the title bar. */
-#define FORGE_UI_WIN_TITLE_BG_R   0.098f
-#define FORGE_UI_WIN_TITLE_BG_G   0.125f
-#define FORGE_UI_WIN_TITLE_BG_B   0.251f
-#define FORGE_UI_WIN_TITLE_BG_A   1.00f
-
-/* Title bar text color — theme text (#e0e0f0) */
-#define FORGE_UI_WIN_TITLE_TEXT_R  0.878f
-#define FORGE_UI_WIN_TITLE_TEXT_G  0.878f
-#define FORGE_UI_WIN_TITLE_TEXT_B  0.941f
-#define FORGE_UI_WIN_TITLE_TEXT_A  1.00f
-
-/* Collapse toggle color — theme dim text (#8888aa) */
-#define FORGE_UI_WIN_TOGGLE_R      0.533f
-#define FORGE_UI_WIN_TOGGLE_G      0.533f
-#define FORGE_UI_WIN_TOGGLE_B      0.667f
-#define FORGE_UI_WIN_TOGGLE_A      1.00f
-
-/* Collapse toggle hover color — theme accent cyan (#4fc3f7) */
-#define FORGE_UI_WIN_TOGGLE_HOT_R  0.310f
-#define FORGE_UI_WIN_TOGGLE_HOT_G  0.765f
-#define FORGE_UI_WIN_TOGGLE_HOT_B  0.969f
-#define FORGE_UI_WIN_TOGGLE_HOT_A  1.00f
 
 /* Extra padding around the collapse toggle triangle to make the click
  * target more forgiving.  The hit rect extends this many pixels beyond
@@ -795,14 +762,14 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     if (!state->collapsed) {
         /* Draw full window background first */
         forge_ui__emit_rect(ctx, state->rect,
-                            FORGE_UI_WIN_BG_R, FORGE_UI_WIN_BG_G,
-                            FORGE_UI_WIN_BG_B, FORGE_UI_WIN_BG_A);
+                            ctx->theme.bg.r, ctx->theme.bg.g,
+                            ctx->theme.bg.b, ctx->theme.bg.a);
     }
 
     /* Title bar on top of background */
     forge_ui__emit_rect(ctx, title_rect,
-                        FORGE_UI_WIN_TITLE_BG_R, FORGE_UI_WIN_TITLE_BG_G,
-                        FORGE_UI_WIN_TITLE_BG_B, FORGE_UI_WIN_TITLE_BG_A);
+                        ctx->theme.title_bar.r, ctx->theme.title_bar.g,
+                        ctx->theme.title_bar.b, ctx->theme.title_bar.a);
 
     /* ── Draw collapse toggle triangle ─────────────────────────────────── */
     {
@@ -813,15 +780,15 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
 
         float tr, tg, tb, ta;
         if (ctx->hot == toggle_id || ctx->active == toggle_id) {
-            tr = FORGE_UI_WIN_TOGGLE_HOT_R;
-            tg = FORGE_UI_WIN_TOGGLE_HOT_G;
-            tb = FORGE_UI_WIN_TOGGLE_HOT_B;
-            ta = FORGE_UI_WIN_TOGGLE_HOT_A;
+            tr = ctx->theme.accent.r;
+            tg = ctx->theme.accent.g;
+            tb = ctx->theme.accent.b;
+            ta = ctx->theme.accent.a;
         } else {
-            tr = FORGE_UI_WIN_TOGGLE_R;
-            tg = FORGE_UI_WIN_TOGGLE_G;
-            tb = FORGE_UI_WIN_TOGGLE_B;
-            ta = FORGE_UI_WIN_TOGGLE_A;
+            tr = ctx->theme.text_dim.r;
+            tg = ctx->theme.text_dim.g;
+            tb = ctx->theme.text_dim.b;
+            ta = ctx->theme.text_dim.a;
         }
 
         if (state->collapsed) {
@@ -858,9 +825,9 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
         float title_text_y = state->rect.y
                              + (win_title_h - m.height) * 0.5f
                              + ascender_px;
-        forge_ui_ctx_label(ctx, disp_buf, title_text_x, title_text_y,
-                           FORGE_UI_WIN_TITLE_TEXT_R, FORGE_UI_WIN_TITLE_TEXT_G,
-                           FORGE_UI_WIN_TITLE_TEXT_B, FORGE_UI_WIN_TITLE_TEXT_A);
+        forge_ui_ctx_label_colored(ctx, disp_buf, title_text_x, title_text_y,
+                                    ctx->theme.title_bar_text.r, ctx->theme.title_bar_text.g,
+                                    ctx->theme.title_bar_text.b, ctx->theme.title_bar_text.a);
     }
 
     /* ── If collapsed, we're done: restore buffers and return false ─────── */
