@@ -54,7 +54,8 @@
 #define WINDOW_WIDTH  1280
 #define WINDOW_HEIGHT 720
 
-/* Clear color — matches lesson 01 (near-black). */
+/* Scene clear color (near-black) — not a UI color; provides contrast
+ * behind the UI windows so their edges are visible. */
 #define CLEAR_R 0.02f
 #define CLEAR_G 0.02f
 #define CLEAR_B 0.03f
@@ -1114,7 +1115,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_GPUColorTargetInfo color_target;
     SDL_zero(color_target);
     color_target.texture     = swapchain;
-    /* Clear the framebuffer each frame to the dark background color.
+    /* Clear the framebuffer each frame to the scene background color.
      * LOAD_CLEAR is used instead of LOAD_LOAD because the UI is the
      * only content -- there is no previous pass to preserve. */
     color_target.load_op     = SDL_GPU_LOADOP_CLEAR;

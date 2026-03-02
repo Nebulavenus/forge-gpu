@@ -17,6 +17,9 @@
   frame with automatic power-of-two buffer growth
 - The **immediate-mode render loop** — declaring widgets, generating geometry,
   uploading to the GPU, and drawing in a single frame
+- **sRGB color handling** — why UI theme colors (authored as sRGB hex values)
+  must be linearized in the fragment shader before output to an sRGB
+  framebuffer, and the IEC 61966-2-1 piecewise EOTF that does the conversion
 
 ## Result
 
@@ -57,6 +60,10 @@ glyphs are anti-aliased via alpha blending against the font atlas.
   FNV-1a hashing; the `##` separator lets widgets share display text while
   keeping unique IDs, and hierarchical scoping prevents collisions across
   windows ([Widget IDs and the `##` separator](#widget-ids-and-the--separator))
+- **sRGB linearization** — UI theme colors are sRGB-encoded; the fragment
+  shader converts them to linear light so the sRGB framebuffer's automatic
+  encoding produces the correct authored colors on screen
+  ([sRGB color handling](#srgb-color-handling))
 
 ## Prerequisites
 
@@ -67,8 +74,9 @@ glyphs are anti-aliased via alpha blending against the font atlas.
 - [Lesson 16 — Blending](../16-blending/) (alpha blend state configuration,
   the blend equation, painter's algorithm)
 - [UI Lesson 01 — TTF Parsing](../../ui/01-ttf-parsing/) through
-  [UI Lesson 12 — Font Scaling and Spacing](../../ui/12-font-scaling-and-spacing/)
-  (the full immediate-mode UI stack that this lesson renders)
+  [UI Lesson 13 — Theming and Color System](../../ui/13-theming-and-color-system/)
+  (the full immediate-mode UI stack that this lesson renders, including the
+  centralized theme whose sRGB colors are linearized in the fragment shader)
 
 ## The UI data contract
 
@@ -422,22 +430,113 @@ floats.
 
 ### Fragment shader
 
-The fragment shader samples the single-channel atlas and uses the red
-channel as a coverage multiplier for the vertex color alpha:
+The fragment shader samples the single-channel atlas, linearizes the sRGB
+vertex color, and uses the red channel as a coverage multiplier for the
+alpha:
 
 ```hlsl
+float srgb_to_linear(float c)
+{
+    return (c <= 0.04045) ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
 float4 main(PSInput input) : SV_Target0
 {
     float coverage = atlas_tex.Sample(atlas_smp, input.uv).r;
-    float4 result  = input.color;
-    result.a      *= coverage;
+
+    float4 result;
+    result.r = srgb_to_linear(input.color.r);
+    result.g = srgb_to_linear(input.color.g);
+    result.b = srgb_to_linear(input.color.b);
+    result.a = input.color.a;
+
+    result.a *= coverage;
     return result;
 }
 ```
 
 For text glyphs, `coverage` provides the anti-aliased edge. For solid
 rectangles, UVs point to the white-pixel region where `coverage = 1.0`, so
-the vertex alpha passes through unchanged.
+the vertex alpha passes through unchanged. The `srgb_to_linear` call is
+explained in [sRGB color handling](#srgb-color-handling) below.
+
+## sRGB color handling
+
+UI theme colors are authored as sRGB values — hex codes like `#1a1a2e`
+divided by 255 to produce floats in [0, 1]. This is the universal convention:
+every major UI framework (Qt, browsers, Dear ImGui, Unity, Unreal) stores
+colors as sRGB. The theme system in
+[UI Lesson 13 — Theming and Color System](../../ui/13-theming-and-color-system/)
+follows the same convention — `ForgeUiTheme` fields are sRGB floats.
+
+### The double-encoding problem
+
+The swapchain framebuffer is typically an sRGB format (e.g.
+`B8G8R8A8_SRGB`). When the GPU writes to an sRGB framebuffer, it applies
+the linear-to-sRGB OETF (opto-electronic transfer function) to the RGB
+output. This conversion is automatic and cannot be disabled — it is defined
+by the framebuffer format.
+
+If sRGB vertex colors are passed through the shader unchanged, the hardware
+applies sRGB encoding to values that are *already* sRGB-encoded. This
+double encoding brightens dark colors significantly — for example, the
+theme's background color `#1a1a2e` (sRGB 0.102) would be encoded again to
+approximately 0.35, appearing as a washed-out gray instead of a deep navy.
+
+### The solution: linearize before output
+
+The fragment shader converts sRGB vertex colors to linear light using the
+IEC 61966-2-1 EOTF (electro-optical transfer function) — the inverse of the
+sRGB encoding curve:
+
+```hlsl
+float srgb_to_linear(float c)
+{
+    return (c <= 0.04045) ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+```
+
+This is a piecewise function with two segments:
+
+- **Below 0.04045:** A linear segment with slope 1/12.92. This avoids an
+  infinite derivative at the origin and handles near-black values accurately.
+- **Above 0.04045:** A gamma-2.4 power curve with an offset. This models the
+  nonlinear response of CRT displays that sRGB was designed to match.
+
+After linearization, the framebuffer's automatic linear-to-sRGB encoding
+reverses the conversion exactly, and the final stored pixel matches the
+original authored sRGB value. The round-trip is:
+
+```text
+sRGB (theme) → linear (shader output) → sRGB (framebuffer write) = original
+```
+
+Alpha is not affected by sRGB — the transfer function applies only to RGB
+channels.
+
+### Why not linearize on the CPU?
+
+An alternative is to convert sRGB to linear on the CPU before emitting
+vertex colors. This avoids the per-fragment `pow` cost but has a drawback:
+vertex color interpolation would happen in linear space instead of sRGB
+space, which can produce visually different gradients along edges and at
+anti-aliased glyph boundaries. For UI rendering where colors are typically
+flat per-widget, the difference is minimal, but linearizing in the shader
+keeps the vertex data in the same sRGB space that the CPU-rasterized UI
+lessons use — one representation everywhere, with the GPU conversion
+localized to the fragment shader.
+
+### Other approaches
+
+Production engines often use `VK_KHR_swapchain_mutable_format` to create
+dual views of the swapchain image — an sRGB view for 3D rendering and a
+UNORM view for UI. The UNORM view bypasses the automatic sRGB encoding
+entirely, letting sRGB vertex colors pass through unchanged. This is the
+most efficient solution but requires Vulkan-specific extension support.
+
+Traditional 2D frameworks (Qt, browsers, Dear ImGui) sidestep the issue by
+targeting UNORM framebuffers and blending in sRGB space — technically
+incorrect but matching decades of content expectations.
 
 ## Controls
 
@@ -526,6 +625,9 @@ a piece of the system that produces the vertex and index data drawn here:
 - [UI Lesson 12 — Font Scaling and Spacing](../../ui/12-font-scaling-and-spacing/)
   — global scale factor, `ForgeUiSpacing` struct, and `FORGE_UI_SCALED` macro
   for DPI-independent widget dimensions
+- [UI Lesson 13 — Theming and Color System](../../ui/13-theming-and-color-system/)
+  — centralized `ForgeUiTheme` with sRGB color slots and WCAG contrast
+  validation; the theme colors linearized in this lesson's fragment shader
 
 ### GPU lessons
 

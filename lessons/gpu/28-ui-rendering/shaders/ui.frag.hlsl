@@ -9,6 +9,16 @@
  * in the red channel.  We extract .r and multiply it into the vertex
  * color's alpha to control per-pixel opacity.
  *
+ * sRGB color handling:
+ *   UI theme colors are authored as sRGB values (hex codes like #1a1a2e
+ *   divided by 255).  The swapchain framebuffer is typically an sRGB
+ *   format (e.g. B8G8R8A8_SRGB), which applies the linear-to-sRGB OETF
+ *   on write.  To avoid double gamma encoding, the shader must linearize
+ *   the sRGB vertex colors before output using the IEC 61966-2-1 EOTF
+ *   (piecewise: linear segment below 0.04045, gamma 2.4 above).  The
+ *   framebuffer's automatic encoding then recovers the original sRGB
+ *   values on screen.  Alpha is not affected by sRGB.
+ *
  * White-pixel technique:
  *   The font atlas contains a small 2x2 region of solid white pixels
  *   (coverage = 1.0) at a known UV rect (ForgeUiFontAtlas.white_uv).
@@ -49,6 +59,15 @@ struct PSInput
     float4 color    : TEXCOORD1;   /* interpolated per-vertex RGBA color*/
 };
 
+/* sRGB EOTF (IEC 61966-2-1): convert a single sRGB-encoded channel to
+ * linear light.  The piecewise function has a linear segment near zero
+ * (slope 1/12.92) to avoid an infinite derivative at the origin, and a
+ * gamma-2.4 curve above the 0.04045 threshold.                         */
+float srgb_to_linear(float c)
+{
+    return (c <= 0.04045) ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
 float4 main(PSInput input) : SV_Target0
 {
     /* Sample the single-channel atlas.  For R8_UNORM textures the GPU
@@ -57,10 +76,18 @@ float4 main(PSInput input) : SV_Target0
      * values along anti-aliased edges.                                  */
     float coverage = atlas_tex.Sample(atlas_smp, input.uv).r;
 
-    /* Start with the vertex color (RGB tint + base alpha).              */
-    float4 result = input.color;
+    /* Linearize the sRGB vertex color so that the framebuffer's
+     * automatic linear-to-sRGB encoding on write recovers the original
+     * authored sRGB values.  Without this, sRGB colors would be
+     * double-encoded (sRGB → sRGB) producing washed-out output.
+     * Alpha is unaffected — sRGB conversion applies only to RGB.        */
+    float4 result;
+    result.r = srgb_to_linear(input.color.r);
+    result.g = srgb_to_linear(input.color.g);
+    result.b = srgb_to_linear(input.color.b);
+    result.a = input.color.a;
 
-    /* Multiply the vertex alpha by the atlas coverage:
+    /* Multiply the linearized alpha by the atlas coverage:
      *   - Text glyphs: coverage varies 0..1 along edges, producing
      *     smooth anti-aliased text when combined with alpha blending.
      *   - Solid rects: UVs point to the white-pixel region where
