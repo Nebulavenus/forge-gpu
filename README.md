@@ -175,6 +175,12 @@ HDR, post-processing, and UI rendering.
 <b>30</b> — Planar Reflections
 </td>
 </tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/31-transform-animations/"><img src="lessons/gpu/31-transform-animations/assets/screenshot.png" width="200" alt="Transform Animations" /></a><br />
+<b>31</b> — Transform Animations
+</td>
+</tr>
 </table>
 
 ### Math Lessons (lessons/math/)
