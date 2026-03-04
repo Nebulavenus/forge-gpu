@@ -148,6 +148,10 @@ typedef struct ForgeGltfNode {
     int  child_count;
     mat4 local_transform; /* computed from TRS or raw matrix */
     mat4 world_transform; /* accumulated from root (set by compute_world_transforms) */
+    vec3 translation;     /* decomposed TRS — for animation (default 0,0,0) */
+    quat rotation;        /* decomposed TRS — for animation (default identity) */
+    vec3 scale_xyz;       /* decomposed TRS — for animation (default 1,1,1) */
+    bool has_trs;         /* true if node uses TRS (not a raw matrix) */
     char name[FORGE_GLTF_NAME_SIZE];
 } ForgeGltfNode;
 
@@ -905,6 +909,10 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
         gn->child_count = 0;
         gn->local_transform = mat4_identity();
         gn->world_transform = mat4_identity();
+        gn->translation = vec3_create(0.0f, 0.0f, 0.0f);
+        gn->rotation    = quat_identity();
+        gn->scale_xyz   = vec3_create(1.0f, 1.0f, 1.0f);
+        gn->has_trs     = false;
         copy_name(gn->name, sizeof(gn->name), node);
 
         /* Mesh reference. */
@@ -939,11 +947,11 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
                 gn->local_transform.m[j] = elem ? (float)elem->valuedouble
                                                  : 0.0f;
             }
+            /* has_trs stays false — raw matrix node */
         } else {
-            /* TRS decomposition: local = T * R * S */
-            mat4 T = mat4_identity();
-            mat4 R = mat4_identity();
-            mat4 S = mat4_identity();
+            /* TRS decomposition: local = T * R * S.
+             * Also store individual T/R/S for animation support. */
+            gn->has_trs = true;
 
             const cJSON *trans = cJSON_GetObjectItemCaseSensitive(
                 node, "translation");
@@ -951,11 +959,12 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
                 const cJSON *t0 = cJSON_GetArrayItem(trans, 0);
                 const cJSON *t1 = cJSON_GetArrayItem(trans, 1);
                 const cJSON *t2 = cJSON_GetArrayItem(trans, 2);
-                if (t0 && t1 && t2) {
-                    T = mat4_translate(vec3_create(
+                if (cJSON_IsNumber(t0) && cJSON_IsNumber(t1)
+                    && cJSON_IsNumber(t2)) {
+                    gn->translation = vec3_create(
                         (float)t0->valuedouble,
                         (float)t1->valuedouble,
-                        (float)t2->valuedouble));
+                        (float)t2->valuedouble);
                 }
             }
 
@@ -967,13 +976,13 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
                 const cJSON *ry = cJSON_GetArrayItem(rot, 1);
                 const cJSON *rz = cJSON_GetArrayItem(rot, 2);
                 const cJSON *rw = cJSON_GetArrayItem(rot, 3);
-                if (rx && ry && rz && rw) {
-                    quat q = quat_create(
+                if (cJSON_IsNumber(rx) && cJSON_IsNumber(ry)
+                    && cJSON_IsNumber(rz) && cJSON_IsNumber(rw)) {
+                    gn->rotation = quat_normalize(quat_create(
                         (float)rw->valuedouble,
                         (float)rx->valuedouble,
                         (float)ry->valuedouble,
-                        (float)rz->valuedouble);
-                    R = quat_to_mat4(q);
+                        (float)rz->valuedouble));
                 }
             }
 
@@ -983,15 +992,20 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
                 const cJSON *s0 = cJSON_GetArrayItem(scl, 0);
                 const cJSON *s1 = cJSON_GetArrayItem(scl, 1);
                 const cJSON *s2 = cJSON_GetArrayItem(scl, 2);
-                if (s0 && s1 && s2) {
-                    S = mat4_scale(vec3_create(
+                if (cJSON_IsNumber(s0) && cJSON_IsNumber(s1)
+                    && cJSON_IsNumber(s2)) {
+                    gn->scale_xyz = vec3_create(
                         (float)s0->valuedouble,
                         (float)s1->valuedouble,
-                        (float)s2->valuedouble));
+                        (float)s2->valuedouble);
                 }
             }
 
-            gn->local_transform = mat4_multiply(T, mat4_multiply(R, S));
+            mat4 t_mat = mat4_translate(gn->translation);
+            mat4 r_mat = quat_to_mat4(gn->rotation);
+            mat4 s_mat = mat4_scale(gn->scale_xyz);
+            gn->local_transform =
+                mat4_multiply(t_mat, mat4_multiply(r_mat, s_mat));
         }
     }
     scene->node_count = count;

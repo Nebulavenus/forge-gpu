@@ -65,6 +65,10 @@ concept with the respect it deserves.
 - **Never commit directly to `main`.** All changes go through pull requests.
 - Create a feature branch, commit there, push, and open a PR with `gh pr create`.
 - Use the **/dev-publish-lesson** skill for lesson PRs — it handles branch + PR creation.
+- **Batch all commits into a single push.** Never push commits piecewise (e.g.
+  pushing a fix, then pushing a lint fix separately). Multiple rapid pushes
+  cause CodeRabbit to freeze and pause reviews, delaying the entire PR. Make
+  all local commits first, verify lint and builds pass locally, then push once.
 
 ## Project Structure
 

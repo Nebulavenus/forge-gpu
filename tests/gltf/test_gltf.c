@@ -40,6 +40,16 @@ static bool vec3_eq(vec3 a, vec3 b)
     return float_eq(a.x, b.x) && float_eq(a.y, b.y) && float_eq(a.z, b.z);
 }
 
+static bool quat_eq(quat a, quat b)
+{
+    /* q and -q represent the same rotation — check both signs. */
+    bool same = float_eq(a.w, b.w) && float_eq(a.x, b.x)
+             && float_eq(a.y, b.y) && float_eq(a.z, b.z);
+    bool flip = float_eq(a.w, -b.w) && float_eq(a.x, -b.x)
+             && float_eq(a.y, -b.y) && float_eq(a.z, -b.z);
+    return same || flip;
+}
+
 #define TEST(name) do { test_count++; SDL_Log("  Testing: %s", (name)); } while (0)
 
 #define ASSERT_TRUE(cond) \
@@ -1042,6 +1052,18 @@ static void test_node_hierarchy(void)
     ASSERT_FLOAT_EQ(scene.nodes[1].world_transform.m[13], 2.0f);
     ASSERT_FLOAT_EQ(scene.nodes[1].world_transform.m[14], 0.0f);
 
+    /* Decomposed TRS fields — both nodes use TRS (translation only). */
+    ASSERT_TRUE(scene.nodes[0].has_trs);
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].translation,
+                        vec3_create(1.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE(quat_eq(scene.nodes[0].rotation, quat_identity()));
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].scale_xyz,
+                        vec3_create(1.0f, 1.0f, 1.0f)));
+
+    ASSERT_TRUE(scene.nodes[1].has_trs);
+    ASSERT_TRUE(vec3_eq(scene.nodes[1].translation,
+                        vec3_create(0.0f, 2.0f, 0.0f)));
+
     /* Parent reference. */
     ASSERT_INT_EQ(scene.nodes[1].parent, 0);
     ASSERT_INT_EQ(scene.root_node_count, 1);
@@ -1119,6 +1141,15 @@ static void test_quaternion_rotation(void)
     ASSERT_FLOAT_EQ(m->m[8],   1.0f);   /* col2.x */
     ASSERT_FLOAT_EQ(m->m[10],  0.0f);   /* col2.z */
 
+    /* Decomposed TRS — rotation stored as quaternion (w,x,y,z). */
+    ASSERT_TRUE(scene.nodes[0].has_trs);
+    ASSERT_TRUE(quat_eq(scene.nodes[0].rotation,
+                        quat_create(0.7071068f, 0.0f, 0.7071068f, 0.0f)));
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].translation,
+                        vec3_create(0.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].scale_xyz,
+                        vec3_create(1.0f, 1.0f, 1.0f)));
+
     forge_gltf_free(&scene);
     END_TEST();
 }
@@ -1182,6 +1213,14 @@ static void test_scale_transform(void)
     ASSERT_FLOAT_EQ(scene.nodes[0].world_transform.m[0],  2.0f);
     ASSERT_FLOAT_EQ(scene.nodes[0].world_transform.m[5],  2.0f);
     ASSERT_FLOAT_EQ(scene.nodes[0].world_transform.m[10], 2.0f);
+
+    /* Decomposed TRS — scale stored as vec3. */
+    ASSERT_TRUE(scene.nodes[0].has_trs);
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].scale_xyz,
+                        vec3_create(2.0f, 2.0f, 2.0f)));
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].translation,
+                        vec3_create(0.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE(quat_eq(scene.nodes[0].rotation, quat_identity()));
 
     forge_gltf_free(&scene);
     END_TEST();
@@ -1262,6 +1301,108 @@ static void test_node_explicit_matrix(void)
     ASSERT_FLOAT_EQ(m->m[14], 6.0f);
     /* Homogeneous w=1 */
     ASSERT_FLOAT_EQ(m->m[15], 1.0f);
+
+    /* Explicit matrix nodes do NOT have decomposed TRS. */
+    ASSERT_FALSE(scene.nodes[0].has_trs);
+    /* Defaults should be preserved for non-TRS nodes. */
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].translation,
+                        vec3_create(0.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE(quat_eq(scene.nodes[0].rotation, quat_identity()));
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].scale_xyz,
+                        vec3_create(1.0f, 1.0f, 1.0f)));
+
+    forge_gltf_free(&scene);
+    END_TEST();
+}
+
+/* ── Combined TRS (translation + rotation + scale) ────────────────────────── */
+
+static void test_combined_trs(void)
+{
+    float positions[9];
+    Uint16 indices[3];
+    Uint8 bin_data[42];
+    const char *json;
+    TempGltf tg;
+    ForgeGltfScene scene;
+    bool wrote;
+    bool ok;
+    const mat4 *m;
+
+    TEST("combined TRS (translation + 90-deg-Y rotation + non-uniform scale)");
+
+    positions[0] = 0; positions[1] = 0; positions[2] = 0;
+    positions[3] = 1; positions[4] = 0; positions[5] = 0;
+    positions[6] = 0; positions[7] = 1; positions[8] = 0;
+    indices[0] = 0; indices[1] = 1; indices[2] = 2;
+
+    SDL_memcpy(bin_data, positions, 36);
+    SDL_memcpy(bin_data + 36, indices, 6);
+
+    /* translation=(3,4,5), rotation=90-deg-Y, scale=(2,1,3) */
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{"
+        "    \"mesh\": 0,"
+        "    \"translation\": [3.0, 4.0, 5.0],"
+        "    \"rotation\": [0.0, 0.7071068, 0.0, 0.7071068],"
+        "    \"scale\": [2.0, 1.0, 3.0]"
+        "  }],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0, \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_trs.bin\", \"byteLength\": 42}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
+                             "test_trs", &tg);
+    ASSERT_TRUE(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, &scene);
+    remove_temp_gltf(&tg);
+
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(scene.node_count, 1);
+
+    /* Verify decomposed TRS fields are stored correctly. */
+    ASSERT_TRUE(scene.nodes[0].has_trs);
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].translation,
+                        vec3_create(3.0f, 4.0f, 5.0f)));
+    ASSERT_TRUE(quat_eq(scene.nodes[0].rotation,
+                        quat_create(0.7071068f, 0.0f, 0.7071068f, 0.0f)));
+    ASSERT_TRUE(vec3_eq(scene.nodes[0].scale_xyz,
+                        vec3_create(2.0f, 1.0f, 3.0f)));
+
+    /* Verify local_transform = T * R * S matches the decomposed fields.
+     * 90-deg-Y rotation: R swaps X↔Z with sign flip.
+     *   col0 = R * scale_x = (0,0,-2,0)
+     *   col1 = R * scale_y = (0,1, 0,0)
+     *   col2 = R * scale_z = (3,0, 0,0)
+     *   col3 = translation = (3,4, 5,1) */
+    m = &scene.nodes[0].world_transform;
+    ASSERT_FLOAT_EQ(m->m[0],   0.0f);   /* col0.x */
+    ASSERT_FLOAT_EQ(m->m[1],   0.0f);   /* col0.y */
+    ASSERT_FLOAT_EQ(m->m[2],  -2.0f);   /* col0.z */
+    ASSERT_FLOAT_EQ(m->m[5],   1.0f);   /* col1.y */
+    ASSERT_FLOAT_EQ(m->m[8],   3.0f);   /* col2.x */
+    ASSERT_FLOAT_EQ(m->m[10],  0.0f);   /* col2.z */
+    ASSERT_FLOAT_EQ(m->m[12],  3.0f);   /* translate x */
+    ASSERT_FLOAT_EQ(m->m[13],  4.0f);   /* translate y */
+    ASSERT_FLOAT_EQ(m->m[14],  5.0f);   /* translate z */
 
     forge_gltf_free(&scene);
     END_TEST();
@@ -1468,6 +1609,7 @@ int main(int argc, char *argv[])
     test_quaternion_rotation();
     test_scale_transform();
     test_node_explicit_matrix();
+    test_combined_trs();
 
     /* Multi-primitive */
     test_multiple_primitives();
