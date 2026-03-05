@@ -70,6 +70,7 @@ from .gpu_diagrams import (
     diagram_gbuffer_mrt,
     diagram_hdr_pipeline,
     diagram_hemisphere_sampling,
+    diagram_joint_matrix_pipeline,
     diagram_karis_averaging,
     diagram_kernel_distribution,
     diagram_keyframe_interpolation,
@@ -447,6 +448,9 @@ DIAGRAMS = {
         ("forward_driven_movement.png", diagram_forward_driven_movement),
         ("arc_length_parameterization.png", diagram_arc_length_parameterization),
     ],
+    "gpu/32": [
+        ("joint_matrix_pipeline.png", diagram_joint_matrix_pipeline),
+    ],
     "ui/01": [
         ("ttf_file_structure.png", diagram_ttf_file_structure),
         ("glyph_anatomy.png", diagram_glyph_anatomy),
@@ -579,6 +583,7 @@ LESSON_NAMES = {
     "gpu/29": "gpu/29-screen-space-reflections",
     "gpu/30": "gpu/30-planar-reflections",
     "gpu/31": "gpu/31-transform-animations",
+    "gpu/32": "gpu/32-skinning-animations",
     "ui/01": "ui/01-ttf-parsing",
     "ui/02": "ui/02-glyph-rasterization",
     "ui/03": "ui/03-font-atlas",

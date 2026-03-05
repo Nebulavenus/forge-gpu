@@ -70,7 +70,7 @@ Infrastructure that supports all lessons:
 ### Animation
 
 - [x] **Lesson 31 — Transform Animations** — Keyframe interpolation for translation, rotation (slerp), and scale; animation clips with timestamps; playing, blending, and looping animations; loading animation data from glTF
-- [ ] **Lesson 32 — Skinning Animations** — Skeletal animation with joint hierarchies; bind-pose inverse matrices; vertex skinning with joint indices and weights (4 joints per vertex); computing the skin matrix in the vertex shader; loading skinned meshes from glTF
+- [x] **Lesson 32 — Skinning Animations** — Skeletal animation with joint hierarchies; bind-pose inverse matrices; vertex skinning with joint indices and weights (4 joints per vertex); computing the skin matrix in the vertex shader; loading skinned meshes from glTF
 
 ### Advanced Rendering
 

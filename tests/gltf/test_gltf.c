@@ -1565,6 +1565,67 @@ static void test_cesium_milk_truck(void)
     END_TEST();
 }
 
+/* ── CesiumMan: skin parsing ───────────────────────────────────────────────── */
+
+static void test_cesiumman_skin(void)
+{
+    const char *base;
+    char path[FORGE_GLTF_PATH_SIZE];
+    ForgeGltfScene scene;
+    bool ok;
+    mat4 identity;
+
+    TEST("CesiumMan skin parsing (19 joints, skin data on mesh)");
+
+    base = SDL_GetBasePath();
+    if (!base) {
+        SDL_Log("    SKIP (SDL_GetBasePath failed)");
+        test_passed++;
+        return;
+    }
+
+    SDL_snprintf(path, sizeof(path),
+                 "%sassets/CesiumMan/CesiumMan.gltf", base);
+
+    ok = forge_gltf_load(path, &scene);
+    if (!ok) {
+        SDL_Log("    SKIP (model not found at %s)", path);
+        test_passed++;
+        return;
+    }
+
+    /* Skin count and joint count. */
+    ASSERT_INT_EQ(scene.skin_count, 1);
+    ASSERT_INT_EQ(scene.skins[0].joint_count, 19);
+
+    /* First joint is node 3 (Skeleton_torso_joint_1). */
+    ASSERT_INT_EQ(scene.skins[0].joints[0], 3);
+
+    /* Skeleton root is node 3. */
+    ASSERT_INT_EQ(scene.skins[0].skeleton, 3);
+
+    /* Inverse bind matrices should be loaded (first matrix != identity). */
+    identity = mat4_identity();
+    ASSERT_FALSE(SDL_memcmp(scene.skins[0].inverse_bind_matrices[0].m,
+                            identity.m, sizeof(identity.m)) == 0);
+
+    /* Node 2 ("Cesium_Man") has skin_index == 0. */
+    ASSERT_TRUE(scene.node_count > 2);
+    ASSERT_INT_EQ(scene.nodes[2].skin_index, 0);
+
+    /* The mesh primitive should have skin data. */
+    ASSERT_TRUE(scene.primitive_count >= 1);
+    ASSERT_TRUE(scene.primitives[0].has_skin_data);
+    ASSERT_TRUE(scene.primitives[0].joint_indices != NULL);
+    ASSERT_TRUE(scene.primitives[0].weights != NULL);
+
+    /* CesiumMan has 3273 skinned vertices. */
+    ASSERT_INT_EQ((int)scene.primitives[0].vertex_count, 3273);
+
+    forge_gltf_free(&scene);
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -1616,6 +1677,9 @@ int main(int argc, char *argv[])
 
     /* Real model */
     test_cesium_milk_truck();
+
+    /* Skin parsing */
+    test_cesiumman_skin();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");

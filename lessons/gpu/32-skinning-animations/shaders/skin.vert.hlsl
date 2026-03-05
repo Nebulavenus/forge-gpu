@@ -1,0 +1,86 @@
+/*
+ * Skinned vertex shader — applies skeletal animation before MVP transform.
+ *
+ * Each vertex has 4 joint indices and 4 blend weights.  The skin matrix
+ * is a weighted sum of the joint matrices, which transforms the vertex
+ * from bind-pose model space to animated world space.
+ *
+ * The joint matrix for joint i is:
+ *   jointMatrix[i] = worldTransform[joints[i]] * inverseBindMatrix[i]
+ *
+ * This is computed on the CPU and passed as a uniform array.
+ *
+ * Outputs world-space position, normal, UV, and light-space clip position
+ * for shadow mapping.
+ *
+ * Uniform buffers:
+ *   register(b0, space1) -> slot 0: scene uniforms (MVP, model, light_vp)
+ *   register(b1, space1) -> slot 1: joint matrices (MAX_JOINTS x float4x4)
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/* Maximum joints must match MAX_JOINTS in main.c. */
+#define MAX_JOINTS 19
+
+cbuffer SceneUniforms : register(b0, space1)
+{
+    column_major float4x4 mvp;      /* model-view-projection matrix */
+    column_major float4x4 model;    /* model (world) matrix — used for normals */
+    column_major float4x4 light_vp; /* light view-projection for shadows */
+};
+
+cbuffer JointUniforms : register(b1, space1)
+{
+    column_major float4x4 joint_mats[MAX_JOINTS];
+};
+
+struct VSInput
+{
+    float3 pos     : TEXCOORD0;
+    float3 normal  : TEXCOORD1;
+    float2 uv      : TEXCOORD2;
+    uint4  joints  : TEXCOORD3;   /* USHORT4 auto-expanded to uint4 by GPU */
+    float4 weights : TEXCOORD4;
+};
+
+struct VSOutput
+{
+    float4 clip_pos   : SV_Position;
+    float3 world_pos  : TEXCOORD0;
+    float3 world_nrm  : TEXCOORD1;
+    float2 uv         : TEXCOORD2;
+    float4 light_clip : TEXCOORD3;
+};
+
+VSOutput main(VSInput input)
+{
+    VSOutput output;
+
+    /* Compute the skin matrix — weighted sum of up to 4 joint transforms.
+     * Each joint matrix transforms from bind-pose model space to current
+     * world space (jointMatrix = worldTransform * inverseBindMatrix). */
+    float4x4 skin_mat = input.weights.x * joint_mats[input.joints.x]
+                       + input.weights.y * joint_mats[input.joints.y]
+                       + input.weights.z * joint_mats[input.joints.z]
+                       + input.weights.w * joint_mats[input.joints.w];
+
+    /* Apply skin matrix to get world-space position. */
+    float4 world = mul(skin_mat, float4(input.pos, 1.0));
+    output.world_pos = world.xyz;
+
+    /* Transform skinned world position to clip space. */
+    output.clip_pos = mul(mvp, world);
+
+    /* Skin the normal using the same matrix (upper 3x3).
+     * This is correct for rigid transforms; for non-uniform scale
+     * you would need the inverse transpose. */
+    output.world_nrm = normalize(mul((float3x3)skin_mat, input.normal));
+
+    output.uv = input.uv;
+
+    /* Light-space position for shadow mapping. */
+    output.light_clip = mul(light_vp, world);
+
+    return output;
+}

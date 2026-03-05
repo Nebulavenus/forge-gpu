@@ -180,6 +180,10 @@ HDR, post-processing, and UI rendering.
 <a href="lessons/gpu/31-transform-animations/"><img src="lessons/gpu/31-transform-animations/assets/screenshot.png" width="200" alt="Transform Animations" /></a><br />
 <b>31</b> — Transform Animations
 </td>
+<td align="center">
+<a href="lessons/gpu/32-skinning-animations/"><img src="lessons/gpu/32-skinning-animations/assets/screenshot.png" width="200" alt="Skinning Animations" /></a><br />
+<b>32</b> — Skinning Animations
+</td>
 </tr>
 </table>
 

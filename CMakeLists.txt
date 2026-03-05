@@ -116,6 +116,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/29-screen-space-reflections)
     add_subdirectory(lessons/gpu/30-planar-reflections)
     add_subdirectory(lessons/gpu/31-transform-animations)
+    add_subdirectory(lessons/gpu/32-skinning-animations)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────
