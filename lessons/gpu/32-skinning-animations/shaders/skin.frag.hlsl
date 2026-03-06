@@ -10,7 +10,7 @@
  */
 
 /* Shadow bias — prevents self-shadowing (shadow acne). */
-#define SHADOW_BIAS 0.005
+#define SHADOW_BIAS 0.0005
 
 /* Shadow map resolution — must match SHADOW_MAP_SIZE in main.c. */
 #define SHADOW_MAP_RES 2048.0

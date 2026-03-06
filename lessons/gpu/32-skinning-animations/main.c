@@ -66,17 +66,17 @@
 #define MOUSE_SENS         0.003f
 #define PITCH_CLAMP        1.5f
 
-/* Camera initial position — close-up, in front of the character. */
+/* Camera initial position — close-up, behind the character. */
 #define CAM_START_X         1.5f
 #define CAM_START_Y         1.0f
 #define CAM_START_Z        -2.5f
 #define CAM_START_YAW_DEG   180.0f
 #define CAM_START_PITCH_DEG -5.0f
 
-/* Directional light — from above-right. */
-#define LIGHT_DIR_X     -0.4f
+/* Directional light — from above-left-front, illuminating the face. */
+#define LIGHT_DIR_X      0.4f
 #define LIGHT_DIR_Y     -0.8f
-#define LIGHT_DIR_Z     -0.4f
+#define LIGHT_DIR_Z      0.4f
 #define LIGHT_INTENSITY  0.9f
 #define LIGHT_COLOR_R    1.0f
 #define LIGHT_COLOR_G    0.95f
@@ -98,6 +98,8 @@
 #define SHADOW_NEAR       0.1f
 #define SHADOW_FAR        20.0f
 #define LIGHT_DISTANCE    8.0f
+#define SHADOW_DEPTH_BIAS       2.0f   /* constant depth bias (in depth units)       */
+#define SHADOW_SLOPE_BIAS       2.0f   /* slope-scaled bias for grazing-angle faces   */
 
 /* Grid floor. */
 #define GRID_HALF_SIZE    20.0f
@@ -1497,9 +1499,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         pi.depth_stencil_state.enable_depth_test  = true;
         pi.depth_stencil_state.enable_depth_write = true;
         pi.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
-        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
-        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode       = SDL_GPU_CULLMODE_BACK;
+        pi.rasterizer_state.front_face      = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.fill_mode       = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.depth_bias_constant_factor = SHADOW_DEPTH_BIAS;
+        pi.rasterizer_state.depth_bias_slope_factor    = SHADOW_SLOPE_BIAS;
+        pi.rasterizer_state.enable_depth_bias          = true;
         pi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 
         state->shadow_pipeline = SDL_CreateGPUGraphicsPipeline(device, &pi);

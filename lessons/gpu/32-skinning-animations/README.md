@@ -10,6 +10,7 @@
 - Loading skin data (joint list, inverse bind matrices) from glTF
 - Dynamic animation channel parsing (57 channels, not hardcoded)
 - Animated shadow maps that deform with the character
+- Why skinned normals need the model matrix (not just the skin matrix)
 
 ## Result
 
@@ -97,7 +98,8 @@ float4x4 skin_mat = input.weights.x * joint_mats[input.joints.x]
                    + input.weights.z * joint_mats[input.joints.z]
                    + input.weights.w * joint_mats[input.joints.w];
 
-float4 world = mul(skin_mat, float4(input.pos, 1.0));
+float4 skinned = mul(skin_mat, float4(input.pos, 1.0));
+float4 world   = mul(model, skinned);  /* model matrix for true world space */
 ```
 
 ## CesiumMan coordinate system
@@ -202,6 +204,46 @@ essential for visual consistency.
 
 Both the scene and shadow vertex shaders receive the same joint matrix
 uniform array (slot 1), so there is no extra CPU work for shadow skinning.
+
+## Skinned normals and the model matrix
+
+The full glTF joint matrix formula outputs vertices in **mesh-local space**
+(not world space), because it includes $M_{mesh}^{-1}$. The mesh node's
+world transform — which includes the walk path rotation — is applied
+afterward as the model matrix.
+
+This means the skin matrix alone does not produce world-space normals.
+If the vertex shader only applies `skin_mat` to the normal, the normal
+stays in mesh-local space. The lighting direction is in world space, so
+dot(N, L) computes the wrong angle — the light appears to rotate with
+the character as it walks.
+
+![Skinned normal transform](assets/skinned_normal_transform.png)
+
+The fix is to apply the model matrix after skinning:
+
+```hlsl
+/* Broken: normal stays in mesh-local space */
+output.world_nrm = normalize(mul((float3x3)skin_mat, input.normal));
+
+/* Correct: transform skinned normal to world space */
+float3 local_nrm = mul((float3x3)skin_mat, input.normal);
+output.world_nrm = normalize(mul((float3x3)model, local_nrm));
+```
+
+The same applies to `world_pos` — the fragment shader uses it for the
+specular view direction, so it must be in true world space:
+
+```hlsl
+float4 skinned = mul(skin_mat, float4(input.pos, 1.0));
+float4 world   = mul(model, skinned);       /* true world position */
+output.clip_pos = mul(mvp, skinned);        /* mvp already includes model */
+```
+
+Note that `clip_pos` and `light_clip` still use the mesh-local `skinned`
+position, because `mvp` and `light_vp` already contain the model matrix.
+Only the interpolated values consumed by the fragment shader (world
+position, world normal) need the extra model transform.
 
 ## Circular walk path
 

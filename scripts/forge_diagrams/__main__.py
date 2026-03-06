@@ -98,6 +98,7 @@ from .gpu_diagrams import (
     diagram_scattering_geometry,
     diagram_screen_space_projection,
     diagram_shadow_lookup,
+    diagram_skinned_normal_transform,
     diagram_sky_render_pipeline,
     diagram_specular_comparison,
     diagram_ssao_render_pipeline,
@@ -455,6 +456,7 @@ DIAGRAMS = {
     ],
     "gpu/32": [
         ("joint_matrix_pipeline.png", diagram_joint_matrix_pipeline),
+        ("skinned_normal_transform.png", diagram_skinned_normal_transform),
     ],
     "gpu/33": [
         ("traditional_vs_pulled_pipeline.png", diagram_traditional_vs_pulled_pipeline),

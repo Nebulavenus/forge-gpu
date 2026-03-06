@@ -65,22 +65,26 @@ VSOutput main(VSInput input)
                        + input.weights.z * joint_mats[input.joints.z]
                        + input.weights.w * joint_mats[input.joints.w];
 
-    /* Apply skin matrix to get world-space position. */
-    float4 world = mul(skin_mat, float4(input.pos, 1.0));
+    /* Apply skin matrix to get mesh-local position, then model matrix
+     * to get true world-space position for lighting. */
+    float4 skinned = mul(skin_mat, float4(input.pos, 1.0));
+    float4 world   = mul(model, skinned);
     output.world_pos = world.xyz;
 
-    /* Transform skinned world position to clip space. */
-    output.clip_pos = mul(mvp, world);
+    /* Transform skinned position to clip space. */
+    output.clip_pos = mul(mvp, skinned);
 
-    /* Skin the normal using the same matrix (upper 3x3).
-     * This is correct for rigid transforms; for non-uniform scale
-     * you would need the inverse transpose. */
-    output.world_nrm = normalize(mul((float3x3)skin_mat, input.normal));
+    /* Skin the normal (bind-pose → mesh-local), then transform to world
+     * space with the model matrix.  Without the model multiply the normal
+     * stays in mesh-local space, so lighting rotates with the character. */
+    float3 local_nrm = mul((float3x3)skin_mat, input.normal);
+    output.world_nrm = normalize(mul((float3x3)model, local_nrm));
 
     output.uv = input.uv;
 
-    /* Light-space position for shadow mapping. */
-    output.light_clip = mul(light_vp, world);
+    /* Light-space position for shadow mapping.
+     * light_vp already includes mesh_world, so use mesh-local skinned pos. */
+    output.light_clip = mul(light_vp, skinned);
 
     return output;
 }
