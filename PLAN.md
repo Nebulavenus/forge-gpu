@@ -13,23 +13,30 @@ The following foundations, tooling, and lesson ranges are complete:
 
 ## GPU Lessons — Remaining
 
+### Stencil Buffer & Picking
+
+- [ ] **Lesson 34 — Stencil Testing** — Stencil buffer fundamentals; configuring stencil state in the depth-stencil texture and pipeline; stencil operations (keep, replace, increment); using stencil masks to control where fragments are drawn; portal/window effect by masking a region; visualizing stencil buffer contents for debugging
+- [ ] **Lesson 35 — Decals** — Projecting flat detail onto existing geometry using stencil masking; deferred decal boxes with inverse projection; writing decal color while preserving surface normals and depth; layering multiple decals with stencil increment; application to bullet holes, dirt, signs, and graffiti (depends on GPU Lesson 34)
+- [ ] **Lesson 36 — Outlines** — Object outlines via stencil buffer technique; render object to stencil, then draw scaled-up version where stencil is zero; per-object outline color and thickness; outline-only mode for selection highlights and X-ray vision; comparison with edge-detection post-process approach (depends on GPU Lesson 34)
+- [ ] **Lesson 37 — 3D Picking** — Identifying objects under the cursor; color-ID picking: render each object with a unique color to an offscreen target, read back the pixel under the mouse; stencil-ID picking as an alternative; GPU readback with `SDL_DownloadFromGPUTexture`; highlight selected object with an outline (depends on GPU Lessons 34, 36)
+
 ### Advanced Rendering
 
-- [ ] **Lesson 34 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
-- [ ] **Lesson 35 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
-- [ ] **Lesson 36 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
+- [ ] **Lesson 38 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
+- [ ] **Lesson 39 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
+- [ ] **Lesson 40 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 
 ### Advanced Materials & Effects
 
-- [ ] **Lesson 37 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
-- [ ] **Lesson 38 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
-- [ ] **Lesson 39 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
+- [ ] **Lesson 41 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
+- [ ] **Lesson 42 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
+- [ ] **Lesson 43 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
 
 ### Volumetric & Terrain
 
-- [ ] **Lesson 40 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
-- [ ] **Lesson 41 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 35)
-- [ ] **Lesson 42 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
+- [ ] **Lesson 44 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
+- [ ] **Lesson 45 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 39)
+- [ ] **Lesson 46 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
 ## UI Lessons — Remaining
 
