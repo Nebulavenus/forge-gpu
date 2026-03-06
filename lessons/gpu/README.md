@@ -53,6 +53,7 @@ portable C interface.
 | 29 | [Screen-Space Reflections](29-screen-space-reflections/) | SSR ray marching, G-buffer, deferred shading | [Vectors](../math/01-vectors/) |
 | 30 | [Planar Reflections](30-planar-reflections/) | Mirror camera, oblique clipping, Fresnel blending | [Matrices](../math/05-matrices/) |
 | 31 | [Transform Animations](31-transform-animations/) | Keyframe interpolation, quaternion slerp, glTF animation, path following | [Orientation](../math/08-orientation/) |
+| 32 | [Skinning Animations](32-skinning-animations/) | Skeletal skinning, joint hierarchies, inverse bind matrices, blend weights | [Orientation](../math/08-orientation/), [Matrices](../math/05-matrices/) |
 
 ## Prerequisites
 
@@ -217,6 +218,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-screen-space-reflections`** — Screen-space reflections with ray marching
 - **`/forge-planar-reflections`** — Planar reflections with oblique near-plane clipping
 - **`/forge-transform-animations`** — Keyframe animation from glTF with slerp and path following
+- **`/forge-skinning-animations`** — Skeletal skinning with joint hierarchies and blend weights
 
 **How to use:**
 
@@ -305,7 +307,7 @@ GPU programming has a learning curve, but these lessons make it manageable.
 
 ## What's Next?
 
-After completing the current 31 lessons, you'll have the skills to build
+After completing the current 32 lessons, you'll have the skills to build
 real-time 3D applications with lighting, shadows, post-processing, UI, and
 procedural content. Use the skills to build your own projects, or extend
 the lessons with new techniques.

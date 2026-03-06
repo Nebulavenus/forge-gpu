@@ -3,7 +3,7 @@
 A set of lessons covering real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
 Four learning tracks that progress from a blank window to shadow maps,
-bloom, SSAO, procedural skies, and GPU-rendered UI — with tested libraries and AI skills
+bloom, SSAO, procedural skies, GPU-rendered UI, and skeletal animations — with tested libraries and AI skills
 you can use in your own projects.
 
 ## Overview
@@ -14,7 +14,7 @@ and run.
 
 **Reusable libraries** — Five header-only C libraries for math, OBJ loading,
 glTF scene loading, UI, and CPU rasterization. Documented, tested, and
-available for your your own projects.
+available for your own projects.
 
 **AI skills** — Key lessons distill into
 [Claude Code skills](https://code.claude.com/docs/en/skills). Copy
@@ -29,10 +29,10 @@ with AI when they understand what they're building.
 
 ### GPU Lessons (lessons/gpu/)
 
-The core rendering track. Start with a triangle, end with GPU-rendered UI.
+The core rendering track. Start with a triangle, end with skeletal animations.
 Every lesson is a standalone C program introducing one SDL GPU concept:
 pipelines, textures, depth buffers, lighting, shadows, compute shaders,
-HDR, post-processing, and UI rendering.
+HDR, post-processing, UI rendering, and animations.
 
 <table>
 <tr>
@@ -528,7 +528,9 @@ forge-gpu/
 │       ├── 27-ssao/
 │       ├── 28-ui-rendering/
 │       ├── 29-screen-space-reflections/
-│       └── 30-planar-reflections/
+│       ├── 30-planar-reflections/
+│       ├── 31-transform-animations/
+│       └── 32-skinning-animations/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -609,8 +611,20 @@ project to enable Claude to build games and tools with you.
 | [forge-point-light-shadows](.claude/skills/forge-point-light-shadows/SKILL.md) | `/forge-point-light-shadows` | Omnidirectional shadow mapping, cube map depth textures, linear depth storage, per-light shadow sampling |
 | [forge-gobo-spotlight](.claude/skills/forge-gobo-spotlight/SKILL.md) | `/forge-gobo-spotlight` | Projected-texture spotlight, cone falloff, gobo pattern projection, single 2D shadow map |
 | [forge-shader-noise](.claude/skills/forge-shader-noise/SKILL.md) | `/forge-shader-noise` | GPU noise functions (hash, value, Perlin, fBm, domain warping), procedural textures, dithering |
+| [forge-normal-maps](.claude/skills/forge-normal-maps/SKILL.md) | `/forge-normal-maps` | Tangent-space normal mapping, TBN matrix, per-texel surface detail |
+| [forge-blinn-phong-materials](.claude/skills/forge-blinn-phong-materials/SKILL.md) | `/forge-blinn-phong-materials` | Per-material Blinn-Phong lighting, material property systems |
+| [forge-debug-lines](.claude/skills/forge-debug-lines/SKILL.md) | `/forge-debug-lines` | Immediate-mode debug line drawing, grids, axes, wireframe boxes |
+| [forge-linear-fog](.claude/skills/forge-linear-fog/SKILL.md) | `/forge-linear-fog` | Depth-based distance fog (linear, exponential, exponential-squared) |
+| [forge-hdr-tone-mapping](.claude/skills/forge-hdr-tone-mapping/SKILL.md) | `/forge-hdr-tone-mapping` | HDR rendering with Reinhard/ACES tone mapping, exposure control |
+| [forge-procedural-sky](.claude/skills/forge-procedural-sky/SKILL.md) | `/forge-procedural-sky` | Physically-based procedural sky, atmospheric scattering, LUT transmittance |
 | [forge-ssao](.claude/skills/forge-ssao/SKILL.md) | `/forge-ssao` | Screen-space ambient occlusion, hemisphere kernel sampling, depth reconstruction, noise rotation, blur pass, AO compositing |
+| [forge-ui-rendering](.claude/skills/forge-ui-rendering/SKILL.md) | `/forge-ui-rendering` | Immediate-mode UI on GPU, font atlas, alpha blending, dynamic buffers |
+| [forge-screen-space-reflections](.claude/skills/forge-screen-space-reflections/SKILL.md) | `/forge-screen-space-reflections` | SSR ray marching, G-buffer, deferred shading |
+| [forge-planar-reflections](.claude/skills/forge-planar-reflections/SKILL.md) | `/forge-planar-reflections` | Mirror camera, oblique clipping, Fresnel blending |
+| [forge-transform-animations](.claude/skills/forge-transform-animations/SKILL.md) | `/forge-transform-animations` | Keyframe animation, glTF loading, quaternion slerp, path following |
+| [forge-skinning-animations](.claude/skills/forge-skinning-animations/SKILL.md) | `/forge-skinning-animations` | Skeletal skinning, joint hierarchies, inverse bind matrices, blend weights |
 | [forge-auto-widget-layout](.claude/skills/forge-auto-widget-layout/SKILL.md) | `/forge-auto-widget-layout` | Automatic widget layout with vertical/horizontal stacking, padding, spacing, and nested layouts |
+| [forge-draggable-windows](.claude/skills/forge-draggable-windows/SKILL.md) | `/forge-draggable-windows` | Draggable, z-ordered, collapsible windows for immediate-mode UI |
 
 ### Development skills (used within this repo)
 
@@ -621,6 +635,14 @@ project to enable Claude to build games and tools with you.
 | [dev-new-lesson](.claude/skills/dev-new-lesson/SKILL.md) | `/dev-new-lesson` | Scaffold a new GPU lesson with all required files |
 | [dev-ui-lesson](.claude/skills/dev-ui-lesson/SKILL.md) | `/dev-ui-lesson` | Add UI lesson: fonts, text, immediate-mode controls |
 | [dev-publish-lesson](.claude/skills/dev-publish-lesson/SKILL.md) | `/dev-publish-lesson` | Validate, commit, and PR a completed lesson |
+| [dev-create-pr](.claude/skills/dev-create-pr/SKILL.md) | `/dev-create-pr` | Stage changes, create branch, commit, and open a pull request |
+| [dev-review-pr](.claude/skills/dev-review-pr/SKILL.md) | `/dev-review-pr` | Handle PR review feedback and merge when ready |
+| [dev-final-pass](.claude/skills/dev-final-pass/SKILL.md) | `/dev-final-pass` | Quality review pass before publishing a lesson |
+| [dev-ui-review](.claude/skills/dev-ui-review/SKILL.md) | `/dev-ui-review` | Code quality and documentation review for UI lessons |
+| [dev-create-diagram](.claude/skills/dev-create-diagram/SKILL.md) | `/dev-create-diagram` | Create matplotlib diagrams with the project's dark theme |
+| [dev-add-screenshot](.claude/skills/dev-add-screenshot/SKILL.md) | `/dev-add-screenshot` | Capture a screenshot for a lesson and update its README |
+| [dev-markdown-lint](.claude/skills/dev-markdown-lint/SKILL.md) | `/dev-markdown-lint` | Check and fix Markdown formatting issues |
+| [dev-reset-workspace](.claude/skills/dev-reset-workspace/SKILL.md) | `/dev-reset-workspace` | Clean workspace for fresh work from main branch |
 
 **How to use:**
 
