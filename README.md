@@ -184,6 +184,10 @@ HDR, post-processing, UI rendering, and animations.
 <a href="lessons/gpu/32-skinning-animations/"><img src="lessons/gpu/32-skinning-animations/assets/screenshot.png" width="200" alt="Skinning Animations" /></a><br />
 <b>32</b> — Skinning Animations
 </td>
+<td align="center">
+<a href="lessons/gpu/33-vertex-pulling/"><img src="lessons/gpu/33-vertex-pulling/assets/screenshot.png" width="200" alt="Vertex Pulling" /></a><br />
+<b>33</b> — Vertex Pulling
+</td>
 </tr>
 </table>
 

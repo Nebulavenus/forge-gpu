@@ -284,10 +284,11 @@ distills this lesson into a reusable pattern. Invoke with
 
 ## What's next
 
-With skinning in place, you can animate any character or creature from a
-glTF file. Future lessons could explore animation blending (crossfading
-between clips), root motion extraction, or inverse kinematics for
-procedural animation.
+[Lesson 33 — Vertex Pulling](../33-vertex-pulling/) replaces the
+fixed-function vertex input assembler with manual storage buffer reads.
+The vertex shader fetches position, normal, and UV from a
+`StructuredBuffer` using `SV_VertexID`, decoupling vertex format from
+pipeline state.
 
 ## Exercises
 

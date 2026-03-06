@@ -74,7 +74,7 @@ Infrastructure that supports all lessons:
 
 ### Advanced Rendering
 
-- [ ] **Lesson 33 — Vertex Pulling** — Programmable vertex fetch using storage buffers instead of vertex input; raw buffer access in the vertex shader; decoupling vertex layout from pipeline input state; use cases — flexible vertex formats, mesh compression, compute-to-vertex pipelines
+- [x] **Lesson 33 — Vertex Pulling** — Programmable vertex fetch using storage buffers instead of vertex input; raw buffer access in the vertex shader; decoupling vertex layout from pipeline input state; use cases — flexible vertex formats, mesh compression, compute-to-vertex pipelines
 - [ ] **Lesson 34 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
 - [ ] **Lesson 35 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on Lessons 11 and 16)
 - [ ] **Lesson 36 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
