@@ -1,7 +1,8 @@
 # forge-gpu
 
 A set of lessons covering real-time graphics with
-[SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
+[SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C and
+ reusable header only libraries and AI skills you can use in your own project.
 
 ## Overview
 
