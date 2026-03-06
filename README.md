@@ -2,9 +2,6 @@
 
 A set of lessons covering real-time graphics with
 [SDL's GPU API](https://wiki.libsdl.org/SDL3/CategoryGPU), written in C.
-Four learning tracks that progress from a blank window to shadow maps,
-bloom, SSAO, procedural skies, GPU-rendered UI, and skeletal animations — with tested libraries and AI skills
-you can use in your own projects.
 
 ## Overview
 
