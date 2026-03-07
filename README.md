@@ -27,10 +27,11 @@ with AI when they understand what they're building.
 
 ### GPU Lessons (lessons/gpu/)
 
-The core rendering track. Start with a triangle, end with skeletal animations.
-Every lesson is a standalone C program introducing one SDL GPU concept:
-pipelines, textures, depth buffers, lighting, shadows, compute shaders,
-HDR, post-processing, UI rendering, and animations.
+The core rendering track. Start with a triangle, build up to skeletal animations,
+stencil effects, and beyond. Every lesson is a standalone C program introducing
+one SDL GPU concept: pipelines, textures, depth buffers, lighting, shadows,
+compute shaders, HDR, post-processing, UI rendering, animations, and stencil
+testing.
 
 <table>
 <tr>
@@ -185,6 +186,12 @@ HDR, post-processing, UI rendering, and animations.
 <td align="center">
 <a href="lessons/gpu/33-vertex-pulling/"><img src="lessons/gpu/33-vertex-pulling/assets/screenshot.png" width="200" alt="Vertex Pulling" /></a><br />
 <b>33</b> — Vertex Pulling
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/34-stencil-testing/"><img src="lessons/gpu/34-stencil-testing/assets/screenshot.png" width="200" alt="Portals & Outlines" /></a><br />
+<b>34</b> — Portals & Outlines
 </td>
 </tr>
 </table>
@@ -562,7 +569,9 @@ forge-gpu/
 │       ├── 29-screen-space-reflections/
 │       ├── 30-planar-reflections/
 │       ├── 31-transform-animations/
-│       └── 32-skinning-animations/
+│       ├── 32-skinning-animations/
+│       ├── 33-vertex-pulling/
+│       └── 34-stencil-testing/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -662,6 +671,7 @@ project to enable Claude to build games and tools with you.
 | [forge-skinning-animations](.claude/skills/forge-skinning-animations/SKILL.md) | `/forge-skinning-animations` | Skeletal skinning, joint hierarchies, inverse bind matrices, blend weights |
 | [forge-auto-widget-layout](.claude/skills/forge-auto-widget-layout/SKILL.md) | `/forge-auto-widget-layout` | Automatic widget layout with vertical/horizontal stacking, padding, spacing, and nested layouts |
 | [forge-draggable-windows](.claude/skills/forge-draggable-windows/SKILL.md) | `/forge-draggable-windows` | Draggable, z-ordered, collapsible windows for immediate-mode UI |
+| [forge-stencil-testing](.claude/skills/forge-stencil-testing/SKILL.md) | `/forge-stencil-testing` | Stencil buffer testing, portals, outlines, per-pixel masking |
 
 ### Development skills (used within this repo)
 
