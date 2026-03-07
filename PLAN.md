@@ -110,6 +110,42 @@ C library (`common/shapes/forge_shapes.h`).
 - [ ] **Asset Lesson 04 — Procedural Geometry** — `common/shapes/forge_shapes.h` header-only C library: parametric surface generation (sphere, icosphere, cylinder, cone, torus, plane, cube, capsule); struct-of-arrays layout for GPU upload; smooth vs flat normals; seam duplication; comprehensive test suite; GPU lesson rendering a five-shape showcase scene
 - [ ] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
 
+### Project Integration
+
+Once the core pipeline lessons (02–05) are complete, wire it up to the
+project's actual assets:
+
+- [ ] **Add a root `pipeline.toml`** pointing at the existing `assets/` tree:
+
+  ```toml
+  [pipeline]
+  source_dir = "assets"
+  output_dir = "assets/processed"
+  cache_dir  = ".forge-cache"
+
+  [texture]
+  max_size = 2048
+  generate_mipmaps = true
+
+  [mesh]
+  deduplicate = true
+  generate_tangents = true
+  ```
+
+- [ ] **Process existing models** — Suzanne, Duck, CesiumMilkTruck, BoxTextured,
+  CesiumMan, space-shuttle OBJ through the mesh plugin (dedup, tangents, LODs)
+- [ ] **Process existing textures** — model textures (BaseColor, Normal,
+  MetallicRoughness PNGs), skybox cube map faces, font atlases through the
+  texture plugin (resize, mipmaps, compression)
+- [ ] **Update GPU lessons to load processed assets** — swap raw asset paths for
+  processed bundle/output paths so lessons benefit from optimized geometry and
+  compressed textures
+- [ ] **Add `.forge-cache/` to `.gitignore`** — fingerprint cache is local state
+- [ ] **Add `assets/processed/` to `.gitignore`** — outputs are reproducible from
+  source assets and should not be committed
+- [ ] **CI integration** — run `python -m pipeline` in CI to verify all assets
+  process without errors; fail the build on processing regressions
+
 ### Web Frontend
 
 - [ ] **Asset Lesson 06 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
