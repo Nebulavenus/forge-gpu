@@ -79,6 +79,7 @@ forge-gpu/
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
 │   ├── physics/           # Physics simulation (particles, rigid bodies, collisions)
+│   ├── assets/            # Asset pipeline (Python CLI tools, web frontend)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
@@ -86,6 +87,7 @@ forge-gpu/
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
 │   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout, panels, windows)
 │   ├── physics/           # Physics library (particles, rigid bodies, collisions)
+│   ├── shapes/            # Procedural geometry (sphere, torus, capsule, etc.)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
@@ -172,6 +174,21 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Add reusable physics code to `common/physics/` as the track grows
 - Capture both screenshots AND animated GIFs (physics is dynamic)
 - Cross-reference math lessons for vectors, quaternions, and integration theory
+
+### Asset pipeline lessons (lessons/assets/)
+
+- Use **/dev-asset-lesson** skill to scaffold
+- **Hybrid Python + C track** — Python orchestrates, C handles performance-
+  critical processing (meshoptimizer, MikkTSpace) and procedural geometry
+- Python lessons are not added to CMakeLists.txt; C tool/library lessons are
+  added and must be listed in CMakeLists.txt for building
+- Plugin architecture — each asset type (texture, mesh, scene) is a plugin;
+  C tools are invoked as subprocesses by the Python pipeline
+- Procedural geometry lives in `common/shapes/forge_shapes.h` (header-only)
+- Incremental builds with content-hash fingerprinting
+- Later lessons add a web frontend (Flask/FastAPI + static HTML/JS)
+- Cross-reference GPU lessons that consume the processed assets
+- Cross-reference engine lessons for build system and dependency concepts
 
 ### Math library usage
 

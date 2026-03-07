@@ -6,13 +6,13 @@ A set of lessons covering real-time graphics with
 
 ## Overview
 
-**Lessons** — Five tracks covering GPU rendering, math fundamentals, engine
-tooling, UI systems, and physics simulation. Each lesson is a standalone
-program you can build and run.
+**Lessons** — Six tracks covering GPU rendering, math fundamentals, engine
+tooling, UI systems, physics simulation, and asset pipeline tooling. Each
+lesson is a standalone program you can build and run.
 
 **Reusable libraries** — Six header-only C libraries for math, OBJ loading,
-glTF scene loading, UI, physics, and CPU rasterization. Documented, tested,
-and available for your own projects.
+glTF scene loading, UI, physics, and CPU rasterization — plus a Python asset
+pipeline. Documented, tested, and available for your own projects.
 
 **AI skills** — Key lessons distill into
 [Claude Code skills](https://code.claude.com/docs/en/skills). Copy
@@ -281,6 +281,21 @@ controls. The physics library (`common/physics/`) grows lesson by lesson.
 | | *Coming soon* | See [PLAN.md](PLAN.md) for the roadmap |
 
 See [lessons/physics/README.md](lessons/physics/README.md) for details and
+[PLAN.md](PLAN.md) for the roadmap.
+
+### Asset Pipeline Lessons (lessons/assets/)
+
+A hybrid Python + C track for building asset processing tooling. Python
+orchestrates the pipeline (CLI, plugins, web frontend), while
+performance-critical processing uses compiled C tools (meshoptimizer,
+MikkTSpace) and procedural geometry lives in a header-only C library
+(`common/shapes/`).
+
+| # | Topic | What you'll learn |
+|---|-------|-------------------|
+| | *Coming soon* | See [PLAN.md](PLAN.md) for the roadmap |
+
+See [lessons/assets/README.md](lessons/assets/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
 
 ## Shared Libraries (`common/`)
@@ -558,6 +573,7 @@ forge-gpu/
 │   │   ├── README.md      Overview and navigation
 │   │   └── NN-topic/      Each topic: program, README, data output
 │   ├── physics/           Physics lessons — simulation rendered with SDL GPU
+│   ├── assets/            Asset pipeline — hybrid Python + C tooling
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
@@ -590,6 +606,8 @@ forge-gpu/
 │   ├── physics/           Physics library (particles, rigid bodies, collisions)
 │   │   ├── forge_physics.h Physics simulation (header-only)
 │   │   └── README.md      API reference and design
+│   ├── shapes/            Procedural geometry (planned — Asset Lesson 04)
+│   │   └── forge_shapes.h Parametric mesh generation (header-only)
 │   ├── raster/            CPU triangle rasterizer (edge function method)
 │   │   └── forge_raster.h Rasterizer implementation (header-only)
 │   ├── capture/           Screenshot/GIF capture utility
@@ -621,6 +639,7 @@ forge-gpu/
 - **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
 - **UI lessons** build an immediate-mode UI system (fonts, text, controls) as CPU-side data
 - **Physics lessons** simulate dynamics and render with SDL GPU, building `common/physics/`
+- **Asset pipeline lessons** build tooling (Python + C) that processes raw art into GPU-ready formats and generates procedural geometry
 - **GPU lessons** use the shared libraries, render UI data, and link to math lessons for theory
 - **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
 - **Rasterizer** (`common/raster/`) software-renders triangles for testing and visualization
@@ -682,6 +701,7 @@ project to enable Claude to build games and tools with you.
 | [dev-new-lesson](.claude/skills/dev-new-lesson/SKILL.md) | `/dev-new-lesson` | Scaffold a new GPU lesson with all required files |
 | [dev-ui-lesson](.claude/skills/dev-ui-lesson/SKILL.md) | `/dev-ui-lesson` | Add UI lesson: fonts, text, immediate-mode controls |
 | [dev-physics-lesson](.claude/skills/dev-physics-lesson/SKILL.md) | `/dev-physics-lesson` | Add physics lesson: simulation rendered with SDL GPU |
+| [dev-asset-lesson](.claude/skills/dev-asset-lesson/SKILL.md) | `/dev-asset-lesson` | Add asset pipeline lesson: Python + C tooling, procedural geometry |
 | [dev-publish-lesson](.claude/skills/dev-publish-lesson/SKILL.md) | `/dev-publish-lesson` | Validate, commit, and PR a completed lesson |
 | [dev-create-pr](.claude/skills/dev-create-pr/SKILL.md) | `/dev-create-pr` | Stage changes, create branch, commit, and open a pull request |
 | [dev-review-pr](.claude/skills/dev-review-pr/SKILL.md) | `/dev-review-pr` | Handle PR review feedback and merge when ready |

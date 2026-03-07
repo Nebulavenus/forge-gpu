@@ -95,20 +95,23 @@ streams as the backend.
 
 ## Asset Pipeline — New Track
 
-Unlike other tracks, asset pipeline lessons are **Python applications** with a
-plugin architecture and a web frontend. The pipeline grows from a simple CLI
-tool into a full asset editor.
+A hybrid Python + C track. The pipeline orchestrator is a Python CLI tool with
+a plugin architecture and web frontend. Processing plugins that need
+high-performance C libraries (meshoptimizer, MikkTSpace) are compiled C tools
+invoked as subprocesses. Procedural geometry generation lives in a header-only
+C library (`common/shapes/forge_shapes.h`).
 
 ### Core Pipeline
 
 - [ ] **Asset Lesson 01 — Pipeline Scaffold** — Python project structure; CLI entry point; plugin discovery and registration; asset file scanning and fingerprinting; configuration via TOML
-- [ ] **Asset Lesson 02 — Texture Processing** — Image import plugin: resize, format conversion (PNG/TGA to compressed formats), mipmap generation; metadata sidecar files; incremental builds (skip unchanged assets)
-- [ ] **Asset Lesson 03 — Mesh Processing** — glTF/OBJ import plugin: vertex deduplication, index optimization, tangent generation; binary output format for fast GPU upload; LOD generation with mesh simplification
-- [ ] **Asset Lesson 04 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
+- [ ] **Asset Lesson 02 — Texture Processing** — Image import plugin (Python + Pillow): resize, format conversion (PNG/TGA to compressed formats), mipmap generation; metadata sidecar files; incremental builds (skip unchanged assets)
+- [ ] **Asset Lesson 03 — Mesh Processing** — C mesh processing tool using meshoptimizer and MikkTSpace: vertex deduplication, index optimization, tangent generation; binary output format for fast GPU upload; LOD generation with mesh simplification; Python plugin invokes the compiled tool as a subprocess
+- [ ] **Asset Lesson 04 — Procedural Geometry** — `common/shapes/forge_shapes.h` header-only C library: parametric surface generation (sphere, icosphere, cylinder, cone, torus, plane, cube, capsule); struct-of-arrays layout for GPU upload; smooth vs flat normals; seam duplication; comprehensive test suite; GPU lesson rendering a five-shape showcase scene
+- [ ] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
 
 ### Web Frontend
 
-- [ ] **Asset Lesson 05 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
-- [ ] **Asset Lesson 06 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
-- [ ] **Asset Lesson 07 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
-- [ ] **Asset Lesson 08 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+- [ ] **Asset Lesson 06 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
+- [ ] **Asset Lesson 07 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
+- [ ] **Asset Lesson 08 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
+- [ ] **Asset Lesson 09 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
