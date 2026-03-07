@@ -250,9 +250,14 @@ a frustrating loop of re-triggering and waiting.
 
 After processing ALL feedback items, if any code changes were made:
 
+- Run `/dev-final-pass` on the fixed code to catch regressions
+- If the lesson has diagrams and any diagram code was changed, run
+  `/dev-review-diagrams` to verify correctness
 - Stage all changed files
 - Create a single commit: "Address PR feedback: [summary of all changes]"
 - Push once to the PR branch
+- Comment `@coderabbitai review` to trigger a fresh full review on the
+  current state (not `resume` — `review` starts clean)
 - Re-run checks with `gh pr checks` (don't wait, just show status)
 - Exit with: "Changes pushed. Run this skill again after checks complete."
 

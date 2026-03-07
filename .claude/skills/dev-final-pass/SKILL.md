@@ -391,6 +391,22 @@ cmake --build build --target lesson_NN_name
 
 ---
 
+## 14. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
+
+If the lesson has diagrams (check for `assets/*.png` files that are not
+screenshots), verify each diagram function against the README:
+
+- [ ] Every diagram's plotted geometry matches the README's equations
+- [ ] Annotations use the same variable names as the README
+- [ ] Coordinate systems are consistent with the lesson's conventions
+- [ ] Docstrings accurately describe what the function plots
+- [ ] Diagrams generate without errors
+
+For a thorough review, invoke `/dev-review-diagrams` with the lesson key.
+If there are no diagrams for the lesson, skip this section.
+
+---
+
 ## Reporting
 
 After completing all checks, report a summary table:
@@ -412,6 +428,7 @@ Final Pass Results — Lesson NN: Name
 11. Markdown lint         ✅ PASS
 12. Python lint           ⏭️  SKIP  (no scripts modified)
 13. Build & shaders       ✅ PASS
+14. Diagram correctness   ⏭️  SKIP  (no diagrams)
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

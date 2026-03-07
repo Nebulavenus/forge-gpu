@@ -15,6 +15,23 @@ The user provides:
 
 If missing, infer from the most recent lesson directory in `lessons/`.
 
+## CodeRabbit workflow (MANDATORY)
+
+Every push triggers a CodeRabbit review. Multiple rapid pushes cause review
+thrashing — each push gets partial feedback, you fix one thing and break
+another, creating an endless cycle.
+
+**Rules:**
+
+1. Run `/dev-final-pass` BEFORE the first push — catch everything locally
+2. If the lesson has diagrams, run `/dev-review-diagrams` too
+3. Push ONCE with all files ready
+4. After CodeRabbit's first review, it auto-pauses
+   (`auto_pause_after_reviewed_commits: 1` in `.coderabbit.yaml`)
+5. Collect ALL feedback, fix ALL issues locally, push once
+6. Comment `@coderabbitai review` for the final clean pass
+7. Never push fix-by-fix — batch everything
+
 ## Validation checklist
 
 Before committing, verify the lesson has all required pieces from the

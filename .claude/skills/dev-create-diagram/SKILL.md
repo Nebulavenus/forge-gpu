@@ -314,6 +314,22 @@ from matplotlib.patches import Polygon, Rectangle, FancyBboxPatch
 # Use STYLE["surface"] for fills, STYLE["accent*"] for borders
 ```
 
+## Post-creation validation (MANDATORY)
+
+After writing the diagram function, before committing:
+
+1. Read the lesson README section that references this diagram
+2. Verify every visual element matches the README's description:
+   - If README says "oriented bounding box", the diagram must rotate the box
+   - If README shows equation `y = f(x)`, the diagram must plot that exact
+     function
+   - If README describes 3 pipeline stages, the diagram must show all 3
+3. Run the diagram and visually inspect the output
+4. Verify the docstring matches what was actually plotted (not copy-pasted
+   from a different diagram)
+
+For a thorough cross-check, invoke `/dev-review-diagrams` with the lesson key.
+
 ## Common mistakes
 
 - **Hardcoded colors** — Using `"red"` or `"#ff0000"` instead of
