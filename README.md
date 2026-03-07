@@ -6,13 +6,13 @@ A set of lessons covering real-time graphics with
 
 ## Overview
 
-**Lessons** — Four tracks covering GPU rendering, math fundamentals, engine
-tooling, and UI systems. Each lesson is a standalone program you can build
-and run.
+**Lessons** — Five tracks covering GPU rendering, math fundamentals, engine
+tooling, UI systems, and physics simulation. Each lesson is a standalone
+program you can build and run.
 
-**Reusable libraries** — Five header-only C libraries for math, OBJ loading,
-glTF scene loading, UI, and CPU rasterization. Documented, tested, and
-available for your own projects.
+**Reusable libraries** — Six header-only C libraries for math, OBJ loading,
+glTF scene loading, UI, physics, and CPU rasterization. Documented, tested,
+and available for your own projects.
 
 **AI skills** — Key lessons distill into
 [Claude Code skills](https://code.claude.com/docs/en/skills). Copy
@@ -262,6 +262,20 @@ vertices, indices, UVs) with no GPU dependency.
 See [lessons/ui/README.md](lessons/ui/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
 
+### Physics Lessons (lessons/physics/)
+
+Real-time physics simulation rendered with SDL GPU. Particle dynamics, rigid
+bodies, collision detection, and constraint solving — each lesson is an
+interactive 3D program with Blinn-Phong lighting, shadow mapping, and camera
+controls. The physics library (`common/physics/`) grows lesson by lesson.
+
+| # | Topic | What you'll learn |
+|---|-------|-------------------|
+| | *Coming soon* | See [PLAN.md](PLAN.md) for the roadmap |
+
+See [lessons/physics/README.md](lessons/physics/README.md) for details and
+[PLAN.md](PLAN.md) for the roadmap.
+
 ## Shared Libraries (`common/`)
 
 GPU lessons use shared, header-only libraries in `common/` instead of writing
@@ -359,6 +373,21 @@ forge_ui_ctx_text_input(&ctx, TI_ID, &name_state, ti_rect, cursor_visible);
 forge_ui_ctx_end(&ctx);
 // Render ctx.vertices / ctx.indices with the atlas texture
 forge_ui_ctx_free(&ctx);
+```
+
+### Physics Library (`common/physics/`)
+
+Particle dynamics, rigid body simulation, collision detection, and contact
+resolution. Built lesson by lesson alongside the physics track.
+See [`common/physics/README.md`](common/physics/README.md) for details.
+
+```c
+#include "physics/forge_physics.h"
+
+ForgePhysicsParticle ball;
+forge_physics_particle_init(&ball, 1.0f, (vec3){0, 10, 0});
+forge_physics_apply_gravity(&ball, (vec3){0, -9.81f, 0});
+forge_physics_integrate(&ball, 1.0f / 60.0f);
 ```
 
 ### Raster Library (`common/raster/`)
@@ -521,6 +550,7 @@ forge-gpu/
 │   ├── ui/                UI lessons — fonts, text, immediate-mode controls
 │   │   ├── README.md      Overview and navigation
 │   │   └── NN-topic/      Each topic: program, README, data output
+│   ├── physics/           Physics lessons — simulation rendered with SDL GPU
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
@@ -548,6 +578,9 @@ forge-gpu/
 │   │   ├── forge_ui.h     TTF parser, rasterizer, atlas packer (header-only)
 │   │   ├── forge_ui_ctx.h Immediate-mode context: labels, buttons, checkboxes, sliders, text input, layout, panels
 │   │   └── README.md      Usage guide and supported features
+│   ├── physics/           Physics library (particles, rigid bodies, collisions)
+│   │   ├── forge_physics.h Physics simulation (header-only)
+│   │   └── README.md      API reference and design
 │   ├── raster/            CPU triangle rasterizer (edge function method)
 │   │   └── forge_raster.h Rasterizer implementation (header-only)
 │   ├── capture/           Screenshot/GIF capture utility
@@ -558,7 +591,8 @@ forge-gpu/
 │   ├── obj/               OBJ parser tests
 │   ├── gltf/              glTF parser tests
 │   ├── raster/            CPU rasterizer tests
-│   └── ui/                UI library tests (TTF parser, immediate-mode context)
+│   ├── ui/                UI library tests (TTF parser, immediate-mode context)
+│   └── physics/           Physics library tests
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── dev-math-lesson/   Add math concept + lesson + update library
 │   ├── dev-ui-lesson/     Add UI lesson (fonts, text, controls)
@@ -577,6 +611,7 @@ forge-gpu/
 - **Math lessons** teach concepts and add to `common/math/`
 - **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
 - **UI lessons** build an immediate-mode UI system (fonts, text, controls) as CPU-side data
+- **Physics lessons** simulate dynamics and render with SDL GPU, building `common/physics/`
 - **GPU lessons** use the shared libraries, render UI data, and link to math lessons for theory
 - **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
 - **Rasterizer** (`common/raster/`) software-renders triangles for testing and visualization
@@ -636,6 +671,7 @@ project to enable Claude to build games and tools with you.
 | [dev-engine-lesson](.claude/skills/dev-engine-lesson/SKILL.md) | `/dev-engine-lesson` | Add engine lesson: build systems, C, debugging, project structure |
 | [dev-new-lesson](.claude/skills/dev-new-lesson/SKILL.md) | `/dev-new-lesson` | Scaffold a new GPU lesson with all required files |
 | [dev-ui-lesson](.claude/skills/dev-ui-lesson/SKILL.md) | `/dev-ui-lesson` | Add UI lesson: fonts, text, immediate-mode controls |
+| [dev-physics-lesson](.claude/skills/dev-physics-lesson/SKILL.md) | `/dev-physics-lesson` | Add physics lesson: simulation rendered with SDL GPU |
 | [dev-publish-lesson](.claude/skills/dev-publish-lesson/SKILL.md) | `/dev-publish-lesson` | Validate, commit, and PR a completed lesson |
 | [dev-create-pr](.claude/skills/dev-create-pr/SKILL.md) | `/dev-create-pr` | Stage changes, create branch, commit, and open a pull request |
 | [dev-review-pr](.claude/skills/dev-review-pr/SKILL.md) | `/dev-review-pr` | Handle PR review feedback and merge when ready |

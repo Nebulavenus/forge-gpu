@@ -1,0 +1,79 @@
+# Physics Lessons
+
+Real-time physics simulation rendered with SDL GPU — particle dynamics, rigid
+bodies, collision detection, and constraint solving.
+
+## Purpose
+
+Physics lessons teach how to simulate physical behavior and render it in
+real time:
+
+- Integrate particle motion with symplectic Euler
+- Apply forces (gravity, drag, springs) via the force accumulator pattern
+- Detect collisions between spheres, planes, boxes, and convex shapes
+- Resolve contacts with impulse-based response and friction
+- Build constraint solvers for joints and contacts
+- Architect a complete simulation loop with fixed timestep and interpolation
+
+Every lesson is a standalone interactive program with Blinn-Phong lighting,
+a grid floor, shadow mapping, and first-person camera controls. The physics
+is the focus — rendering uses simple geometric shapes (spheres, cubes,
+capsules) so the simulation behavior is front and center.
+
+## Philosophy
+
+- **Simulate, then render** — Get the physics correct first, then visualize it.
+  A correct simulation with simple shapes is better than a beautiful scene with
+  broken physics.
+- **Fixed timestep** — Physics runs at a fixed rate (60 Hz) decoupled from
+  rendering. The accumulator pattern ensures identical behavior regardless of
+  frame rate.
+- **Interactive** — Every lesson supports pause (Space), reset (R), and slow
+  motion (T) so learners can observe and experiment with the simulation.
+- **Library-driven** — Reusable physics code lives in `common/physics/` and
+  grows lesson by lesson, just like the math library.
+
+## Lessons
+
+| # | Topic | What you'll learn |
+|---|-------|-------------------|
+| | *Coming soon* | See [PLAN.md](../../PLAN.md) for the roadmap |
+
+## Shared library
+
+Physics lessons build on `common/physics/forge_physics.h` — a header-only
+library that grows with each lesson. See
+[common/physics/README.md](../../common/physics/README.md) for the API
+reference.
+
+## Controls
+
+Every physics lesson uses the same control scheme:
+
+| Key | Action |
+|---|---|
+| WASD / Arrows | Move camera |
+| Mouse | Look around |
+| R | Reset simulation |
+| Space | Pause / resume |
+| T | Toggle slow motion |
+| Escape | Release mouse / quit |
+
+## Prerequisites
+
+Physics lessons use the same build system as GPU lessons:
+
+- CMake 3.24+
+- A C compiler (MSVC, GCC, or Clang)
+- A GPU with Vulkan, Direct3D 12, or Metal support
+- Python 3 (for shader compilation and capture scripts)
+
+## Building
+
+```bash
+cmake -B build
+cmake --build build --config Debug
+
+# Run a physics lesson
+python scripts/run.py physics/01
+```

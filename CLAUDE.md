@@ -78,16 +78,18 @@ forge-gpu/
 │   ├── math/              # Math fundamentals (vectors, matrices, etc.)
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
+│   ├── physics/           # Physics simulation (particles, rigid bodies, collisions)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
 │   ├── obj/               # OBJ parser (Wavefront .obj files)
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
 │   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout, panels, windows)
+│   ├── physics/           # Physics library (particles, rigid bodies, collisions)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster, ui)
+├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)
 ```
@@ -157,6 +159,19 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Add reusable types and functions to `common/ui/` as the track grows
 - Cross-reference math lessons (vectors, rects) and engine lessons (memory,
   structs) where relevant
+
+### Physics lessons (lessons/physics/)
+
+- Use **/dev-physics-lesson** skill to scaffold
+- Interactive 3D programs — simulation rendered in real time with SDL GPU
+- Every lesson includes Blinn-Phong lighting, grid floor, shadow map, and
+  camera controls as a rendering baseline
+- Use simple shapes (spheres, cubes, capsules) — the physics is the focus
+- Fixed timestep with accumulator pattern — physics must be frame-rate independent
+- Support pause (Space), reset (R), and slow motion (T) in every lesson
+- Add reusable physics code to `common/physics/` as the track grows
+- Capture both screenshots AND animated GIFs (physics is dynamic)
+- Cross-reference math lessons for vectors, quaternions, and integration theory
 
 ### Math library usage
 
