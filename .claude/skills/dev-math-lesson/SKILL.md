@@ -315,6 +315,20 @@ Common fixes needed:
 - Add language tags to code blocks (`` ```text ``, `` ```c ``, `` ```bash ``)
 - Use 4 backticks for nested code blocks (when showing markdown in markdown)
 
+## MANDATORY: Chunked writes for large files
+
+Task agents have a 32K output token limit per Write call. **Any file over ~800
+lines** MUST be written in chunks — split into parts, write each to `/tmp/`,
+then concatenate.
+
+**Recovery rule — if a writing agent fails with a token limit error:**
+
+- **NEVER write a fallback or simplified version.** STOP and report the failure.
+- Re-run the write using the chunked approach.
+
+See [`.claude/large-file-strategy.md`](../../../.claude/large-file-strategy.md)
+for the full strategy.
+
 ## Math Library Conventions
 
 ### Coordinate System

@@ -342,6 +342,32 @@ Tell the user:
 - Does **not** update root README.md gallery (that's `/dev-create-lesson`)
 - Does **not** create a branch or PR (that's `/dev-publish-lesson`)
 
+## MANDATORY: Chunked writes for main.c
+
+**ALL GPU lesson `main.c` files MUST use the chunked-write pattern.** Task
+agents have a 32K output token limit per Write call. A single Write over ~800
+lines fails silently — the file is never created and all work is lost.
+
+**When creating PLAN.md (step 7), ALWAYS include a "main.c Decomposition"
+section** specifying how the file will be split into chunks. This is required
+even if the file seems small now — scenes grow during iterative building.
+
+**Required workflow for writing main.c:**
+
+1. Split into 3-4 parts (~400-600 lines each). Write each to `/tmp/`.
+2. Agent A (header + helpers + structs) runs first. B and C run in parallel.
+3. Concatenate with `cat` into the final `main.c`.
+
+**Recovery rule — if a coding agent fails with a token limit error:**
+
+- **NEVER write a fallback or simplified `main.c`.** This destroys all the
+  planning and coding work.
+- **STOP immediately** and report the failure to the user.
+- Re-plan using the chunked approach and re-run with decomposed agents.
+
+See [`.claude/large-file-strategy.md`](../../../.claude/large-file-strategy.md)
+for the full strategy and decomposition template.
+
 ## Code style reminders
 
 - C99 matching SDL's style

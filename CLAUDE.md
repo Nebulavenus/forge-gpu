@@ -190,6 +190,31 @@ Never disable lint rules, remove CI workflows, add ignore comments, or relax
 thresholds to make errors pass. Always fix the underlying issue. If a rule
 seems problematic, ask the user — don't bypass it yourself.
 
+## Large file writes (MANDATORY — Task agent token limit)
+
+Task agents hit a **32K output token limit** on Write calls. A single Write
+producing ~800+ lines of C will fail silently — the file is never created and
+all agent work is lost. This is a **fatal, unrecoverable error** that wastes
+hours of planning and coding.
+
+**MANDATORY rules — these are non-negotiable:**
+
+1. **ALL GPU lesson `main.c` files MUST use the chunked-write pattern.** Do not
+   attempt to write a full lesson `main.c` in a single Write call — ever. Split
+   into 3-4 parts (~400-600 lines each), write each to `/tmp/`, then
+   concatenate with `cat`.
+2. **Every lesson PLAN.md MUST include a "main.c Decomposition" section**
+   specifying what goes in each chunk before any coding agent starts writing.
+3. **If a coding agent fails with a token limit error, NEVER write a fallback
+   or simplified replacement.** STOP immediately and report the failure to the
+   user. Writing a dumbed-down `main.c` destroys all the planning and coding
+   work and forces the user to redo everything from scratch.
+4. **Any file over ~800 lines** (README, `.c`, `.h`) must be written in chunks.
+
+See [`.claude/large-file-strategy.md`](.claude/large-file-strategy.md) for the
+full strategy, agent decomposition template, contract-sharing rules, and
+recovery steps.
+
 ## Dependencies
 
 - SDL3 (with GPU API)
