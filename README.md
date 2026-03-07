@@ -193,6 +193,10 @@ testing.
 <a href="lessons/gpu/34-stencil-testing/"><img src="lessons/gpu/34-stencil-testing/assets/screenshot.png" width="200" alt="Portals & Outlines" /></a><br />
 <b>34</b> — Portals & Outlines
 </td>
+<td align="center">
+<a href="lessons/gpu/35-decals/"><img src="lessons/gpu/35-decals/assets/screenshot.png" width="200" alt="Decals" /></a><br />
+<b>35</b> — Decals
+</td>
 </tr>
 </table>
 

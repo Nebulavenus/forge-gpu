@@ -119,6 +119,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/32-skinning-animations)
     add_subdirectory(lessons/gpu/33-vertex-pulling)
     add_subdirectory(lessons/gpu/34-stencil-testing)
+    add_subdirectory(lessons/gpu/35-decals)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────
