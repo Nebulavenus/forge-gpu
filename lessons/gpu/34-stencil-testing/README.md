@@ -36,9 +36,13 @@ buffer (which answers "is this fragment closer?"), the stencil buffer answers
 whatever question you program it to answer: "is this pixel inside the portal?",
 "has this pixel already been drawn?", or "should this pixel show an outline?".
 
-Stencil behavior is configured entirely on the **pipeline state**. Shaders
-have no knowledge of stencil at all. This makes it a powerful fixed-function
-feature that works with any shader combination.
+For every fragment the GPU rasterizes, the stencil buffer can **test** the
+existing value at that pixel and **discard** the fragment if the test fails — no
+color write, no depth write. It can also **write** a new value into the buffer
+for later draw calls to test against. Both the test and the write are configured
+entirely on the **pipeline state**. Shaders have no knowledge of stencil at
+all. This makes it a powerful fixed-function feature that works with any shader
+combination.
 
 ## The stencil buffer
 
@@ -96,18 +100,20 @@ values). Treat this sequence as the conceptual model for understanding how
 `fail_op`, `depth_fail_op`, and `pass_op` apply — not the guaranteed hardware
 execution order.
 
-The comparison evaluates:
+Each fragment goes through two tests in sequence. The **stencil test** compares
+the existing buffer value at that pixel against a reference value:
 
 $$
 (\mathrm{buffer\\_value} \mathbin{\\&} \mathrm{compare\\_mask}) \enspace \mathrm{COMPARE\\_OP} \enspace (\mathrm{reference} \mathbin{\\&} \mathrm{compare\\_mask})
 $$
 
-where `buffer_value` is the current stencil value at this pixel, `reference`
-is set per draw call, and `COMPARE_OP` is one of the eight comparison
-functions (NEVER, LESS, EQUAL, LESS_OR_EQUAL, GREATER, NOT_EQUAL,
-GREATER_OR_EQUAL, ALWAYS).
+`COMPARE_OP` is one of eight comparison functions (NEVER, LESS, EQUAL,
+LESS_OR_EQUAL, GREATER, NOT_EQUAL, GREATER_OR_EQUAL, ALWAYS). If the stencil
+test fails, the fragment is discarded and `fail_op` runs on the stencil buffer.
 
-Three outcomes determine what happens to the stencil buffer:
+If the stencil test passes, the **depth test** runs next. If the depth test
+fails, `depth_fail_op` runs. If both tests pass, `pass_op` runs and the
+fragment writes to the color buffer.
 
 | Outcome | Condition | Operation field |
 |---------|-----------|-----------------|
@@ -115,7 +121,9 @@ Three outcomes determine what happens to the stencil buffer:
 | Depth fail | Stencil passes, depth fails | `depth_fail_op` |
 | Both pass | Both stencil and depth pass | `pass_op` |
 
-Each outcome can apply a different stencil operation to the buffer value.
+Each operation field specifies what to do with the stencil buffer value at that
+pixel (KEEP, REPLACE, INCREMENT, etc. — see [Stencil operations](#stencil-operations)
+below).
 
 Two important properties of the stencil configuration:
 
