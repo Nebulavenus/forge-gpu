@@ -3,6 +3,11 @@
 A hybrid Python + C track for building asset processing tooling — from a CLI
 pipeline to a full asset editor with a web frontend.
 
+The pipeline is a **reusable Python library** at
+[`pipeline/`](../../pipeline/) in the repo root. Install it with
+`pip install -e ".[dev]"` and use it in your own projects. These lessons teach
+how each piece was designed and built.
+
 ## What you'll learn
 
 - Scaffold a plugin-based CLI pipeline with TOML configuration (Python)
@@ -30,6 +35,9 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
   optimization, tangent generation) uses compiled C tools invoked as
   subprocesses. Procedural geometry lives in a header-only C library that GPU
   lessons include directly.
+- **Reusable library** — The pipeline lives at `pipeline/` in the repo root
+  as a pip-installable package. Each lesson adds functionality to the shared
+  library, not to throwaway lesson-local code.
 - **Incremental builds** — Only reprocess what changed. Fingerprint source
   files by content hash and skip unchanged assets.
 - **Plugin architecture** — Each asset type (texture, mesh, scene) is a plugin
@@ -42,9 +50,9 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 
 ## Lessons
 
-| # | Topic | Language | What you'll learn |
-|---|-------|----------|-------------------|
-| | *Coming soon* | | See [PLAN.md](../../PLAN.md) for the roadmap |
+| # | Topic | Language | What it adds to the pipeline |
+|---|-------|----------|------------------------------|
+| 01 | [Pipeline Scaffold](01-pipeline-scaffold/) | Python | CLI, plugin discovery, scanning, fingerprinting, TOML config |
 
 ## Building
 
@@ -53,19 +61,32 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 - Python 3.10+ (for pipeline CLI and web frontend)
 - CMake 3.24+ and a C compiler (for mesh processing tools and procedural
   geometry library)
-- pip (for installing Python dependencies per lesson)
 
-Individual lessons may add dependencies (Pillow, Flask/FastAPI, meshoptimizer,
-MikkTSpace) as needed — each lesson's README lists its requirements.
+### Installation
+
+```bash
+# From the forge-gpu repository root
+pip install -e ".[dev]"
+```
 
 ### Running
 
 ```bash
-# Python lessons — from a lesson directory
-pip install -r requirements.txt   # if present
-python -m pipeline                # or as documented per lesson
+# Run the pipeline CLI
+forge-pipeline -v
 
-# C tools — built via CMake alongside GPU lessons
+# Try it with the lesson's sample assets
+cd lessons/assets/01-pipeline-scaffold
+forge-pipeline -v
+
+# Run the tests
+pytest tests/pipeline/ -v
+```
+
+C tools (mesh processing, procedural geometry) are built via CMake alongside
+GPU lessons:
+
+```bash
 cmake -B build
 cmake --build build --config Debug
 ```

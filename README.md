@@ -293,7 +293,7 @@ MikkTSpace) and procedural geometry lives in a header-only C library
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
-| | *Coming soon* | See [PLAN.md](PLAN.md) for the roadmap |
+| 01 | [Pipeline Scaffold](lessons/assets/01-pipeline-scaffold/) | CLI entry point, plugin discovery, asset scanning, content-hash fingerprinting, TOML config |
 
 See [lessons/assets/README.md](lessons/assets/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
@@ -434,8 +434,38 @@ forge_raster_write_bmp(&buf, "triangle.bmp");
 forge_raster_buffer_destroy(&buf);
 ```
 
-All five libraries are header-only — just include and use. No build
+All six C libraries are header-only — just include and use. No build
 configuration needed.
+
+### Asset Pipeline (`pipeline/`)
+
+A pip-installable Python package for scanning, fingerprinting, and processing
+game assets. Plugin-based architecture — add new asset types by dropping a
+`.py` file into a plugins directory.
+See [`pipeline/README.md`](pipeline/README.md) for the full API reference.
+
+```bash
+pip install -e ".[dev]"        # install from repo root
+forge-pipeline -v              # scan and report
+forge-pipeline --help          # see all options
+```
+
+```python
+from pathlib import Path
+
+from pipeline.config import load_config
+from pipeline.plugin import PluginRegistry
+from pipeline.scanner import scan, FingerprintCache
+
+config = load_config(Path("pipeline.toml"))
+registry = PluginRegistry()
+registry.discover(Path("plugins/"))
+cache = FingerprintCache(config.cache_dir / "fingerprints.json")
+files = scan(config.source_dir, registry.supported_extensions, cache)
+```
+
+Built incrementally across the [asset pipeline lessons](lessons/assets/).
+Each lesson adds real functionality to this shared package.
 
 ## Getting Started
 
@@ -444,7 +474,7 @@ configuration needed.
 - **CMake 3.24+**
 - **A C compiler** (MSVC, GCC, or Clang)
 - **A GPU** with Vulkan, Direct3D 12, or Metal support
-- **Python 3** (for helper scripts)
+- **Python 3.10+** (for helper scripts and the asset pipeline)
 
 SDL3 is fetched automatically — no manual installation required.
 
@@ -501,16 +531,17 @@ build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
 ## Testing
 
 The shared libraries have automated tests covering math operations, OBJ parsing,
-glTF parsing, CPU rasterization, and UI systems.
+glTF parsing, CPU rasterization, UI systems, the asset pipeline, and physics
+(coming soon).
 
-**Run all tests:**
+**Run all C tests:**
 
 ```bash
 cd build
 ctest -C Debug --output-on-failure
 ```
 
-**Run a specific test suite:**
+**Run a specific C test suite:**
 
 ```bash
 cmake --build build --config Debug --target test_math
@@ -521,8 +552,15 @@ cmake --build build --config Debug --target test_ui
 cmake --build build --config Debug --target test_ui_ctx
 ```
 
-All tests use epsilon comparison for floating-point accuracy and return proper
-exit codes for CI/CD integration.
+**Run pipeline (Python) tests:**
+
+```bash
+pip install -e ".[dev]"        # once, from repo root
+pytest tests/pipeline/ -v
+```
+
+All C tests use epsilon comparison for floating-point accuracy and return
+proper exit codes for CI/CD integration.
 
 See [tests/math/README.md](tests/math/README.md) for adding new tests.
 
@@ -573,7 +611,7 @@ forge-gpu/
 │   │   ├── README.md      Overview and navigation
 │   │   └── NN-topic/      Each topic: program, README, data output
 │   ├── physics/           Physics lessons — simulation rendered with SDL GPU
-│   ├── assets/            Asset pipeline — hybrid Python + C tooling
+│   ├── assets/            Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               GPU lessons — SDL API and rendering
 │       ├── 01-hello-window/
 │       ├── ...
@@ -613,13 +651,21 @@ forge-gpu/
 │   ├── capture/           Screenshot/GIF capture utility
 │   │   └── forge_capture.h
 │   └── forge.h            Shared utilities for lessons
-├── tests/                 Test suite (CTest integration)
+├── pipeline/              Asset pipeline library (Python, pip-installable)
+│   ├── __main__.py        CLI entry point (forge-pipeline)
+│   ├── config.py          TOML configuration loader
+│   ├── plugin.py          Plugin base class, registry, file-based discovery
+│   ├── scanner.py         File scanning, SHA-256 fingerprinting, cache
+│   ├── plugins/           Built-in asset type plugins
+│   └── README.md          API reference and usage guide
+├── tests/                 Test suite (CTest + pytest)
 │   ├── math/              Math library tests
 │   ├── obj/               OBJ parser tests
 │   ├── gltf/              glTF parser tests
 │   ├── raster/            CPU rasterizer tests
 │   ├── ui/                UI library tests (TTF parser, immediate-mode context)
-│   └── physics/           Physics library tests
+│   ├── physics/           Physics library tests
+│   └── pipeline/          Asset pipeline tests (pytest)
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── dev-math-lesson/   Add math concept + lesson + update library
 │   ├── dev-ui-lesson/     Add UI lesson (fonts, text, controls)
@@ -639,7 +685,7 @@ forge-gpu/
 - **Engine lessons** teach build systems, C fundamentals, debugging, and project structure
 - **UI lessons** build an immediate-mode UI system (fonts, text, controls) as CPU-side data
 - **Physics lessons** simulate dynamics and render with SDL GPU, building `common/physics/`
-- **Asset pipeline lessons** build tooling (Python + C) that processes raw art into GPU-ready formats and generates procedural geometry
+- **Asset pipeline lessons** teach the design of `pipeline/` — a reusable Python package for processing raw art into GPU-ready formats
 - **GPU lessons** use the shared libraries, render UI data, and link to math lessons for theory
 - **Parsers** (`common/obj/`, `common/gltf/`) load 3D models for GPU lessons
 - **Rasterizer** (`common/raster/`) software-renders triangles for testing and visualization
@@ -691,6 +737,7 @@ project to enable Claude to build games and tools with you.
 | [forge-auto-widget-layout](.claude/skills/forge-auto-widget-layout/SKILL.md) | `/forge-auto-widget-layout` | Automatic widget layout with vertical/horizontal stacking, padding, spacing, and nested layouts |
 | [forge-draggable-windows](.claude/skills/forge-draggable-windows/SKILL.md) | `/forge-draggable-windows` | Draggable, z-ordered, collapsible windows for immediate-mode UI |
 | [forge-stencil-testing](.claude/skills/forge-stencil-testing/SKILL.md) | `/forge-stencil-testing` | Stencil buffer testing, portals, outlines, per-pixel masking |
+| [forge-asset-pipeline](.claude/skills/forge-asset-pipeline/SKILL.md) | `/forge-asset-pipeline` | Plugin-based asset pipeline with CLI, content-hash fingerprinting, TOML config |
 
 ### Development skills (used within this repo)
 

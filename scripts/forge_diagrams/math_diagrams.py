@@ -2320,7 +2320,7 @@ def diagram_white_noise_comparison():
     titles = ["Wang Hash", "PCG Hash", "xxHash32"]
     noises = [noise_wang, noise_pcg, noise_xx]
 
-    for ax, title, noise in zip(axes, titles, noises):
+    for ax, title, noise in zip(axes, titles, noises, strict=True):
         ax.set_facecolor(STYLE["bg"])
         ax.imshow(noise, cmap="gray", vmin=0, vmax=1, interpolation="nearest")
         ax.set_title(title, color=STYLE["text"], fontsize=12, fontweight="bold", pad=8)
@@ -2441,7 +2441,7 @@ def diagram_distribution_histogram():
 
     expected = n / n_bins
 
-    for ax, (title, data, color) in zip(axes, datasets):
+    for ax, (title, data, color) in zip(axes, datasets, strict=True):
         ax.set_facecolor(STYLE["bg"])
         counts, edges, _ = ax.hist(
             data, bins=n_bins, range=(0, 1), color=color, alpha=0.75, edgecolor="none"
@@ -2783,7 +2783,9 @@ def diagram_gradient_noise_concept():
     ]
     corner_labels = ["g00", "g10", "g01", "g11"]
 
-    for (cx, cy), color, label in zip(corners, corner_colors, corner_labels):
+    for (cx, cy), color, label in zip(
+        corners, corner_colors, corner_labels, strict=True
+    ):
         gx_abs = cell_x + cx
         gy_abs = cell_y + cy
         dx, dy = grid_grads[(gx_abs, gy_abs)]
@@ -2840,7 +2842,7 @@ def diagram_gradient_noise_concept():
     )
 
     # Distance vectors from each corner to sample point (dashed)
-    for (cx, cy), color in zip(corners, corner_colors):
+    for (cx, cy), color in zip(corners, corner_colors, strict=True):
         gx_abs = cell_x + cx
         gy_abs = cell_y + cy
         ax.plot(
@@ -3169,7 +3171,7 @@ def diagram_noise_comparison():
     noises = [white, perlin * 2.5, simplex * 1.8]
     cmaps = ["gray", "gray", "gray"]
 
-    for ax, title, noise, cmap in zip(axes, titles, noises, cmaps):
+    for ax, title, noise, cmap in zip(axes, titles, noises, cmaps, strict=True):
         ax.set_facecolor(STYLE["bg"])
         ax.imshow(
             noise,
@@ -3217,7 +3219,7 @@ def diagram_fbm_octaves():
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4.5), facecolor=STYLE["bg"])
 
-    for ax, octaves in zip(axes, octave_counts):
+    for ax, octaves in zip(axes, octave_counts, strict=True):
         noise = _fbm2d(xx * scale, yy * scale, 42, octaves)
         ax.set_facecolor(STYLE["bg"])
         ax.imshow(
@@ -3352,7 +3354,7 @@ def diagram_domain_warping():
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4.5), facecolor=STYLE["bg"])
 
-    for ax, strength, label in zip(axes, strengths, labels):
+    for ax, strength, label in zip(axes, strengths, labels, strict=True):
         if strength == 0.0:
             noise = _fbm2d(xx * scale, yy * scale, 42, 4)
         else:
@@ -3497,7 +3499,7 @@ def diagram_sampling_comparison():
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4.5), facecolor=STYLE["bg"])
 
-    for ax, (title, xs, ys, color) in zip(axes, datasets):
+    for ax, (title, xs, ys, color) in zip(axes, datasets, strict=True):
         ax.set_facecolor(STYLE["bg"])
         ax.scatter(xs, ys, s=6, c=color, alpha=0.8, edgecolors="none")
         ax.set_xlim(0, 1)
@@ -3605,7 +3607,7 @@ def diagram_dithering_comparison():
 
     fig, axes = plt.subplots(5, 1, figsize=(12, 6.25), facecolor=STYLE["bg"])
 
-    for ax, (title, data) in zip(axes, panels):
+    for ax, (title, data) in zip(axes, panels, strict=True):
         ax.set_facecolor(STYLE["bg"])
         ax.imshow(
             data, cmap="gray", vmin=0, vmax=1, aspect="auto", interpolation="nearest"
@@ -3654,7 +3656,7 @@ def diagram_power_spectrum():
     blue = np.zeros((size, size))
     n_points = size * size // 4
     bnx, bny = _blue_noise_2d(min(n_points, 400), 25, 42)
-    for px, py in zip(bnx, bny):
+    for px, py in zip(bnx, bny, strict=True):
         ix = int(px * (size - 1))
         iy = int(py * (size - 1))
         if 0 <= ix < size and 0 <= iy < size:
@@ -3912,7 +3914,7 @@ def diagram_radical_inverse():
     fig, axes = plt.subplots(1, 3, figsize=(14, 4), facecolor=STYLE["bg"])
 
     counts = [4, 8, 16]
-    for ax, n in zip(axes, counts):
+    for ax, n in zip(axes, counts, strict=True):
         ax.set_facecolor(STYLE["bg"])
 
         # Plot the Halton base-2 points on a number line
@@ -5094,7 +5096,7 @@ def diagram_de_casteljau_quadratic():
 
     t_vals = [0.25, 0.5, 0.75]
 
-    for ax, t_val in zip(axes, t_vals):
+    for ax, t_val in zip(axes, t_vals, strict=True):
         setup_axes(ax, xlim=(-0.5, 4.8), ylim=(-0.8, 4.8))
 
         # Full curve (faint)
@@ -5119,7 +5121,7 @@ def diagram_de_casteljau_quadratic():
         # Control points
         labels = ["$P_0$", "$P_1$", "$P_2$"]
         offsets = [(-0.3, -0.35), (0.0, 0.25), (0.15, -0.35)]
-        for p, lbl, off in zip(ctrl, labels, offsets):
+        for p, lbl, off in zip(ctrl, labels, offsets, strict=True):
             ax.plot(*p, "o", color=STYLE["accent2"], markersize=9, zorder=5)
             ax.text(
                 p[0] + off[0],
@@ -5224,7 +5226,7 @@ def diagram_de_casteljau_cubic():
 
     t_vals = [0.25, 0.5, 0.75]
 
-    for ax, t_val in zip(axes, t_vals):
+    for ax, t_val in zip(axes, t_vals, strict=True):
         setup_axes(ax, xlim=(-0.5, 4.8), ylim=(-0.8, 3.8))
 
         # Full curve (faint)
@@ -5249,7 +5251,7 @@ def diagram_de_casteljau_cubic():
         # Control points
         labels = ["$P_0$", "$P_1$", "$P_2$", "$P_3$"]
         offsets = [(-0.3, -0.3), (-0.35, 0.2), (0.15, 0.2), (0.15, -0.3)]
-        for p, lbl, off in zip(ctrl, labels, offsets):
+        for p, lbl, off in zip(ctrl, labels, offsets, strict=True):
             ax.plot(*p, "o", color=STYLE["accent2"], markersize=9, zorder=5)
             ax.text(
                 p[0] + off[0],
@@ -5449,7 +5451,7 @@ def diagram_cubic_tangent_vectors():
     # Control points
     labels = ["$P_0$", "$P_1$", "$P_2$", "$P_3$"]
     offsets = [(-0.3, -0.35), (-0.4, 0.2), (0.15, 0.2), (0.15, -0.35)]
-    for p, lbl, off in zip([p0, p1, p2, p3], labels, offsets):
+    for p, lbl, off in zip([p0, p1, p2, p3], labels, offsets, strict=True):
         ax.plot(*p, "o", color=STYLE["accent2"], markersize=9, zorder=5)
         ax.text(
             p[0] + off[0],
@@ -5472,7 +5474,7 @@ def diagram_cubic_tangent_vectors():
         STYLE["accent3"],
     ]
 
-    for t_val, col in zip(t_samples, colors):
+    for t_val, col in zip(t_samples, colors, strict=True):
         pt = _bezier_cubic(p0, p1, p2, p3, t_val)
         tan = _bezier_cubic_tangent(p0, p1, p2, p3, t_val)
         # Scale tangent for visualization (normalize to fixed visual length)
@@ -5616,7 +5618,7 @@ def diagram_convex_hull():
     # Control points
     clabels = ["$P_0$", "$P_1$", "$P_2$", "$P_3$"]
     coffsets = [(-0.3, -0.3), (-0.35, 0.2), (0.15, 0.2), (0.15, -0.3)]
-    for p, lbl, off in zip([cp0, cp1, cp2, cp3], clabels, coffsets):
+    for p, lbl, off in zip([cp0, cp1, cp2, cp3], clabels, coffsets, strict=True):
         ax.plot(*p, "o", color=STYLE["accent2"], markersize=9, zorder=5)
         ax.text(
             p[0] + off[0],
@@ -5891,6 +5893,7 @@ def diagram_quadratic_vs_cubic():
         [p0, p1, p2],
         ["$P_0$", "$P_1$", "$P_2$"],
         [(-0.3, -0.35), (0.0, 0.25), (0.15, -0.35)],
+        strict=True,
     ):
         ax.plot(*p, "o", color=STYLE["accent2"], markersize=10, zorder=5)
         ax.text(
@@ -5942,6 +5945,7 @@ def diagram_quadratic_vs_cubic():
         [cp0, cp1, cp2, cp3],
         ["$P_0$", "$P_1$", "$P_2$", "$P_3$"],
         [(-0.3, -0.3), (-0.35, 0.2), (0.15, 0.2), (0.15, -0.3)],
+        strict=True,
     ):
         ax.plot(*p, "o", color=STYLE["accent2"], markersize=10, zorder=5)
         ax.text(
@@ -5988,7 +5992,7 @@ def diagram_arc_length():
 
     segment_counts = [4, 8, 32]
 
-    for ax, n_seg in zip(axes, segment_counts):
+    for ax, n_seg in zip(axes, segment_counts, strict=True):
         setup_axes(ax, xlim=(-0.3, 4.5), ylim=(-0.5, 3.5))
 
         # Faint full curve

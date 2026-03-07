@@ -454,7 +454,7 @@ def diagram_uv_mapping():
         STYLE["accent3"],
         STYLE["accent4"],
     ]
-    for (vx, vy, label), vc in zip(verts, vert_colors):
+    for (vx, vy, label), vc in zip(verts, vert_colors, strict=True):
         ax1.plot(vx, vy, "o", color=vc, markersize=8, zorder=5)
         ox = -0.32 if vx < 0 else 0.08
         oy = -0.18 if vy < 0 else 0.06
@@ -3795,7 +3795,7 @@ def diagram_blend_modes():
         },
     ]
 
-    for ax, mode in zip(axes.flat, modes):
+    for ax, mode in zip(axes.flat, modes, strict=True):
         setup_axes(ax, xlim=(-0.5, 10.5), ylim=(-1.5, 6.5), grid=False)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -4612,7 +4612,7 @@ def diagram_lengyel_tangent_basis():
         f"\u0394u\u2082={du2:+.1f}   \u0394v\u2082={dv2:+.1f}",
     ]
     uv_colors = [STYLE["accent1"], STYLE["accent2"]]
-    for i, (text, color) in enumerate(zip(uv_legend, uv_colors)):
+    for i, (text, color) in enumerate(zip(uv_legend, uv_colors, strict=True)):
         ax2.text(
             0.0,
             -0.07 - i * 0.07,
@@ -4633,7 +4633,7 @@ def diagram_lengyel_tangent_basis():
     eq_colors = [STYLE["accent3"], STYLE["accent4"]]
     eq_y_start = 0.08
     eq_spacing = 0.035
-    for i, (line, color) in enumerate(zip(eq_lines, eq_colors)):
+    for i, (line, color) in enumerate(zip(eq_lines, eq_colors, strict=True)):
         fig.text(
             0.50,
             eq_y_start - i * eq_spacing,
@@ -4773,7 +4773,7 @@ def diagram_fog_blending():
     ]
     colors = [STYLE["accent1"], STYLE["accent2"], STYLE["accent3"]]
 
-    for ax, (name, factor), col in zip(axes, modes, colors):
+    for ax, (name, factor), col in zip(axes, modes, colors, strict=True):
         # Build a 2D image: 1 row x 256 columns x 3 channels
         gradient = np.zeros((1, 256, 3))
         for i in range(256):
@@ -4999,7 +4999,7 @@ def diagram_hdr_pipeline():
 
     colors = [STYLE["accent1"], STYLE["accent2"], STYLE["accent3"], STYLE["accent4"]]
 
-    for (x, y, w, h, title, subtitle), color in zip(stages, colors):
+    for (x, y, w, h, title, subtitle), color in zip(stages, colors, strict=True):
         rect = Rectangle(
             (x, y),
             w,
@@ -5258,7 +5258,7 @@ def diagram_exposure_effect():
 
     a, b, c, d, e = ACES_COEFFS
 
-    for exp, col in zip(exposures, colors_list):
+    for exp, col in zip(exposures, colors_list, strict=True):
         hdr = x * exp
         aces = np.clip((hdr * (a * hdr + b)) / (hdr * (c * hdr + d) + e), 0, 1)
         ax.plot(x, aces, color=col, lw=2.5, label=f"Exposure {exp:.1f}")
@@ -5430,7 +5430,7 @@ def diagram_bloom_pipeline():
     mip_x_starts = []
     cx = hdr_x + hdr_w + 0.6
     for i, ((label, size), mw, mh) in enumerate(
-        zip(mip_sizes, mip_widths, mip_heights)
+        zip(mip_sizes, mip_widths, mip_heights, strict=True)
     ):
         my = hdr_y + (hdr_h - mh) / 2  # vertically center
         rect = Rectangle(
@@ -5518,7 +5518,7 @@ def diagram_bloom_pipeline():
     us_y_base = -3.6
     us_positions = []  # (x, y, w, h) indexed by mip level 0..4
     for i, ((label, size), mw, mh) in enumerate(
-        zip(mip_sizes, mip_widths, mip_heights)
+        zip(mip_sizes, mip_widths, mip_heights, strict=True)
     ):
         ux = mip_x_starts[i]
         uy = us_y_base + (hdr_h - mh) / 2
@@ -6104,7 +6104,7 @@ def diagram_karis_averaging():
     # Karis-weighted average
     weights_k = [1.0 / (1.0 + p) for p in pixels]
     w_sum = sum(weights_k)
-    karis_avg = sum(p * w / w_sum for p, w in zip(pixels, weights_k))
+    karis_avg = sum(p * w / w_sum for p, w in zip(pixels, weights_k, strict=True))
 
     bar_x = np.arange(3)
     bar_labels = ["Uniform\naverage", "Karis\naverage", "Without\nfirefly"]
@@ -6114,7 +6114,7 @@ def diagram_karis_averaging():
     bars = ax2.bar(bar_x, bar_values, color=bar_colors, width=0.6, alpha=0.85)
 
     # Value labels on bars
-    for bar, val in zip(bars, bar_values):
+    for bar, val in zip(bars, bar_values, strict=True):
         ax2.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.4,
@@ -6203,7 +6203,7 @@ def diagram_mip_chain_flow():
     ds_box_heights = [s * 1.6 for s in mip_scales]
 
     for i, (x, label, bw, bh) in enumerate(
-        zip(ds_x_positions, mip_labels, ds_box_widths, ds_box_heights)
+        zip(ds_x_positions, mip_labels, ds_box_widths, ds_box_heights, strict=True)
     ):
         color = STYLE["accent1"] if i == 0 else STYLE["accent2"]
         y = (1.6 - bh) / 2  # vertically center
@@ -6310,7 +6310,7 @@ def diagram_mip_chain_flow():
     us_box_heights = [s * 1.6 for s in us_scales]
 
     for i, (x, label, bw, bh) in enumerate(
-        zip(us_x_positions, us_labels, us_box_widths, us_box_heights)
+        zip(us_x_positions, us_labels, us_box_widths, us_box_heights, strict=True)
     ):
         y = (1.6 - bh) / 2
         rect = Rectangle(
@@ -9438,7 +9438,7 @@ def diagram_composite_modes():
 
     colors = [STYLE["accent1"], STYLE["accent2"], STYLE["accent3"]]
 
-    for i, ((title, img), color) in enumerate(zip(modes, colors)):
+    for i, ((title, img), color) in enumerate(zip(modes, colors, strict=True)):
         ax = fig.add_subplot(1, 3, i + 1)
         setup_axes(ax, grid=False, aspect="equal")
         ax.imshow(np.clip(img, 0, 1), origin="lower")
@@ -12837,7 +12837,7 @@ def diagram_keyframe_interpolation():
     )
 
     # Keyframe dots
-    for t_kf, v_kf in zip(kf_times, kf_values):
+    for t_kf, v_kf in zip(kf_times, kf_values, strict=True):
         ax.plot(t_kf, v_kf, "o", color=STYLE["warn"], ms=8, zorder=5)
 
     # --- Binary search highlight ---
@@ -13588,7 +13588,7 @@ def diagram_path_following():
     wp_x = a * np.cos(wp_angles)
     wp_z = b * np.sin(wp_angles)
 
-    for i, (wx, wz) in enumerate(zip(wp_x, wp_z)):
+    for i, (wx, wz) in enumerate(zip(wp_x, wp_z, strict=True)):
         ax.plot(wx, wz, "o", color=STYLE["text_dim"], ms=5, zorder=4)
         # Label every 4th waypoint
         if i % 4 == 0:
@@ -14331,7 +14331,7 @@ def diagram_arc_length_parameterization():
             alpha=0.4,
             zorder=1,
         )
-        for i, (wp, lbl) in enumerate(zip(waypoints, labels)):
+        for i, (wp, lbl) in enumerate(zip(waypoints, labels, strict=True)):
             ax.plot(*wp, "o", color=STYLE["warn"], ms=7, zorder=6)
             oy = 0.5 if i < 2 else -0.5
             ax.text(

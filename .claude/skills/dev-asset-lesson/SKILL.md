@@ -44,25 +44,31 @@ before scaffolding.
 
 ### Type A: Python lessons
 
-Pipeline scaffold, texture processing, asset bundles, web frontend. These are
-Python packages with a CLI entry point.
+Pipeline scaffold, texture processing, asset bundles, web frontend. These add
+functionality to the **shared `pipeline/` package** at the repo root (not
+lesson-local code). The lesson directory contains only the README, diagrams,
+example config, and sample assets.
 
 **Directory structure:**
 
 ```text
-lessons/assets/NN-topic-name/
-  README.md
-  pyproject.toml
-  pipeline/
-    __init__.py
-    __main__.py
-    ... (modules per lesson)
-  tests/
-    __init__.py
+pipeline/                     # shared library (repo root) — code goes HERE
+  __init__.py
+  __main__.py
+  config.py, plugin.py, scanner.py, ...
+  plugins/
+    <type>.py                 # built-in plugins grow lesson by lesson
+tests/
+  pipeline/                   # tests for the shared library
     test_<module>.py
+lessons/assets/NN-topic-name/
+  README.md                   # lesson walkthrough pointing at pipeline/ code
+  pipeline.toml               # example config for hands-on testing
+  assets/                     # sample source files, diagrams
 ```
 
 **Not added to CMakeLists.txt** — Python projects are not C targets.
+**`pyproject.toml` is at the repo root** — one package for the whole pipeline.
 
 ### Type B: C tool lessons
 

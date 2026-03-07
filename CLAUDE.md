@@ -79,8 +79,14 @@ forge-gpu/
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
 │   ├── physics/           # Physics simulation (particles, rigid bodies, collisions)
-│   ├── assets/            # Asset pipeline (Python CLI tools, web frontend)
+│   ├── assets/            # Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
+├── pipeline/              # Asset pipeline library (Python, pip-installable)
+│   ├── __main__.py        # CLI entry point
+│   ├── config.py          # TOML configuration loader
+│   ├── plugin.py          # Plugin base class, registry, discovery
+│   ├── scanner.py         # File scanning and fingerprinting
+│   └── plugins/           # Built-in asset type plugins
 ├── common/
 │   ├── math/              # Math library (header-only, documented)
 │   ├── obj/               # OBJ parser (Wavefront .obj files)
@@ -91,7 +97,7 @@ forge-gpu/
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics)
+├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics, pipeline)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)
 ```
@@ -99,14 +105,17 @@ forge-gpu/
 ## Testing
 
 ```bash
-cmake --build build --target test_gltf   # build one test
-ctest --test-dir build -R gltf           # run one test
-ctest --test-dir build                   # run all tests
+cmake --build build --target test_gltf   # build one C test
+ctest --test-dir build -R gltf           # run one C test
+ctest --test-dir build                   # run all C tests
+pytest tests/pipeline/ -v                # run pipeline (Python) tests
 ```
 
 When modifying parsers or libraries in `common/`, always build and run the
-corresponding tests. When adding a new module, add a matching test under
-`tests/` and register it in the root `CMakeLists.txt`.
+corresponding tests. When modifying the pipeline library in `pipeline/`,
+run `pytest tests/pipeline/`. When adding a new module, add a matching test
+under `tests/` and register it in the root `CMakeLists.txt` (C) or
+`pyproject.toml` (Python).
 
 ## Shader compilation
 
@@ -180,8 +189,12 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Use **/dev-asset-lesson** skill to scaffold
 - **Hybrid Python + C track** — Python orchestrates, C handles performance-
   critical processing (meshoptimizer, MikkTSpace) and procedural geometry
-- Python lessons are not added to CMakeLists.txt; C tool/library lessons are
-  added and must be listed in CMakeLists.txt for building
+- **The pipeline is a reusable library** at `pipeline/` in the repo root,
+  pip-installable via `pip install -e ".[dev]"`. Lessons teach how each
+  piece works; the code lives in the shared library, not in lesson directories.
+- Each lesson adds real functionality to `pipeline/` — config, plugins,
+  scanning, processing. Tests live in `tests/pipeline/`.
+- C tool/library lessons are added to CMakeLists.txt for building
 - Plugin architecture — each asset type (texture, mesh, scene) is a plugin;
   C tools are invoked as subprocesses by the Python pipeline
 - Procedural geometry lives in `common/shapes/forge_shapes.h` (header-only)
@@ -212,9 +225,9 @@ Test locally: `npx markdownlint-cli2 "**/*.md"`
 
 ### Python linting
 
-Scripts are linted with [Ruff](https://docs.astral.sh/ruff/) (config: `pyproject.toml`).
-Test locally: `ruff check scripts/ && ruff format --check scripts/`
-Auto-fix: `ruff check --fix scripts/ && ruff format scripts/`
+All Python code is linted with [Ruff](https://docs.astral.sh/ruff/) (config: `pyproject.toml`).
+Test locally: `ruff check && ruff format --check`
+Auto-fix: `ruff check --fix && ruff format`
 
 ### CRITICAL: Never circumvent quality checks
 

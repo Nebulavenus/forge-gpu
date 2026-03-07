@@ -95,15 +95,16 @@ streams as the backend.
 
 ## Asset Pipeline — New Track
 
-A hybrid Python + C track. The pipeline orchestrator is a Python CLI tool with
-a plugin architecture and web frontend. Processing plugins that need
+A hybrid Python + C track. The pipeline is a **reusable Python library** at
+`pipeline/` in the repo root (`pip install -e ".[dev]"`). Each lesson adds
+real functionality to the shared package. Processing plugins that need
 high-performance C libraries (meshoptimizer, MikkTSpace) are compiled C tools
 invoked as subprocesses. Procedural geometry generation lives in a header-only
 C library (`common/shapes/forge_shapes.h`).
 
 ### Core Pipeline
 
-- [ ] **Asset Lesson 01 — Pipeline Scaffold** — Python project structure; CLI entry point; plugin discovery and registration; asset file scanning and fingerprinting; configuration via TOML
+- [x] **Asset Lesson 01 — Pipeline Scaffold** — Python project structure; CLI entry point; plugin discovery and registration; asset file scanning and fingerprinting; configuration via TOML
 - [ ] **Asset Lesson 02 — Texture Processing** — Image import plugin (Python + Pillow): resize, format conversion (PNG/TGA to compressed formats), mipmap generation; metadata sidecar files; incremental builds (skip unchanged assets)
 - [ ] **Asset Lesson 03 — Mesh Processing** — C mesh processing tool using meshoptimizer and MikkTSpace: vertex deduplication, index optimization, tangent generation; binary output format for fast GPU upload; LOD generation with mesh simplification; Python plugin invokes the compiled tool as a subprocess
 - [ ] **Asset Lesson 04 — Procedural Geometry** — `common/shapes/forge_shapes.h` header-only C library: parametric surface generation (sphere, icosphere, cylinder, cone, torus, plane, cube, capsule); struct-of-arrays layout for GPU upload; smooth vs flat normals; seam duplication; comprehensive test suite; GPU lesson rendering a five-shape showcase scene

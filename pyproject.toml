@@ -1,8 +1,34 @@
-[tool.ruff]
-target-version = "py39"
+[project]
+name = "forge-pipeline"
+version = "0.1.0"
+description = "Asset processing pipeline for forge-gpu — plugin-based CLI for scanning, fingerprinting, and processing game assets"
+requires-python = ">=3.10"
+license = "Zlib"
+readme = "pipeline/README.md"
+dependencies = [
+    "tomli>=1.0.0; python_version < '3.11'",
+]
 
-# Only lint our own scripts, not third_party/ or build/
-include = ["scripts/*.py"]
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+forge-pipeline = "pipeline.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/pipeline"]
+
+[tool.ruff]
+target-version = "py310"
+
+# Lint pipeline code and scripts
+include = ["scripts/**/*.py", "pipeline/**/*.py", "tests/pipeline/**/*.py"]
 
 [tool.ruff.lint]
 # Enable a sensible set of rules
@@ -21,7 +47,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["scripts"]
+known-first-party = ["pipeline", "scripts"]
 
 [tool.ruff.format]
 quote-style = "double"

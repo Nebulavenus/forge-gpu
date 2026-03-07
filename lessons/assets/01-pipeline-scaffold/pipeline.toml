@@ -1,0 +1,21 @@
+# forge-gpu asset pipeline configuration
+#
+# This file configures the asset pipeline scaffold from Lesson 01.
+# Each section maps to a concept taught in the lesson.
+
+[pipeline]
+source_dir = "assets/raw"       # Where raw source assets live
+output_dir = "assets/processed" # Where processed assets go
+cache_dir  = ".forge-cache"     # Fingerprint cache for incremental builds
+
+# Per-plugin settings — each plugin reads its own section.
+# These are placeholders for Lesson 01; real settings are added in later
+# lessons when the plugins gain actual processing capabilities.
+
+[texture]
+max_size = 2048
+generate_mipmaps = true
+
+[mesh]
+deduplicate = true
+generate_tangents = true
