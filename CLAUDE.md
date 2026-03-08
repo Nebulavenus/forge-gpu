@@ -144,7 +144,16 @@ forge-gpu/
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics, pipeline)
+├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics, shapes, pipeline)
+├── scripts/
+│   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
+│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_37.py)
+│       ├── math/          # Math lesson diagrams
+│       ├── ui/            # UI lesson diagrams
+│       ├── engine/        # Engine lesson diagrams
+│       └── assets/        # Asset pipeline lesson diagrams
+├── tools/
+│   └── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)
 ```

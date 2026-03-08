@@ -757,12 +757,14 @@ $$
 
 For force diagrams, collision geometry, phase space plots, and integration
 comparisons, add diagram functions to
-`scripts/forge_diagrams/physics_diagrams.py`:
+`scripts/forge_diagrams/physics/lesson_NN.py` (create the file if it doesn't
+exist):
 
 1. Write a function following the existing pattern
-2. Register it in the `DIAGRAMS` dict in `__main__.py`
-3. Run `python scripts/forge_diagrams --lesson physics/NN` to generate the PNG
-4. Reference in the README: `![Description](assets/diagram_name.png)`
+2. Re-export from `scripts/forge_diagrams/physics/__init__.py`
+3. Import and register in the `DIAGRAMS` dict in `__main__.py`
+4. Run `python scripts/forge_diagrams --lesson physics/NN` to generate the PNG
+5. Reference in the README: `![Description](assets/diagram_name.png)`
 
 ### Mermaid diagrams
 

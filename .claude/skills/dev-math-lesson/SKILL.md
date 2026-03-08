@@ -402,13 +402,16 @@ diagrams following the project's visual identity and quality standards.
 ### Matplotlib diagrams
 
 For geometric or mathematical visuals (vector diagrams, interpolation grids,
-frustum views), add a diagram function to `scripts/forge_diagrams/math_diagrams.py`:
+frustum views), add a diagram function to
+`scripts/forge_diagrams/math/lesson_NN.py` (create the file if it doesn't
+exist):
 
 1. Write a function following the existing pattern (shared `setup_axes`,
    `draw_vector`, `save` helpers from `_common.py`)
-2. Register it in the `DIAGRAMS` dict in `__main__.py` with the lesson key
-3. Run `python scripts/forge_diagrams --lesson math/NN` to generate the PNG
-4. Reference in the README: `![Description](assets/diagram_name.png)`
+2. Re-export from `scripts/forge_diagrams/math/__init__.py`
+3. Import and register in the `DIAGRAMS` dict in `__main__.py` with the lesson key
+4. Run `python scripts/forge_diagrams --lesson math/NN` to generate the PNG
+5. Reference in the README: `![Description](assets/diagram_name.png)`
 
 Output goes to each lesson's `assets/` directory at 200 DPI (PNG only).
 

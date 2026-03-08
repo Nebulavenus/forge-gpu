@@ -5,20 +5,14 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–36** — From Hello Window through Edge Detection
+- **GPU Lessons 01–37** — From Hello Window through 3D Picking
 - **Math Lessons 01–15** — From Vectors through Bezier Curves
 - **Engine Lessons 01–11** — From Intro to C through Git & Version Control
 - **UI Lessons 01–13** — From TTF Parsing through Theming and Color System
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
+- **Asset Lessons 01–04** — From Pipeline Scaffold through Procedural Geometry
 
 ## GPU Lessons — Remaining
-
-### Stencil Buffer & Picking
-
-- [x] **Lesson 34 — Portals & Outlines** — Stencil buffer fundamentals; configuring stencil state in the depth-stencil texture and pipeline; stencil operations (keep, replace, increment); portal masking with depth-aware phase ordering; two-pass stencil outline technique (silhouette expansion); depth-stencil interaction pitfalls and draw order correctness; visualizing stencil buffer contents for debugging
-- [x] **Lesson 35 — Decals** — Projecting flat detail onto existing geometry using deferred decal boxes; inverse projection to reconstruct world position from depth; writing decal color while preserving surface normals and depth; layering multiple decals with stencil increment/decrement; depth-aware phase ordering (building on L34's phase ordering insight); application to bullet holes, dirt, signs, and graffiti (depends on GPU Lesson 34)
-- [x] **Lesson 36 — Edge Detection & X-Ray** — Post-process outline techniques as an alternative to L34's stencil outlines; Sobel/Roberts edge detection on depth and normal buffers; rendering to offscreen G-buffer targets for edge input; X-ray vision using `depth_fail_op` to reveal occluded objects as ghostly silhouettes; comparison of three outline methods: stencil expansion (L34), edge detection (this lesson), and jump flood distance fields; when to use each approach (depends on GPU Lesson 34)
-- [x] **Lesson 37 — 3D Picking** — Identifying objects under the cursor; color-ID picking: render each object with a unique color to an offscreen target, read back the pixel under the mouse; stencil-ID picking as an alternative using per-object stencil reference values; GPU readback with `SDL_DownloadFromGPUTexture`; highlight selected object with stencil outline from L34 (depends on GPU Lessons 34, 36)
 
 ### Advanced Rendering
 
@@ -104,10 +98,6 @@ C library (`common/shapes/forge_shapes.h`).
 
 ### Core Pipeline
 
-- [x] **Asset Lesson 01 — Pipeline Scaffold** — Python project structure; CLI entry point; plugin discovery and registration; asset file scanning and fingerprinting; configuration via TOML
-- [x] **Asset Lesson 02 — Texture Processing** — Image import plugin (Python + Pillow): resize, format conversion (PNG/TGA to compressed formats), mipmap generation; metadata sidecar files; incremental builds (skip unchanged assets)
-- [x] **Asset Lesson 03 — Mesh Processing** — C mesh processing tool using meshoptimizer and MikkTSpace: vertex deduplication, index optimization, tangent generation; binary output format for fast GPU upload; LOD generation with mesh simplification; Python plugin invokes the compiled tool as a subprocess
-- [x] **Asset Lesson 04 — Procedural Geometry** — `common/shapes/forge_shapes.h` header-only C library: parametric surface generation (sphere, icosphere, cylinder, cone, torus, plane, cube, capsule); struct-of-arrays layout for GPU upload; smooth vs flat normals; seam duplication; comprehensive test suite
 - [ ] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
 
 ### Project Integration

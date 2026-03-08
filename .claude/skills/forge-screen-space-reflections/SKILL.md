@@ -528,7 +528,7 @@ See [Math Lesson 01 — Vectors](../../../lessons/math/01-vectors/) for reflecti
 ## References
 
 - [Lesson 29 — Screen-Space Reflections](../../../lessons/gpu/29-screen-space-reflections/)
-- [Lesson 15 — Deferred Rendering](../../../lessons/gpu/15-deferred-rendering/) (G-buffer)
-- [Lesson 11 — Shadow Mapping](../../../lessons/gpu/11-shadow-mapping/) (depth precision)
+- [Lesson 27 — SSAO](../../../lessons/gpu/27-ssao/) (G-buffer, depth reconstruction)
+- [Lesson 15 — Cascaded Shadow Maps](../../../lessons/gpu/15-cascaded-shadow-maps/) (depth precision)
 - [Lesson 10 — Basic Lighting](../../../lessons/gpu/10-basic-lighting/) (Blinn-Phong diffuse)
 - [Math Lesson 01 — Vectors](../../../lessons/math/01-vectors/) (reflection, dot product)

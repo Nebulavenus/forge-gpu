@@ -253,7 +253,7 @@ in parallel.
 ### Team 2: Diagrams (parallel, independent)
 
 - **Agent: diagram-creator** — Add 6+ diagram functions to
-  `scripts/forge_diagrams/gpu_diagrams.py`, register in `__main__.py`,
+  `scripts/forge_diagrams/gpu/lesson_34.py`, register in `__main__.py`,
   generate PNGs to `lessons/gpu/34-stencil-testing/assets/`.
 
 ### Team 3: main.c (sequential A, then parallel B+C)

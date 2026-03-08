@@ -20,7 +20,7 @@ if __name__ == "__main__" and not __package__:
 import argparse
 import sys
 
-from .asset_diagrams import (
+from .assets import (
     diagram_lod_simplification,
     diagram_mesh_processing_pipeline,
     diagram_parametric_sphere,
@@ -30,7 +30,7 @@ from .asset_diagrams import (
     diagram_texture_block_compression,
     diagram_texture_format_comparison,
 )
-from .engine_diagrams import (
+from .engine import (
     diagram_alpha_blending,
     diagram_barycentric_coords,
     diagram_bounding_box,
@@ -49,7 +49,7 @@ from .engine_diagrams import (
     diagram_vertex_memory_layout,
     diagram_worktree_architecture,
 )
-from .gpu_diagrams import (  # gpu/37
+from .gpu import (
     diagram_aabb_sorting,
     diagram_animation_clip_structure,
     diagram_animation_timeline,
@@ -159,7 +159,7 @@ from .gpu_diagrams import (  # gpu/37
     diagram_water_layers,
     diagram_xray_depth_fail,
 )
-from .math_diagrams import (
+from .math import (
     diagram_arc_length,
     diagram_avalanche_matrix,
     diagram_bernstein_basis,
@@ -207,7 +207,7 @@ from .math_diagrams import (
     diagram_view_transform,
     diagram_white_noise_comparison,
 )
-from .ui_diagrams import (
+from .ui import (
     diagram_adjacent_pair_matrix,
     diagram_antialiasing_comparison,
     diagram_atlas_rebuild_at_scale,

@@ -648,7 +648,8 @@ forge-gpu/
 │       ├── 33-vertex-pulling/
 │       ├── 34-stencil-testing/
 │       ├── 35-decals/
-│       └── 36-edge-detection/
+│       ├── 36-edge-detection/
+│       └── 37-3d-picking/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -688,6 +689,7 @@ forge-gpu/
 │   ├── raster/            CPU rasterizer tests
 │   ├── ui/                UI library tests (TTF parser, immediate-mode context)
 │   ├── physics/           Physics library tests
+│   ├── shapes/            Procedural geometry tests
 │   └── pipeline/          Asset pipeline tests (pytest)
 ├── .claude/skills/        Claude Code skills (AI-invokable patterns)
 │   ├── dev-math-lesson/   Add math concept + lesson + update library
@@ -696,6 +698,12 @@ forge-gpu/
 │   ├── forge-sdl-gpu-setup/ Scaffold SDL3 GPU application
 │   └── ...
 ├── scripts/               Helper scripts (run, setup, shader compilation)
+│   └── forge_diagrams/    Matplotlib diagram generator (per-lesson modules)
+│       ├── gpu/           GPU lesson diagrams (lesson_03.py … lesson_37.py)
+│       ├── math/          Math lesson diagrams
+│       ├── ui/            UI lesson diagrams
+│       ├── engine/        Engine lesson diagrams
+│       └── assets/        Asset pipeline lesson diagrams
 ├── third_party/SDL/       SDL3 source (submodule, for reference)
 ├── PLAN.md                Lesson roadmap and progress
 ├── CLAUDE.md              AI coding guidelines for this project
@@ -762,6 +770,9 @@ project to enable Claude to build games and tools with you.
 | [forge-stencil-testing](.claude/skills/forge-stencil-testing/SKILL.md) | `/forge-stencil-testing` | Stencil buffer testing, portals, outlines, per-pixel masking |
 | [forge-edge-detection](.claude/skills/edge-detection/SKILL.md) | `/forge-edge-detection` | Sobel edge detection on G-buffer, stencil X-ray vision, Fresnel ghost silhouettes |
 | [forge-asset-pipeline](.claude/skills/forge-asset-pipeline/SKILL.md) | `/forge-asset-pipeline` | Plugin-based asset pipeline with CLI, content-hash fingerprinting, TOML config |
+| [forge-decals](.claude/skills/forge-decals/SKILL.md) | `/forge-decals` | Deferred decal projection onto scene geometry using depth reconstruction |
+| [forge-vertex-pulling](.claude/skills/forge-vertex-pulling/SKILL.md) | `/forge-vertex-pulling` | Vertex pulling (programmable vertex fetch), storage buffer reads in vertex shader |
+| [forge-3d-picking](.claude/skills/3d-picking/SKILL.md) | `/forge-3d-picking` | GPU-based 3D object picking with color-ID and stencil-ID methods |
 | [forge-procedural-geometry](.claude/skills/forge-procedural-geometry/SKILL.md) | `/forge-procedural-geometry` | Procedural geometry generation: parametric surfaces, struct-of-arrays GPU upload |
 
 ### Development skills (used within this repo)
@@ -783,6 +794,10 @@ project to enable Claude to build games and tools with you.
 | [dev-add-screenshot](.claude/skills/dev-add-screenshot/SKILL.md) | `/dev-add-screenshot` | Capture a screenshot for a lesson and update its README |
 | [dev-markdown-lint](.claude/skills/dev-markdown-lint/SKILL.md) | `/dev-markdown-lint` | Check and fix Markdown formatting issues |
 | [dev-reset-workspace](.claude/skills/dev-reset-workspace/SKILL.md) | `/dev-reset-workspace` | Clean workspace for fresh work from main branch |
+| [dev-start-lesson](.claude/skills/dev-start-lesson/SKILL.md) | `/dev-start-lesson` | Scaffold an advanced GPU lesson directory with minimal main.c and PLAN.md |
+| [dev-create-lesson](.claude/skills/dev-create-lesson/SKILL.md) | `/dev-create-lesson` | Add lesson content (README, skill, screenshot) to a working GPU lesson scene |
+| [dev-docs-review](.claude/skills/dev-docs-review/SKILL.md) | `/dev-docs-review` | Review all project documentation for staleness |
+| [dev-review-diagrams](.claude/skills/dev-review-diagrams/SKILL.md) | `/dev-review-diagrams` | Validate diagram correctness against the lesson README |
 
 **How to use:**
 

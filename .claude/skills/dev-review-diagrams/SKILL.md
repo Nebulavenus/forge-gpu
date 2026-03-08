@@ -44,8 +44,8 @@ referenced in the README (via `![...](assets/<name>.png)`), note:
 
 ### 3. Cross-check each diagram function
 
-For each diagram function, read its source code in the relevant
-`*_diagrams.py` file and verify:
+For each diagram function, read its source code in the relevant per-lesson file
+under `scripts/forge_diagrams/<track>/lesson_NN.py` and verify:
 
 #### Geometry and math accuracy
 

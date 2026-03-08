@@ -37,15 +37,22 @@ If any are missing, infer from context or ask.
 
 ### 1. Determine the diagram module
 
-Choose the correct file based on the lesson category:
+Diagram functions are organized by track and lesson number under
+`scripts/forge_diagrams/<track>/lesson_NN.py`:
 
-- `scripts/forge_diagrams/math_diagrams.py` — math lessons
-- `scripts/forge_diagrams/gpu_diagrams.py` — GPU lessons
-- `scripts/forge_diagrams/engine_diagrams.py` — engine lessons
+- `scripts/forge_diagrams/math/lesson_NN.py` — math lessons
+- `scripts/forge_diagrams/gpu/lesson_NN.py` — GPU lessons
+- `scripts/forge_diagrams/engine/lesson_NN.py` — engine lessons
+- `scripts/forge_diagrams/ui/lesson_NN.py` — UI lessons
+- `scripts/forge_diagrams/assets/lesson_NN.py` — asset pipeline lessons
+- `scripts/forge_diagrams/physics/lesson_NN.py` — physics lessons
+
+If a `lesson_NN.py` file does not exist yet for the lesson, create one.
 
 ### 2. Write the diagram function
 
-Add a new function to the appropriate module following the existing patterns.
+Add a new function to the appropriate per-lesson module following the existing
+patterns.
 
 **Required imports and helpers:**
 
@@ -54,7 +61,7 @@ import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ._common import FORGE_CMAP, STYLE, draw_vector, save, setup_axes
+from .._common import FORGE_CMAP, STYLE, draw_vector, save, setup_axes
 ```
 
 `pe` is needed for the text readability stroke (`path_effects=[pe.withStroke(...)]`)
@@ -174,24 +181,31 @@ Every color in the diagram must come from the `STYLE` dictionary:
 
 ### 4. Register the diagram
 
-Add the function to the `DIAGRAMS` dict in `scripts/forge_diagrams/__main__.py`:
+Wire up the function so the CLI can find it. Three files need changes:
 
-1. Import the function at the top of the file from the appropriate module
-2. Add an entry to the `DIAGRAMS` dict under the lesson key
-3. Add the lesson to `LESSON_NAMES` if it's not already there
+1. **Per-lesson file** — already done in step 2
+2. **Track `__init__.py`** — re-export the function
+3. **`__main__.py`** — import and register in `DIAGRAMS` dict
 
-**Example:**
+**Example for a new math lesson (math/NN):**
 
 ```python
-# In the imports section:
-from .math_diagrams import diagram_new_concept
+# 1. Function is in scripts/forge_diagrams/math/lesson_NN.py (already written)
 
-# In the DIAGRAMS dict:
+# 2. In scripts/forge_diagrams/math/__init__.py — add to __all__ and imports:
+from .lesson_NN import diagram_new_concept
+# ... and add "diagram_new_concept" to the __all__ list
+
+# 3. In scripts/forge_diagrams/__main__.py:
+# Import section:
+from .math import diagram_new_concept
+
+# DIAGRAMS dict:
 "math/NN": [
     ("new_concept.png", diagram_new_concept),
 ],
 
-# In LESSON_NAMES:
+# LESSON_NAMES:
 "math/NN": "math/NN-concept-name",
 ```
 
@@ -340,10 +354,12 @@ For a thorough cross-check, invoke `/dev-review-diagrams` with the lesson key.
   causing the title to sit directly on top of the data.
 - **Overlapping labels** — Placing two labels at similar coordinates without
   adjusting offsets. Always check label positions against each other.
-- **Wrong module** — Adding a math diagram to `gpu_diagrams.py` or vice versa.
-  Match the module to the lesson category.
+- **Wrong module** — Adding a math diagram to a GPU lesson file or vice versa.
+  Match the track directory and lesson number to the lesson category.
 - **Forgetting to register** — Writing the function but not adding it to the
   `DIAGRAMS` dict in `__main__.py`. The CLI won't find unregistered diagrams.
+- **Forgetting to re-export** — Adding the function to `lesson_NN.py` but not
+  adding it to the track's `__init__.py` `__all__` list and imports.
 - **Forgetting the import** — Adding the entry to `DIAGRAMS` but not importing
   the function at the top of `__main__.py`.
 - **Not running linting** — The diagram scripts must pass `ruff check` and

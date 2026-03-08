@@ -35,7 +35,7 @@ another, creating an endless cycle.
 ## Validation checklist
 
 Before committing, verify the lesson has all required pieces from the
-`new-lesson` skill:
+`dev-new-lesson` skill:
 
 ### Required files
 
