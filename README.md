@@ -105,7 +105,7 @@ system everything runs on.
 - **[Engine](lessons/engine/)** — CMake, C fundamentals, debugging, RenderDoc, git
 - **[UI](lessons/ui/)** — Immediate-mode UI from TTF parsing to draggable windows
 - **[Physics](lessons/physics/)** — Particles, rigid bodies, collisions, constraints
-- **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry
+- **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry, asset bundles
 
 ## Using Claude Code
 

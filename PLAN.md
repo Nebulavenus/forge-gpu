@@ -98,7 +98,7 @@ C library (`common/shapes/forge_shapes.h`).
 
 ### Core Pipeline
 
-- [ ] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
+- [x] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
 
 ### Project Integration
 

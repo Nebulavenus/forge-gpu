@@ -9,6 +9,9 @@ __all__ = [
     "diagram_seam_duplication",
     "diagram_smooth_vs_flat_normals",
     "diagram_struct_of_arrays",
+    "diagram_bundle_layout",
+    "diagram_random_vs_sequential",
+    "diagram_dependency_graph",
 ]
 
 from .lesson_02 import (
@@ -21,4 +24,9 @@ from .lesson_04 import (
     diagram_seam_duplication,
     diagram_smooth_vs_flat_normals,
     diagram_struct_of_arrays,
+)
+from .lesson_05 import (
+    diagram_bundle_layout,
+    diagram_dependency_graph,
+    diagram_random_vs_sequential,
 )

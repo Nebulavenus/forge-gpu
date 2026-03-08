@@ -270,6 +270,38 @@ generate_mipmaps = true
 deduplicate = true
 ```
 
+### bundler.py — bundle packing and reading
+
+```python
+from pathlib import Path
+from pipeline.bundler import BundleWriter, BundleReader, create_bundle
+
+# Write a bundle
+writer = BundleWriter(Path("game.forgepak"))
+writer.add("textures/brick.png", brick_bytes)
+writer.add_file(Path("hero.fmesh"), "meshes/hero.fmesh",
+                dependencies=["textures/brick.png"])
+manifest = writer.finalize()
+
+# Read a bundle (random access)
+with BundleReader(Path("game.forgepak")) as reader:
+    data = reader.read("textures/brick.png")
+
+# Bundle an entire directory
+manifest = create_bundle(
+    output_dir=Path("assets/processed"),
+    bundle_path=Path("assets/bundles/game.forgepak"),
+)
+```
+
+### CLI bundling
+
+```bash
+forge-pipeline bundle                              # bundle all processed assets
+forge-pipeline bundle -o game.forgepak --level 9   # custom output, higher compression
+forge-pipeline info game.forgepak                  # inspect bundle contents
+```
+
 ## Common mistakes
 
 | Mistake | Fix |
@@ -283,4 +315,5 @@ deduplicate = true
 
 ## Reference
 
-Based on [Asset Lesson 01 — Pipeline Scaffold](../../../lessons/assets/01-pipeline-scaffold/).
+Based on [Asset Lesson 01 — Pipeline Scaffold](../../../lessons/assets/01-pipeline-scaffold/)
+and [Asset Lesson 05 — Asset Bundles](../../../lessons/assets/05-asset-bundles/).

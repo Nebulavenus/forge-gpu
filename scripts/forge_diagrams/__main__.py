@@ -21,9 +21,12 @@ import argparse
 import sys
 
 from .assets import (
+    diagram_bundle_layout,
+    diagram_dependency_graph,
     diagram_lod_simplification,
     diagram_mesh_processing_pipeline,
     diagram_parametric_sphere,
+    diagram_random_vs_sequential,
     diagram_seam_duplication,
     diagram_smooth_vs_flat_normals,
     diagram_struct_of_arrays,
@@ -295,6 +298,11 @@ DIAGRAMS = {
         ("seam_duplication.png", diagram_seam_duplication),
         ("smooth_vs_flat_normals.png", diagram_smooth_vs_flat_normals),
         ("struct_of_arrays.png", diagram_struct_of_arrays),
+    ],
+    "assets/05": [
+        ("bundle_layout.png", diagram_bundle_layout),
+        ("random_vs_sequential.png", diagram_random_vs_sequential),
+        ("dependency_graph.png", diagram_dependency_graph),
     ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
@@ -649,6 +657,7 @@ LESSON_NAMES = {
     "assets/02": "assets/02-texture-processing",
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",
+    "assets/05": "assets/05-asset-bundles",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",

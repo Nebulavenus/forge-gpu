@@ -25,6 +25,7 @@ import logging
 import sys
 from pathlib import Path
 
+from pipeline.bundler import BundleError, BundleFormatError, BundleReader, create_bundle
 from pipeline.config import ConfigError, default_config, load_config
 from pipeline.plugin import PluginRegistry
 from pipeline.scanner import FileStatus, FingerprintCache, scan
@@ -72,6 +73,49 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable debug logging",
     )
+
+    # -- Subcommands --------------------------------------------------------
+    subparsers = parser.add_subparsers(dest="command")
+
+    bundle_cmd = subparsers.add_parser(
+        "bundle",
+        help="Pack processed assets into a .forgepak bundle",
+    )
+    bundle_cmd.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Output bundle path (default: <output_dir>/assets.forgepak)",
+    )
+    bundle_cmd.add_argument(
+        "--no-compress",
+        action="store_true",
+        help="Disable zstd compression",
+    )
+    bundle_cmd.add_argument(
+        "--level",
+        type=int,
+        default=3,
+        help="Zstd compression level, 1-22 (default: 3)",
+    )
+    bundle_cmd.add_argument(
+        "--pattern",
+        action="append",
+        default=None,
+        help="Glob pattern to filter files (repeatable, e.g. --pattern '*.png')",
+    )
+
+    info_cmd = subparsers.add_parser(
+        "info",
+        help="Show contents of a .forgepak bundle",
+    )
+    info_cmd.add_argument(
+        "bundle_file",
+        type=Path,
+        help="Path to the .forgepak bundle file",
+    )
+
     return parser
 
 
@@ -144,6 +188,81 @@ def _process_files(files, registry, config) -> tuple[int, int, set]:
 # ---------------------------------------------------------------------------
 
 
+def _cmd_bundle(args, config) -> int:
+    """Handle the ``bundle`` subcommand."""
+    bundle_settings = config.plugin_settings.get("bundle", {})
+
+    compress = not args.no_compress
+    level = args.level
+    patterns = args.pattern
+
+    # Determine output path.
+    bundle_dir = Path(bundle_settings.get("bundle_dir", config.output_dir))
+    output_path = args.output
+    if output_path is None:
+        output_path = bundle_dir / "assets.forgepak"
+
+    if not config.output_dir.is_dir():
+        log.error("Output directory not found: %s", config.output_dir)
+        log.error("Run 'forge-pipeline' first to process assets.")
+        return 1
+
+    print(f"\nBundling assets from {config.output_dir}...")
+    try:
+        manifest = create_bundle(
+            config.output_dir,
+            output_path,
+            compress=compress,
+            compression_level=level,
+            patterns=patterns,
+        )
+    except BundleError as exc:
+        log.error("Bundle failed: %s", exc)
+        return 1
+
+    # Report.
+    ratio = (
+        manifest.total_compressed / manifest.total_original * 100
+        if manifest.total_original > 0
+        else 100.0
+    )
+    print(f"\nBundle written: {output_path}")
+    print(f"  Entries:        {len(manifest.entries)}")
+    print(f"  Original size:  {manifest.total_original:,} bytes")
+    print(f"  Compressed:     {manifest.total_compressed:,} bytes ({ratio:.1f}%)")
+    print(f"  Bundle file:    {output_path.stat().st_size:,} bytes")
+    return 0
+
+
+def _cmd_info(args) -> int:
+    """Handle the ``info`` subcommand."""
+    try:
+        with BundleReader(args.bundle_file) as reader:
+            m = reader.manifest
+            print(f"\nBundle: {args.bundle_file}")
+            print(f"Version: {m.version}")
+            print(f"Entries: {len(m.entries)}")
+            if m.total_original > 0:
+                ratio = m.total_compressed / m.total_original * 100
+                print(
+                    f"Total:   {m.total_original:,} bytes "
+                    f"-> {m.total_compressed:,} bytes ({ratio:.1f}%)"
+                )
+            print()
+            print(f"{'Path':<40} {'Original':>10} {'Compressed':>12} {'Ratio':>7}")
+            print("-" * 73)
+            for e in m.entries:
+                r = e.size / e.original_size * 100 if e.original_size > 0 else 100.0
+                print(f"{e.path:<40} {e.original_size:>10,} {e.size:>12,} {r:>6.1f}%")
+                if e.dependencies:
+                    for dep in e.dependencies:
+                        print(f"  -> {dep}")
+    except (BundleError, BundleFormatError) as exc:
+        log.error("%s", exc)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point.  Returns 0 on success, 1 on error."""
     args = build_parser().parse_args(argv)
@@ -154,6 +273,10 @@ def main(argv: list[str] | None = None) -> int:
         level=level,
         format="%(name)s: %(message)s",
     )
+
+    # -- Handle info subcommand (no config/plugins needed) ------------------
+    if args.command == "info":
+        return _cmd_info(args)
 
     # -- Configuration ------------------------------------------------------
     config_path = args.config or Path("pipeline.toml")
@@ -174,6 +297,10 @@ def main(argv: list[str] | None = None) -> int:
     # CLI overrides
     if args.source_dir is not None:
         config.source_dir = args.source_dir
+
+    # -- Handle bundle subcommand (config needed, plugins not needed) -------
+    if args.command == "bundle":
+        return _cmd_bundle(args, config)
 
     # -- Plugin discovery ---------------------------------------------------
     plugins_dir = args.plugins_dir

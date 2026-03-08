@@ -56,6 +56,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 02 | [Texture Processing](02-texture-processing/) | Python | Image resize, format conversion, mipmap generation, GPU block compression (BC/ASTC), metadata sidecars |
 | 03 | [Mesh Processing](03-mesh-processing/) | C + Python | Vertex deduplication, index optimization, tangent generation, LOD simplification |
 | 04 | [Procedural Geometry](04-procedural-geometry/) | C | Header-only parametric geometry library: sphere, icosphere, cylinder, cone, torus, plane, cube, capsule |
+| 05 | [Asset Bundles](05-asset-bundles/) | Python | Packing processed assets into `.forgepak` bundles with zstd compression, random-access TOC, and dependency tracking |
 
 ## Building
 

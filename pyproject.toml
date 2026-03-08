@@ -8,6 +8,7 @@ readme = "pipeline/README.md"
 dependencies = [
     "tomli>=1.0.0; python_version < '3.11'",
     "Pillow>=10.0.0",
+    "zstandard>=0.20.0",
 ]
 
 [project.optional-dependencies]
