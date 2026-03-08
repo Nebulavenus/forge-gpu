@@ -1,0 +1,130 @@
+name: Merge Gate
+
+# Always runs on every PR — this is the only required check in the ruleset.
+# It waits for all other CI workflows to finish, then fails if any of them
+# failed. Workflows that didn't run (path-filtered out) are ignored.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  merge-gate:
+    permissions:
+      checks: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for other checks and verify results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.payload.pull_request.head.sha;
+
+            // Checks to monitor — these are the job names from other workflows.
+            // The merge-gate itself and external checks (CodeRabbit) are excluded.
+            const ciChecks = new Set([
+              'markdownlint',
+              'build-and-test',
+              'ruff',
+              'test',
+            ]);
+
+            // Poll until all CI checks have completed (max 15 minutes).
+            // Grace period: CI workflows take a few seconds to register their
+            // check runs after a push. The gate must not pass until the grace
+            // period expires, because a check that hasn't registered yet can't
+            // be distinguished from one that won't run at all.
+            const maxWait = 15 * 60 * 1000;
+            const registrationGrace = 60 * 1000;
+            const interval = 15 * 1000;
+            const start = Date.now();
+
+            while (Date.now() - start < maxWait) {
+              const { data: result } = await github.rest.checks.listForRef({
+                owner, repo, ref: sha, per_page: 100,
+              });
+
+              // Deduplicate by name — reruns can leave multiple check runs for
+              // the same job. Keep only the latest attempt per name.
+              const latestByName = new Map();
+              for (const run of result.check_runs) {
+                if (!ciChecks.has(run.name)) continue;
+                const prev = latestByName.get(run.name);
+                const runTime = Date.parse(run.completed_at ?? run.started_at ?? 0);
+                const prevTime = prev
+                  ? Date.parse(prev.completed_at ?? prev.started_at ?? 0)
+                  : -1;
+                if (!prev || runTime >= prevTime) {
+                  latestByName.set(run.name, run);
+                }
+              }
+              const runs = [...latestByName.values()];
+              const elapsed = Date.now() - start;
+
+              // Still within the grace period — more checks may register
+              if (elapsed < registrationGrace) {
+                const pending = runs.filter(r => r.status !== 'completed');
+                if (runs.length === 0) {
+                  core.info(
+                    `No CI checks registered yet. ` +
+                    `Waiting for registration (${Math.round(elapsed / 1000)}s ` +
+                    `/ ${registrationGrace / 1000}s grace)...`
+                  );
+                } else if (pending.length > 0) {
+                  core.info(`Waiting on: ${pending.map(r => r.name).join(', ')}`);
+                } else {
+                  // All registered checks completed, but grace period is still
+                  // active — more checks may not have registered yet.
+                  core.info(
+                    `${runs.length} check(s) completed, but grace period ` +
+                    `still active (${Math.round(elapsed / 1000)}s ` +
+                    `/ ${registrationGrace / 1000}s). Waiting for late arrivals...`
+                  );
+                }
+                await new Promise(r => setTimeout(r, interval));
+                continue;
+              }
+
+              // Grace period expired — evaluate whatever has registered
+
+              if (runs.length === 0) {
+                core.info('No CI checks registered — none required for this PR.');
+                return;
+              }
+
+              const pending = runs.filter(r => r.status !== 'completed');
+              if (pending.length > 0) {
+                core.info(`Waiting on: ${pending.map(r => r.name).join(', ')}`);
+                await new Promise(r => setTimeout(r, interval));
+                continue;
+              }
+
+              // All registered CI checks are complete — evaluate results
+              const failed = runs.filter(r =>
+                r.conclusion !== 'success' &&
+                r.conclusion !== 'skipped' &&
+                r.conclusion !== 'neutral'
+              );
+
+              if (failed.length > 0) {
+                const summary = failed.map(r =>
+                  `  - ${r.name}: ${r.conclusion} (${r.html_url})`
+                ).join('\n');
+                core.setFailed(`CI checks failed:\n${summary}`);
+                return;
+              }
+
+              const passed = runs.filter(r => r.conclusion === 'success');
+              const skipped = runs.filter(r =>
+                r.conclusion === 'skipped' || r.conclusion === 'neutral'
+              );
+              core.info(
+                `All CI checks passed. ` +
+                `${passed.length} succeeded, ${skipped.length} skipped.`
+              );
+              return;
+            }
+
+            core.setFailed('Timed out waiting for CI checks to complete.');
