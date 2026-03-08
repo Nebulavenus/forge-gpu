@@ -10,6 +10,8 @@
 
 - Deferred decal projection using oriented bounding boxes (OBBs)
 - Inverse depth reconstruction to obtain world positions from the depth buffer
+- Normal G-buffer for smooth surface normals in the decal pass
+- Blinn-Phong lighting and shadow map sampling on decals
 - Three-pass rendering: shadow, scene, decals
 - Front-face culling (`CULL_FRONT`) for robust decal visibility inside volumes
 - Procedural texture generation for decal shapes (circle, heart, star, and more)
@@ -23,7 +25,10 @@ shadow mapping. Projected onto the scene surfaces are decals of various shapes
 — circles, hearts, stars, checkerboards, rings, diamonds, crosses, and
 triangles — each generated procedurally as a texture. The decals conform to
 whatever geometry they overlap, bending across Suzanne's curved surfaces and
-the floor without any UV seams or mesh modifications.
+the floor without any UV seams or mesh modifications. Each decal is lit with
+the same Blinn-Phong shading and shadow map as the underlying scene, so decals
+darken in shadow and respond to the directional light rather than appearing as
+flat overlays.
 
 ## Key concepts
 
@@ -163,6 +168,44 @@ product of all three axes gives a smooth falloff that tapers to zero at every
 edge and corner of the OBB. `FADE_EDGE` controls the width of the transition
 region.
 
+### Lit decals with a normal G-buffer
+
+Decals that ignore scene lighting look flat and pasted-on — they break the
+visual coherence of a lit scene. To match the Blinn-Phong shading on the
+underlying geometry, the decal shader needs two things: a surface normal at
+the hit point and access to the shadow map.
+
+**Normal G-buffer.** The scene and grid fragment shaders write a second render
+target (`SV_Target1`) containing the world-space normal encoded into an RGBA8
+texture. The encoding maps each component from [-1, 1] to [0, 1]:
+
+```hlsl
+output.normal = float4(normalize(world_nrm) * 0.5 + 0.5, 1.0);
+```
+
+The decal shader samples this texture at the fragment's screen UV and decodes
+it back:
+
+```hlsl
+float3 N = normalize(normal_tex.Sample(normal_smp, screen_uv).xyz * 2.0 - 1.0);
+```
+
+This gives smooth per-vertex interpolated normals — the same quality as the
+scene's own lighting. An alternative approach using `ddx()`/`ddy()` on the
+reconstructed world position produces flat, faceted normals that look like
+Gouraud shading on curved surfaces.
+
+**Shadow sampling.** The decal shader samples the same shadow map as the scene
+pass. The reconstructed world position is projected into light clip space using
+the light view-projection matrix, then compared against the shadow depth
+texture with the same 2x2 PCF filter used by the scene shader. This ensures
+decals darken in shadow and brighten in light exactly like the geometry
+underneath.
+
+**Blinn-Phong.** With the normal and shadow factor available, the shader
+computes the same ambient + diffuse + specular lighting model as the scene
+shader (`scene.frag.hlsl`). The decal's tint color serves as the albedo.
+
 ### Procedural shape textures
 
 Decal textures are generated on the CPU using signed distance field math. Each
@@ -202,37 +245,43 @@ the scene pass for shadow testing.
 
 ### Pass 2: Scene
 
-The main scene renders to the swapchain color texture and a separate
-`D24_UNORM_S8_UINT` depth texture. Both are cleared at the start. Suzanne meshes
-and the grid floor are drawn with Blinn-Phong lighting and shadow sampling. The
-depth texture is stored (not discarded) because the decal pass needs it.
+The main scene renders to two color targets (swapchain + normal G-buffer) and a
+`D24_UNORM_S8_UINT` depth texture. All are cleared at the start. Suzanne meshes
+and the grid floor are drawn with Blinn-Phong lighting and shadow sampling,
+writing both lit color (`SV_Target0`) and encoded world normals (`SV_Target1`).
+The depth and normal textures are stored because the decal pass needs both.
 
-- Color target: swapchain texture, CLEAR + STORE
+- Color target 0: swapchain texture, CLEAR + STORE
+- Color target 1: normal G-buffer (`R8G8B8A8_UNORM`), CLEAR + STORE
 - Depth-stencil: scene depth `D24_UNORM_S8_UINT`, CLEAR + STORE
 - Cull mode: BACK (Suzannes), NONE (grid)
 
 ### Pass 3: Decals
 
 The decal pass loads the existing swapchain color (preserving the scene image)
-and has **no depth-stencil attachment**. Instead, the scene depth texture is
-bound as a fragment shader sampler. Each decal box is drawn as a cube with
-alpha blending enabled — the decal color blends on top of the existing scene.
+and has **no depth-stencil attachment**. The scene depth texture and shadow map
+are both bound as fragment shader samplers. Each decal box is drawn as a cube
+with alpha blending enabled — the decal shader reconstructs the world position
+and surface normal, computes Blinn-Phong lighting with shadow sampling, and
+blends the lit result on top of the existing scene.
 
 - Color target: swapchain texture, LOAD + STORE
-- Depth-stencil: none (scene depth bound as sampler)
+- Depth-stencil: none (scene depth, shadow map, and normals bound as samplers)
+- Fragment samplers: scene depth (slot 0), decal texture (slot 1),
+  shadow map (slot 2), scene normals (slot 3)
 - Cull mode: FRONT (draw back faces only)
 - Blend: `SRC_ALPHA` / `ONE_MINUS_SRC_ALPHA`
 
-The critical detail in this architecture is that the scene depth texture
-transitions from a render target (Pass 2) to a shader resource (Pass 3). SDL
-GPU handles this transition automatically between render passes, but the
-texture must be created with both `DEPTH_STENCIL_TARGET` and `SAMPLER` usage
-flags.
+The critical detail in this architecture is that the scene depth and normal
+textures transition from render targets (Pass 2) to shader resources (Pass 3).
+SDL GPU handles these transitions automatically between render passes, but the
+depth texture must be created with both `DEPTH_STENCIL_TARGET` and `SAMPLER`
+usage flags, and the normal texture with both `COLOR_TARGET` and `SAMPLER`.
 
 ## Decal fragment shader
 
-The decal fragment shader implements the full projection algorithm in six
-steps:
+The decal fragment shader implements the full projection and lighting algorithm
+in eight steps:
 
 ```hlsl
 float4 frag_main(VSOutput input) : SV_Target0
@@ -261,27 +310,44 @@ float4 frag_main(VSOutput input) : SV_Target0
 
     /* 6. Map local XZ to decal UV; sample shape texture; apply fade */
     float2 decal_uv = local.xz + 0.5;
-    float shape = shape_texture.Sample(shape_sampler, decal_uv).a;
+    float4 decal_color = shape_texture.Sample(shape_sampler, decal_uv) * tint;
     float fade = smoothstep(0.0, FADE_EDGE, 0.5 - abs(local.x))
                * smoothstep(0.0, FADE_EDGE, 0.5 - abs(local.y))
                * smoothstep(0.0, FADE_EDGE, 0.5 - abs(local.z));
+    decal_color.a *= fade;
 
-    return float4(decal_color.rgb, shape * fade * decal_color.a);
+    /* 7. Sample surface normal from the scene normal G-buffer */
+    float3 N = normalize(normal_tex.Sample(normal_smp, screen_uv).xyz * 2.0 - 1.0);
+
+    /* 8. Blinn-Phong lighting with shadow sampling */
+    float3 lit = decal_color.rgb * ambient;
+    float3 L = normalize(-light_dir);
+    float NdotL = max(dot(N, L), 0.0);
+    float3 H = normalize(L + normalize(eye_pos - world_pos));
+    float spec = specular_str * pow(max(dot(N, H), 0.0), shininess);
+    float shadow = sample_shadow(world_pos);
+    lit += (decal_color.rgb * NdotL + spec) * light_intensity
+         * light_color * shadow;
+
+    return float4(lit, decal_color.a);
 }
 ```
 
-Step 1-2 read from the scene's depth buffer. Steps 3-4 perform the inverse
-projection to recover the world position that was originally rendered at this
-pixel. Step 5 tests whether that world position is inside the decal's OBB.
-Step 6 generates the final color with soft edges and shape masking.
+Steps 1–2 read from the scene's depth buffer. The next two steps perform the
+inverse projection to recover the world position that was originally rendered at
+this pixel, while step 5 tests whether that world position is inside the decal's
+OBB. From there, step 6 generates the decal color with soft edges and shape
+masking, and step 7 samples the surface normal from the normal G-buffer. Step 8
+applies the same Blinn-Phong lighting and shadow sampling as the scene shader, so
+decals respond to directional light and receive consistent shadows.
 
 ## Pipeline configuration
 
-| Pipeline | Cull | Depth Test | Depth Write | Blend | DS Format | Color |
-|----------|------|------------|-------------|-------|-----------|-------|
+| Pipeline | Cull | Depth Test | Depth Write | Blend | DS Format | Color targets |
+|----------|------|------------|-------------|-------|-----------|---------------|
 | shadow | BACK | LESS | yes | none | D32_FLOAT | none |
-| scene | BACK | LESS | yes | none | scene DS | swapchain |
-| grid | NONE | LESS_OR_EQUAL | yes | none | scene DS | swapchain |
+| scene | BACK | LESS | yes | none | scene DS | swapchain + normal |
+| grid | NONE | LESS_OR_EQUAL | yes | none | scene DS | swapchain + normal |
 | decal | FRONT | disabled | no | SRC_ALPHA blend | none | swapchain |
 
 The decal pipeline is notable for three properties:
@@ -320,13 +386,13 @@ double-blending artifact.
 | File | Stage | Purpose |
 |------|-------|---------|
 | `scene.vert.hlsl` | Vertex | MVP transform, world position, normal, and light-space coordinates |
-| `scene.frag.hlsl` | Fragment | Blinn-Phong lighting with shadow sampling and base color |
+| `scene.frag.hlsl` | Fragment | Blinn-Phong lighting with shadow sampling, outputs color + world normal (MRT) |
 | `shadow.vert.hlsl` | Vertex | Light-space MVP transform for depth-only rendering |
 | `shadow.frag.hlsl` | Fragment | Empty output (depth-only pass, required by SDL GPU) |
 | `grid.vert.hlsl` | Vertex | Grid floor vertex transform with light-space coordinates |
-| `grid.frag.hlsl` | Fragment | Procedural grid pattern with shadow sampling |
+| `grid.frag.hlsl` | Fragment | Procedural grid pattern with shadow sampling, outputs color + world normal (MRT) |
 | `decal.vert.hlsl` | Vertex | MVP transform for decal box geometry |
-| `decal.frag.hlsl` | Fragment | Depth reconstruction, OBB bounds test, shape sampling, soft fade |
+| `decal.frag.hlsl` | Fragment | Depth reconstruction, OBB bounds test, shape sampling, soft fade, normal G-buffer sampling, Blinn-Phong lighting, shadow sampling |
 
 ## Building
 
@@ -371,30 +437,24 @@ for decal projection.
    builds directly on the stencil increment technique from
    [Lesson 34](../34-stencil-testing/).
 
-2. **Lit decals** — Instead of blending a flat color, render decals into a
-   G-buffer (albedo, normal, roughness) and apply deferred lighting afterward.
-   The decal modifies the surface's material properties, so it responds to
-   light direction and shadow just like the underlying geometry.
-
-3. **Normal-mapped decals** — Generate per-texel normal maps for each decal
+2. **Normal-mapped decals** — Generate per-texel normal maps for each decal
    shape (e.g., embossed edges on the circle, raised ridges on the star).
    Blend the decal normals with the surface normals in the decal fragment
    shader using a technique such as Reoriented Normal Mapping (RNM) to produce
-   correct lighting on the decal surface.
+   more detailed lighting on the decal surface.
 
-4. **Interactive placement** — Click to place a new decal at the mouse
+3. **Interactive placement** — Click to place a new decal at the mouse
    position. Read back the depth buffer at the click coordinates, reconstruct
    the world position, and orient the decal's OBB to align with the surface
    normal (derived from neighboring depth samples). This turns the static decal
    array into a runtime painting system.
 
-5. **Angle-based fade** — Fade decals at grazing angles to prevent stretching
-   on surfaces nearly parallel to the projection direction. Derive the surface
-   normal from depth buffer gradients (using finite differences on neighboring
-   depth samples), compute the dot product with the decal's projection axis,
-   and multiply the alpha by a smoothstep on that dot product.
+4. **Angle-based fade** — Fade decals at grazing angles to prevent stretching
+   on surfaces nearly parallel to the projection direction. Use the surface
+   normal sampled from the G-buffer, compute the dot product with the decal's
+   projection axis, and multiply the alpha by a smoothstep on that dot product.
 
-6. **Animated decals** — Add time-based animation to the decal shader. Rotate
+5. **Animated decals** — Add time-based animation to the decal shader. Rotate
    the decal UV coordinates over time, pulse the alpha with a sine wave, or
    scroll the texture coordinates to create flowing patterns. Pass a time
    uniform to the decal fragment shader and use it to modulate the UV

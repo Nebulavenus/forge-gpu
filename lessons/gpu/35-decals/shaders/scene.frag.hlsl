@@ -76,11 +76,18 @@ float sample_shadow(float4 light_clip)
     return shadow / (float)PCF_SAMPLES;
 }
 
-float4 main(float4 clip_pos   : SV_Position,
-             float3 world_pos  : TEXCOORD0,
-             float3 world_nrm  : TEXCOORD1,
-             float4 light_clip : TEXCOORD2) : SV_Target
+struct PSOutput
 {
+    float4 color  : SV_Target0;  /* lit scene color                        */
+    float4 normal : SV_Target1;  /* world-space normal (xyz), unused (w)   */
+};
+
+PSOutput main(float4 clip_pos   : SV_Position,
+              float3 world_pos  : TEXCOORD0,
+              float3 world_nrm  : TEXCOORD1,
+              float4 light_clip : TEXCOORD2)
+{
+    PSOutput output;
     /* ── Surface color ──────────────────────────────────────────────── */
     float4 albedo = base_color;
 
@@ -104,5 +111,8 @@ float4 main(float4 clip_pos   : SV_Position,
                        light_color * shadow;
     }
 
-    return float4(total_light, albedo.a);
+    output.color  = float4(total_light, albedo.a);
+    /* Encode world normal to [0,1] range for RGBA8 storage: n * 0.5 + 0.5 */
+    output.normal = float4(normalize(world_nrm) * 0.5 + 0.5, 1.0);
+    return output;
 }

@@ -3,7 +3,8 @@ name: forge-decals
 description: >
   Add deferred decal projection to an SDL GPU project. Render projected decals
   onto scene geometry using depth reconstruction, inverse view-projection
-  transforms, and local-space bounds checking with soft-edge fading.
+  transforms, local-space bounds checking, soft-edge fading, G-buffer
+  normals, Blinn-Phong lighting, and shadow map sampling.
 triggers:
   - decal
   - decal projection
@@ -19,7 +20,8 @@ triggers:
 Add projected decals to an SDL GPU project. This skill covers three-pass
 rendering (shadow, scene, decals), depth texture sampling, inverse
 view-projection reconstruction, local-space projection with bounds rejection,
-procedural decal textures, and soft-edge fading.
+procedural decal textures, soft-edge fading, G-buffer surface normals,
+Blinn-Phong lighting, and shadow map sampling on decals.
 
 ## When to use
 
@@ -208,6 +210,51 @@ The smoothstep range `(0.4, 0.5)` controls the fade width. A narrower range
 (e.g., `0.45, 0.5`) produces a sharper edge; a wider range (e.g., `0.3, 0.5`)
 produces a softer gradient.
 
+## Normal G-buffer for decal lighting
+
+Decals need surface normals for lighting. The scene and grid fragment shaders
+write world-space normals to a second color target (`SV_Target1`), encoded
+into an RGBA8 texture as `n * 0.5 + 0.5`. The decal shader samples this
+texture and decodes:
+
+```hlsl
+float3 N = normalize(normal_tex.Sample(normal_smp, screen_uv).xyz * 2.0 - 1.0);
+```
+
+This gives the same smooth per-vertex interpolated normals as the scene's own
+lighting. With the normal available, apply the same Blinn-Phong model as the
+scene shader:
+
+```hlsl
+float3 lit = decal_color.rgb * ambient;
+float3 L = normalize(-light_dir);
+float NdotL = max(dot(N, L), 0.0);
+float3 H = normalize(L + normalize(eye_pos - world_pos));
+float spec = specular_str * pow(max(dot(N, H), 0.0), shininess);
+float shadow = sample_shadow(world_pos);  /* project into light VP, PCF sample */
+lit += (decal_color.rgb * NdotL + spec) * light_intensity * light_color * shadow;
+```
+
+The decal fragment shader needs these additional uniforms and samplers:
+
+- **Uniform**: `light_vp` (mat4), `eye_pos`, `light_dir`, `light_color`,
+  `light_intensity`, `ambient`, `shininess`, `specular_str`
+- **Sampler slot 2**: shadow depth texture + nearest-clamp sampler
+- **Sampler slot 3**: scene normal texture + nearest-clamp sampler
+
+The scene and grid pipelines must have 2 color targets (swapchain + normal
+G-buffer). Create the normal texture with `COLOR_TARGET | SAMPLER` usage.
+
+Update the shader creation to declare 4 fragment samplers:
+
+```c
+SDL_GPUShader *decal_frag = create_shader(device,
+    SDL_GPU_SHADERSTAGE_FRAGMENT,
+    decal_frag_spirv, sizeof(decal_frag_spirv),
+    decal_frag_dxil, sizeof(decal_frag_dxil),
+    4, 0, 1);  /* 4 samplers: scene depth, decal texture, shadow map, normals */
+```
+
 ## Decal volume geometry
 
 Each decal is rendered as a unit cube `[-0.5, 0.5]^3` transformed by the
@@ -233,11 +280,15 @@ depth-stencil target (depth test is disabled). The scene depth is bound as a
 fragment sampler instead:
 
 ```c
-/* Scene pass: render to color + depth */
-SDL_GPUColorTargetInfo color_target = { .texture = scene_color, /* ... */ };
+/* Scene pass: render to color + normal G-buffer + depth */
+SDL_GPUColorTargetInfo color_targets[2] = {
+    { .texture = scene_color, /* ... */ },
+    { .texture = scene_normal, .load_op = SDL_GPU_LOADOP_CLEAR,
+      .store_op = SDL_GPU_STOREOP_STORE, /* ... */ },
+};
 SDL_GPUDepthStencilTargetInfo ds_target = { .texture = scene_depth, /* ... */ };
 SDL_GPURenderPass *scene_pass = SDL_BeginGPURenderPass(
-    cmd, &color_target, 1, &ds_target);
+    cmd, color_targets, 2, &ds_target);
 /* ... draw scene ... */
 SDL_EndGPURenderPass(scene_pass);
 

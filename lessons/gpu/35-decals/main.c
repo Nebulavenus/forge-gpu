@@ -185,14 +185,23 @@ typedef struct DecalVertUniforms {
     mat4 mvp; /* decal-model × view × projection for clip-space transform */
 } DecalVertUniforms;
 
-/* Decal fragment: inverse matrices + screen info + tint (160 bytes). */
+/* Decal fragment: inverse matrices + screen info + tint + lighting (288 bytes). */
 typedef struct DecalFragUniforms {
     mat4  inv_vp;            /* inverse view-projection for depth reconstruction */
-    mat4  inv_decal_model;   /* inverse decal model matrix (world → decal local) */
+    mat4  inv_decal_model;   /* inverse decal model matrix (world -> decal local) */
+    mat4  light_vp;          /* light view-projection for shadow map lookup */
     float screen_size[2];    /* viewport width and height in pixels */
     float near_plane;        /* camera near plane distance */
     float far_plane;         /* camera far plane distance */
     float decal_tint[4];     /* RGBA per-decal color tint (linear, 0-1) */
+    float eye_pos[3];        /* world-space camera position */
+    float ambient;           /* ambient light intensity (0-1) */
+    float light_dir[3];      /* normalized world-space light direction */
+    float light_intensity;   /* directional light brightness multiplier */
+    float light_color[3];    /* RGB light color (linear, 0-1) */
+    float shininess;         /* Blinn-Phong specular exponent */
+    float specular_str;      /* specular intensity multiplier (0-1) */
+    float _pad[3];           /* padding to 16-byte alignment */
 } DecalFragUniforms;
 
 /* ── Scene object description ─────────────────────────────────────────── */
@@ -228,6 +237,7 @@ typedef struct app_state {
     /* Render targets */
     SDL_GPUTexture *shadow_depth;           /* shadow map texture; format negotiated at runtime (may be D32_FLOAT or other depth formats) */
     SDL_GPUTexture *scene_depth;            /* window-sized depth texture used as depth-stencil target and sampled for decal reconstruction */
+    SDL_GPUTexture *scene_normal;           /* window-sized RGBA8 normal G-buffer (encoded world normals) sampled by decal shader */
     SDL_GPUTextureFormat depth_stencil_fmt; /* negotiated depth-stencil format for scene rendering (D24S8 or D32_FLOAT — stencil may be absent) */
     SDL_GPUTextureFormat shadow_depth_fmt;  /* negotiated shadow map depth format (selected from preferred list at init) */
 
@@ -953,6 +963,26 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         }
     }
 
+    /* Scene normal G-buffer — stores encoded world-space normals for decal lighting */
+    {
+        SDL_GPUTextureCreateInfo ti;
+        SDL_zero(ti);
+        ti.type = SDL_GPU_TEXTURETYPE_2D;
+        ti.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ti.width = WINDOW_WIDTH;
+        ti.height = WINDOW_HEIGHT;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels = 1;
+        ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                   SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        state->scene_normal = SDL_CreateGPUTexture(device, &ti);
+        if (!state->scene_normal) {
+            SDL_Log("ERROR: SDL_CreateGPUTexture (scene_normal) failed: %s",
+                    SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+    }
+
     /* Shadow map depth — 2048x2048, D32_FLOAT */
     {
         SDL_GPUTextureCreateInfo ti;
@@ -1057,7 +1087,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         decal_frag_spirv, sizeof(decal_frag_spirv),
         decal_frag_dxil, sizeof(decal_frag_dxil),
-        2, 0, 1);
+        4, 0, 1);  /* 4 samplers: scene depth, decal texture, shadow map, scene normals */
 
     if (!scene_vert || !scene_frag || !shadow_vert || !shadow_frag ||
         !grid_vert || !grid_frag || !decal_vert || !decal_frag) {
@@ -1181,6 +1211,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_zero(color_target_desc);
     color_target_desc.format = swapchain_format;
 
+    /* Scene pass writes to two color targets: swapchain (color) + normal G-buffer */
+    SDL_GPUColorTargetDescription scene_color_targets[2];
+    SDL_zero(scene_color_targets);
+    scene_color_targets[0].format = swapchain_format;
+    scene_color_targets[1].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+
     /* Pipeline 1: Shadow (depth-only, cull back) */
     {
         SDL_GPUGraphicsPipelineCreateInfo pi;
@@ -1201,7 +1237,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->shadow_pipeline = SDL_CreateGPUGraphicsPipeline(device, &pi);
     }
 
-    /* Pipeline 2: Scene (Suzanne, cull back, depth test+write) */
+    /* Pipeline 2: Scene (Suzanne, cull back, depth test+write, 2 color targets) */
     {
         SDL_GPUGraphicsPipelineCreateInfo pi;
         SDL_zero(pi);
@@ -1215,14 +1251,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         pi.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
         pi.depth_stencil_state.enable_depth_test = true;
         pi.depth_stencil_state.enable_depth_write = true;
-        pi.target_info.color_target_descriptions = &color_target_desc;
-        pi.target_info.num_color_targets = 1;
+        pi.target_info.color_target_descriptions = scene_color_targets;
+        pi.target_info.num_color_targets = 2;
         pi.target_info.depth_stencil_format = state->depth_stencil_fmt;
         pi.target_info.has_depth_stencil_target = true;
         state->scene_pipeline = SDL_CreateGPUGraphicsPipeline(device, &pi);
     }
 
-    /* Pipeline 3: Grid (cull none, depth test LESS_OR_EQUAL) */
+    /* Pipeline 3: Grid (cull none, depth test LESS_OR_EQUAL, 2 color targets) */
     {
         SDL_GPUGraphicsPipelineCreateInfo pi;
         SDL_zero(pi);
@@ -1236,8 +1272,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         pi.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
         pi.depth_stencil_state.enable_depth_test = true;
         pi.depth_stencil_state.enable_depth_write = true;
-        pi.target_info.color_target_descriptions = &color_target_desc;
-        pi.target_info.num_color_targets = 1;
+        pi.target_info.color_target_descriptions = scene_color_targets;
+        pi.target_info.num_color_targets = 2;
         pi.target_info.depth_stencil_format = state->depth_stencil_fmt;
         pi.target_info.has_depth_stencil_target = true;
         state->grid_pipeline = SDL_CreateGPUGraphicsPipeline(device, &pi);
@@ -1592,12 +1628,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* ── 6. Pass 2: Scene (Suzannes + grid) ────────────────────────── */
 
-    SDL_GPUColorTargetInfo color_target;
-    SDL_zero(color_target);
-    color_target.texture    = swapchain_tex;
-    color_target.load_op    = SDL_GPU_LOADOP_CLEAR;
-    color_target.store_op   = SDL_GPU_STOREOP_STORE;
-    color_target.clear_color = (SDL_FColor){ CLEAR_R, CLEAR_G, CLEAR_B, 1.0f };
+    SDL_GPUColorTargetInfo color_targets[2];
+    SDL_zero(color_targets);
+    /* Target 0: swapchain color */
+    color_targets[0].texture    = swapchain_tex;
+    color_targets[0].load_op    = SDL_GPU_LOADOP_CLEAR;
+    color_targets[0].store_op   = SDL_GPU_STOREOP_STORE;
+    color_targets[0].clear_color = (SDL_FColor){ CLEAR_R, CLEAR_G, CLEAR_B, 1.0f };
+    /* Target 1: world-space normal G-buffer */
+    color_targets[1].texture    = state->scene_normal;
+    color_targets[1].load_op    = SDL_GPU_LOADOP_CLEAR;
+    color_targets[1].store_op   = SDL_GPU_STOREOP_STORE;
+    color_targets[1].clear_color = (SDL_FColor){ 0.5f, 1.0f, 0.5f, 1.0f }; /* default +Y normal encoded */
 
     bool has_stencil =
         state->depth_stencil_fmt == SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT ||
@@ -1616,7 +1658,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     }
 
     SDL_GPURenderPass *scene_pass = SDL_BeginGPURenderPass(
-        cmd, &color_target, 1, &scene_ds);
+        cmd, color_targets, 2, &scene_ds);
+    if (!scene_pass) {
+        SDL_Log("SDL_BeginGPURenderPass (scene) failed: %s", SDL_GetError());
+        SDL_SubmitGPUCommandBuffer(cmd);
+        return SDL_APP_FAILURE;
+    }
 
     /* Bind scene pipeline and shadow map */
     SDL_BindGPUGraphicsPipeline(scene_pass, state->scene_pipeline);
@@ -1768,10 +1815,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         dvu.mvp = mat4_multiply(cam_vp, decal_model);
         SDL_PushGPUVertexUniformData(cmd, 0, &dvu, sizeof(dvu));
 
-        /* Fragment uniforms */
+        /* Fragment uniforms — projection, lighting, and shadow */
         DecalFragUniforms dfu;
+        SDL_zero(dfu);
         dfu.inv_vp = inv_vp;
         dfu.inv_decal_model = inv_decal_model;
+        dfu.light_vp = state->light_vp;
         dfu.screen_size[0] = (float)WINDOW_WIDTH;
         dfu.screen_size[1] = (float)WINDOW_HEIGHT;
         dfu.near_plane = NEAR_PLANE;
@@ -1780,17 +1829,39 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         dfu.decal_tint[1] = d->tint[1];
         dfu.decal_tint[2] = d->tint[2];
         dfu.decal_tint[3] = d->tint[3];
+        dfu.eye_pos[0] = state->cam_position.x;
+        dfu.eye_pos[1] = state->cam_position.y;
+        dfu.eye_pos[2] = state->cam_position.z;
+        dfu.ambient = AMBIENT_SCENE;
+        dfu.light_dir[0] = light_dir.x;
+        dfu.light_dir[1] = light_dir.y;
+        dfu.light_dir[2] = light_dir.z;
+        dfu.light_intensity = 1.0f;
+        dfu.light_color[0] = 1.0f;
+        dfu.light_color[1] = 1.0f;
+        dfu.light_color[2] = 1.0f;
+        dfu.shininess = SHININESS;
+        dfu.specular_str = SPECULAR_STR;
         SDL_PushGPUFragmentUniformData(cmd, 0, &dfu, sizeof(dfu));
 
-        /* Bind samplers: slot 0 = depth, slot 1 = decal texture */
+        /* Bind samplers: slot 0 = depth, slot 1 = decal texture,
+         *                 slot 2 = shadow map, slot 3 = scene normals */
         SDL_GPUTextureSamplerBinding decal_tex_bind;
         decal_tex_bind.texture = state->decal_textures[d->tex_index];
         decal_tex_bind.sampler = state->linear_clamp;
 
-        SDL_GPUTextureSamplerBinding frag_samplers[2] = {
-            depth_bind, decal_tex_bind
+        SDL_GPUTextureSamplerBinding shadow_bind_decal;
+        shadow_bind_decal.texture = state->shadow_depth;
+        shadow_bind_decal.sampler = state->nearest_clamp;
+
+        SDL_GPUTextureSamplerBinding normal_bind;
+        normal_bind.texture = state->scene_normal;
+        normal_bind.sampler = state->nearest_clamp;
+
+        SDL_GPUTextureSamplerBinding frag_samplers[4] = {
+            depth_bind, decal_tex_bind, shadow_bind_decal, normal_bind
         };
-        SDL_BindGPUFragmentSamplers(decal_pass, 0, frag_samplers, 2);
+        SDL_BindGPUFragmentSamplers(decal_pass, 0, frag_samplers, 4);
 
         SDL_DrawGPUIndexedPrimitives(decal_pass, CUBE_INDEX_COUNT,
                                      1, 0, 0, 0);
@@ -1873,6 +1944,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     /* Release depth textures */
     if (state->shadow_depth) SDL_ReleaseGPUTexture(state->device, state->shadow_depth);
     if (state->scene_depth)  SDL_ReleaseGPUTexture(state->device, state->scene_depth);
+    if (state->scene_normal) SDL_ReleaseGPUTexture(state->device, state->scene_normal);
 
     /* Free glTF scene */
     forge_gltf_free(&state->gltf_scene);

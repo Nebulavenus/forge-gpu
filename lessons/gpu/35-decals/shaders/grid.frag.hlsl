@@ -86,8 +86,15 @@ struct PSInput
     float4 light_clip : TEXCOORD1;
 };
 
-float4 main(PSInput input) : SV_Target
+struct PSOutput
 {
+    float4 color  : SV_Target0;  /* lit grid color                         */
+    float4 normal : SV_Target1;  /* world-space normal (xyz), unused (w)   */
+};
+
+PSOutput main(PSInput input)
+{
+    PSOutput output;
     /* ── Procedural grid pattern ─────────────────────────────────────── */
 
     float2 grid_uv = input.world_pos.xz / grid_spacing;
@@ -119,5 +126,8 @@ float4 main(PSInput input) : SV_Target
 
     float3 lit = surface * (ambient + NdotL * light_intensity * shadow);
 
-    return float4(lit, 1.0);
+    output.color  = float4(lit, 1.0);
+    /* Grid floor normal is always +Y, encoded to [0,1] for RGBA8 storage */
+    output.normal = float4(0.5, 1.0, 0.5, 1.0);  /* (0,1,0) * 0.5 + 0.5 */
+    return output;
 }
