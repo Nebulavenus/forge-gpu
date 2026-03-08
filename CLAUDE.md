@@ -60,6 +60,53 @@ concept with the respect it deserves.
 - **Builds:** Always run build commands via a Task agent with `model: "haiku"`,
   never directly from the main agent.
 
+### FPS camera pattern (MANDATORY)
+
+Every 3D lesson with a fly camera **must** use the math library's quaternion
+camera — never hand-roll sin/cos. This is the canonical pattern:
+
+```c
+/* ── Mouse look (in SDL_AppEvent) ────────────────────────────────── */
+case SDL_EVENT_MOUSE_MOTION:
+    if (state->mouse_captured) {
+        state->cam_yaw   -= event->motion.xrel * MOUSE_SENSITIVITY;
+        state->cam_pitch -= event->motion.yrel * MOUSE_SENSITIVITY;
+        if (state->cam_pitch >  PITCH_CLAMP) state->cam_pitch =  PITCH_CLAMP;
+        if (state->cam_pitch < -PITCH_CLAMP) state->cam_pitch = -PITCH_CLAMP;
+    }
+    break;
+
+/* ── Camera update (in SDL_AppIterate) ───────────────────────────── */
+quat cam_orient = quat_from_euler(state->cam_yaw, state->cam_pitch, 0.0f);
+vec3 forward = quat_forward(cam_orient);
+vec3 right   = quat_right(cam_orient);
+
+vec3 move = vec3_create(0.0f, 0.0f, 0.0f);
+if (keys[SDL_SCANCODE_W]) move = vec3_add(move, forward);
+if (keys[SDL_SCANCODE_S]) move = vec3_sub(move, forward);
+if (keys[SDL_SCANCODE_D]) move = vec3_add(move, right);
+if (keys[SDL_SCANCODE_A]) move = vec3_sub(move, right);
+if (keys[SDL_SCANCODE_SPACE])  move.y += 1.0f;
+if (keys[SDL_SCANCODE_LSHIFT]) move.y -= 1.0f;
+
+if (vec3_length(move) > 0.001f) {
+    move = vec3_scale(vec3_normalize(move), MOVE_SPEED * dt);
+    state->cam_position = vec3_add(state->cam_position, move);
+}
+
+mat4 view = mat4_view_from_quat(state->cam_position, cam_orient);
+mat4 proj = mat4_perspective(FOV_DEG * FORGE_DEG2RAD, aspect,
+                             NEAR_PLANE, FAR_PLANE);
+mat4 cam_vp = mat4_multiply(proj, view);
+```
+
+Key rules — violating any of these produces a backwards or broken camera:
+
+- **Yaw decrements** on positive xrel (`-=`, not `+=`)
+- **Use `quat_from_euler` / `quat_forward` / `quat_right`** — never `sinf`/`cosf`
+- **Use `mat4_view_from_quat`** — never `mat4_look_at` with a manual target
+- **Use `FORGE_DEG2RAD`** — never `* FORGE_PI / 180.0f`
+
 ## Git workflow
 
 - **Never commit directly to `main`.** All changes go through pull requests.

@@ -202,6 +202,16 @@ testing, and edge detection.
 <b>36</b> — Edge Detection
 </td>
 </tr>
+<tr>
+<td align="center">
+<a href="lessons/gpu/37-3d-picking/"><img src="lessons/gpu/37-3d-picking/assets/screenshot.png" width="200" alt="3D Picking" /></a><br />
+<b>37</b> — 3D Picking
+</td>
+<td align="center">
+</td>
+<td align="center">
+</td>
+</tr>
 </table>
 
 ### Math Lessons (lessons/math/)
