@@ -30,8 +30,8 @@ with AI when they understand what they're building.
 The core rendering track. Start with a triangle, build up to skeletal animations,
 stencil effects, and beyond. Every lesson is a standalone C program introducing
 one SDL GPU concept: pipelines, textures, depth buffers, lighting, shadows,
-compute shaders, HDR, post-processing, UI rendering, animations, and stencil
-testing.
+compute shaders, HDR, post-processing, UI rendering, animations, stencil
+testing, and edge detection.
 
 <table>
 <tr>
@@ -196,6 +196,10 @@ testing.
 <td align="center">
 <a href="lessons/gpu/35-decals/"><img src="lessons/gpu/35-decals/assets/screenshot.png" width="200" alt="Decals" /></a><br />
 <b>35</b> — Decals
+</td>
+<td align="center">
+<a href="lessons/gpu/36-edge-detection/"><img src="lessons/gpu/36-edge-detection/assets/screenshot.png" width="200" alt="Edge Detection" /></a><br />
+<b>36</b> — Edge Detection
 </td>
 </tr>
 </table>
@@ -630,7 +634,9 @@ forge-gpu/
 │       ├── 31-transform-animations/
 │       ├── 32-skinning-animations/
 │       ├── 33-vertex-pulling/
-│       └── 34-stencil-testing/
+│       ├── 34-stencil-testing/
+│       ├── 35-decals/
+│       └── 36-edge-detection/
 ├── common/
 │   ├── math/              Math library (vectors, matrices, quaternions)
 │   │   ├── forge_math.h   All math operations (header-only)
@@ -742,6 +748,7 @@ project to enable Claude to build games and tools with you.
 | [forge-auto-widget-layout](.claude/skills/forge-auto-widget-layout/SKILL.md) | `/forge-auto-widget-layout` | Automatic widget layout with vertical/horizontal stacking, padding, spacing, and nested layouts |
 | [forge-draggable-windows](.claude/skills/forge-draggable-windows/SKILL.md) | `/forge-draggable-windows` | Draggable, z-ordered, collapsible windows for immediate-mode UI |
 | [forge-stencil-testing](.claude/skills/forge-stencil-testing/SKILL.md) | `/forge-stencil-testing` | Stencil buffer testing, portals, outlines, per-pixel masking |
+| [forge-edge-detection](.claude/skills/edge-detection/SKILL.md) | `/forge-edge-detection` | Sobel edge detection on G-buffer, stencil X-ray vision, Fresnel ghost silhouettes |
 | [forge-asset-pipeline](.claude/skills/forge-asset-pipeline/SKILL.md) | `/forge-asset-pipeline` | Plugin-based asset pipeline with CLI, content-hash fingerprinting, TOML config |
 
 ### Development skills (used within this repo)

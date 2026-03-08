@@ -5,7 +5,7 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–33** — From Hello Window through Vertex Pulling
+- **GPU Lessons 01–36** — From Hello Window through Edge Detection
 - **Math Lessons 01–15** — From Vectors through Bezier Curves
 - **Engine Lessons 01–11** — From Intro to C through Git & Version Control
 - **UI Lessons 01–13** — From TTF Parsing through Theming and Color System
@@ -17,7 +17,7 @@ The following foundations, tooling, and lesson ranges are complete:
 
 - [x] **Lesson 34 — Portals & Outlines** — Stencil buffer fundamentals; configuring stencil state in the depth-stencil texture and pipeline; stencil operations (keep, replace, increment); portal masking with depth-aware phase ordering; two-pass stencil outline technique (silhouette expansion); depth-stencil interaction pitfalls and draw order correctness; visualizing stencil buffer contents for debugging
 - [x] **Lesson 35 — Decals** — Projecting flat detail onto existing geometry using deferred decal boxes; inverse projection to reconstruct world position from depth; writing decal color while preserving surface normals and depth; layering multiple decals with stencil increment/decrement; depth-aware phase ordering (building on L34's phase ordering insight); application to bullet holes, dirt, signs, and graffiti (depends on GPU Lesson 34)
-- [ ] **Lesson 36 — Edge Detection & X-Ray** — Post-process outline techniques as an alternative to L34's stencil outlines; Sobel/Roberts edge detection on depth and normal buffers; rendering to offscreen G-buffer targets for edge input; X-ray vision using `depth_fail_op` to reveal occluded objects as ghostly silhouettes; comparison of three outline methods: stencil expansion (L34), edge detection (this lesson), and jump flood distance fields; when to use each approach (depends on GPU Lesson 34)
+- [x] **Lesson 36 — Edge Detection & X-Ray** — Post-process outline techniques as an alternative to L34's stencil outlines; Sobel/Roberts edge detection on depth and normal buffers; rendering to offscreen G-buffer targets for edge input; X-ray vision using `depth_fail_op` to reveal occluded objects as ghostly silhouettes; comparison of three outline methods: stencil expansion (L34), edge detection (this lesson), and jump flood distance fields; when to use each approach (depends on GPU Lesson 34)
 - [ ] **Lesson 37 — 3D Picking** — Identifying objects under the cursor; color-ID picking: render each object with a unique color to an offscreen target, read back the pixel under the mouse; stencil-ID picking as an alternative using per-object stencil reference values; GPU readback with `SDL_DownloadFromGPUTexture`; highlight selected object with stencil outline from L34 (depends on GPU Lessons 34, 36)
 
 ### Advanced Rendering

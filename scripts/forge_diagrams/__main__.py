@@ -43,7 +43,7 @@ from .engine_diagrams import (
     diagram_vertex_memory_layout,
     diagram_worktree_architecture,
 )
-from .gpu_diagrams import (
+from .gpu_diagrams import (  # gpu/36
     diagram_aabb_sorting,
     diagram_animation_clip_structure,
     diagram_animation_timeline,
@@ -68,8 +68,11 @@ from .gpu_diagrams import (
     diagram_decal_render_pipeline,
     diagram_density_profiles,
     diagram_depth_reconstruction,
+    diagram_depth_vs_normal_edges,
     diagram_downsample_13tap,
     diagram_draw_order_stencil,
+    diagram_edge_detection_gbuffer_layout,
+    diagram_edge_detection_pipeline,
     diagram_exposure_effect,
     diagram_filtering_comparison,
     diagram_fog_blending,
@@ -94,6 +97,7 @@ from .gpu_diagrams import (
     diagram_normal_transformation,
     diagram_oblique_clip_planes,
     diagram_occlusion_test,
+    diagram_outline_method_comparison,
     diagram_outline_technique,
     diagram_path_following,
     diagram_pcf_kernel,
@@ -114,6 +118,7 @@ from .gpu_diagrams import (
     diagram_shadow_lookup,
     diagram_skinned_normal_transform,
     diagram_sky_render_pipeline,
+    diagram_sobel_kernels,
     diagram_specular_comparison,
     diagram_ssao_render_pipeline,
     diagram_ssr_gbuffer_layout,
@@ -139,6 +144,7 @@ from .gpu_diagrams import (
     diagram_uv_mapping,
     diagram_vertex_pulling_use_cases,
     diagram_water_layers,
+    diagram_xray_depth_fail,
 )
 from .math_diagrams import (
     diagram_arc_length,
@@ -503,6 +509,14 @@ DIAGRAMS = {
         ("back_face_culling_decals.png", diagram_back_face_culling_decals),
         ("decal_layering.png", diagram_decal_layering),
     ],
+    "gpu/36": [
+        ("sobel_kernels.png", diagram_sobel_kernels),
+        ("depth_vs_normal_edges.png", diagram_depth_vs_normal_edges),
+        ("gbuffer_layout.png", diagram_edge_detection_gbuffer_layout),
+        ("xray_depth_fail.png", diagram_xray_depth_fail),
+        ("outline_method_comparison.png", diagram_outline_method_comparison),
+        ("edge_detection_pipeline.png", diagram_edge_detection_pipeline),
+    ],
     "ui/01": [
         ("ttf_file_structure.png", diagram_ttf_file_structure),
         ("glyph_anatomy.png", diagram_glyph_anatomy),
@@ -640,6 +654,7 @@ LESSON_NAMES = {
     "gpu/33": "gpu/33-vertex-pulling",
     "gpu/34": "gpu/34-stencil-testing",
     "gpu/35": "gpu/35-decals",
+    "gpu/36": "gpu/36-edge-detection",
     "ui/01": "ui/01-ttf-parsing",
     "ui/02": "ui/02-glyph-rasterization",
     "ui/03": "ui/03-font-atlas",
