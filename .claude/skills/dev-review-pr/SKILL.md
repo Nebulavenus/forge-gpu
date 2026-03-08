@@ -20,9 +20,8 @@ The user provides:
 Use `gh pr checks <pr-number>` to see if automated reviews are complete.
 
 **Important:** This command returns exit code 8 if any checks are pending, and
-outputs them to stderr. Handle both stdout and stderr to capture all check statuses.
-
-Output format: `check-name  status  duration  url`
+outputs them to stderr. Handle both stdout and stderr to capture all check
+statuses. Output format: `check-name  status  duration  url`
 
 **If any checks are still running (pending):**
 
@@ -77,42 +76,43 @@ If the "Markdown Lint" check failed:
 
 6. **Exit and wait for checks to re-run** — user should invoke `/dev-review-pr` again after checks pass
 
-### 1.7. Check for paused CodeRabbit reviews
+### 1.7. Check CodeRabbit review status
 
-After checks pass, check whether CodeRabbit has paused its reviews (this happens
-when many commits are pushed in rapid succession). Fetch the PR's general comments
-and look at the **first** comment from `coderabbitai[bot]`:
+CodeRabbit is configured to **auto-pause after the first reviewed commit**
+(`reviews.auto_review.auto_pause_after_reviewed_commits: 1` in `.coderabbit.yaml`). This means
+after every push, CodeRabbit reviews once and then pauses. The "Reviews paused"
+banner in the PR comment is **normal and expected** — it does NOT mean something
+went wrong or that the review is missing.
+
+**Key insight:** CodeRabbit completes its review *before* pausing. The review
+comments and review body are already available.
+
+**How to check:**
+
+Look at the CodeRabbit check status from step 1:
+
+- If CodeRabbit shows `pass` — the review is done. **Proceed directly to
+  step 2** to fetch the review comments. Ignore the "Reviews paused"
+  banner — it just means future commits won't be auto-reviewed.
+- If CodeRabbit shows `pending` or no CodeRabbit check yet — the review
+  hasn't started or is still running. Exit and ask the user to re-run later.
+
+**After implementing feedback and pushing fixes (step 5):**
+
+Since auto-pause is on, CodeRabbit will NOT automatically review the new
+commit. Post a single comment to request a fresh review:
 
 ```bash
-gh api repos/{owner}/{repo}/issues/{pr-number}/comments \
-  | jq '[.[] | select(.user.login == "coderabbitai[bot]")][0].body' -r \
-  | head -20
+gh pr comment <pr-number> --body "@coderabbitai review"
 ```
 
-**If the comment body contains "Reviews paused":**
+Do NOT post `@coderabbitai resume` — we *want* it to stay paused
+after each review to avoid review thrashing from rapid commits.
 
-- Report to the user: "CodeRabbit reviews are paused due to rapid commits."
-- Post **two** comments — one to do a full review, one to resume future reviews:
+**If CodeRabbit shows "Currently processing new changes":**
 
-  ```bash
-  gh pr comment <pr-number> --body "@coderabbitai full review"
-  gh pr comment <pr-number> --body "@coderabbitai resume reviews"
-  ```
-
-- Exit with message: "Requested CodeRabbit full review and resumed reviews.
-  Run this skill again when the review completes."
-- DO NOT proceed to fetch review comments — CodeRabbit hasn't reviewed yet
-
-**If the comment body contains "Currently processing new changes":**
-
-- Report to the user: "CodeRabbit is currently processing new changes."
-- Exit with message: "CodeRabbit is still reviewing. Run this skill again when
-  the review completes."
-- DO NOT proceed to fetch review comments — CodeRabbit hasn't finished yet
-
-**If reviews are not paused and not processing:**
-
-- Proceed to step 2
+- The review is actively running. Exit and tell the user to re-run later.
+- Do NOT fetch review comments yet — they may be incomplete.
 
 ### 2. Fetch review comments
 
@@ -256,8 +256,8 @@ After processing ALL feedback items, if any code changes were made:
 - Stage all changed files
 - Create a single commit: "Address PR feedback: [summary of all changes]"
 - Push once to the PR branch
-- Comment `@coderabbitai review` to trigger a fresh full review on the
-  current state (not `resume` — `review` starts clean)
+- Comment `@coderabbitai review` to trigger a fresh review (do NOT use
+  `@coderabbitai resume` — we want auto-pause to stay active)
 - Re-run checks with `gh pr checks` (don't wait, just show status)
 - Exit with: "Changes pushed. Run this skill again after checks complete."
 
@@ -333,7 +333,7 @@ Show success message with merged commit SHA.
 ## GitHub CLI commands reference
 
 ```bash
-# Check PR status (returns exit code 8 if checks are pending)
+# Check PR status (exit code 8 if any checks are pending)
 gh pr checks <pr-number>
 
 # Get inline review comments (the "tasks" shown in GitHub UI)
@@ -379,7 +379,7 @@ gh pr merge <pr-number> --squash --delete-branch
 - Always show the user what will be changed before making code modifications
 - Use the same commit message format as publish-lesson (with Co-Authored-By line)
 - **The "X out of Y pending tasks"** shown in GitHub UI are the unresolved review comment threads—fetch them via `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments`
-- **CodeRabbit paused/processing reviews:** When many commits are pushed quickly, CodeRabbit pauses reviews and adds "Reviews paused" to its initial PR comment. It may also show "Currently processing new changes" while actively re-reviewing. Always check for both statuses before fetching review comments — if paused, post both `@coderabbitai full review` AND `@coderabbitai resume reviews` (the second is needed to unpause future reviews); if processing, wait for it to finish. In either case, exit and tell the user to re-run the skill later.
+- **CodeRabbit auto-pause is intentional:** CodeRabbit is configured to auto-pause after reviewing each commit (`reviews.auto_review.auto_pause_after_reviewed_commits: 1`). The "Reviews paused" banner is normal — it means CodeRabbit already completed its review and is waiting. Do NOT post `@coderabbitai resume` — we want it paused to prevent review thrashing. After pushing fixes, request a single fresh review with `@coderabbitai review`. If CodeRabbit shows "Currently processing new changes", wait for it to finish before fetching comments.
 - **CodeRabbit auto-resolution:** CodeRabbit automatically resolves conversations when it detects the suggested fix was implemented in a new commit. Let it auto-resolve; only ask it to resolve manually if it doesn't detect your fix after re-review.
 - **CodeRabbit duplicate comments:** When CodeRabbit re-reviews after a fix, it may move previously unresolved issues into a "Duplicate comments" section in the review body instead of creating new inline threads. These are NOT resolved — they indicate the fix was incomplete. Always check the latest review body for `♻️ Duplicate comments` and `🧹 Nitpick comments` sections and treat them as active feedback requiring action.
 - **Reply to comment threads:** Always use `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies` to reply to specific review comments. This keeps conversations threaded. Do NOT use `gh pr comment` for replies—it creates unthreaded general comments.
