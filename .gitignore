@@ -10,6 +10,7 @@
 
 # Allow Wavefront OBJ model files in lesson directories
 !lessons/**/models/**/*.obj
+!lessons/**/assets/raw/**/*.obj
 
 # Linker output
 *.ilk

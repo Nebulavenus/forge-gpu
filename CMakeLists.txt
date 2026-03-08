@@ -138,6 +138,12 @@ add_subdirectory(lessons/ui/11-widget-id-system)
 add_subdirectory(lessons/ui/12-font-scaling-and-spacing)
 add_subdirectory(lessons/ui/13-theming-and-color-system)
 
+# ── Asset Pipeline Tools ───────────────────────────────────────────────────
+# Reusable C tools for the asset pipeline (invoked as subprocesses by Python
+# plugins).  These live at the project level — not scoped to individual
+# lessons — so the pipeline and any lesson can use them.
+add_subdirectory(tools/mesh)
+
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
 add_subdirectory(tests/ui)

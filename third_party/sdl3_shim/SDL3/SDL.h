@@ -105,6 +105,10 @@ static inline void SDL_Log(const char *fmt, ...)
 
 /* ── Memory ─────────────────────────────────────────────────────────────── */
 
+/* SDL_zero / SDL_zerop clear a struct to all-zero bytes. */
+#define SDL_zero(x) SDL_memset(&(x), 0, sizeof(x))
+#define SDL_zerop(x) SDL_memset((x), 0, sizeof(*(x)))
+
 static inline void *SDL_malloc(size_t size)            { return malloc(size); }
 static inline void *SDL_calloc(size_t n, size_t sz)    { return calloc(n, sz); }
 static inline void *SDL_realloc(void *p, size_t size)  { return realloc(p, size); }

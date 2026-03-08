@@ -21,6 +21,8 @@ import argparse
 import sys
 
 from .asset_diagrams import (
+    diagram_lod_simplification,
+    diagram_mesh_processing_pipeline,
     diagram_texture_block_compression,
     diagram_texture_format_comparison,
 )
@@ -272,6 +274,10 @@ DIAGRAMS = {
     "assets/02": [
         ("block_compression.png", diagram_texture_block_compression),
         ("format_comparison.png", diagram_texture_format_comparison),
+    ],
+    "assets/03": [
+        ("mesh_pipeline.png", diagram_mesh_processing_pipeline),
+        ("lod_simplification.png", diagram_lod_simplification),
     ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
@@ -615,6 +621,7 @@ DIAGRAMS = {
 # Full lesson directory names for display
 LESSON_NAMES = {
     "assets/02": "assets/02-texture-processing",
+    "assets/03": "assets/03-mesh-processing",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",
