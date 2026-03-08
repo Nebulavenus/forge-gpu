@@ -23,6 +23,10 @@ import sys
 from .asset_diagrams import (
     diagram_lod_simplification,
     diagram_mesh_processing_pipeline,
+    diagram_parametric_sphere,
+    diagram_seam_duplication,
+    diagram_smooth_vs_flat_normals,
+    diagram_struct_of_arrays,
     diagram_texture_block_compression,
     diagram_texture_format_comparison,
 )
@@ -285,6 +289,12 @@ DIAGRAMS = {
     "assets/03": [
         ("mesh_pipeline.png", diagram_mesh_processing_pipeline),
         ("lod_simplification.png", diagram_lod_simplification),
+    ],
+    "assets/04": [
+        ("parametric_sphere.png", diagram_parametric_sphere),
+        ("seam_duplication.png", diagram_seam_duplication),
+        ("smooth_vs_flat_normals.png", diagram_smooth_vs_flat_normals),
+        ("struct_of_arrays.png", diagram_struct_of_arrays),
     ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
@@ -638,6 +648,7 @@ DIAGRAMS = {
 LESSON_NAMES = {
     "assets/02": "assets/02-texture-processing",
     "assets/03": "assets/03-mesh-processing",
+    "assets/04": "assets/04-procedural-geometry",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",

@@ -107,7 +107,7 @@ C library (`common/shapes/forge_shapes.h`).
 - [x] **Asset Lesson 01 — Pipeline Scaffold** — Python project structure; CLI entry point; plugin discovery and registration; asset file scanning and fingerprinting; configuration via TOML
 - [x] **Asset Lesson 02 — Texture Processing** — Image import plugin (Python + Pillow): resize, format conversion (PNG/TGA to compressed formats), mipmap generation; metadata sidecar files; incremental builds (skip unchanged assets)
 - [x] **Asset Lesson 03 — Mesh Processing** — C mesh processing tool using meshoptimizer and MikkTSpace: vertex deduplication, index optimization, tangent generation; binary output format for fast GPU upload; LOD generation with mesh simplification; Python plugin invokes the compiled tool as a subprocess
-- [ ] **Asset Lesson 04 — Procedural Geometry** — `common/shapes/forge_shapes.h` header-only C library: parametric surface generation (sphere, icosphere, cylinder, cone, torus, plane, cube, capsule); struct-of-arrays layout for GPU upload; smooth vs flat normals; seam duplication; comprehensive test suite; GPU lesson rendering a five-shape showcase scene
+- [x] **Asset Lesson 04 — Procedural Geometry** — `common/shapes/forge_shapes.h` header-only C library: parametric surface generation (sphere, icosphere, cylinder, cone, torus, plane, cube, capsule); struct-of-arrays layout for GPU upload; smooth vs flat normals; seam duplication; comprehensive test suite
 - [ ] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
 
 ### Project Integration

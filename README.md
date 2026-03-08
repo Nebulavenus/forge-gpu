@@ -314,6 +314,7 @@ MikkTSpace) and procedural geometry lives in a header-only C library
 | 01 | [Pipeline Scaffold](lessons/assets/01-pipeline-scaffold/) | CLI entry point, plugin discovery, asset scanning, content-hash fingerprinting, TOML config |
 | 02 | [Texture Processing](lessons/assets/02-texture-processing/) | Image resize, format conversion, mipmap generation, GPU block compression (BC/ASTC), metadata sidecars |
 | 03 | [Mesh Processing](lessons/assets/03-mesh-processing/) | Vertex deduplication, index optimization, MikkTSpace tangent generation, LOD simplification |
+| 04 | [Procedural Geometry](lessons/assets/04-procedural-geometry/) | Header-only parametric geometry library: sphere, icosphere, cylinder, cone, torus, plane, cube, capsule |
 
 See [lessons/assets/README.md](lessons/assets/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.
@@ -666,7 +667,7 @@ forge-gpu/
 │   ├── physics/           Physics library (particles, rigid bodies, collisions)
 │   │   ├── forge_physics.h Physics simulation (header-only)
 │   │   └── README.md      API reference and design
-│   ├── shapes/            Procedural geometry (planned — Asset Lesson 04)
+│   ├── shapes/            Procedural geometry (Asset Lesson 04)
 │   │   └── forge_shapes.h Parametric mesh generation (header-only)
 │   ├── raster/            CPU triangle rasterizer (edge function method)
 │   │   └── forge_raster.h Rasterizer implementation (header-only)
@@ -761,6 +762,7 @@ project to enable Claude to build games and tools with you.
 | [forge-stencil-testing](.claude/skills/forge-stencil-testing/SKILL.md) | `/forge-stencil-testing` | Stencil buffer testing, portals, outlines, per-pixel masking |
 | [forge-edge-detection](.claude/skills/edge-detection/SKILL.md) | `/forge-edge-detection` | Sobel edge detection on G-buffer, stencil X-ray vision, Fresnel ghost silhouettes |
 | [forge-asset-pipeline](.claude/skills/forge-asset-pipeline/SKILL.md) | `/forge-asset-pipeline` | Plugin-based asset pipeline with CLI, content-hash fingerprinting, TOML config |
+| [forge-procedural-geometry](.claude/skills/forge-procedural-geometry/SKILL.md) | `/forge-procedural-geometry` | Procedural geometry generation: parametric surfaces, struct-of-arrays GPU upload |
 
 ### Development skills (used within this repo)
 
