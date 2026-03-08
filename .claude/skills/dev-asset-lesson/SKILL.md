@@ -9,6 +9,30 @@ orchestrator is Python, performance-critical processing uses compiled C tools
 (meshoptimizer, MikkTSpace), and procedural geometry lives in a header-only C
 library (`common/shapes/forge_shapes.h`).
 
+**The goal is not just pedagogical.** Every library, tool, and pipeline
+component built in an asset lesson must be production-quality — well-tested,
+documented, and designed for reuse beyond the lesson. The project's own
+`PLAN.md` has a "Project Integration" section where forge-gpu's existing
+assets (models, textures, skyboxes) are processed through the pipeline we
+build. So the pipeline, plugins, and C tools are not toy examples scoped to a
+single lesson — they are the actual tooling this project depends on.
+
+Concretely this means:
+
+- **Libraries and tools are shared, not lesson-local.** Python code goes in
+  `pipeline/`, C libraries go in `common/`, C tools go in `tools/`. The
+  lesson directory contains the walkthrough, not the implementation.
+- **Test thoroughly.** Every module gets a test suite (`tests/pipeline/` for
+  Python, `tests/test_*.c` for C). Edge cases, error paths, and realistic
+  inputs — not just happy-path smoke tests.
+- **Design for integration.** The Python pipeline will process forge-gpu's
+  own models and textures. The C mesh tool will be invoked by the pipeline
+  as a subprocess. The shapes library is already used by GPU and physics
+  lessons. Build APIs that work for real projects.
+- **Don't cut corners for pedagogy.** If the correct approach requires more
+  code, write more code. Simplifying for the lesson at the cost of
+  correctness or reusability defeats the purpose.
+
 **When to use this skill:**
 
 - You need to teach asset import, processing, or optimization concepts
@@ -345,7 +369,9 @@ lod_levels = [1.0, 0.5, 0.25]
 
 Asset pipeline lessons should be practical and tool-focused. Pipeline tooling
 is infrastructure that enables art and rendering — treat it with the same
-rigor as the rendering code it serves.
+rigor as the rendering code it serves. The output of these lessons is not
+disposable teaching material; it is production tooling that forge-gpu itself
+will use to process its own assets.
 
 - **Name the techniques and formats** — BC7, KTX2, glTF, meshoptimizer,
   MikkTSpace — named tools and formats carry weight and help readers find
@@ -356,6 +382,8 @@ rigor as the rendering code it serves.
   before and after processing
 - **Connect to GPU** — Always explain how the processed output maps to GPU
   concepts (texture formats, vertex layouts, draw calls)
+- **Build for real use** — Every API, CLI flag, and config option should work
+  for a real project, not just the lesson's sample assets
 
 ## Example: Pipeline Scaffold Lesson (Type A — Python)
 
