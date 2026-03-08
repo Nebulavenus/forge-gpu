@@ -13,6 +13,14 @@ generate_mipmaps = true    # Generate a full mip chain for each texture
 output_format = "png"      # Output as PNG (lossless)
 # jpg_quality = 90         # Uncomment to use JPEG output with quality setting
 
+# -- GPU texture compression (optional — requires basisu or astcenc installed)
+# compression = "basisu"     # none, basisu, astc
+# basisu_format = "uastc"    # etc1s (smaller) or uastc (higher quality)
+# basisu_quality = 128       # 1-255, higher = better quality + slower
+# astc_block_size = "6x6"    # 4x4, 5x5, 6x6, 8x8
+# astc_quality = "medium"    # fastest, fast, medium, thorough, exhaustive
+# normal_map = false         # true for normal maps (uses BC5/linear)
+
 [mesh]
 deduplicate = true
 generate_tangents = true

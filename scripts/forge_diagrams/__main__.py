@@ -20,6 +20,10 @@ if __name__ == "__main__" and not __package__:
 import argparse
 import sys
 
+from .asset_diagrams import (
+    diagram_texture_block_compression,
+    diagram_texture_format_comparison,
+)
 from .engine_diagrams import (
     diagram_alpha_blending,
     diagram_barycentric_coords,
@@ -259,6 +263,10 @@ from .ui_diagrams import (
 # ---------------------------------------------------------------------------
 
 DIAGRAMS = {
+    "assets/02": [
+        ("block_compression.png", diagram_texture_block_compression),
+        ("format_comparison.png", diagram_texture_format_comparison),
+    ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
         ("vertex_memory_layout.png", diagram_vertex_memory_layout),
@@ -592,6 +600,7 @@ DIAGRAMS = {
 
 # Full lesson directory names for display
 LESSON_NAMES = {
+    "assets/02": "assets/02-texture-processing",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",

@@ -1,4 +1,5 @@
-"""Texture processing plugin — resize, format conversion, and mipmap generation.
+"""Texture processing plugin — resize, format conversion, mipmap generation,
+and optional GPU texture compression.
 
 Processes image files (PNG, JPG, TGA, BMP) through a configurable pipeline:
 
@@ -6,8 +7,10 @@ Processes image files (PNG, JPG, TGA, BMP) through a configurable pipeline:
 2. **Resize** to fit within ``max_size`` while preserving aspect ratio.
 3. **Convert** to the output format (default: PNG).
 4. **Generate mipmaps** — a series of progressively halved images down to 1x1.
-5. **Write metadata** — a ``.meta.json`` sidecar describing the source, output
-   dimensions, mip levels, and processing settings.
+5. **Compress** (optional) — encode into a GPU-native block format (BC7, ASTC,
+   ETC2) via Basis Universal or astcenc, outputting KTX2 or ``.astc`` files.
+6. **Write metadata** — a ``.meta.json`` sidecar describing the source, output
+   dimensions, mip levels, compression info, and processing settings.
 
 Settings are read from the ``[texture]`` section of ``pipeline.toml``::
 
@@ -16,6 +19,12 @@ Settings are read from the ``[texture]`` section of ``pipeline.toml``::
     generate_mipmaps = true  # Create mip chain alongside the base image
     output_format = "png"    # Output format (png, jpg, bmp)
     jpg_quality = 90         # JPEG quality (1-100, only used for jpg output)
+    compression = "none"     # none, basisu, or astc
+    basisu_format = "uastc"  # etc1s (smaller) or uastc (higher quality)
+    basisu_quality = 128     # 1-255, higher = better + slower
+    astc_block_size = "6x6"  # 4x4, 5x5, 6x6, 8x8
+    astc_quality = "medium"  # fastest, fast, medium, thorough, exhaustive
+    normal_map = false       # true for normal maps (BC5/linear encoding)
 """
 
 from __future__ import annotations
@@ -23,6 +32,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import shutil
+import subprocess
 from pathlib import Path
 
 from PIL import Image
@@ -35,6 +46,15 @@ log = logging.getLogger(__name__)
 DEFAULT_MAX_SIZE = 2048
 DEFAULT_OUTPUT_FORMAT = "png"
 DEFAULT_JPG_QUALITY = 90
+
+# Valid compression modes.
+_VALID_COMPRESSION = {"none", "basisu", "astc"}
+
+# Valid ASTC quality presets (mapped to astcenc CLI flags).
+_ASTC_QUALITIES = {"fastest", "fast", "medium", "thorough", "exhaustive"}
+
+# Valid ASTC block sizes.
+_ASTC_BLOCK_SIZES = {"4x4", "5x5", "6x6", "8x8"}
 
 # Pillow format strings for each output extension.
 _FORMAT_MAP = {
@@ -97,6 +117,102 @@ def _generate_mipmaps(
     return mip_info
 
 
+def _find_tool(name: str) -> str | None:
+    """Return the full path to an external tool, or None if not installed."""
+    return shutil.which(name)
+
+
+def _run_basisu(
+    input_path: Path,
+    output_dir: Path,
+    *,
+    basisu_format: str = "uastc",
+    quality: int = 128,
+    mipmaps: bool = True,
+    normal_map: bool = False,
+) -> Path:
+    """Compress a PNG into a KTX2 file using Basis Universal.
+
+    Returns the path to the generated .ktx2 file.
+    """
+    tool = _find_tool("basisu")
+    if tool is None:
+        raise FileNotFoundError(
+            "basisu not found — install Basis Universal to enable GPU "
+            "texture compression (https://github.com/BinomialLLC/basis_universal)"
+        )
+
+    args = [tool, "-ktx2", "-q", str(quality)]
+    if basisu_format == "uastc":
+        args.append("-uastc")
+    if mipmaps:
+        args.append("-mipmap")
+    if normal_map:
+        args.extend(["-normal_map", "-separate_rg_to_color_alpha"])
+    args.extend(["-file", str(input_path), "-output_path", str(output_dir)])
+
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, check=False, timeout=600
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"basisu timed out after 600 s compressing {input_path.name}"
+        ) from exc
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"basisu failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+
+    ktx2_path = output_dir / f"{input_path.stem}.ktx2"
+    log.debug("  basisu -> %s", ktx2_path.name)
+    return ktx2_path
+
+
+def _run_astcenc(
+    input_path: Path,
+    output_path: Path,
+    *,
+    block_size: str = "6x6",
+    quality: str = "medium",
+) -> Path:
+    """Compress an image into an ASTC file using astcenc.
+
+    Returns the path to the generated .astc file.
+    """
+    tool = _find_tool("astcenc")
+    if tool is None:
+        raise FileNotFoundError(
+            "astcenc not found — install the ASTC Encoder to enable ASTC "
+            "compression (https://github.com/ARM-software/astc-encoder)"
+        )
+
+    args = [
+        tool,
+        "-cl",
+        str(input_path),
+        str(output_path),
+        block_size,
+        f"-{quality}",
+    ]
+
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, check=False, timeout=600
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"astcenc timed out after 600 s compressing {input_path.name}"
+        ) from exc
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"astcenc failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+
+    log.debug("  astcenc -> %s", output_path.name)
+    return output_path
+
+
 def _write_metadata(
     meta_path: Path,
     source: Path,
@@ -105,6 +221,7 @@ def _write_metadata(
     final_size: tuple[int, int],
     mip_levels: list[dict],
     settings_used: dict,
+    compression_info: dict | None = None,
 ) -> None:
     """Write a JSON sidecar with processing metadata."""
     meta = {
@@ -117,6 +234,8 @@ def _write_metadata(
         "mip_levels": mip_levels,
         "settings": settings_used,
     }
+    if compression_info is not None:
+        meta["compression"] = compression_info
     meta_path.write_text(
         json.dumps(meta, indent=2) + "\n",
         encoding="utf-8",
@@ -131,7 +250,7 @@ class TexturePlugin(AssetPlugin):
     extensions = [".png", ".jpg", ".jpeg", ".tga", ".bmp"]
 
     def process(self, source: Path, output_dir: Path, settings: dict) -> AssetResult:
-        """Load *source*, resize, convert, generate mipmaps, write metadata.
+        """Load *source*, resize, convert, generate mipmaps, compress, write metadata.
 
         *settings* comes from ``[texture]`` in ``pipeline.toml``.
         """
@@ -141,6 +260,42 @@ class TexturePlugin(AssetPlugin):
         generate_mips = bool(settings.get("generate_mipmaps", True))
         out_fmt = str(settings.get("output_format", DEFAULT_OUTPUT_FORMAT)).lower()
         jpg_quality = int(settings.get("jpg_quality", DEFAULT_JPG_QUALITY))
+
+        # Compression settings (optional, additive).
+        compression = str(settings.get("compression", "none")).lower()
+        if compression not in _VALID_COMPRESSION:
+            raise ValueError(
+                f"Unsupported compression {compression!r} — "
+                f"choose from: {', '.join(sorted(_VALID_COMPRESSION))}"
+            )
+        basisu_format = str(settings.get("basisu_format", "uastc")).lower()
+        basisu_quality = int(settings.get("basisu_quality", 128))
+        astc_block_size = str(settings.get("astc_block_size", "6x6"))
+        astc_quality = str(settings.get("astc_quality", "medium")).lower()
+
+        # Validate only the selected backend's settings.
+        if compression == "basisu":
+            if basisu_format not in {"etc1s", "uastc"}:
+                raise ValueError(
+                    f"Unsupported basisu_format {basisu_format!r} — "
+                    "choose from: etc1s, uastc"
+                )
+            if not 1 <= basisu_quality <= 255:
+                raise ValueError(
+                    f"basisu_quality must be between 1 and 255, got {basisu_quality}"
+                )
+        elif compression == "astc":
+            if astc_block_size not in _ASTC_BLOCK_SIZES:
+                raise ValueError(
+                    f"Unsupported astc_block_size {astc_block_size!r} — "
+                    f"choose from: {', '.join(sorted(_ASTC_BLOCK_SIZES))}"
+                )
+            if astc_quality not in _ASTC_QUALITIES:
+                raise ValueError(
+                    f"Unsupported astc_quality {astc_quality!r} — "
+                    f"choose from: {', '.join(sorted(_ASTC_QUALITIES))}"
+                )
+        normal_map = bool(settings.get("normal_map", False))
 
         pil_format = _FORMAT_MAP.get(out_fmt)
         if pil_format is None:
@@ -212,6 +367,75 @@ class TexturePlugin(AssetPlugin):
                 img, output_stem, out_ext, pil_format, save_kwargs
             )
 
+        # -- GPU compression (optional) -----------------------------------------
+        compression_info: dict | None = None
+        if compression == "basisu":
+            tool_path = _find_tool("basisu")
+            if tool_path is None:
+                log.warning(
+                    "basisu not installed — skipping GPU texture compression for %s",
+                    source.name,
+                )
+            else:
+                uncompressed_size = output_path.stat().st_size
+                compressed_path = _run_basisu(
+                    output_path,
+                    output_dir,
+                    basisu_format=basisu_format,
+                    quality=basisu_quality,
+                    mipmaps=generate_mips,
+                    normal_map=normal_map,
+                )
+                if not compressed_path.exists():
+                    log.warning(
+                        "basisu reported success but output file %s not found",
+                        compressed_path,
+                    )
+                else:
+                    compressed_size = compressed_path.stat().st_size
+                    compression_info = {
+                        "codec": basisu_format,
+                        "container": "ktx2",
+                        "compressed_file": compressed_path.name,
+                        "uncompressed_bytes": uncompressed_size,
+                        "compressed_bytes": compressed_size,
+                        "ratio": round(uncompressed_size / compressed_size, 2),
+                        "normal_map": normal_map,
+                    }
+
+        elif compression == "astc":
+            tool_path = _find_tool("astcenc")
+            if tool_path is None:
+                log.warning(
+                    "astcenc not installed — skipping ASTC compression for %s",
+                    source.name,
+                )
+            else:
+                uncompressed_size = output_path.stat().st_size
+                astc_output = output_dir / f"{source.stem}.astc"
+                _run_astcenc(
+                    output_path,
+                    astc_output,
+                    block_size=astc_block_size,
+                    quality=astc_quality,
+                )
+                if not astc_output.exists():
+                    log.warning(
+                        "astcenc reported success but output file %s not found",
+                        astc_output,
+                    )
+                else:
+                    compressed_size = astc_output.stat().st_size
+                    compression_info = {
+                        "codec": "astc",
+                        "block_size": astc_block_size,
+                        "quality": astc_quality,
+                        "compressed_file": astc_output.name,
+                        "uncompressed_bytes": uncompressed_size,
+                        "compressed_bytes": compressed_size,
+                        "ratio": round(uncompressed_size / compressed_size, 2),
+                    }
+
         # -- Metadata sidecar ---------------------------------------------------
         meta_path = output_dir / f"{source.stem}.meta.json"
         settings_used = {
@@ -221,6 +445,8 @@ class TexturePlugin(AssetPlugin):
         }
         if pil_format == "JPEG":
             settings_used["jpg_quality"] = jpg_quality
+        if compression != "none":
+            settings_used["compression"] = compression
 
         _write_metadata(
             meta_path,
@@ -230,8 +456,10 @@ class TexturePlugin(AssetPlugin):
             img.size,
             mip_levels,
             settings_used,
+            compression_info=compression_info,
         )
 
+        effective_compression = compression if compression_info is not None else "none"
         return AssetResult(
             source=source,
             output=output_path,
@@ -241,5 +469,6 @@ class TexturePlugin(AssetPlugin):
                 "mip_levels": len(mip_levels),
                 "format": out_fmt,
                 "meta_file": str(meta_path.name),
+                "compression": effective_compression,
             },
         )
