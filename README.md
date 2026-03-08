@@ -298,6 +298,7 @@ MikkTSpace) and procedural geometry lives in a header-only C library
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
 | 01 | [Pipeline Scaffold](lessons/assets/01-pipeline-scaffold/) | CLI entry point, plugin discovery, asset scanning, content-hash fingerprinting, TOML config |
+| 02 | [Texture Processing](lessons/assets/02-texture-processing/) | Image resize, format conversion, mipmap generation, metadata sidecars, incremental processing |
 
 See [lessons/assets/README.md](lessons/assets/README.md) for details and
 [PLAN.md](PLAN.md) for the roadmap.

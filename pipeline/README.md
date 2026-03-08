@@ -106,11 +106,11 @@ The plugin is discovered automatically — no core code changes needed.
 
 | Plugin | Extensions | Status |
 |---|---|---|
-| `texture` | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp` | Scaffold (no-op) |
+| `texture` | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp` | Resize, format convert, mipmaps, metadata |
 | `mesh` | `.obj`, `.gltf`, `.glb` | Scaffold (no-op) |
 
-Real processing is added in later lessons: texture compression (Lesson 02),
-mesh optimization with meshoptimizer and MikkTSpace (Lesson 03).
+The texture plugin was built in Lesson 02.  Mesh optimization with
+meshoptimizer and MikkTSpace is added in Lesson 03.
 
 ## Why content hashes?
 
@@ -180,7 +180,7 @@ The pipeline is built incrementally across the
 | Lesson | What it adds to the pipeline |
 |---|---|
 | [01 — Pipeline Scaffold](../lessons/assets/01-pipeline-scaffold/) | CLI, plugin discovery, scanning, fingerprinting, TOML config |
-| 02 — Texture Processing | Image import plugin (resize, compress, mipmaps) |
+| [02 — Texture Processing](../lessons/assets/02-texture-processing/) | Image resize, format conversion, mipmaps, metadata sidecars |
 | 03 — Mesh Processing | C tool for vertex/index optimization (meshoptimizer, MikkTSpace) |
 | 04 — Procedural Geometry | `common/shapes/forge_shapes.h` header-only library |
 | 05 — Asset Bundles | Packing, compression, random-access table of contents |

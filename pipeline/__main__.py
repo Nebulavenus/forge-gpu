@@ -4,20 +4,23 @@ Run with::
 
     python -m pipeline [OPTIONS]
 
-The CLI ties together the three core subsystems built in this lesson:
+The CLI ties together the core subsystems:
 
 1. **Configuration** — load ``pipeline.toml`` for project settings.
 2. **Plugin discovery** — scan a plugins directory, register handlers.
 3. **Asset scanning** — walk the source tree, fingerprint files, and report
    what needs processing.
+4. **Processing** — run each plugin on new/changed files, write outputs and
+   metadata sidecars, then update the fingerprint cache.
 
-No actual processing happens yet — this lesson builds the scaffold that
-later lessons fill in with real texture, mesh, and scene processing plugins.
+Use ``--dry-run`` to scan and report without actually processing files.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
 import sys
 from pathlib import Path
@@ -61,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Scan and report without processing (always true in this lesson)",
+        help="Scan and report without processing",
     )
     parser.add_argument(
         "-v",
@@ -70,6 +73,70 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable debug logging",
     )
     return parser
+
+
+# ---------------------------------------------------------------------------
+# Settings-aware fingerprinting
+# ---------------------------------------------------------------------------
+
+
+def _fingerprint_with_settings(content_hash: str, settings: dict) -> str:
+    """Combine a file's content hash with its plugin settings.
+
+    This ensures that changing a setting (e.g. ``max_size``) invalidates
+    previously processed assets even if the source file hasn't changed.
+    """
+    settings_json = json.dumps(settings, sort_keys=True)
+    combined = hashlib.sha256(f"{content_hash}:{settings_json}".encode()).hexdigest()
+    return combined
+
+
+# ---------------------------------------------------------------------------
+# Processing
+# ---------------------------------------------------------------------------
+
+
+def _process_files(files, registry, config) -> tuple[int, int, set]:
+    """Run plugins on NEW and CHANGED files.
+
+    Returns *(success_count, error_count, succeeded_paths)* where
+    *succeeded_paths* is the set of ``ScannedFile.relative`` paths that
+    were processed without error.
+    """
+    to_process = [f for f in files if f.status is not FileStatus.UNCHANGED]
+    if not to_process:
+        return 0, 0, set()
+
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+
+    success = 0
+    errors = 0
+    succeeded: set[Path] = set()
+
+    for f in to_process:
+        plugin = registry.get_by_extension(f.extension)
+        if plugin is None:
+            log.warning("No plugin for %s — skipping", f.relative)
+            continue
+
+        # Build the output subdirectory mirroring the source tree structure.
+        relative_dir = f.relative.parent
+        output_subdir = config.output_dir / relative_dir
+        output_subdir.mkdir(parents=True, exist_ok=True)
+
+        # Get plugin-specific settings from the config.
+        settings = config.plugin_settings.get(plugin.name, {})
+
+        try:
+            result = plugin.process(f.path, output_subdir, settings)
+            log.info("  [OK] %s -> %s", f.relative, result.output.name)
+            success += 1
+            succeeded.add(f.relative)
+        except Exception:
+            log.exception("  [FAIL] %s", f.relative)
+            errors += 1
+
+    return success, errors, succeeded
 
 
 # ---------------------------------------------------------------------------
@@ -174,17 +241,34 @@ def main(argv: list[str] | None = None) -> int:
             plugin_name = plugin.name if plugin else "?"
             print(f"  {label}  {f.relative}  ({plugin_name})")
 
-    # Update the fingerprint cache so the next run sees unchanged files as
-    # UNCHANGED.  This demonstrates incremental detection — the core value of
-    # content-hash fingerprinting.  Later lessons will tie cache updates to
-    # successful processing; for now the scan itself is the "processing step".
-    for f in files:
-        if f.status is not FileStatus.UNCHANGED:
-            cache.set(f.relative, f.fingerprint)
-    cache.save()
+    # -- Processing ---------------------------------------------------------
+    if args.dry_run:
+        if new_count + changed_count > 0:
+            print(f"\n{new_count + changed_count} file(s) would be processed.")
+        else:
+            print("\nAll files up to date — nothing to process.")
+    elif new_count + changed_count > 0:
+        print(f"\nProcessing {new_count + changed_count} file(s)...")
+        success, errors, succeeded = _process_files(files, registry, config)
 
-    if new_count + changed_count > 0:
-        print(f"\n{new_count + changed_count} file(s) would be processed.")
+        # Update the fingerprint cache only for files that were processed
+        # successfully.  The cache key combines the source content hash with
+        # a digest of the plugin settings so that config changes (e.g.
+        # max_size, output_format) trigger reprocessing automatically.
+        for f in files:
+            if f.relative in succeeded:
+                plugin = registry.get_by_extension(f.extension)
+                settings = config.plugin_settings.get(plugin.name, {}) if plugin else {}
+                combined = _fingerprint_with_settings(f.fingerprint, settings)
+                cache.set(f.relative, combined)
+        cache.save()
+
+        print(
+            f"\nDone: {success} processed, {errors} failed, "
+            f"{unchanged_count} unchanged."
+        )
+        if errors > 0:
+            return 1
     else:
         print("\nAll files up to date — nothing to process.")
 
