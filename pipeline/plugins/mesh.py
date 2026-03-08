@@ -1,7 +1,7 @@
 """Mesh processing plugin — vertex deduplication, index optimization,
 tangent generation, and LOD simplification.
 
-Processes OBJ model files through an external C tool:
+Processes 3D model files (OBJ, glTF, GLB) through an external C tool:
 
 1. **Deduplicate** vertices — remove identical positions/normals/UVs.
 2. **Optimize** — reorder indices for vertex and overdraw cache efficiency
@@ -104,7 +104,7 @@ class MeshPlugin(AssetPlugin):
     """Process 3D model files: deduplicate, optimize, generate tangents, LOD."""
 
     name = "mesh"
-    extensions = [".obj"]
+    extensions = [".obj", ".gltf", ".glb"]
 
     def process(self, source: Path, output_dir: Path, settings: dict) -> AssetResult:
         """Run ``forge-mesh-tool`` on *source* and return the result.

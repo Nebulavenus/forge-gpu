@@ -19,9 +19,12 @@ FetchContent_Declare(mikktspace
 FetchContent_MakeAvailable(mikktspace)
 
 add_executable(forge_mesh_tool main.c
-    ${mikktspace_SOURCE_DIR}/mikktspace.c)
+    ${mikktspace_SOURCE_DIR}/mikktspace.c
+    ${CMAKE_SOURCE_DIR}/third_party/cJSON/cJSON.c)
 target_include_directories(forge_mesh_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/common
+    ${CMAKE_SOURCE_DIR}/third_party
+    ${CMAKE_SOURCE_DIR}/third_party/cJSON
     ${mikktspace_SOURCE_DIR})
 target_link_libraries(forge_mesh_tool PRIVATE
     SDL3::SDL3 meshoptimizer m)

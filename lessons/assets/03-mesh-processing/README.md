@@ -1,15 +1,17 @@
 # Lesson 03 — Mesh Processing
 
-Turn raw OBJ meshes into optimized, GPU-ready binary files. This lesson builds
-a C tool that deduplicates vertices, optimizes index buffers for GPU hardware,
-generates MikkTSpace tangent vectors for normal mapping, and produces LOD levels
-via mesh simplification. The Python pipeline invokes this tool as a subprocess,
-following the same plugin pattern established in Lesson 02.
+Turn raw meshes into optimized, GPU-ready binary files. This lesson builds
+a C tool that reads OBJ and glTF/GLB models, deduplicates vertices, optimizes
+index buffers for GPU hardware, generates MikkTSpace tangent vectors for normal
+mapping, and produces LOD levels via mesh simplification. The Python pipeline
+invokes this tool as a subprocess, following the same plugin pattern established
+in Lesson 02.
 
 ## What you'll learn
 
-- Deduplicate vertices from de-indexed OBJ data using meshoptimizer's vertex
-  remap
+- Load OBJ and glTF/GLB models — OBJ vertices are de-indexed, glTF vertices
+  are already indexed with optional tangent vectors
+- Deduplicate vertices using meshoptimizer's vertex remap
 - Optimize index buffers for GPU vertex cache, overdraw, and vertex fetch
   efficiency
 - Generate MikkTSpace tangent vectors for correct normal mapping
@@ -25,7 +27,7 @@ $ forge-pipeline -v
 
 pipeline: Loaded config from pipeline.toml
 pipeline: Loaded 2 plugin(s)
-pipeline:   mesh          .obj
+pipeline:   mesh          .obj, .gltf, .glb
 pipeline:   texture       .png, .jpg, .jpeg, .tga, .bmp
 pipeline: Scanned 2 file(s) in assets/raw — 2 new, 0 changed, 0 unchanged
 
@@ -567,9 +569,10 @@ pytest tests/pipeline/test_mesh.py -v
    deduplication ratio. OBJ files from Blender export with many duplicate
    vertex/normal/UV combinations — expect 70-85% reduction.
 
-5. **Add glTF input** — Extend the C tool to accept `.gltf` files by using
-   `forge_gltf_load()` from `common/gltf/`. The glTF parser already produces
-   unified vertices, so deduplication may yield a smaller reduction than OBJ.
+5. **Multi-primitive glTF** — The tool currently processes only the first
+   primitive in a glTF scene. Extend it to iterate over all primitives and
+   produce one `.fmesh` per primitive (or a multi-primitive binary format
+   with a primitive table in the header).
 
 ## Further reading
 

@@ -53,7 +53,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | # | Topic | Language | What it adds to the pipeline |
 |---|-------|----------|------------------------------|
 | 01 | [Pipeline Scaffold](01-pipeline-scaffold/) | Python | CLI, plugin discovery, scanning, fingerprinting, TOML config |
-| 02 | [Texture Processing](02-texture-processing/) | Python | Image resize, format conversion, mipmap generation, metadata sidecars |
+| 02 | [Texture Processing](02-texture-processing/) | Python | Image resize, format conversion, mipmap generation, GPU block compression (BC/ASTC), metadata sidecars |
 | 03 | [Mesh Processing](03-mesh-processing/) | C + Python | Vertex deduplication, index optimization, tangent generation, LOD simplification |
 
 ## Building

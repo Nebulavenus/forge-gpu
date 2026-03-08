@@ -79,10 +79,10 @@ def test_mesh_plugin_registered(plugin):
 
 
 def test_mesh_extensions(plugin):
-    """.obj is handled (glTF/GLB deferred until tool support lands)."""
+    """.obj, .gltf, and .glb are handled."""
     assert ".obj" in plugin.extensions
-    assert ".gltf" not in plugin.extensions
-    assert ".glb" not in plugin.extensions
+    assert ".gltf" in plugin.extensions
+    assert ".glb" in plugin.extensions
 
 
 # -- 3. Default tool invocation ---------------------------------------------

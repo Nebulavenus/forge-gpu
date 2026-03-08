@@ -1,17 +1,17 @@
 /*
  * forge-mesh-tool — CLI mesh processing tool
  *
- * Reads an OBJ file, generates an indexed mesh via vertex deduplication,
- * optimizes the index/vertex layout for GPU efficiency, generates MikkTSpace
- * tangent vectors, produces LOD levels via mesh simplification, and writes
- * a binary .fmesh file with a .meta.json sidecar.
+ * Reads an OBJ or glTF/GLB file, generates an indexed mesh via vertex
+ * deduplication, optimizes the index/vertex layout for GPU efficiency,
+ * generates MikkTSpace tangent vectors, produces LOD levels via mesh
+ * simplification, and writes a binary .fmesh file with a .meta.json sidecar.
  *
  * Built as a reusable project-level tool at tools/mesh/ — not scoped to
  * a single lesson.  The Python pipeline plugin invokes it as a subprocess.
  * Asset Lesson 03 teaches how it works.
  *
  * Usage:
- *   forge-mesh-tool <input.obj> <output.fmesh> [options]
+ *   forge-mesh-tool <input> <output.fmesh> [options]
  *     --lod-levels 1.0,0.5,0.25   LOD target ratios (comma-separated)
  *     --no-deduplicate             Skip vertex deduplication
  *     --no-tangents                Skip tangent generation
@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "obj/forge_obj.h"
+#include "gltf/forge_gltf.h"
 #include "math/forge_math.h"
 #include "meshoptimizer.h"
 #include "mikktspace.h"
@@ -78,10 +79,33 @@ typedef struct LodEntry {
     float        target_error;
 } LodEntry;
 
+/* ── Input format detection ──────────────────────────────────────────────── */
+
+typedef enum InputFormat {
+    FORMAT_OBJ,   /* Wavefront .obj (de-indexed, needs deduplication) */
+    FORMAT_GLTF,  /* glTF .gltf or .glb (already indexed) */
+} InputFormat;
+
+/* Return the input format based on file extension, or -1 if unsupported.
+ * Caller must check for -1 and handle the error. */
+static int detect_format(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    if (!dot) return -1; /* no extension = unsupported */
+
+    if (SDL_strcasecmp(dot, ".obj") == 0) {
+        return FORMAT_OBJ;
+    }
+    if (SDL_strcasecmp(dot, ".gltf") == 0 || SDL_strcasecmp(dot, ".glb") == 0) {
+        return FORMAT_GLTF;
+    }
+    return -1; /* unsupported extension */
+}
+
 /* ── Command-line options ────────────────────────────────────────────────── */
 
 typedef struct ToolOptions {
-    const char *input_path;                  /* path to input .obj file */
+    const char *input_path;                  /* path to input mesh file */
     const char *output_path;                 /* path to output .fmesh file */
     float       lod_ratios[MAX_LOD_LEVELS];  /* target triangle ratios per LOD (0,1] */
     int         lod_count;                   /* number of active LOD levels */
@@ -274,7 +298,8 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
     }
 
     if (!opts->input_path || !opts->output_path) {
-        SDL_Log("Usage: forge-mesh-tool <input.obj> <output.fmesh> [options]");
+        SDL_Log("Usage: forge-mesh-tool <input> <output.fmesh> [options]");
+        SDL_Log("  Supported input formats: .obj, .gltf, .glb");
         SDL_Log("  --lod-levels 1.0,0.5,0.25   LOD target ratios");
         SDL_Log("  --no-deduplicate             Skip vertex deduplication");
         SDL_Log("  --no-tangents                Skip tangent generation");
@@ -326,15 +351,19 @@ static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
 
 /* ── Main processing pipeline ────────────────────────────────────────────── */
 
-static bool process_mesh(const ToolOptions *opts)
+/* ── Load OBJ into MeshVertex + index buffers ───────────────────────────── */
+
+static bool load_obj(const char *path, bool deduplicate, bool verbose,
+                     MeshVertex **out_vertices, unsigned int *out_vertex_count,
+                     unsigned int **out_indices, unsigned int *out_index_count,
+                     unsigned int *out_original_vertex_count)
 {
-    /* ── Step 1: Load OBJ ────────────────────────────────────────────────
-     * The OBJ parser gives us a flat de-indexed array: every 3 vertices
+    /* The OBJ parser gives us a flat de-indexed array: every 3 vertices
      * form one triangle with no shared vertices. We need to deduplicate
      * these into a proper indexed mesh for the GPU. */
     ForgeObjMesh obj_mesh;
-    if (!forge_obj_load(opts->input_path, &obj_mesh)) {
-        SDL_Log("Error: failed to load OBJ '%s'", opts->input_path);
+    if (!forge_obj_load(path, &obj_mesh)) {
+        SDL_Log("Error: failed to load OBJ '%s'", path);
         return false;
     }
 
@@ -345,14 +374,14 @@ static bool process_mesh(const ToolOptions *opts)
         forge_obj_free(&obj_mesh);
         return false;
     }
+    *out_original_vertex_count = original_vertex_count;
 
-    if (opts->verbose) {
+    if (verbose) {
         SDL_Log("Input: %u vertices (%u triangles) from '%s'",
-                original_vertex_count, original_vertex_count / 3,
-                opts->input_path);
+                original_vertex_count, original_vertex_count / 3, path);
     }
 
-    /* ── Step 2: Convert OBJ vertices to our output layout ───────────────
+    /* Convert OBJ vertices to our output layout.
      * Copy position/normal/uv from ForgeObjVertex into MeshVertex.
      * Tangent data starts zeroed and gets filled by MikkTSpace later. */
     MeshVertex *raw_vertices = (MeshVertex *)SDL_calloc(
@@ -377,24 +406,10 @@ static bool process_mesh(const ToolOptions *opts)
     /* OBJ data no longer needed — we've copied everything into MeshVertex */
     forge_obj_free(&obj_mesh);
 
-    /* ── Step 3: Vertex deduplication ────────────────────────────────────
-     * meshopt_generateVertexRemap identifies unique vertices by comparing
-     * all attributes byte-for-byte. Vertices that are bitwise identical
-     * get mapped to the same index, producing a compact index buffer.
-     *
-     * We use the full MeshVertex stride here (including the zeroed tangent
-     * fields) so that the comparison is consistent. Since all tangents are
-     * zero at this point, they don't affect deduplication — two vertices
-     * with the same position/normal/uv will still merge correctly.
-     *
-     * When --no-deduplicate is set, we skip remap and create an identity
-     * index buffer instead (each vertex referenced exactly once). */
-    MeshVertex   *vertices = NULL;
-    unsigned int *indices  = NULL;
-    unsigned int  vertex_count;
-    unsigned int  index_count = original_vertex_count;
-
-    if (opts->deduplicate) {
+    /* Vertex deduplication: meshopt_generateVertexRemap identifies unique
+     * vertices by comparing all attributes byte-for-byte. Since tangents
+     * are all zero at this point, they don't affect deduplication. */
+    if (deduplicate) {
         unsigned int *remap = (unsigned int *)SDL_malloc(
             sizeof(unsigned int) * original_vertex_count);
         if (!remap) {
@@ -407,53 +422,297 @@ static bool process_mesh(const ToolOptions *opts)
             remap, NULL, original_vertex_count,
             raw_vertices, original_vertex_count, sizeof(MeshVertex));
 
-        vertices = (MeshVertex *)SDL_calloc(
+        *out_vertices = (MeshVertex *)SDL_calloc(
             unique_vertex_count, sizeof(MeshVertex));
-        indices = (unsigned int *)SDL_malloc(
+        *out_indices = (unsigned int *)SDL_malloc(
             sizeof(unsigned int) * original_vertex_count);
 
-        if (!vertices || !indices) {
+        if (!*out_vertices || !*out_indices) {
             SDL_Log("Error: allocation failed for remapped buffers");
             SDL_free(remap);
             SDL_free(raw_vertices);
-            SDL_free(vertices);
-            SDL_free(indices);
+            SDL_free(*out_vertices);
+            SDL_free(*out_indices);
+            *out_vertices = NULL;
+            *out_indices = NULL;
             return false;
         }
 
-        meshopt_remapVertexBuffer(vertices, raw_vertices, original_vertex_count,
+        meshopt_remapVertexBuffer(*out_vertices, raw_vertices,
+                                   original_vertex_count,
                                    sizeof(MeshVertex), remap);
-        meshopt_remapIndexBuffer(indices, NULL, original_vertex_count, remap);
+        meshopt_remapIndexBuffer(*out_indices, NULL,
+                                  original_vertex_count, remap);
 
         SDL_free(remap);
         SDL_free(raw_vertices);
-        vertex_count = (unsigned int)unique_vertex_count;
+        *out_vertex_count = (unsigned int)unique_vertex_count;
+        *out_index_count  = original_vertex_count;
     } else {
         /* No dedup: use the raw vertices directly with identity indices */
-        vertices = raw_vertices;
-        raw_vertices = NULL; /* transfer ownership */
-        vertex_count = original_vertex_count;
+        *out_vertices = raw_vertices;
+        *out_vertex_count = original_vertex_count;
+        *out_index_count  = original_vertex_count;
 
-        indices = (unsigned int *)SDL_malloc(
+        *out_indices = (unsigned int *)SDL_malloc(
             sizeof(unsigned int) * original_vertex_count);
-        if (!indices) {
+        if (!*out_indices) {
             SDL_Log("Error: allocation failed for identity index buffer");
-            SDL_free(vertices);
+            SDL_free(*out_vertices);
+            *out_vertices = NULL;
             return false;
         }
         for (unsigned int i = 0; i < original_vertex_count; i++) {
-            indices[i] = i;
+            (*out_indices)[i] = i;
         }
     }
 
-    if (opts->verbose) {
-        if (opts->deduplicate) {
-            float dedup_ratio = (float)vertex_count / (float)original_vertex_count;
+    if (verbose) {
+        if (deduplicate) {
+            float dedup_ratio = (float)*out_vertex_count / (float)original_vertex_count;
             SDL_Log("Deduplication: %u -> %u vertices (%.1f%% of original)",
-                    original_vertex_count, vertex_count,
+                    original_vertex_count, *out_vertex_count,
                     (double)(dedup_ratio * 100.0f));
         } else {
             SDL_Log("Deduplication: skipped (--no-deduplicate)");
+        }
+    }
+
+    return true;
+}
+
+/* ── Load glTF/GLB into MeshVertex + index buffers ──────────────────────── */
+
+static bool load_gltf(const char *path, bool deduplicate, bool verbose,
+                      MeshVertex **out_vertices, unsigned int *out_vertex_count,
+                      unsigned int **out_indices, unsigned int *out_index_count,
+                      unsigned int *out_original_vertex_count,
+                      bool *out_has_tangents)
+{
+    ForgeGltfScene scene;
+    if (!forge_gltf_load(path, &scene)) {
+        SDL_Log("Error: failed to load glTF '%s'", path);
+        return false;
+    }
+
+    if (scene.primitive_count == 0) {
+        SDL_Log("Error: glTF scene has no primitives");
+        forge_gltf_free(&scene);
+        return false;
+    }
+
+    /* Process the first primitive. Multi-primitive scenes (multiple
+     * materials) would need one .fmesh per primitive — a future extension.
+     * For now, take the first and warn if there are more. */
+    if (scene.primitive_count > 1 && verbose) {
+        SDL_Log("Note: glTF has %d primitives; processing only the first",
+                scene.primitive_count);
+    }
+
+    ForgeGltfPrimitive *prim = &scene.primitives[0];
+    unsigned int prim_vert_count  = prim->vertex_count;
+    unsigned int prim_index_count = prim->index_count;
+
+    if (prim_vert_count == 0) {
+        SDL_Log("Error: glTF primitive has no vertices");
+        forge_gltf_free(&scene);
+        return false;
+    }
+
+    *out_original_vertex_count = prim_vert_count;
+    *out_has_tangents = prim->has_tangents;
+
+    if (verbose) {
+        SDL_Log("Input: %u vertices, %u indices (%u triangles) from '%s'",
+                prim_vert_count, prim_index_count, prim_index_count / 3, path);
+        if (prim->has_tangents) {
+            SDL_Log("  glTF provides tangent vectors — skipping MikkTSpace");
+        }
+    }
+
+    /* Convert ForgeGltfVertex to MeshVertex (same layout: pos/normal/uv).
+     * If glTF provides tangents, copy them too. */
+    MeshVertex *verts = (MeshVertex *)SDL_calloc(
+        prim_vert_count, sizeof(MeshVertex));
+    if (!verts) {
+        SDL_Log("Error: allocation failed for %u vertices", prim_vert_count);
+        forge_gltf_free(&scene);
+        return false;
+    }
+
+    for (unsigned int i = 0; i < prim_vert_count; i++) {
+        verts[i].position[0] = prim->vertices[i].position.x;
+        verts[i].position[1] = prim->vertices[i].position.y;
+        verts[i].position[2] = prim->vertices[i].position.z;
+        verts[i].normal[0]   = prim->vertices[i].normal.x;
+        verts[i].normal[1]   = prim->vertices[i].normal.y;
+        verts[i].normal[2]   = prim->vertices[i].normal.z;
+        verts[i].uv[0]       = prim->vertices[i].uv.x;
+        verts[i].uv[1]       = prim->vertices[i].uv.y;
+
+        if (prim->has_tangents && prim->tangents) {
+            verts[i].tangent[0] = prim->tangents[i].x;
+            verts[i].tangent[1] = prim->tangents[i].y;
+            verts[i].tangent[2] = prim->tangents[i].z;
+            verts[i].tangent[3] = prim->tangents[i].w;
+        }
+    }
+
+    /* Convert indices to uint32. glTF primitives may use uint16 or uint32
+     * index stride, and may have no indices at all (non-indexed draw). */
+    unsigned int idx_count;
+    unsigned int *idx_buf;
+
+    if (prim_index_count > 0 && prim->indices) {
+        idx_count = prim_index_count;
+        idx_buf = (unsigned int *)SDL_malloc(sizeof(unsigned int) * idx_count);
+        if (!idx_buf) {
+            SDL_Log("Error: allocation failed for index buffer");
+            SDL_free(verts);
+            forge_gltf_free(&scene);
+            return false;
+        }
+
+        if (prim->index_stride == 2) {
+            const Uint16 *src = (const Uint16 *)prim->indices;
+            for (unsigned int i = 0; i < idx_count; i++) {
+                idx_buf[i] = (unsigned int)src[i];
+            }
+        } else if (prim->index_stride == 4) {
+            const Uint32 *src = (const Uint32 *)prim->indices;
+            for (unsigned int i = 0; i < idx_count; i++) {
+                idx_buf[i] = (unsigned int)src[i];
+            }
+        } else {
+            SDL_Log("Error: unexpected glTF index stride %u (expected 2 or 4)",
+                    prim->index_stride);
+            SDL_free(idx_buf);
+            SDL_free(verts);
+            forge_gltf_free(&scene);
+            return false;
+        }
+    } else {
+        /* Non-indexed primitive: generate identity indices */
+        idx_count = prim_vert_count;
+        idx_buf = (unsigned int *)SDL_malloc(sizeof(unsigned int) * idx_count);
+        if (!idx_buf) {
+            SDL_Log("Error: allocation failed for identity index buffer");
+            SDL_free(verts);
+            forge_gltf_free(&scene);
+            return false;
+        }
+        for (unsigned int i = 0; i < idx_count; i++) {
+            idx_buf[i] = i;
+        }
+    }
+
+    /* Validate triangle mesh: index count must be a non-zero multiple of 3 */
+    if (idx_count == 0 || idx_count % 3 != 0) {
+        SDL_Log("Error: glTF has %u indices (expected non-zero multiple of 3)",
+                idx_count);
+        SDL_free(idx_buf);
+        SDL_free(verts);
+        forge_gltf_free(&scene);
+        return false;
+    }
+
+    /* glTF data no longer needed */
+    forge_gltf_free(&scene);
+
+    /* glTF vertices are already indexed, but deduplication can still help
+     * if the exporter produced redundant vertices. */
+    if (deduplicate) {
+        unsigned int *remap = (unsigned int *)SDL_malloc(
+            sizeof(unsigned int) * prim_vert_count);
+        if (!remap) {
+            SDL_Log("Error: allocation failed for remap table");
+            SDL_free(verts);
+            SDL_free(idx_buf);
+            return false;
+        }
+
+        size_t unique = meshopt_generateVertexRemap(
+            remap, idx_buf, idx_count,
+            verts, prim_vert_count, sizeof(MeshVertex));
+
+        MeshVertex *deduped = (MeshVertex *)SDL_calloc(
+            unique, sizeof(MeshVertex));
+        unsigned int *new_indices = (unsigned int *)SDL_malloc(
+            sizeof(unsigned int) * idx_count);
+
+        if (!deduped || !new_indices) {
+            SDL_Log("Error: allocation failed for remapped buffers");
+            SDL_free(remap);
+            SDL_free(verts);
+            SDL_free(idx_buf);
+            SDL_free(deduped);
+            SDL_free(new_indices);
+            return false;
+        }
+
+        meshopt_remapVertexBuffer(deduped, verts, prim_vert_count,
+                                   sizeof(MeshVertex), remap);
+        meshopt_remapIndexBuffer(new_indices, idx_buf, idx_count, remap);
+
+        SDL_free(remap);
+        SDL_free(verts);
+        SDL_free(idx_buf);
+        verts   = deduped;
+        idx_buf = new_indices;
+        *out_vertex_count = (unsigned int)unique;
+        *out_index_count  = idx_count;
+
+        if (verbose) {
+            float ratio = (float)unique / (float)prim_vert_count;
+            SDL_Log("Deduplication: %u -> %zu vertices (%.1f%% of original)",
+                    prim_vert_count, unique, (double)(ratio * 100.0f));
+        }
+    } else {
+        *out_vertex_count = prim_vert_count;
+        *out_index_count  = idx_count;
+
+        if (verbose) {
+            SDL_Log("Deduplication: skipped (--no-deduplicate)");
+        }
+    }
+
+    *out_vertices = verts;
+    *out_indices  = idx_buf;
+    return true;
+}
+
+/* ── Main processing pipeline ────────────────────────────────────────────── */
+
+static bool process_mesh(const ToolOptions *opts)
+{
+    int format = detect_format(opts->input_path);
+    if (format < 0) {
+        SDL_Log("Error: unsupported input format for '%s' "
+                "(expected .obj, .gltf, or .glb)", opts->input_path);
+        return false;
+    }
+
+    MeshVertex   *vertices = NULL;
+    unsigned int *indices  = NULL;
+    unsigned int  vertex_count = 0;
+    unsigned int  index_count  = 0;
+    unsigned int  original_vertex_count = 0;
+    bool          gltf_has_tangents = false; /* true if glTF provided tangents */
+
+    /* ── Step 1–3: Load and deduplicate ──────────────────────────────────
+     * OBJ: de-indexed → deduplicate → indexed mesh
+     * glTF: already indexed → optional deduplication */
+    if (format == FORMAT_GLTF) {
+        if (!load_gltf(opts->input_path, opts->deduplicate, opts->verbose,
+                       &vertices, &vertex_count, &indices, &index_count,
+                       &original_vertex_count, &gltf_has_tangents)) {
+            return false;
+        }
+    } else {
+        if (!load_obj(opts->input_path, opts->deduplicate, opts->verbose,
+                      &vertices, &vertex_count, &indices, &index_count,
+                      &original_vertex_count)) {
+            return false;
         }
     }
 
@@ -499,16 +758,21 @@ static bool process_mesh(const ToolOptions *opts)
      * We run this after optimization because the index buffer is now in
      * its final order, and MikkTSpace uses the indices to identify shared
      * vertices and average their tangent contributions. */
-    if (opts->generate_tangents) {
+    bool has_tangents = gltf_has_tangents; /* glTF may already provide them */
+
+    if (opts->generate_tangents && !gltf_has_tangents) {
         if (!generate_tangents(vertices, vertex_count, indices, index_count)) {
             SDL_free(vertices);
             SDL_free(indices);
             return false;
         }
+        has_tangents = true;
 
         if (opts->verbose) {
             SDL_Log("Tangent generation: complete (MikkTSpace)");
         }
+    } else if (gltf_has_tangents && opts->verbose) {
+        SDL_Log("Tangent generation: skipped (glTF provides tangent vectors)");
     }
 
     /* ── Step 6: LOD generation ──────────────────────────────────────────
@@ -604,7 +868,7 @@ static bool process_mesh(const ToolOptions *opts)
     unsigned int flags = 0;
     unsigned int vertex_stride;
 
-    if (opts->generate_tangents) {
+    if (has_tangents) {
         flags |= FMESH_FLAG_TANGENTS;
         vertex_stride = (unsigned int)VERTEX_STRIDE_TAN;
     } else {
@@ -624,7 +888,7 @@ static bool process_mesh(const ToolOptions *opts)
     /* ── Step 9: Write .meta.json sidecar ────────────────────────────────*/
     ok = write_meta_json(opts->output_path, opts->input_path,
                           vertex_count, vertex_stride,
-                          opts->generate_tangents,
+                          has_tangents,
                           lods, opts->lod_count, opts->lod_ratios,
                           original_vertex_count);
 

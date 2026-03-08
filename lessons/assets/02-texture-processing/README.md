@@ -12,6 +12,8 @@ for reproducible builds.
   aspect ratio (Lanczos resampling)
 - Convert between image formats (TGA/BMP source to PNG/JPG output)
 - Generate mipmap chains — progressively halved images from full size to 1x1
+- Compress textures into GPU block formats (BC1/BC3/BC7 via Basis Universal,
+  ASTC via astcenc) for smaller VRAM footprint and faster GPU sampling
 - Write `.meta.json` sidecar files that record processing settings and output
   dimensions
 - Wire a real plugin into the pipeline's processing loop (not just scanning)

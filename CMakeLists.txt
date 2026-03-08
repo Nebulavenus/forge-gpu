@@ -142,7 +142,9 @@ add_subdirectory(lessons/ui/13-theming-and-color-system)
 # Reusable C tools for the asset pipeline (invoked as subprocesses by Python
 # plugins).  These live at the project level — not scoped to individual
 # lessons — so the pipeline and any lesson can use them.
-add_subdirectory(tools/mesh)
+if(NOT FORGE_USE_SHIM)
+    add_subdirectory(tools/mesh)
+endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/math)
