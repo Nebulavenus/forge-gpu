@@ -19450,7 +19450,7 @@ def diagram_xray_depth_fail():
         ax.add_patch(wall)
         ax.text(
             4.3,
-            0.5,
+            7.0,
             "wall",
             color=STYLE["text_dim"],
             fontsize=7,

@@ -373,9 +373,10 @@ detection or stencil X-ray techniques are needed in your project.
 
 ## What's next
 
-Lesson 37 will continue the stencil buffer arc with portal rendering — using
-the stencil buffer to mask regions of the screen where an alternate scene is
-rendered, creating the illusion of looking through a window into another world.
+Lesson 37 introduces **3D picking** — identifying which object is under the
+mouse cursor. It renders each object with a unique color ID to an offscreen
+target, reads back the pixel under the mouse with `SDL_DownloadFromGPUTexture`,
+and highlights the selected object with a stencil outline from Lesson 34.
 
 ## Exercises
 
