@@ -45,8 +45,7 @@ lesson.
 
 | File | What to check |
 |------|---------------|
-| `README.md` (root) | Lesson listed in track table, listed in structure tree, skill listed in skills table |
-| `lessons/<track>/README.md` | Lesson listed in the track's own lesson list |
+| `lessons/<track>/README.md` | Lesson listed in the track's lesson table (GPU track uses screenshot gallery table) |
 | `lessons/<track>/<NN>-*/README.md` | Lesson README exists, links are valid, diagrams referenced exist in `assets/` |
 | `scripts/forge_diagrams/README.md` | Diagram count and lesson count for the track are accurate |
 | `scripts/forge_diagrams/<track>/lesson_<NN>.py` | Diagram module exists if lesson has diagrams |
@@ -55,37 +54,35 @@ lesson.
 
 **Checks per file:**
 
-1. **Root `README.md`:**
-   - The lesson row exists in the track's lesson table (image grid or text
-     list). If missing, add it.
-   - The lesson directory appears in the project structure tree. If missing,
-     add it.
-   - If the lesson created a skill, verify the skill appears in the skills
-     table. If missing, add it.
+1. **Track `README.md`** (`lessons/<track>/README.md`):
+   - The lesson is listed in the track's lesson table. For the GPU track,
+     this is a screenshot gallery table (thumbnail + name + description).
+     For other tracks, it is a markdown table.
+   - If missing, add the lesson entry in the correct format for that track.
+   - **Skills list (GPU track):** The GPU README has an "Available skills"
+     bullet list. If the lesson has a matching skill in `.claude/skills/`,
+     verify it appears in this list. If missing, add it.
 
-2. **Track `README.md`** (`lessons/<track>/README.md`):
-   - The lesson is listed. If missing, add it.
-
-3. **Lesson `README.md`** (`lessons/<track>/<NN>-*/README.md`):
+2. **Lesson `README.md`** (`lessons/<track>/<NN>-*/README.md`):
    - Exists. If missing, report (don't auto-generate — lesson READMEs are
      substantive).
    - All `assets/*.png` references point to files that exist.
    - All internal links (e.g. to other lessons, common/ headers) are valid.
 
-4. **Diagram infrastructure:**
+3. **Diagram infrastructure:**
    - If `scripts/forge_diagrams/<track>/lesson_<NN>.py` exists, verify it is
-     imported in `scripts/forge_diagrams/<track>/__init__.py` and registered
-     in `scripts/forge_diagrams/__main__.py`.
+     re-exported in `scripts/forge_diagrams/<track>/__init__.py` (the track
+     package `__init__.py` surfaces modules to the `__main__.py` registry).
    - Check that `scripts/forge_diagrams/README.md` counts are still accurate
      (total diagrams, per-track lesson counts).
 
-5. **Lesson skill:**
+4. **Lesson skill:**
    - Search `.claude/skills/*/SKILL.md` for references to the lesson number
      or slug. The matching skill is the one created alongside the lesson (e.g.
      `forge-stencil-testing` for lesson 34).
    - Verify all path references in that skill doc are valid.
 
-6. **Root `PLAN.md`:**
+5. **Root `PLAN.md`:**
    - If the lesson directory exists and is complete (has `main.c` + README),
      it should not appear as an unchecked TODO in the plan.
 
@@ -131,11 +128,12 @@ Discard non-documentation files (`.c`, `.h`, `.py`, `.hlsl`, etc.).
 **For each documentation file changed in the PR, check:**
 
 1. **README.md files** (root, track, lesson, scripts, etc.):
-   - Project structure trees match the filesystem
-   - Lesson lists include all existing lesson directories for that track
-   - Skills tables include all existing skills
+   - Project structure trees (in CLAUDE.md, scripts/) match the filesystem
+   - Track READMEs list all existing lesson directories for that track
    - Internal links are valid
    - Diagram counts are accurate (for `scripts/forge_diagrams/README.md`)
+   - Note: the root README is intentionally minimal — no structure trees,
+     no full lesson lists, no skills tables. Do not add them back.
 
 2. **SKILL.md files:**
    - File path references point to files that exist
@@ -183,10 +181,11 @@ works independently. Launch all agents at once, then collect results.
 
 1. **Find all structure trees** — search for `├──` or `└──` in:
    - `CLAUDE.md`
-   - `README.md`
    - `scripts/README.md`
    - `scripts/forge_diagrams/README.md`
    - Any other `README.md` that contains a tree
+   - Note: the root `README.md` is intentionally minimal and does NOT contain
+     a structure tree or lesson lists — do not add them back.
 
 2. **For each tree**, extract the listed paths and compare against the real
    filesystem:
@@ -195,13 +194,20 @@ works independently. Launch all agents at once, then collect results.
    - **Stale entries** — paths listed in the tree that no longer exist
    - **Wrong descriptions** — comments that don't match the directory contents
 
-3. **Lesson lists** — for the GPU lesson list in `README.md`, verify every
-   `lessons/gpu/NN-*` directory is listed. Same for math, ui, engine, assets,
-   and physics tracks.
+3. **Lesson lists** — verify each track's own README lists all lessons for
+   that track. The GPU track (`lessons/gpu/README.md`) uses a screenshot
+   gallery table (thumbnail + name + description). Other tracks use markdown
+   tables. Check that every `lessons/<track>/NN-*` directory has a row.
 
-4. **Report** each finding with file, line number, and what's wrong.
+4. **Skills lists** — the GPU track README (`lessons/gpu/README.md`) has a
+   "Available skills" bullet list mapping each lesson to its Claude Code skill.
+   Verify that every lesson with a matching skill in `.claude/skills/` has an
+   entry in this list. Cross-reference by globbing `.claude/skills/*/SKILL.md`
+   for skills that reference a GPU lesson.
 
-5. **If `--fix`:** Edit the trees to match reality. Add missing entries, remove
+5. **Report** each finding with file, line number, and what's wrong.
+
+6. **If `--fix`:** Edit the trees to match reality. Add missing entries, remove
    stale ones, fix descriptions. Do not rewrite working trees — only patch the
    diffs.
 
@@ -288,6 +294,7 @@ correct paths and patterns.
    - `lessons/*/` — every track should have a README
    - `lessons/*/*/` — every lesson should have a README
    - `pipeline/` — should have a README
+   - `docs/` — `building.md` (build guide) and any other docs
    - `tests/` — could benefit from a README
    - `tools/` — each tool directory
    - `scripts/` and subdirectories

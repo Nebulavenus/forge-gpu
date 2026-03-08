@@ -20,40 +20,45 @@ portable C interface.
 
 ## Lessons
 
-| # | Name | What you'll learn | Math concepts |
-|---|------|-------------------|---------------|
-| 01 | [Hello Window](01-hello-window/) | GPU device, swapchain, render passes | — |
-| 02 | [First Triangle](02-first-triangle/) | Vertex buffers, shaders, pipelines | [Vectors](../math/01-vectors/) |
-| 03 | [Uniforms & Motion](03-uniforms-and-motion/) | Push uniforms, animation | [Vectors](../math/01-vectors/) |
-| 04 | [Textures & Samplers](04-textures-and-samplers/) | Textures, samplers, UV coordinates, index buffers | [Bilinear Interpolation](../math/03-bilinear-interpolation/) |
-| 05 | [Mipmaps](05-mipmaps/) | Mipmap generation, trilinear filtering, sampler modes | [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
-| 06 | [Depth Buffer & 3D Transforms](06-depth-and-3d/) | MVP pipeline, depth testing, back-face culling | [Matrices](../math/05-matrices/) |
-| 07 | [Camera & Input](07-camera-and-input/) | First-person camera, keyboard/mouse input, delta time | [Orientation](../math/08-orientation/), [View Matrix](../math/09-view-matrix/) |
-| 08 | [Loading a Mesh (OBJ)](08-mesh-loading/) | OBJ parsing, de-indexing, file-based textures, mipmaps | [Vectors](../math/01-vectors/), [Mipmaps & LOD](../math/04-mipmaps-and-lod/) |
-| 09 | [Loading a Scene (glTF)](09-scene-loading/) | glTF parsing, multi-material meshes, scene hierarchy, indexed drawing | [Matrices](../math/05-matrices/) |
-| 10 | [Basic Lighting (Blinn-Phong)](10-basic-lighting/) | Ambient, diffuse, specular lighting, world-space normals | [Vectors](../math/01-vectors/) |
-| 11 | [Compute Shaders](11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups | — |
-| 12 | [Shader Grid](12-shader-grid/) | Procedural anti-aliased grid, screen-space derivatives, multiple pipelines | — |
-| 13 | [Instanced Rendering](13-instanced-rendering/) | Per-instance vertex buffers, repeated geometry | [Matrices](../math/05-matrices/) |
-| 14 | [Environment Mapping](14-environment-mapping/) | Cube map textures, skybox, reflective surfaces | [Vectors](../math/01-vectors/) |
-| 15 | [Cascaded Shadow Maps](15-cascaded-shadow-maps/) | Shadow mapping, PCF soft shadows, cascade splitting | [Projections](../math/06-projections/) |
-| 16 | [Blending](16-blending/) | Alpha blending, alpha testing, additive blending, blend state | — |
-| 17 | [Normal Maps](17-normal-maps/) | Tangent-space normal mapping, TBN matrix | [Vectors](../math/01-vectors/) |
-| 18 | [Blinn-Phong with Materials](18-blinn-phong-materials/) | Per-material lighting, material properties | — |
-| 19 | [Debug Lines](19-debug-lines/) | Immediate-mode debug drawing, grids, axes, wireframes | [Vectors](../math/01-vectors/) |
-| 20 | [Linear Fog](20-linear-fog/) | Distance fog, linear/exponential/exponential-squared modes | — |
-| 21 | [HDR & Tone Mapping](21-hdr-tone-mapping/) | Floating-point render targets, Reinhard/ACES tone mapping, exposure | [Color Spaces](../math/11-color-spaces/) |
-| 22 | [Bloom (Jimenez Dual-Filter)](22-bloom/) | Downsample/upsample chain, Karis averaging, tent filter | — |
-| 23 | [Point Light Shadows](23-point-light-shadows/) | Omnidirectional shadows, cube map depth textures | [Projections](../math/06-projections/) |
-| 24 | [Gobo Spotlight](24-gobo-spotlight/) | Projected-texture spotlight, cone falloff, pattern projection | — |
-| 25 | [Shader Noise](25-shader-noise/) | Hash functions, value/Perlin noise, fBm, domain warping | [Hash Functions](../math/12-hash-functions/), [Gradient Noise](../math/13-gradient-noise/) |
-| 26 | [Procedural Sky (Hillaire)](26-procedural-sky/) | Atmospheric scattering, Rayleigh/Mie, LUT transmittance | — |
-| 27 | [SSAO](27-ssao/) | Screen-space ambient occlusion, G-buffer, hemisphere sampling | [Blue Noise](../math/14-blue-noise-sequences/) |
-| 28 | [UI Rendering](28-ui-rendering/) | Immediate-mode UI on GPU, font atlas, alpha blending, dynamic buffers | [Vectors](../math/01-vectors/), [Matrices](../math/05-matrices/) |
-| 29 | [Screen-Space Reflections](29-screen-space-reflections/) | SSR ray marching, G-buffer, deferred shading | [Vectors](../math/01-vectors/) |
-| 30 | [Planar Reflections](30-planar-reflections/) | Mirror camera, oblique clipping, Fresnel blending | [Matrices](../math/05-matrices/) |
-| 31 | [Transform Animations](31-transform-animations/) | Keyframe interpolation, quaternion slerp, glTF animation, path following | [Orientation](../math/08-orientation/) |
-| 32 | [Skinning Animations](32-skinning-animations/) | Skeletal skinning, joint hierarchies, inverse bind matrices, blend weights | [Orientation](../math/08-orientation/), [Matrices](../math/05-matrices/) |
+| | Lesson | About |
+|---|--------|-------|
+| <img src="01-hello-window/assets/screenshot.png" width="120" alt="Hello Window"/> | [**01 — Hello Window**](01-hello-window/) | GPU device, swapchain, and render pass — get a window on screen |
+| <img src="02-first-triangle/assets/screenshot.png" width="120" alt="First Triangle"/> | [**02 — First Triangle**](02-first-triangle/) | Vertex buffers, HLSL shaders, and a graphics pipeline — your first draw call |
+| <img src="03-uniforms-and-motion/assets/screenshot.png" width="120" alt="Uniforms & Motion"/> | [**03 — Uniforms & Motion**](03-uniforms-and-motion/) | Pass per-frame data to shaders with push uniforms and animate geometry |
+| <img src="04-textures-and-samplers/assets/screenshot.png" width="120" alt="Textures & Samplers"/> | [**04 — Textures & Samplers**](04-textures-and-samplers/) | Load images, create GPU textures and samplers, draw textured geometry with index buffers |
+| <img src="05-mipmaps/assets/screenshot.png" width="120" alt="Mipmaps"/> | [**05 — Mipmaps**](05-mipmaps/) | Generate mip chains, configure trilinear filtering, and control LOD |
+| <img src="06-depth-and-3d/assets/screenshot.png" width="120" alt="Depth & 3D"/> | [**06 — Depth & 3D**](06-depth-and-3d/) | Depth buffer, model-view-projection pipeline, back-face culling, and window resize |
+| <img src="07-camera-and-input/assets/screenshot.png" width="120" alt="Camera & Input"/> | [**07 — Camera & Input**](07-camera-and-input/) | First-person fly camera with quaternion orientation, keyboard/mouse input, and delta time |
+| <img src="08-mesh-loading/assets/screenshot.png" width="120" alt="Mesh Loading"/> | [**08 — Mesh Loading**](08-mesh-loading/) | Load a 3D model from an OBJ file with file-based textures and mipmaps |
+| <img src="09-scene-loading/assets/screenshot.png" width="120" alt="Scene Loading"/> | [**09 — Scene Loading**](09-scene-loading/) | Load glTF 2.0 scenes with multi-material meshes, scene hierarchy, and indexed drawing |
+| <img src="10-basic-lighting/assets/screenshot.png" width="120" alt="Basic Lighting"/> | [**10 — Basic Lighting**](10-basic-lighting/) | Blinn-Phong lighting — ambient, diffuse, and specular with world-space normals |
+| <img src="11-compute-shaders/assets/screenshot.png" width="120" alt="Compute Shaders"/> | [**11 — Compute Shaders**](11-compute-shaders/) | Compute pipelines, storage textures, dispatch groups, and the compute-then-render pattern |
+| <img src="12-shader-grid/assets/screenshot.png" width="120" alt="Shader Grid"/> | [**12 — Shader Grid**](12-shader-grid/) | Procedural anti-aliased grid using screen-space derivatives and multiple pipelines |
+| <img src="13-instanced-rendering/assets/screenshot.png" width="120" alt="Instanced Rendering"/> | [**13 — Instanced Rendering**](13-instanced-rendering/) | Draw many copies of a mesh with per-instance vertex buffers |
+| <img src="14-environment-mapping/assets/screenshot.png" width="120" alt="Environment Mapping"/> | [**14 — Environment Mapping**](14-environment-mapping/) | Cube map textures, skybox rendering, and reflective surfaces |
+| <img src="15-cascaded-shadow-maps/assets/screenshot.png" width="120" alt="Cascaded Shadow Maps"/> | [**15 — Cascaded Shadow Maps**](15-cascaded-shadow-maps/) | Shadow mapping with frustum cascade splitting and PCF soft shadows |
+| <img src="16-blending/assets/screenshot.png" width="120" alt="Blending"/> | [**16 — Blending**](16-blending/) | Alpha blending, alpha testing, and additive blending with blend state configuration |
+| <img src="17-normal-maps/assets/screenshot.png" width="120" alt="Normal Maps"/> | [**17 — Normal Maps**](17-normal-maps/) | Tangent-space normal mapping with TBN matrix construction |
+| <img src="18-blinn-phong-materials/assets/screenshot.png" width="120" alt="Materials"/> | [**18 — Materials**](18-blinn-phong-materials/) | Per-material Blinn-Phong lighting with ambient, diffuse, specular, and shininess |
+| <img src="19-debug-lines/assets/screenshot.png" width="120" alt="Debug Lines"/> | [**19 — Debug Lines**](19-debug-lines/) | Immediate-mode debug line drawing — grids, axes, circles, and wireframe boxes |
+| <img src="20-linear-fog/assets/screenshot.png" width="120" alt="Linear Fog"/> | [**20 — Linear Fog**](20-linear-fog/) | Depth-based distance fog in linear, exponential, and exponential-squared modes |
+| <img src="21-hdr-tone-mapping/assets/screenshot.png" width="120" alt="HDR & Tone Mapping"/> | [**21 — HDR & Tone Mapping**](21-hdr-tone-mapping/) | Render to a floating-point target, then tone map with Reinhard or ACES and exposure control |
+| <img src="22-bloom/assets/screenshot.png" width="120" alt="Bloom"/> | [**22 — Bloom**](22-bloom/) | Jimenez dual-filter bloom with 13-tap downsample, Karis averaging, and tent-filter upsample |
+| <img src="23-point-light-shadows/assets/screenshot.png" width="120" alt="Point Light Shadows"/> | [**23 — Point Light Shadows**](23-point-light-shadows/) | Omnidirectional shadow mapping with cube map depth textures and linear depth storage |
+| <img src="24-gobo-spotlight/assets/screenshot.png" width="120" alt="Gobo Spotlight"/> | [**24 — Gobo Spotlight**](24-gobo-spotlight/) | Projected-texture spotlight with cone falloff, shadow map, and pattern projection |
+| <img src="25-shader-noise/assets/screenshot.png" width="120" alt="Shader Noise"/> | [**25 — Shader Noise**](25-shader-noise/) | GPU noise functions — hash, value, Perlin, fBm, and domain warping |
+| <img src="26-procedural-sky/assets/screenshot.png" width="120" alt="Procedural Sky"/> | [**26 — Procedural Sky**](26-procedural-sky/) | Physically-based atmospheric scattering with Rayleigh, Mie, and LUT-accelerated transmittance |
+| <img src="27-ssao/assets/screenshot_with_ao.png" width="120" alt="SSAO"/> | [**27 — SSAO**](27-ssao/) | Screen-space ambient occlusion with G-buffer, hemisphere kernel sampling, and blur |
+| <img src="28-ui-rendering/assets/screenshot.png" width="120" alt="UI Rendering"/> | [**28 — UI Rendering**](28-ui-rendering/) | Render the immediate-mode UI system on the GPU with a single draw call and font atlas |
+| <img src="29-screen-space-reflections/assets/screenshot.png" width="120" alt="Screen-Space Reflections"/> | [**29 — Screen-Space Reflections**](29-screen-space-reflections/) | SSR with ray marching against the depth buffer and deferred shading |
+| <img src="30-planar-reflections/assets/screenshot.png" width="120" alt="Planar Reflections"/> | [**30 — Planar Reflections**](30-planar-reflections/) | Mirror camera, oblique near-plane clipping, and Fresnel-blended water |
+| <img src="31-transform-animations/assets/screenshot.png" width="120" alt="Transform Animations"/> | [**31 — Transform Animations**](31-transform-animations/) | Keyframe animation with glTF loading, quaternion slerp, and path following |
+| <img src="32-skinning-animations/assets/screenshot.png" width="120" alt="Skinning Animations"/> | [**32 — Skinning Animations**](32-skinning-animations/) | Skeletal skinning with joint hierarchies, inverse bind matrices, and per-vertex blend weights |
+| <img src="33-vertex-pulling/assets/screenshot.png" width="120" alt="Vertex Pulling"/> | [**33 — Vertex Pulling**](33-vertex-pulling/) | Programmable vertex fetch — replace fixed-function vertex input with storage buffer reads |
+| <img src="34-stencil-testing/assets/screenshot.png" width="120" alt="Stencil Testing"/> | [**34 — Stencil Testing**](34-stencil-testing/) | Stencil buffer for portals, selection outlines, and per-pixel masking |
+| <img src="35-decals/assets/screenshot.png" width="120" alt="Decals"/> | [**35 — Decals**](35-decals/) | Deferred decal projection onto scene geometry using depth reconstruction |
+| <img src="36-edge-detection/assets/screenshot.png" width="120" alt="Edge Detection"/> | [**36 — Edge Detection**](36-edge-detection/) | Sobel edge detection on G-buffer data, stencil X-ray vision, and Fresnel ghost silhouettes |
+| <img src="37-3d-picking/assets/screenshot.png" width="120" alt="3D Picking"/> | [**37 — 3D Picking**](37-3d-picking/) | GPU-based object picking with color-ID and stencil-ID methods, plus selection highlighting |
 
 ## Prerequisites
 
@@ -219,6 +224,11 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-planar-reflections`** — Planar reflections with oblique near-plane clipping
 - **`/forge-transform-animations`** — Keyframe animation from glTF with slerp and path following
 - **`/forge-skinning-animations`** — Skeletal skinning with joint hierarchies and blend weights
+- **`/forge-vertex-pulling`** — Programmable vertex fetch with storage buffer reads
+- **`/forge-stencil-testing`** — Stencil buffer for portals, outlines, and per-pixel masking
+- **`/forge-decals`** — Deferred decal projection with depth reconstruction
+- **`/edge-detection`** — Sobel edge detection, stencil X-ray vision, Fresnel silhouettes
+- **`/3d-picking`** — GPU-based object selection with color-ID and stencil-ID methods
 
 **How to use:**
 
@@ -228,7 +238,7 @@ the same pattern. Use these to build projects quickly:
 
 Skills know the project conventions and generate correct code.
 
-See the main [README.md](../../README.md#skills--build-with-ai) for complete skills documentation.
+See the [skills directory](../../.claude/skills/) for all available skills.
 
 ## Building Real Projects
 
@@ -307,7 +317,7 @@ GPU programming has a learning curve, but these lessons make it manageable.
 
 ## What's Next?
 
-After completing the current 32 lessons, you'll have the skills to build
+After completing these lessons, you'll have the skills to build
 real-time 3D applications with lighting, shadows, post-processing, UI, and
 procedural content. Use the skills to build your own projects, or extend
 the lessons with new techniques.

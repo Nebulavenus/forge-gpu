@@ -37,6 +37,35 @@ concept with the respect it deserves.
 - **Explain reasoning, not magic.** "We use the transpose because rotation
   matrices are orthonormal" beats "there's a neat trick with the transpose."
 
+### Documentation and public-facing tone
+
+READMEs, descriptions, and any text a visitor reads first. The core audience
+is two groups: beginners new to graphics/game dev, and experienced graphics
+programmers who evaluate projects critically. Expert endorsement is what drives
+adoption — if credible sources recommend forge-gpu, beginners follow.
+
+**Say what it is. Don't sell it.**
+
+- **No rhetorical flourishes.** "The same license as SDL" not "the same license
+  as SDL itself." Every unnecessary word that exists to make something sound
+  more impressive undermines credibility.
+- **No AI-generated hype.** Words like *powerful*, *unlock*, *robust*,
+  *grounded*, *revolutionary* are instant dismissal for the expert audience.
+  They pattern-match to LLM output.
+- **No selling against others.** "Most tutorials only do X" is insecure.
+  Present the project's own value and let people compare.
+- **No performing.** "Designed for exploration with an AI assistant" is
+  performing. "The lessons are structured so Claude Code can navigate them" is
+  informing. The difference is whether the sentence creates an impression or
+  communicates a fact.
+- **Earned confidence over enthusiasm.** The tone of someone who built
+  something substantial and can describe it plainly — not someone trying to
+  convince you it's substantial.
+- **Stable facts.** If a number will go stale next week (lesson counts), don't
+  feature it prominently. Describe scope through arcs and breadth instead.
+- **Trust the reader.** Short is fine. Sparse is fine. Over-explaining reads
+  as selling. If the information is there, people will find it.
+
 ## Code conventions
 
 - **Language:** C99, matching SDL's own style conventions
