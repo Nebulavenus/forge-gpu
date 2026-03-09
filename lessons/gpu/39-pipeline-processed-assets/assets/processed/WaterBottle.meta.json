@@ -1,13 +1,12 @@
 {
   "source": "WaterBottle.gltf",
+  "format_version": 2,
   "vertex_count": 2549,
   "vertex_stride": 48,
   "has_tangents": true,
-  "lods": [
-    {"level": 0, "index_count": 13530, "target_ratio": 1.00, "error": 0.000000},
-    {"level": 1, "index_count": 6765, "target_ratio": 0.50, "error": 0.001012},
-    {"level": 2, "index_count": 3378, "target_ratio": 0.25, "error": 0.002539}
-  ],
+  "submesh_count": 1,
+  "lod_count": 3,
+  "lod_ratios": [1.00, 0.50, 0.25],
   "original_vertex_count": 2549,
   "dedup_ratio": 1.00
 }

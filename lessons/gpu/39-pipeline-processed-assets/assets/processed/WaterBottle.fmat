@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "materials": [
+    {
+      "name": "BottleMat",
+      "base_color_factor": [1.000000, 1.000000, 1.000000, 1.000000],
+      "base_color_texture": "lessons/gpu/39-pipeline-processed-assets/assets/WaterBottle/WaterBottle_baseColor.png",
+      "metallic_factor": 1.000000,
+      "roughness_factor": 1.000000,
+      "metallic_roughness_texture": "lessons/gpu/39-pipeline-processed-assets/assets/WaterBottle/WaterBottle_occlusionRoughnessMetallic.png",
+      "normal_texture": "lessons/gpu/39-pipeline-processed-assets/assets/WaterBottle/WaterBottle_normal.png",
+      "normal_scale": 1.000000,
+      "occlusion_texture": "lessons/gpu/39-pipeline-processed-assets/assets/WaterBottle/WaterBottle_occlusionRoughnessMetallic.png",
+      "occlusion_strength": 1.000000,
+      "emissive_factor": [1.000000, 1.000000, 1.000000],
+      "emissive_texture": "lessons/gpu/39-pipeline-processed-assets/assets/WaterBottle/WaterBottle_emissive.png",
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.500000,
+      "double_sided": false
+    }
+  ]
+}

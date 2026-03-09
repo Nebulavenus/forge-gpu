@@ -5,13 +5,15 @@ description: Load and render .fmesh binary meshes and pipeline-processed texture
 
 # Skill: Pipeline-Processed Assets
 
-Load and render `.fmesh` binary meshes and pipeline-processed textures in SDL
-GPU applications. This pattern replaces raw glTF loading with optimized binary
-assets produced by the forge-gpu asset pipeline.
+Load and render `.fmesh` binary meshes, `.fmat` material sidecars, and
+pipeline-processed textures in SDL GPU applications. This pattern replaces
+raw glTF loading with optimized binary assets produced by the forge-gpu
+asset pipeline.
 
 ## When to use
 
-- Loading mesh assets processed by `forge-mesh-tool` (`.fmesh` format)
+- Loading mesh assets processed by `forge-mesh-tool` (`.fmesh` v2 format)
+- Loading material data from `.fmat` sidecars (texture paths, PBR parameters)
 - Loading textures with `.meta.json` sidecar metadata
 - Setting up dual vertex formats (48-byte with tangents, 32-byte without)
 - Implementing LOD selection based on camera distance
@@ -21,17 +23,19 @@ assets produced by the forge-gpu asset pipeline.
 
 | File | Purpose |
 |------|---------|
-| `common/pipeline/forge_pipeline.h` | Runtime loader for `.fmesh` + textures |
-| `tools/mesh/main.c` | CLI tool that generates `.fmesh` from OBJ/glTF |
+| `common/pipeline/forge_pipeline.h` | Runtime loader for `.fmesh` + `.fmat` + textures |
+| `tools/mesh/main.c` | CLI tool that generates `.fmesh` + `.fmat` from OBJ/glTF |
 | `lessons/gpu/39-pipeline-processed-assets/main.c` | Reference implementation |
 
 ## Key API calls
 
-- `forge_pipeline_load_mesh(path, &mesh)` — load `.fmesh` binary into CPU struct
+- `forge_pipeline_load_mesh(path, &mesh)` — load `.fmesh` v2 binary into CPU struct
 - `forge_pipeline_free_mesh(&mesh)` — release CPU-side mesh data
 - `forge_pipeline_has_tangents(&mesh)` — check if mesh has 48-byte tangent vertices
 - `forge_pipeline_lod_index_count(&mesh, lod)` — get index count for a LOD level
 - `forge_pipeline_lod_indices(&mesh, lod)` — get index pointer for a LOD level
+- `forge_pipeline_load_materials(path, &set)` — load `.fmat` material sidecar
+- `forge_pipeline_free_materials(&set)` — release CPU-side material data
 - `forge_pipeline_load_texture(path, &tex)` — load texture via `.meta.json` sidecar
 - `forge_pipeline_free_texture(&tex)` — release CPU-side texture data
 
@@ -76,7 +80,33 @@ for (uint32_t lod = 0; lod < mesh.lod_count; lod++) {
 forge_pipeline_free_mesh(&mesh);
 ```
 
-### 3. Load a pipeline texture
+### 3. Load materials from .fmat sidecar
+
+```c
+ForgePipelineMaterialSet materials;
+if (!forge_pipeline_load_materials("model.fmat", &materials)) {
+    /* handle error */
+}
+
+/* Use material texture paths (not hardcoded filenames) */
+for (uint32_t i = 0; i < materials.material_count; i++) {
+    ForgePipelineMaterial *mat = &materials.materials[i];
+    if (mat->base_color_texture[0]) {
+        /* Extract filename, resolve in processed directory */
+        const char *fname = filename_from_path(mat->base_color_texture);
+        load_pipeline_texture(device, fname, /*srgb=*/true);
+    }
+    if (mat->normal_texture[0]) {
+        const char *fname = filename_from_path(mat->normal_texture);
+        load_pipeline_texture(device, fname, /*srgb=*/false);
+    }
+}
+
+/* Cleanup */
+forge_pipeline_free_materials(&materials);
+```
+
+### 4. Load a pipeline texture (via .meta.json sidecar)
 
 ```c
 ForgePipelineTexture tex;
@@ -98,7 +128,7 @@ if (!surface) {
 }
 ```
 
-### 4. Generate .fmesh files
+### 5. Generate .fmesh + .fmat files
 
 ```bash
 # From glTF with LOD levels and tangent generation
@@ -106,10 +136,10 @@ if (!surface) {
     input.gltf output.fmesh \
     --lod-levels 1.0,0.5,0.25 --verbose
 
-# Creates output.fmesh + output.meta.json
+# Creates output.fmesh + output.fmat + output.meta.json
 ```
 
-### 5. Create .meta.json sidecars for textures
+### 6. Create .meta.json sidecars for textures
 
 ```json
 {
@@ -159,12 +189,17 @@ uint32_t select_lod(float distance, uint32_t max_lods) {
 - **Using `SDL_LoadBMP_IO` for PNG data** — `SDL_LoadBMP_IO` only decodes
   BMP format. Use `SDL_LoadSurface_IO` (which auto-detects PNG and BMP) or
   fall back to loading the file directly from disk with `SDL_LoadSurface()`.
-- **Forgetting to free pipeline data** — `forge_pipeline_load_mesh` and
-  `forge_pipeline_load_texture` allocate memory internally. Always call the
-  matching `_free` function, even if you've already uploaded the data to
-  the GPU.
+- **Hardcoding texture filenames instead of loading .fmat** — the `.fmat`
+  sidecar maps each submesh to its material and lists texture paths. Use
+  `forge_pipeline_load_materials()` and read `base_color_texture`,
+  `normal_texture`, etc. from the material struct.
+- **Forgetting to free pipeline data** — `forge_pipeline_load_mesh`,
+  `forge_pipeline_load_materials`, and `forge_pipeline_load_texture` allocate
+  memory internally. Always call the matching `_free` function, even if
+  you've already uploaded the data to the GPU.
 
 ## Reference
 
 - [Lesson 39 — Pipeline-Processed Assets](lessons/gpu/39-pipeline-processed-assets/)
 - [Asset Lesson 06 — Loading Processed Assets](lessons/assets/06-loading-processed-assets/)
+- [Asset Lesson 07 — Materials](lessons/assets/07-materials/)

@@ -1,13 +1,15 @@
 # Lesson 39 — Pipeline-Processed Assets
 
-> **Core concept: loading .fmesh binary meshes and pipeline-processed textures,
-> then comparing them against raw glTF+PNG loading in a split-screen view.**
-> This is the transition point where forge-gpu starts consuming assets produced
-> by its own pipeline instead of loading raw source files at runtime.
+> **Core concept: loading .fmesh binary meshes, .fmat material sidecars, and
+> pipeline-processed textures, then comparing them against raw glTF+PNG
+> loading in a split-screen view.** This is the transition point where
+> forge-gpu starts consuming assets produced by its own pipeline instead of
+> loading raw source files at runtime.
 
 ## What you will learn
 
-- `.fmesh` binary mesh format with LOD levels
+- `.fmesh` v2 binary mesh format with LOD levels and submeshes
+- `.fmat` material sidecars — texture paths driven by material data
 - Pipeline-processed textures via `.meta.json` sidecars
 - Dual vertex formats: 48-byte (with tangent) vs 32-byte (without)
 - Gram-Schmidt TBN re-orthogonalization for normal mapping
@@ -34,11 +36,12 @@ The asset pipeline converts raw source files into optimized runtime formats:
 
 1. **Source assets** — glTF models, PNG textures from content tools
 2. **forge-mesh-tool** — reads glTF, generates MikkTSpace tangents, runs
-   meshoptimizer for LOD levels, writes `.fmesh` binary
+   meshoptimizer for LOD levels, writes `.fmesh` v2 binary and `.fmat`
+   material sidecar
 3. **Texture plugin** — validates dimensions, generates `.meta.json` sidecar
    with format and mip-level metadata
-4. **Runtime** — `forge_pipeline_load_mesh()` and
-   `forge_pipeline_load_texture()` read processed files and upload to the GPU
+4. **Runtime** — `forge_pipeline_load_mesh()`, `forge_pipeline_load_materials()`,
+   and `forge_pipeline_load_texture()` read processed files and upload to the GPU
 
 The raw path bypasses all of this: `forge_gltf_load()` parses `.gltf` JSON
 and `.bin` directly, producing 32-byte vertices without tangents.
@@ -53,37 +56,43 @@ loads in a single `SDL_LoadFile` call and parses with sequential reads.
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | 4 | Magic: `FMSH` (ASCII) |
-| 4 | 4 | Version (uint32 LE, currently 1) |
+| 4 | 4 | Version (uint32 LE, currently 2) |
 | 8 | 4 | vertex_count (uint32 LE) |
 | 12 | 4 | vertex_stride (uint32 LE: 32 or 48) |
 | 16 | 4 | lod_count (uint32 LE, 1..8) |
 | 20 | 4 | flags (uint32 LE, bit 0 = has_tangents) |
-| 24 | 8 | reserved (zero padding) |
-| 32 | 12 * lod_count | LOD entries |
+| 24 | 4 | submesh_count (uint32 LE, 1..64) |
+| 28 | 4 | reserved (zero padding) |
+| 32 | varies | LOD-submesh table |
 | ... | vertex_count * vertex_stride | Vertex data |
 | ... | sum(lod index counts) * 4 | Index data (uint32 LE) |
 
-Each LOD entry is 12 bytes:
+The LOD-submesh table stores `lod_count` entries. Each LOD entry begins
+with a 4-byte target error float, followed by `submesh_count` submesh
+records of 12 bytes each:
 
 ```c
-typedef struct ForgePipelineLod {
-    uint32_t index_count;  /* number of indices in this LOD level */
-    uint32_t index_offset; /* byte offset into the index section */
-    float    target_error; /* meshoptimizer simplification error metric */
-} ForgePipelineLod;
+/* Per-submesh index range within a single LOD level */
+typedef struct ForgePipelineSubmesh {
+    uint32_t index_count;     /* number of indices for this submesh */
+    uint32_t index_offset;    /* byte offset into the index section */
+    int32_t  material_index;  /* index into ForgePipelineMaterialSet, -1 = none */
+} ForgePipelineSubmesh;
 ```
 
 The loaded mesh struct:
 
 ```c
 typedef struct ForgePipelineMesh {
-    void             *vertices;      /* vertex array (cast based on stride) */
-    uint32_t         *indices;       /* all LOD indices concatenated */
-    uint32_t          vertex_count;
-    uint32_t          vertex_stride; /* 32 or 48 */
-    ForgePipelineLod *lods;          /* LOD table */
-    uint32_t          lod_count;
-    uint32_t          flags;         /* FORGE_PIPELINE_FLAG_TANGENTS etc. */
+    void                  *vertices;      /* vertex array (cast based on stride) */
+    uint32_t              *indices;       /* all LOD indices concatenated */
+    uint32_t               vertex_count;
+    uint32_t               vertex_stride; /* 32 or 48 */
+    ForgePipelineLod      *lods;          /* per-LOD aggregate (lod_count entries) */
+    uint32_t               lod_count;
+    uint32_t               flags;         /* FORGE_PIPELINE_FLAG_TANGENTS etc. */
+    ForgePipelineSubmesh  *submeshes;     /* lod_count × submesh_count entries */
+    uint32_t               submesh_count; /* number of submeshes (primitives) */
 } ForgePipelineMesh;
 ```
 
@@ -201,6 +210,56 @@ and uses the interpolated vertex normal directly — no normal mapping is
 possible. See [Lesson 17 — Normal Maps](../17-normal-maps/) for the full
 derivation.
 
+## Material loading from .fmat sidecars
+
+The `.fmat` file is a JSON sidecar that forge-mesh-tool writes alongside
+each `.fmesh`. It contains one material entry per glTF material, with
+texture paths and PBR parameters:
+
+```json
+{
+  "version": 1,
+  "materials": [
+    {
+      "name": "BottleMat",
+      "base_color_factor": [1.0, 1.0, 1.0, 1.0],
+      "base_color_texture": "WaterBottle_baseColor.png",
+      "normal_texture": "WaterBottle_normal.png",
+      "metallic_factor": 1.0,
+      "roughness_factor": 1.0,
+      "alpha_mode": "OPAQUE"
+    }
+  ]
+}
+```
+
+At runtime, the code loads the `.fmat` and uses the material's texture
+paths to find processed textures — no hardcoded filenames:
+
+```c
+ForgePipelineMaterialSet materials;
+forge_pipeline_load_materials("processed/WaterBottle.fmat", &materials);
+
+ForgePipelineMaterial *mat = &materials.materials[0];
+if (mat->base_color_texture[0]) {
+    /* Extract filename, resolve in processed directory */
+    const char *fname = filename_from_path(mat->base_color_texture);
+    load_pipeline_texture(device, fname, /*srgb=*/true);
+}
+if (mat->normal_texture[0]) {
+    const char *fname = filename_from_path(mat->normal_texture);
+    load_pipeline_texture(device, fname, /*srgb=*/false);
+}
+```
+
+The `.fmesh` v2 submesh entries carry a `material_index` that maps each
+submesh to its material in the `.fmat` array. For single-material models
+like WaterBottle, all submeshes reference material 0. Multi-material
+models (e.g., a vehicle with body, glass, and tire materials) would use
+different indices per submesh. See
+[Asset Lesson 07 — Materials](../../assets/07-materials/) for the full
+format specification and pipeline integration.
+
 ## Block compression
 
 The pipeline code paths support block-compressed textures, though this lesson
@@ -228,23 +287,30 @@ pipeline — see Exercise 5.
 ### Pipeline loading path
 
 ```c
-/* Load .fmesh binary → CPU-side mesh struct */
+/* Load .fmesh v2 binary → CPU-side mesh struct with submeshes */
 ForgePipelineMesh mesh;
 forge_pipeline_load_mesh("processed/WaterBottle.fmesh", &mesh);
 
 /* Upload vertex data to GPU (48-byte stride with tangents) */
-SDL_GPUBuffer *vb = upload_gpu_buffer(device, cmd,
-    mesh.vertices, mesh.vertex_count * mesh.vertex_stride,
-    SDL_GPU_BUFFERUSAGE_VERTEX);
+SDL_GPUBuffer *vb = upload_gpu_buffer(device,
+    SDL_GPU_BUFFERUSAGE_VERTEX,
+    mesh.vertices, mesh.vertex_count * mesh.vertex_stride);
 
 /* Upload all LOD indices to a single GPU buffer */
-SDL_GPUBuffer *ib = upload_gpu_buffer(device, cmd,
-    mesh.indices, total_index_bytes,
-    SDL_GPU_BUFFERUSAGE_INDEX);
+SDL_GPUBuffer *ib = upload_gpu_buffer(device,
+    SDL_GPU_BUFFERUSAGE_INDEX,
+    mesh.indices, total_index_bytes);
 
-/* Load texture via .meta.json sidecar → decode PNG → upload */
-ForgePipelineTexture tex;
-forge_pipeline_load_texture("processed/WaterBottle_baseColor.png", &tex);
+/* Load material sidecar → get texture paths from material data */
+ForgePipelineMaterialSet materials;
+forge_pipeline_load_materials("processed/WaterBottle.fmat", &materials);
+
+/* Use material texture paths (not hardcoded filenames) */
+ForgePipelineMaterial *mat = &materials.materials[0];
+const char *diffuse_name = filename_from_path(mat->base_color_texture);
+const char *normal_name  = filename_from_path(mat->normal_texture);
+SDL_GPUTexture *diffuse = load_pipeline_texture(device, diffuse_name, true);
+SDL_GPUTexture *normal  = load_pipeline_texture(device, normal_name, false);
 ```
 
 ### Raw loading path
@@ -335,6 +401,8 @@ Run:
   viewport/scissor technique reused for the comparison view
 - [Asset Lesson 06 — Loading Processed Assets](../../assets/06-loading-processed-assets/)
   — walkthrough of `forge_pipeline.h` and the runtime loading API
+- [Asset Lesson 07 — Materials](../../assets/07-materials/) — `.fmat` material
+  sidecar format, PBR material fields, and `forge_pipeline_load_materials()`
 - [Math Library — `forge_math.h`](../../../common/math/) — `mat4_perspective`,
   `mat4_view_from_quat`, `quat_from_euler`, quaternion camera pattern
 

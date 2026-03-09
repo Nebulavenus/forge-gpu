@@ -1,13 +1,14 @@
 /*
  * Lesson 39 — Pipeline-Processed Assets
  *
- * Demonstrates loading and rendering .fmesh binary meshes and pipeline-
- * processed textures (PNG with .meta.json sidecars), comparing them against
- * raw glTF+PNG loading.  Three render modes let you see both paths side by
+ * Demonstrates loading and rendering .fmesh binary meshes, .fmat material
+ * sidecars, and pipeline-processed textures, comparing them against raw
+ * glTF+PNG loading.  Three render modes let you see both paths side by
  * side: pipeline-only, raw-only, and split-screen comparison.
  *
  * Key concepts:
- *   - .fmesh binary mesh format with LOD levels and tangent data
+ *   - .fmesh v2 binary mesh format with LOD levels, submeshes, and tangents
+ *   - .fmat material sidecars — texture paths driven by material data
  *   - Pipeline-processed textures via .meta.json sidecar metadata
  *   - Dual vertex formats: 48-byte (with tangents) vs 32-byte (no tangents)
  *   - Gram-Schmidt TBN re-orthogonalization for normal mapping
@@ -324,14 +325,17 @@ typedef struct GridFragUniforms {
 
 /* ── Loaded model data ────────────────────────────────────────────────── */
 
-/* Pipeline-loaded model: .fmesh mesh with GPU buffers and textures. */
+/* Pipeline-loaded model: .fmesh mesh + .fmat materials with GPU buffers
+ * and textures.  Texture paths come from the material sidecar — not
+ * hardcoded filenames. */
 typedef struct PipelineModel {
-    ForgePipelineMesh  mesh;           /* CPU-side mesh data (vertices, indices, LODs) */
-    SDL_GPUBuffer     *vertex_buffer;  /* GPU vertex buffer (48-byte stride) */
-    SDL_GPUBuffer     *index_buffer;   /* GPU index buffer (all LODs concatenated) */
-    SDL_GPUTexture    *diffuse_tex;    /* base color texture */
-    SDL_GPUTexture    *normal_tex;     /* normal map texture */
-    uint32_t           current_lod;    /* active LOD level */
+    ForgePipelineMesh        mesh;           /* CPU-side mesh data (vertices, indices, LODs) */
+    ForgePipelineMaterialSet materials;      /* materials from .fmat sidecar */
+    SDL_GPUBuffer           *vertex_buffer;  /* GPU vertex buffer (48-byte stride) */
+    SDL_GPUBuffer           *index_buffer;   /* GPU index buffer (all LODs concatenated) */
+    SDL_GPUTexture          *diffuse_tex;    /* base color texture */
+    SDL_GPUTexture          *normal_tex;     /* normal map texture */
+    uint32_t                 current_lod;    /* active LOD level */
 } PipelineModel;
 
 /* Raw-loaded model: glTF mesh with GPU buffers and textures. */
@@ -914,6 +918,18 @@ static SDL_GPUTexture *create_flat_normal_texture(SDL_GPUDevice *device)
     }
     SDL_ReleaseGPUTransferBuffer(device, transfer);
     return texture;
+}
+
+/* ── Path helper ──────────────────────────────────────────────────────── */
+
+/* Extract the filename portion from a full or relative path.
+ * "some/dir/WaterBottle_baseColor.png" → "WaterBottle_baseColor.png" */
+static const char *filename_from_path(const char *path)
+{
+    const char *slash  = strrchr(path, '/');
+    const char *bslash = strrchr(path, '\\');
+    if (bslash && (!slash || bslash > slash)) slash = bslash;
+    return slash ? slash + 1 : path;
 }
 
 /* ── LOD selection ────────────────────────────────────────────────────── */
@@ -1531,9 +1547,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
             goto fail_cleanup;
         }
 
-        SDL_Log("Pipeline WaterBottle: %u verts, %u LODs, stride %u",
+        SDL_Log("Pipeline WaterBottle: %u verts, %u LODs, %u submeshes, stride %u",
                 state->pipe_water.mesh.vertex_count,
                 state->pipe_water.mesh.lod_count,
+                state->pipe_water.mesh.submesh_count,
                 state->pipe_water.mesh.vertex_stride);
 
         /* Upload vertices to GPU */
@@ -1553,20 +1570,39 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
             SDL_GPU_BUFFERUSAGE_INDEX, state->pipe_water.mesh.indices, ib_size);
         if (!state->pipe_water.index_buffer) goto fail_cleanup;
 
-        /* Load textures — pipeline path uses .meta.json sidecars */
-        char tex_path[PATH_BUFFER_SIZE];
-        SDL_snprintf(tex_path, sizeof(tex_path),
-                     "%sassets/processed/WaterBottle_baseColor.png", base_path);
-        state->pipe_water.diffuse_tex = load_pipeline_texture(device, tex_path, true);
-        if (!state->pipe_water.diffuse_tex) {
-            state->pipe_water.diffuse_tex = state->white_texture;
+        /* Load material sidecar — texture paths come from here */
+        char fmat_path[PATH_BUFFER_SIZE];
+        SDL_snprintf(fmat_path, sizeof(fmat_path),
+                     "%sassets/processed/WaterBottle.fmat", base_path);
+        if (!forge_pipeline_load_materials(fmat_path,
+                                           &state->pipe_water.materials)) {
+            SDL_Log("Failed to load WaterBottle materials");
+            goto fail_cleanup;
         }
 
-        SDL_snprintf(tex_path, sizeof(tex_path),
-                     "%sassets/processed/WaterBottle_normal.png", base_path);
-        state->pipe_water.normal_tex = load_pipeline_texture(device, tex_path, false);
-        if (!state->pipe_water.normal_tex) {
-            state->pipe_water.normal_tex = state->flat_normal_texture;
+        /* Bind textures from material 0 (WaterBottle has one material) */
+        state->pipe_water.diffuse_tex = state->white_texture;
+        state->pipe_water.normal_tex  = state->flat_normal_texture;
+
+        if (state->pipe_water.materials.material_count > 0) {
+            ForgePipelineMaterial *mat = &state->pipe_water.materials.materials[0];
+            char tex_path[PATH_BUFFER_SIZE];
+
+            if (mat->base_color_texture[0]) {
+                const char *fname = filename_from_path(mat->base_color_texture);
+                SDL_snprintf(tex_path, sizeof(tex_path),
+                             "%sassets/processed/%s", base_path, fname);
+                SDL_GPUTexture *t = load_pipeline_texture(device, tex_path, true);
+                if (t) state->pipe_water.diffuse_tex = t;
+            }
+
+            if (mat->normal_texture[0]) {
+                const char *fname = filename_from_path(mat->normal_texture);
+                SDL_snprintf(tex_path, sizeof(tex_path),
+                             "%sassets/processed/%s", base_path, fname);
+                SDL_GPUTexture *t = load_pipeline_texture(device, tex_path, false);
+                if (t) state->pipe_water.normal_tex = t;
+            }
         }
 
         state->pipe_water.current_lod = 0;
@@ -1598,14 +1634,41 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
             SDL_GPU_BUFFERUSAGE_INDEX, state->pipe_box.mesh.indices, ib_size);
         if (!state->pipe_box.index_buffer) goto fail_cleanup;
 
-        char tex_path[PATH_BUFFER_SIZE];
-        SDL_snprintf(tex_path, sizeof(tex_path),
-                     "%sassets/processed/BoxTextured_baseColor.png", base_path);
-        state->pipe_box.diffuse_tex = load_pipeline_texture(device, tex_path, true);
-        if (!state->pipe_box.diffuse_tex) {
-            state->pipe_box.diffuse_tex = state->white_texture;
+        /* Load material sidecar */
+        char fmat_path[PATH_BUFFER_SIZE];
+        SDL_snprintf(fmat_path, sizeof(fmat_path),
+                     "%sassets/processed/BoxTextured.fmat", base_path);
+        if (!forge_pipeline_load_materials(fmat_path,
+                                           &state->pipe_box.materials)) {
+            SDL_Log("Failed to load BoxTextured materials");
+            goto fail_cleanup;
         }
-        state->pipe_box.normal_tex = state->flat_normal_texture;
+
+        /* Bind textures from material 0 */
+        state->pipe_box.diffuse_tex = state->white_texture;
+        state->pipe_box.normal_tex  = state->flat_normal_texture;
+
+        if (state->pipe_box.materials.material_count > 0) {
+            ForgePipelineMaterial *mat = &state->pipe_box.materials.materials[0];
+            char tex_path[PATH_BUFFER_SIZE];
+
+            if (mat->base_color_texture[0]) {
+                const char *fname = filename_from_path(mat->base_color_texture);
+                SDL_snprintf(tex_path, sizeof(tex_path),
+                             "%sassets/processed/%s", base_path, fname);
+                SDL_GPUTexture *t = load_pipeline_texture(device, tex_path, true);
+                if (t) state->pipe_box.diffuse_tex = t;
+            }
+
+            if (mat->normal_texture[0]) {
+                const char *fname = filename_from_path(mat->normal_texture);
+                SDL_snprintf(tex_path, sizeof(tex_path),
+                             "%sassets/processed/%s", base_path, fname);
+                SDL_GPUTexture *t = load_pipeline_texture(device, tex_path, false);
+                if (t) state->pipe_box.normal_tex = t;
+            }
+        }
+
         state->pipe_box.current_lod = 0;
     }
 
@@ -1797,6 +1860,7 @@ fail_cleanup:
             SDL_ReleaseGPUTexture(device, state->pipe_box.diffuse_tex);
         if (state->pipe_box.index_buffer)  SDL_ReleaseGPUBuffer(device, state->pipe_box.index_buffer);
         if (state->pipe_box.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->pipe_box.vertex_buffer);
+        forge_pipeline_free_materials(&state->pipe_box.materials);
         forge_pipeline_free_mesh(&state->pipe_box.mesh);
 
         if (state->pipe_water.normal_tex && state->pipe_water.normal_tex != state->flat_normal_texture)
@@ -1805,6 +1869,7 @@ fail_cleanup:
             SDL_ReleaseGPUTexture(device, state->pipe_water.diffuse_tex);
         if (state->pipe_water.index_buffer)  SDL_ReleaseGPUBuffer(device, state->pipe_water.index_buffer);
         if (state->pipe_water.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->pipe_water.vertex_buffer);
+        forge_pipeline_free_materials(&state->pipe_water.materials);
         forge_pipeline_free_mesh(&state->pipe_water.mesh);
 
         /* Shared resources */
@@ -2434,6 +2499,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         SDL_ReleaseGPUTexture(device, state->pipe_box.diffuse_tex);
     if (state->pipe_box.index_buffer)  SDL_ReleaseGPUBuffer(device, state->pipe_box.index_buffer);
     if (state->pipe_box.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->pipe_box.vertex_buffer);
+    forge_pipeline_free_materials(&state->pipe_box.materials);
     forge_pipeline_free_mesh(&state->pipe_box.mesh);
 
     if (state->pipe_water.normal_tex && state->pipe_water.normal_tex != state->flat_normal_texture)
@@ -2442,6 +2508,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         SDL_ReleaseGPUTexture(device, state->pipe_water.diffuse_tex);
     if (state->pipe_water.index_buffer)  SDL_ReleaseGPUBuffer(device, state->pipe_water.index_buffer);
     if (state->pipe_water.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->pipe_water.vertex_buffer);
+    forge_pipeline_free_materials(&state->pipe_water.materials);
     forge_pipeline_free_mesh(&state->pipe_water.mesh);
 
     /* ── Shared resources ─────────────────────────────────────────────── */
