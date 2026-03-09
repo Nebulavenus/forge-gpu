@@ -10,27 +10,34 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Engine Lessons 01–11** — From Intro to C through Git & Version Control
 - **UI Lessons 01–13** — From TTF Parsing through Theming and Color System
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Asset Lessons 01–04** — From Pipeline Scaffold through Procedural Geometry
+- **Asset Lessons 01–05** — From Pipeline Scaffold through Asset Bundles
 
 ## GPU Lessons — Remaining
 
 ### Advanced Rendering
 
 - [ ] **Lesson 38 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
-- [ ] **Lesson 39 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
-- [ ] **Lesson 40 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
+
+### Asset Pipeline Integration
+
+- [ ] **Lesson 39 — Pipeline-Processed Assets** — Loading BC7 (albedo) and BC5 (normal map) compressed textures from the asset pipeline; reconstructing normals from two-channel BC5 (`z = sqrt(1 - x² - y²)`); loading optimized `.fmesh` files with tangents and LODs; CMake `forge-assets` build dependency; comparing raw vs. processed asset quality and load times. From this lesson onward, all assets come through the pipeline. (depends on Asset Lesson 06)
+
+### Advanced Rendering (continued)
+
+- [ ] **Lesson 40 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
+- [ ] **Lesson 41 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 
 ### Advanced Materials & Effects
 
-- [ ] **Lesson 41 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
-- [ ] **Lesson 42 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
-- [ ] **Lesson 43 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
+- [ ] **Lesson 42 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
+- [ ] **Lesson 43 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
+- [ ] **Lesson 44 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
 
 ### Volumetric & Terrain
 
-- [ ] **Lesson 44 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
-- [ ] **Lesson 45 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 39)
-- [ ] **Lesson 46 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
+- [ ] **Lesson 45 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
+- [ ] **Lesson 46 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 40)
+- [ ] **Lesson 47 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
 ## UI Lessons — Remaining
 
@@ -99,46 +106,25 @@ C library (`common/shapes/forge_shapes.h`).
 ### Core Pipeline
 
 - [x] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
+- [ ] **Asset Lesson 06 — Loading Processed Assets in C** — Reading `.fmesh` binary format and BC7/BC5 compressed textures from `assets/processed/`; header-only C loader (`common/pipeline/forge_pipeline.h`); CMake `forge-assets` target as a build dependency for GPU lessons 09+; integration test rendering a pipeline-processed model with normal mapping
 
 ### Project Integration
 
-Once the core pipeline lessons (02–05) are complete, wire it up to the
-project's actual assets:
+See [docs/PLAN-asset-integration.md](docs/PLAN-asset-integration.md) for the
+full plan. Summary:
 
-- [ ] **Add a root `pipeline.toml`** pointing at the existing `assets/` tree:
-
-  ```toml
-  [pipeline]
-  source_dir = "assets"
-  output_dir = "assets/processed"
-  cache_dir  = ".forge-cache"
-
-  [texture]
-  max_size = 2048
-  generate_mipmaps = true
-
-  [mesh]
-  deduplicate = true
-  generate_tangents = true
-  ```
-
-- [ ] **Process existing models** — Suzanne, Duck, CesiumMilkTruck, BoxTextured,
-  CesiumMan, space-shuttle OBJ through the mesh plugin (dedup, tangents, LODs)
-- [ ] **Process existing textures** — model textures (BaseColor, Normal,
-  MetallicRoughness PNGs), skybox cube map faces, font atlases through the
-  texture plugin (resize, mipmaps, compression)
-- [ ] **Update GPU lessons to load processed assets** — swap raw asset paths for
-  processed bundle/output paths so lessons benefit from optimized geometry and
-  compressed textures
-- [ ] **Add `.forge-cache/` to `.gitignore`** — fingerprint cache is local state
-- [ ] **Add `assets/processed/` to `.gitignore`** — outputs are reproducible from
-  source assets and should not be committed
-- [ ] **CI integration** — run `python -m pipeline` in CI to verify all assets
-  process without errors; fail the build on processing regressions
+- [ ] Root `pipeline.toml` — BC7 albedo, BC5 normal maps, mesh optimization
+- [ ] CMake `forge-assets` target — `add_dependencies(lesson_XX forge-assets)` for lessons 39+
+- [ ] `.gitignore` — `.forge-cache/`, `assets/processed/`, `assets/bundles/`
+- [ ] Process all existing models and textures through the pipeline
+- [ ] GPU Lesson 08 README hint pointing to the asset pipeline track
+- [ ] GPU Lesson 39 teaches loading pipeline-processed assets (BC7/BC5, .fmesh); pipeline mandate starts here
+- [ ] Update skills (dev-new-lesson, dev-physics-lesson, dev-final-pass, dev-publish-lesson) to mandate pipeline usage for lessons 39+
+- [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 
 ### Web Frontend
 
-- [ ] **Asset Lesson 06 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
-- [ ] **Asset Lesson 07 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
-- [ ] **Asset Lesson 08 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
-- [ ] **Asset Lesson 09 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+- [ ] **Asset Lesson 07 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
+- [ ] **Asset Lesson 08 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
+- [ ] **Asset Lesson 09 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
+- [ ] **Asset Lesson 10 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
