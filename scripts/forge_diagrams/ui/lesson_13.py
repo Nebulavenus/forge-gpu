@@ -3,6 +3,7 @@
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import numpy as np
 
 from .._common import STYLE, save, setup_axes
@@ -309,11 +310,11 @@ def diagram_contrast_ratio_scale():
             # 7:1 to 21:1 — yellow to green
             frac = min(1.0, (t - 0.3) / 0.7)
             r, g, b = 0.9 - 0.5 * frac, 0.9, 0.3 + 0.3 * frac
-        ax.add_patch(plt.Rectangle((x, bar_y), w + 0.02, bar_h, color=(r, g, b)))
+        ax.add_patch(Rectangle((x, bar_y), w + 0.02, bar_h, color=(r, g, b)))
 
     # Outline
     ax.add_patch(
-        plt.Rectangle(
+        Rectangle(
             (1.0, bar_y),
             20.0,
             bar_h,
@@ -784,7 +785,7 @@ def diagram_adjacent_pair_matrix():
             ax.add_patch(row_bg)
 
         # Foreground color name + swatch
-        ax.add_patch(plt.Rectangle((col_x[0] - 0.3, y - 0.15), 0.25, 0.3, color=fg_hex))
+        ax.add_patch(Rectangle((col_x[0] - 0.3, y - 0.15), 0.25, 0.3, color=fg_hex))
         ax.text(
             col_x[0] + 0.1,
             y,
@@ -797,7 +798,7 @@ def diagram_adjacent_pair_matrix():
         )
 
         # Background color name + swatch
-        ax.add_patch(plt.Rectangle((col_x[1] - 0.3, y - 0.15), 0.25, 0.3, color=bg_hex))
+        ax.add_patch(Rectangle((col_x[1] - 0.3, y - 0.15), 0.25, 0.3, color=bg_hex))
         ax.text(
             col_x[1] + 0.1,
             y,

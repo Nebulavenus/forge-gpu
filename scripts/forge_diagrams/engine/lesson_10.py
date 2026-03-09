@@ -156,8 +156,8 @@ def diagram_edge_functions():
         n = n / np.linalg.norm(n) * 0.6
         ax.annotate(
             "",
-            xy=mid + n,
-            xytext=mid,
+            xy=tuple(mid + n),  # type: ignore[arg-type]
+            xytext=tuple(mid),  # type: ignore[arg-type]
             arrowprops={"arrowstyle": "->,head_width=0.15", "color": color, "lw": 1.5},
             zorder=4,
         )
@@ -319,7 +319,7 @@ def diagram_barycentric_coords():
 
     ax.imshow(
         rgb,
-        extent=[-0.5, 10.5, -0.5, 10.5],
+        extent=(-0.5, 10.5, -0.5, 10.5),
         origin="lower",
         interpolation="bilinear",
         zorder=1,

@@ -108,7 +108,7 @@ def diagram_checkbox_anatomy():
         va="top",
     )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "ui/06-checkboxes-and-sliders", "checkbox_anatomy.png")
 
 
@@ -232,7 +232,7 @@ def diagram_checkbox_vs_button():
             style="italic",
         )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "ui/06-checkboxes-and-sliders", "checkbox_vs_button.png")
 
 
@@ -525,7 +525,7 @@ def diagram_slider_value_mapping():
             transform=fig.transFigure,
         )
 
-    fig.tight_layout(rect=[0, 0, 0.78, 0.93])
+    fig.tight_layout(rect=(0, 0, 0.78, 0.93))
     save(fig, "ui/06-checkboxes-and-sliders", "slider_value_mapping.png")
 
 
@@ -641,7 +641,7 @@ def diagram_drag_outside_bounds():
             va="top",
         )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.91])
+    fig.tight_layout(rect=(0, 0, 1, 0.91))
     save(fig, "ui/06-checkboxes-and-sliders", "drag_outside_bounds.png")
 
 
@@ -755,7 +755,7 @@ def diagram_slider_state_colors():
                 family="monospace",
             )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "ui/06-checkboxes-and-sliders", "slider_state_colors.png")
 
 

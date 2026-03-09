@@ -1424,7 +1424,7 @@ def diagram_forward_driven_movement():
             interp_pos[0] + lateral[0] * drift_scale,
             interp_pos[1] + lateral[1] * drift_scale,
         ),
-        xytext=interp_pos,
+        xytext=tuple(interp_pos),  # type: ignore[arg-type]
         arrowprops={
             "arrowstyle": "->,head_width=0.2,head_length=0.12",
             "color": STYLE["accent2"],
@@ -1450,7 +1450,7 @@ def diagram_forward_driven_movement():
     ax1.annotate(
         "",
         xy=(interp_pos[0] + head_dir[0] * 1.3, interp_pos[1] + head_dir[1] * 1.3),
-        xytext=interp_pos,
+        xytext=tuple(interp_pos),  # type: ignore[arg-type]
         arrowprops={
             "arrowstyle": "->,head_width=0.2,head_length=0.12",
             "color": STYLE["accent3"],

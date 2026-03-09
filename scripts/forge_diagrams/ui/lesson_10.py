@@ -3,6 +3,7 @@
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
 
 from .._common import STYLE, save, setup_axes
 
@@ -50,7 +51,7 @@ def diagram_window_anatomy():
     # Collapse toggle triangle (down-pointing = expanded state)
     tri_x = wx + 0.4
     tri_cy = wy + wh - th / 2
-    tri = plt.Polygon(
+    tri = Polygon(
         [
             [tri_x, tri_cy + 0.2],
             [tri_x + 0.4, tri_cy + 0.2],
@@ -448,7 +449,7 @@ def diagram_drag_mechanics():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "ui/10-windows", "drag_mechanics.png")
 
 
@@ -874,7 +875,7 @@ def diagram_collapse_toggle():
         tcx = wx + 0.6
         tcy = wy + wh - th / 2
         if arrows[i] == "down":
-            tri = plt.Polygon(
+            tri = Polygon(
                 [[tcx - 0.2, tcy + 0.15], [tcx + 0.2, tcy + 0.15], [tcx, tcy - 0.2]],
                 closed=True,
                 facecolor=STYLE["accent3"],
@@ -882,7 +883,7 @@ def diagram_collapse_toggle():
                 linewidth=1.5,
             )
         else:
-            tri = plt.Polygon(
+            tri = Polygon(
                 [[tcx - 0.12, tcy + 0.2], [tcx - 0.12, tcy - 0.2], [tcx + 0.2, tcy]],
                 closed=True,
                 facecolor=STYLE["accent3"],
@@ -917,7 +918,7 @@ def diagram_collapse_toggle():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "ui/10-windows", "collapse_toggle.png")
 
 
@@ -1146,7 +1147,7 @@ def diagram_window_vs_panel_comparison():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "ui/10-windows", "window_vs_panel_comparison.png")
 
 

@@ -86,7 +86,7 @@ def _parse_lod_levels(raw: object) -> list[float]:
     elif isinstance(raw, str):
         levels = [float(v) for v in raw.split(",") if v.strip()]
     else:
-        levels = [float(raw)]
+        levels = [float(raw)]  # type: ignore[arg-type]
 
     if not levels:
         return list(DEFAULT_LOD_LEVELS)

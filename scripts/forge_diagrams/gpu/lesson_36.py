@@ -18,7 +18,7 @@ def diagram_sobel_kernels():
     stroke = [pe.withStroke(linewidth=3, foreground=STYLE["bg"])]
 
     # --- Gx kernel (left) ---
-    ax1 = fig.add_axes([0.04, 0.22, 0.38, 0.62])
+    ax1 = fig.add_axes((0.04, 0.22, 0.38, 0.62))
     setup_axes(ax1, xlim=(-0.5, 2.5), ylim=(-0.5, 2.5), grid=False, aspect="equal")
     ax1.set_xticks([])
     ax1.set_yticks([])
@@ -67,7 +67,7 @@ def diagram_sobel_kernels():
             )
 
     # --- Gy kernel (right) ---
-    ax2 = fig.add_axes([0.46, 0.22, 0.38, 0.62])
+    ax2 = fig.add_axes((0.46, 0.22, 0.38, 0.62))
     setup_axes(ax2, xlim=(-0.5, 2.5), ylim=(-0.5, 2.5), grid=False, aspect="equal")
     ax2.set_xticks([])
     ax2.set_yticks([])
@@ -116,7 +116,7 @@ def diagram_sobel_kernels():
             )
 
     # --- Color legend ---
-    ax_leg = fig.add_axes([0.86, 0.40, 0.12, 0.30])
+    ax_leg = fig.add_axes((0.86, 0.40, 0.12, 0.30))
     ax_leg.set_facecolor(STYLE["bg"])
     ax_leg.axis("off")
     ax_leg.text(
@@ -702,7 +702,7 @@ def diagram_xray_depth_fail():
         fontweight="bold",
         y=0.99,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "gpu/36-edge-detection", "xray_depth_fail.png")
 
 
@@ -777,7 +777,7 @@ def diagram_outline_method_comparison():
     ]
 
     for i, m in enumerate(methods):
-        ax = fig.add_axes([0.02 + i * 0.33, 0.05, 0.31, 0.82])
+        ax = fig.add_axes((0.02 + i * 0.33, 0.05, 0.31, 0.82))
         ax.set_facecolor(STYLE["bg"])
         ax.set_xlim(0, 10)
         ax.set_ylim(0, 14)

@@ -233,8 +233,8 @@ def diagram_ray_sphere_intersection():
     ray_end = cam + ray_dir * t_far
     ax.annotate(
         "",
-        xy=ray_end,
-        xytext=cam,
+        xy=tuple(ray_end),  # type: ignore[arg-type]
+        xytext=tuple(cam),  # type: ignore[arg-type]
         arrowprops={"arrowstyle": "->", "color": STYLE["accent2"], "lw": 2.5},
     )
 
@@ -301,8 +301,8 @@ def diagram_scattering_geometry():
     view_len = 1.1
     ax.annotate(
         "",
-        xy=P,
-        xytext=P - view_dir * view_len,
+        xy=tuple(P),  # type: ignore[arg-type]
+        xytext=tuple(P - view_dir * view_len),  # type: ignore[arg-type]
         arrowprops={"arrowstyle": "->", "color": STYLE["accent1"], "lw": 2.5},
     )
     # Label above the incoming arrow, well clear of θ
@@ -324,8 +324,8 @@ def diagram_scattering_geometry():
     sun_len = 1.2
     ax.annotate(
         "",
-        xy=P + sun_dir * sun_len,
-        xytext=P,
+        xy=tuple(P + sun_dir * sun_len),  # type: ignore[arg-type]
+        xytext=tuple(P),  # type: ignore[arg-type]
         arrowprops={"arrowstyle": "->", "color": STYLE["accent2"], "lw": 2.5},
     )
     sun_label_pos = P + sun_dir * 0.9
@@ -344,8 +344,8 @@ def diagram_scattering_geometry():
     scatter_len = 1.0
     ax.annotate(
         "",
-        xy=P + scatter_dir * scatter_len,
-        xytext=P,
+        xy=tuple(P + scatter_dir * scatter_len),  # type: ignore[arg-type]
+        xytext=tuple(P),  # type: ignore[arg-type]
         arrowprops={"arrowstyle": "->", "color": STYLE["accent4"], "lw": 2, "ls": "--"},
     )
     scatter_label_pos = P + scatter_dir * 0.75
@@ -629,8 +629,8 @@ def diagram_sun_transmittance():
     noon_end = P_noon + sun_noon * 0.35
     ax.annotate(
         "",
-        xy=noon_end,
-        xytext=P_noon,
+        xy=tuple(noon_end),  # type: ignore[arg-type]
+        xytext=tuple(P_noon),  # type: ignore[arg-type]
         arrowprops={"arrowstyle": "->", "color": STYLE["accent1"], "lw": 2.5},
     )
     ax.plot(*P_noon, "o", color=STYLE["accent1"], markersize=8, zorder=10)
@@ -652,8 +652,8 @@ def diagram_sun_transmittance():
     sunset_end = P_sunset + sun_sunset * 1.2
     ax.annotate(
         "",
-        xy=sunset_end,
-        xytext=P_sunset,
+        xy=tuple(sunset_end),  # type: ignore[arg-type]
+        xytext=tuple(P_sunset),  # type: ignore[arg-type]
         arrowprops={"arrowstyle": "->", "color": STYLE["accent2"], "lw": 2.5},
     )
     ax.plot(*P_sunset, "o", color=STYLE["accent2"], markersize=8, zorder=10)

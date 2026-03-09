@@ -313,7 +313,7 @@ def diagram_clip_rect_operation():
         path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
     )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "ui/09-panels-and-scrolling", "clip_rect_operation.png")
 
 
@@ -416,7 +416,7 @@ def diagram_scroll_offset_model():
                 path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
             )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "ui/09-panels-and-scrolling", "scroll_offset_model.png")
 
 
@@ -738,7 +738,7 @@ def diagram_uv_remap_on_clip():
         path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
     )
 
-    fig.tight_layout(rect=[0, 0.1, 1, 0.92])
+    fig.tight_layout(rect=(0, 0.1, 1, 0.92))
     save(fig, "ui/09-panels-and-scrolling", "uv_remap_on_clip.png")
 
 
@@ -865,7 +865,7 @@ def diagram_panel_with_scroll_sequence():
             )
             ax.add_patch(thumb)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "ui/09-panels-and-scrolling", "panel_with_scroll_sequence.png")
 
 
@@ -1036,7 +1036,7 @@ def diagram_mouse_wheel_and_drag():
         path_effects=[pe.withStroke(linewidth=2, foreground=STYLE["bg"])],
     )
 
-    fig.tight_layout(rect=[0, 0.08, 1, 0.92])
+    fig.tight_layout(rect=(0, 0.08, 1, 0.92))
     save(fig, "ui/09-panels-and-scrolling", "mouse_wheel_and_drag.png")
 
 

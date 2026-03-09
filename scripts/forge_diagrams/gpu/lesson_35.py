@@ -218,7 +218,7 @@ def diagram_decal_box_projection():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "gpu/35-decals", "decal_box_projection.png")
 
 
@@ -363,7 +363,7 @@ def diagram_decal_depth_reconstruction():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "gpu/35-decals", "depth_reconstruction.png")
 
 
@@ -581,7 +581,7 @@ def diagram_decal_local_space():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "gpu/35-decals", "decal_local_space.png")
 
 
@@ -806,7 +806,7 @@ def diagram_decal_render_pipeline():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "gpu/35-decals", "render_pass_architecture.png")
 
 
@@ -1063,7 +1063,7 @@ def diagram_back_face_culling_decals():
         fontweight="bold",
         y=0.99,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     save(fig, "gpu/35-decals", "back_face_culling_decals.png")
 
 
@@ -1308,7 +1308,7 @@ def diagram_decal_layering():
         fontweight="bold",
         y=0.99,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     save(fig, "gpu/35-decals", "decal_layering.png")
 
 

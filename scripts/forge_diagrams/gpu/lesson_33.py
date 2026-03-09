@@ -889,7 +889,7 @@ def diagram_vertex_pulling_use_cases():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, "gpu/33-vertex-pulling", "vertex_pulling_use_cases.png")
 
 

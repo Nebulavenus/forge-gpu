@@ -224,7 +224,7 @@ def diagram_stencil_buffer_concept():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0.06, 1, 0.94])
+    fig.tight_layout(rect=(0, 0.06, 1, 0.94))
     save(fig, "gpu/34-stencil-testing", "stencil_buffer_concept.png")
 
 
@@ -377,7 +377,7 @@ def diagram_stencil_test_pipeline():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     save(fig, "gpu/34-stencil-testing", "stencil_test_pipeline.png")
 
 
@@ -679,7 +679,7 @@ def diagram_portal_technique():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, "gpu/34-stencil-testing", "portal_technique.png")
 
 
@@ -898,7 +898,7 @@ def diagram_outline_technique():
         fontweight="bold",
         y=0.99,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     save(fig, "gpu/34-stencil-testing", "outline_technique.png")
 
 
@@ -1127,7 +1127,7 @@ def diagram_stencil_operations():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     save(fig, "gpu/34-stencil-testing", "stencil_operations.png")
 
 
@@ -1264,7 +1264,7 @@ def diagram_draw_order_stencil():
         fontweight="bold",
         y=0.97,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     save(fig, "gpu/34-stencil-testing", "draw_order_stencil.png")
 
 
@@ -1726,7 +1726,7 @@ def diagram_phase_ordering():
         fontweight="bold",
         y=0.99,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, "gpu/34-stencil-testing", "phase_ordering.png")
 
 

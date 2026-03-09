@@ -2,6 +2,7 @@
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 import numpy as np
 
 from .._common import STYLE, save, setup_axes
@@ -140,7 +141,7 @@ def diagram_lod_simplification():
             ax.plot(x_lon, y_lon, color=color, alpha=alpha * 0.7, linewidth=0.8)
 
         # Draw outer circle silhouette
-        circle = plt.Circle(
+        circle = Circle(
             (0, 0),
             1.0,
             fill=False,
@@ -164,7 +165,7 @@ def diagram_lod_simplification():
         ax.set_xticks([])
         ax.set_yticks([])
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "assets/03-mesh-processing", "lod_simplification.png")
 
 

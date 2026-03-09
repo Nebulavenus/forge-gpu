@@ -1,0 +1,39 @@
+name: Pyright
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**/*.py'
+      - 'pipeline/**/*.py'
+      - 'tests/pipeline/**/*.py'
+      - 'pyrightconfig.json'
+      - '.github/workflows/pyright.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/**/*.py'
+      - 'pipeline/**/*.py'
+      - 'tests/pipeline/**/*.py'
+      - 'pyrightconfig.json'
+
+jobs:
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyright numpy matplotlib Pillow
+
+      - name: Run Pyright
+        run: pyright

@@ -260,7 +260,7 @@ def diagram_id_collision():
         fontweight="bold",
         y=0.98,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "ui/11-widget-id-system", "id_collision.png")
 
 

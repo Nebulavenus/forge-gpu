@@ -28,6 +28,7 @@ jobs:
               'markdownlint',
               'build-and-test',
               'ruff',
+              'pyright',
               'test',
             ]);
 

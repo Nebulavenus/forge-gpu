@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/.clang-format)",
+      "Edit(/.markdownlint-cli2.jsonc)",
+      "Edit(/pyrightconfig.json)",
+      "Edit(/.github/**)"
+    ]
+  }
+}

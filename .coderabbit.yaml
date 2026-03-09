@@ -26,6 +26,8 @@ reviews:
     - "!third_party/**"
     # Internal planning docs (working notes, not published content)
     - "!**/PLAN.md"
+    # Pyright config — simple JSON, no reviewable logic
+    - "!pyrightconfig.json"
 
   # Review configuration
   auto_review:

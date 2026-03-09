@@ -3,6 +3,7 @@
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 
 from .._common import STYLE, save, setup_axes
@@ -261,7 +262,7 @@ def diagram_contour_reconstruction():
 
     # Shared legend at the bottom of the figure
     legend_items = [
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             marker="o",
@@ -272,7 +273,7 @@ def diagram_contour_reconstruction():
             markeredgewidth=0.8,
             label="on-curve point",
         ),
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             marker="s",
@@ -283,7 +284,7 @@ def diagram_contour_reconstruction():
             markeredgewidth=0.8,
             label="off-curve point",
         ),
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             marker="D",
@@ -307,7 +308,7 @@ def diagram_contour_reconstruction():
         bbox_to_anchor=(0.5, -0.01),
     )
 
-    fig.tight_layout(rect=[0, 0.06, 1, 0.93])
+    fig.tight_layout(rect=(0, 0.06, 1, 0.93))
     save(fig, "ui/02-glyph-rasterization", "contour_reconstruction.png")
 
 
@@ -627,14 +628,14 @@ def diagram_winding_direction():
 
     # Legend box at the bottom
     legend_items = [
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             color=STYLE["accent1"],
             linewidth=2.5,
             label="Outer contour (CW)",
         ),
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             color=STYLE["accent2"],
@@ -893,7 +894,7 @@ def diagram_antialiasing_comparison():
 
     # Coverage legend at the bottom of the figure
     legend_items = [
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             marker="o",
@@ -902,7 +903,7 @@ def diagram_antialiasing_comparison():
             markersize=7,
             label="Sample inside glyph",
         ),
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             marker="x",
@@ -912,7 +913,7 @@ def diagram_antialiasing_comparison():
             markersize=7,
             label="Sample outside glyph",
         ),
-        plt.Line2D(
+        Line2D(
             [0],
             [0],
             color=STYLE["accent2"],
@@ -932,7 +933,7 @@ def diagram_antialiasing_comparison():
         bbox_to_anchor=(0.5, -0.01),
     )
 
-    fig.tight_layout(rect=[0, 0.06, 1, 0.93])
+    fig.tight_layout(rect=(0, 0.06, 1, 0.93))
     save(fig, "ui/02-glyph-rasterization", "antialiasing_comparison.png")
 
 

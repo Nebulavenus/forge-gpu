@@ -355,7 +355,7 @@ def diagram_declare_then_draw():
         va="center",
     )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "ui/05-immediate-mode-basics", "declare_then_draw.png")
 
 

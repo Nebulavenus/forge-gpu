@@ -133,7 +133,7 @@ def diagram_fog_blending():
             f = factor[i]
             gradient[0, i] = f * surface + (1.0 - f) * fog_col
 
-        ax.imshow(gradient, aspect="auto", extent=[0, 25, 0, 1])
+        ax.imshow(gradient, aspect="auto", extent=(0, 25, 0, 1))
         ax.set_facecolor(STYLE["bg"])
         ax.set_yticks([])
         ax.set_xlim(0, 25)

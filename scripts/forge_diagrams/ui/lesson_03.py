@@ -2,6 +2,7 @@
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 
 from .._common import STYLE, save, setup_axes
 
@@ -211,7 +212,7 @@ def diagram_shelf_packing():
         bbox_to_anchor=(0.5, -0.01),
     )
 
-    fig.tight_layout(rect=[0, 0.06, 1, 0.93])
+    fig.tight_layout(rect=(0, 0.06, 1, 0.93))
     save(fig, "ui/03-font-atlas", "shelf_packing.png")
 
 
@@ -279,7 +280,7 @@ def diagram_padding_bleed():
     )
 
     # Draw the sampling circle at the boundary
-    circle = plt.Circle(
+    circle = Circle(
         (3.5, 2.5),
         0.8,
         facecolor="none",
@@ -318,7 +319,7 @@ def diagram_padding_bleed():
     )
 
     # Draw the sampling circle in the padded case
-    circle2 = plt.Circle(
+    circle2 = Circle(
         (3.5, 2.5),
         0.8,
         facecolor="none",
@@ -359,7 +360,7 @@ def diagram_padding_bleed():
         bbox_to_anchor=(0.5, -0.01),
     )
 
-    fig.tight_layout(rect=[0, 0.06, 1, 0.93])
+    fig.tight_layout(rect=(0, 0.06, 1, 0.93))
     save(fig, "ui/03-font-atlas", "padding_bleed.png")
 
 

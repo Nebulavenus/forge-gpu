@@ -180,7 +180,7 @@ def diagram_texture_block_compression():
         labelcolor=STYLE["text"],
     )
 
-    plt.tight_layout(rect=[0, 0.08, 1, 0.95])
+    plt.tight_layout(rect=(0, 0.08, 1, 0.95))
     save(fig, "assets/02-texture-processing", "block_compression.png")
 
 

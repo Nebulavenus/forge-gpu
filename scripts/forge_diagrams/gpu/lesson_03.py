@@ -62,10 +62,10 @@ def diagram_unit_circle():
         va="center",
         path_effects=stroke,
     )
-    ax.text(1.0, -0.18, "(1, 0)", **cardinal_style)
-    ax.text(-1.0, -0.18, "(\u22121, 0)", **cardinal_style)
-    ax.text(0.22, 1.12, "(0, 1)", **cardinal_style)
-    ax.text(0.22, -1.12, "(0, \u22121)", **cardinal_style)
+    ax.text(1.0, -0.18, "(1, 0)", **cardinal_style)  # type: ignore[arg-type]
+    ax.text(-1.0, -0.18, "(\u22121, 0)", **cardinal_style)  # type: ignore[arg-type]
+    ax.text(0.22, 1.12, "(0, 1)", **cardinal_style)  # type: ignore[arg-type]
+    ax.text(0.22, -1.12, "(0, \u22121)", **cardinal_style)  # type: ignore[arg-type]
 
     # --- Point on circle at angle t ---
     t = np.radians(40)  # 40° for a clear visual

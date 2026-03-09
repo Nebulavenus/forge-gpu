@@ -3,6 +3,7 @@
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
 
 from .._common import STYLE, save, setup_axes
 
@@ -487,7 +488,7 @@ def diagram_quad_vertex_layout():
     pos_labels = ["(5, 2)", "(24, 2)", "(24, 18)", "(5, 18)"]
 
     # Draw the quad
-    quad = plt.Polygon(
+    quad = Polygon(
         verts,
         closed=True,
         facecolor=STYLE["surface"],
@@ -598,7 +599,7 @@ def diagram_quad_vertex_layout():
     uv1 = (0.45, 0.38)  # bottom-right (u1, v1)
 
     uv_verts = [(uv0[0], uv0[1]), (uv1[0], uv0[1]), (uv1[0], uv1[1]), (uv0[0], uv1[1])]
-    uv_quad = plt.Polygon(
+    uv_quad = Polygon(
         uv_verts,
         closed=True,
         facecolor=STYLE["accent1"],

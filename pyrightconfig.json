@@ -1,0 +1,15 @@
+{
+  "include": [
+    "pipeline",
+    "scripts",
+    "tests/pipeline"
+  ],
+  "extraPaths": [
+    "scripts"
+  ],
+  "exclude": [
+    "build",
+    "out",
+    "third_party"
+  ]
+}

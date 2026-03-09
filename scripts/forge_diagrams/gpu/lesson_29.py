@@ -506,8 +506,8 @@ def diagram_ssr_ray_march():
     arrow_end = p_point - view_unit * 0.4
     ax.annotate(
         "",
-        xy=arrow_end,
-        xytext=arrow_start,
+        xy=tuple(arrow_end),  # type: ignore[arg-type]
+        xytext=tuple(arrow_start),  # type: ignore[arg-type]
         arrowprops={
             "arrowstyle": "->,head_width=0.22,head_length=0.13",
             "color": STYLE["warn"],
@@ -540,7 +540,7 @@ def diagram_ssr_ray_march():
     ax.annotate(
         "",
         xy=(p_point[0], p_point[1] + normal_len),
-        xytext=p_point,
+        xytext=tuple(p_point),  # type: ignore[arg-type]
         arrowprops={
             "arrowstyle": "->,head_width=0.22,head_length=0.13",
             "color": STYLE["accent3"],

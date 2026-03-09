@@ -2,6 +2,7 @@
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 import numpy as np
 
 from .._common import STYLE, save, setup_axes
@@ -111,7 +112,7 @@ def diagram_parametric_sphere():
     )
 
     # Outer silhouette
-    circle = plt.Circle(
+    circle = Circle(
         (0, 0),
         1.0,
         fill=False,
@@ -184,7 +185,7 @@ def diagram_parametric_sphere():
     ax.set_xticks([])
     ax.set_yticks([])
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "assets/04-procedural-geometry", "parametric_sphere.png")
 
 
@@ -346,7 +347,7 @@ def diagram_seam_duplication():
     )
 
     # Silhouette circle
-    circle = plt.Circle(
+    circle = Circle(
         (0, 0),
         1.0,
         fill=False,
@@ -370,7 +371,7 @@ def diagram_seam_duplication():
     ax.set_xticks([])
     ax.set_yticks([])
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "assets/04-procedural-geometry", "seam_duplication.png")
 
 
@@ -504,7 +505,7 @@ def diagram_smooth_vs_flat_normals():
     ax.set_xticks([])
     ax.set_yticks([])
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "assets/04-procedural-geometry", "smooth_vs_flat_normals.png")
 
 
@@ -687,5 +688,5 @@ def diagram_struct_of_arrays():
     ax.set_xticks([])
     ax.set_yticks([])
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, "assets/04-procedural-geometry", "struct_of_arrays.png")

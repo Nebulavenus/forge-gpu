@@ -797,8 +797,8 @@ def diagram_continuity():
     ts = np.linspace(0, 1, 100)
 
     # Draw curves
-    c1 = np.array([_bezier_cubic(*s1, t) for t in ts])
-    c2 = np.array([_bezier_cubic(*s2, t) for t in ts])
+    c1 = np.array([_bezier_cubic(*s1, t) for t in ts])  # type: ignore[arg-type]
+    c2 = np.array([_bezier_cubic(*s2, t) for t in ts])  # type: ignore[arg-type]
     ax.plot(
         c1[:, 0], c1[:, 1], color=STYLE["accent1"], lw=3, zorder=3, label="Segment 1"
     )
@@ -828,8 +828,8 @@ def diagram_continuity():
     )
 
     # Show tangent mismatch
-    tan1 = _bezier_cubic_tangent(*s1, 1.0)
-    tan2 = _bezier_cubic_tangent(*s2, 0.0)
+    tan1 = _bezier_cubic_tangent(*s1, 1.0)  # type: ignore[arg-type]
+    tan2 = _bezier_cubic_tangent(*s2, 0.0)  # type: ignore[arg-type]
     scale = 0.15
     ax.annotate(
         "",
@@ -884,8 +884,8 @@ def diagram_continuity():
         np.array([6, 0]),
     ]
 
-    c1 = np.array([_bezier_cubic(*s1, t) for t in ts])
-    c2 = np.array([_bezier_cubic(*s2_c1, t) for t in ts])
+    c1 = np.array([_bezier_cubic(*s1, t) for t in ts])  # type: ignore[arg-type]
+    c2 = np.array([_bezier_cubic(*s2_c1, t) for t in ts])  # type: ignore[arg-type]
     ax.plot(
         c1[:, 0], c1[:, 1], color=STYLE["accent1"], lw=3, zorder=3, label="Segment 1"
     )
@@ -915,8 +915,8 @@ def diagram_continuity():
     )
 
     # Show tangent match
-    tan1 = _bezier_cubic_tangent(*s1, 1.0)
-    tan2 = _bezier_cubic_tangent(*s2_c1, 0.0)
+    tan1 = _bezier_cubic_tangent(*s1, 1.0)  # type: ignore[arg-type]
+    tan2 = _bezier_cubic_tangent(*s2_c1, 0.0)  # type: ignore[arg-type]
     scale = 0.15
     ax.annotate(
         "",

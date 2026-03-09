@@ -1146,7 +1146,7 @@ def diagram_before_after_spacing():
             path_effects=stroke,
         )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     save(fig, LESSON_12_PATH, "before_after_spacing.png")
 
 

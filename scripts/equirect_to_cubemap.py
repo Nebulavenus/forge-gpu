@@ -34,7 +34,7 @@ except ImportError:
 
 # Optional: imageio for HDR (.hdr / .exr) support.
 try:
-    import imageio.v3 as iio
+    import imageio.v3 as iio  # type: ignore[import-unresolved]
 
     _HAS_IMAGEIO = True
 except ImportError:
@@ -240,7 +240,7 @@ def convert(input_path, output_dir, size, preloaded_hdr=None):
             source = preloaded_hdr
         else:
             try:
-                source = iio.imread(input_path).astype(np.float32)
+                source = iio.imread(input_path).astype(np.float32)  # type: ignore[reportPossiblyUnbound]
             except Exception as exc:
                 sys.exit(f"Failed to decode HDR/EXR image '{input_path}': {exc}")
         # Normalize channels: ensure 3-channel (H, W, 3) output
@@ -328,7 +328,7 @@ def main():
             return 1
         # Load once and reuse for both validation and conversion.
         try:
-            preloaded_hdr = iio.imread(args.input).astype(np.float32)
+            preloaded_hdr = iio.imread(args.input).astype(np.float32)  # type: ignore[reportPossiblyUnbound]
         except Exception as exc:
             print(
                 f"Failed to decode HDR/EXR image '{args.input}': {exc}",
