@@ -16,7 +16,7 @@ The following foundations, tooling, and lesson ranges are complete:
 
 ### Advanced Rendering
 
-- [ ] **Lesson 38 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUPrimitivesIndirect` / `SDL_DrawGPUIndexedPrimitivesIndirect`; filling indirect argument buffers from compute shaders; basic GPU culling (frustum cull in compute, emit surviving draws); reducing CPU draw-call overhead
+- [x] **Lesson 38 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUIndexedPrimitivesIndirect`; compute shader frustum culling fills indirect argument buffers; dual-camera split-screen debug visualization; per-object storage buffer transforms via instance vertex buffer pattern
 
 ### Asset Pipeline Integration
 

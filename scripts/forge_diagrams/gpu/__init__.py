@@ -109,6 +109,12 @@ __all__ = [
     "diagram_outline_selection",
     "diagram_pick_event_timing",
     "diagram_id_color_encoding",
+    "diagram_indirect_draw_concept",
+    "diagram_frustum_culling",
+    "diagram_indirect_buffer_layout",
+    "diagram_compute_to_render_pipeline",
+    "diagram_split_screen_layout",
+    "diagram_sphere_frustum_test",
 ]
 
 from .lesson_03 import diagram_aspect_ratio, diagram_unit_circle
@@ -244,4 +250,12 @@ from .lesson_37 import (
     diagram_pick_event_timing,
     diagram_picking_method_comparison,
     diagram_stencil_id_picking,
+)
+from .lesson_38 import (
+    diagram_compute_to_render_pipeline,
+    diagram_frustum_culling,
+    diagram_indirect_buffer_layout,
+    diagram_indirect_draw_concept,
+    diagram_sphere_frustum_test,
+    diagram_split_screen_layout,
 )

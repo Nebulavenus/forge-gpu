@@ -59,6 +59,7 @@ portable C interface.
 | <img src="35-decals/assets/screenshot.png" width="120" alt="Decals"/> | [**35 — Decals**](35-decals/) | Deferred decal projection onto scene geometry using depth reconstruction |
 | <img src="36-edge-detection/assets/screenshot.png" width="120" alt="Edge Detection"/> | [**36 — Edge Detection**](36-edge-detection/) | Sobel edge detection on G-buffer data, stencil X-ray vision, and Fresnel ghost silhouettes |
 | <img src="37-3d-picking/assets/screenshot.png" width="120" alt="3D Picking"/> | [**37 — 3D Picking**](37-3d-picking/) | GPU-based object picking with color-ID and stencil-ID methods, plus selection highlighting |
+| <img src="38-indirect-drawing/assets/screenshot.png" width="120" alt="Indirect Drawing"/> | [**38 — Indirect Drawing**](38-indirect-drawing/) | GPU-driven draw calls with compute frustum culling, indirect argument buffers, and dual-camera debug visualization |
 
 ## Prerequisites
 
@@ -229,6 +230,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-decals`** — Deferred decal projection with depth reconstruction
 - **`/edge-detection`** — Sobel edge detection, stencil X-ray vision, Fresnel silhouettes
 - **`/3d-picking`** — GPU-based object selection with color-ID and stencil-ID methods
+- **`/forge-indirect-drawing`** — GPU-driven indirect draw calls with compute frustum culling
 
 **How to use:**
 
