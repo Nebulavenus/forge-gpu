@@ -6333,6 +6333,730 @@ static void test_label_colored_out_of_range_clamped(void)
     forge_ui_ctx_free(&ctx);
 }
 
+/* ── Solid rect tests ──────────────────────────────────────────────────── */
+
+#define SR_TEST_X       10.0f   /* solid rect test x */
+#define SR_TEST_Y       20.0f   /* solid rect test y */
+#define SR_TEST_W      150.0f   /* solid rect test width */
+#define SR_TEST_H       30.0f   /* solid rect test height */
+#define SR_LAYOUT_SIZE  20.0f   /* layout size for rect_layout tests */
+#define SR_LAYOUT_X     10.0f   /* layout rect x */
+#define SR_LAYOUT_Y     10.0f   /* layout rect y */
+#define SR_LAYOUT_W    300.0f   /* layout rect width */
+#define SR_LAYOUT_H    200.0f   /* layout rect height */
+#define SR_LAYOUT_PAD    4.0f   /* layout padding */
+#define SR_LAYOUT_GAP    2.0f   /* layout spacing */
+
+static void test_rect_basic(void)
+{
+    TEST("rect: emits exactly one quad");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { 0.0f, 0.0f, 0.0f, 0.5f };
+    ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
+    int idx_before = ctx.index_count;
+    forge_ui_ctx_rect(&ctx, rect, color);
+    /* One quad = 4 vertices, 6 indices */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    ASSERT_EQ_INT(ctx.index_count - idx_before, 6);
+    /* Verify color is stored correctly */
+    ASSERT_NEAR(ctx.vertices[before].r, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx.vertices[before].a, 0.5f, 0.001f);
+    /* Verify corner positions: [0]=top-left, [2]=bottom-right */
+    ASSERT_NEAR(ctx.vertices[before].pos_x, SR_TEST_X, 0.1f);
+    ASSERT_NEAR(ctx.vertices[before].pos_y, SR_TEST_Y, 0.1f);
+    ASSERT_NEAR(ctx.vertices[before + 2].pos_x, SR_TEST_X + SR_TEST_W, 0.1f);
+    ASSERT_NEAR(ctx.vertices[before + 2].pos_y, SR_TEST_Y + SR_TEST_H, 0.1f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_null_ctx(void)
+{
+    TEST("rect: NULL ctx does not crash");
+    ForgeUiColor color = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
+    forge_ui_ctx_rect(NULL, rect, color);
+    ASSERT_TRUE(true);
+}
+
+static void test_rect_nan_rect_rejected(void)
+{
+    TEST("rect: NaN in rect produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { NAN, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
+    forge_ui_ctx_rect(&ctx, rect, color);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_inf_rect_rejected(void)
+{
+    TEST("rect: Inf in rect produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, INFINITY, SR_TEST_H };
+    forge_ui_ctx_rect(&ctx, rect, color);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_nan_color_rejected(void)
+{
+    TEST("rect: NaN in color produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { NAN, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
+    forge_ui_ctx_rect(&ctx, rect, color);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_inf_color_rejected(void)
+{
+    TEST("rect: Inf in color produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { 0.5f, INFINITY, 0.0f, 1.0f };
+    ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
+    forge_ui_ctx_rect(&ctx, rect, color);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_color_clamped(void)
+{
+    TEST("rect: out-of-range color components clamped to [0,1]");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { 1.5f, -0.3f, 0.5f, 2.0f };
+    ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
+    forge_ui_ctx_rect(&ctx, rect, color);
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    ASSERT_NEAR(ctx.vertices[before].r, 1.0f, 0.001f);
+    ASSERT_NEAR(ctx.vertices[before].g, 0.0f, 0.001f);
+    ASSERT_NEAR(ctx.vertices[before].b, 0.5f, 0.001f);
+    ASSERT_NEAR(ctx.vertices[before].a, 1.0f, 0.001f);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_layout_basic(void)
+{
+    TEST("rect_layout: emits one quad inside layout");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { SR_LAYOUT_X, SR_LAYOUT_Y,
+                                 SR_LAYOUT_W, SR_LAYOUT_H };
+    ASSERT_TRUE(forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              SR_LAYOUT_PAD, SR_LAYOUT_GAP));
+    int before = ctx.vertex_count;
+    int idx_before = ctx.index_count;
+    ForgeUiColor color = { 0.5f, 0.5f, 0.5f, 1.0f };
+    forge_ui_ctx_rect_layout(&ctx, color, SR_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    ASSERT_EQ_INT(ctx.index_count - idx_before, 6);
+    /* Verify the rect is positioned inside the layout area */
+    ASSERT_NEAR(ctx.vertices[before].pos_x,
+                SR_LAYOUT_X + SR_LAYOUT_PAD, 0.1f);
+    ASSERT_NEAR(ctx.vertices[before].pos_y,
+                SR_LAYOUT_Y + SR_LAYOUT_PAD, 0.1f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_layout_no_layout(void)
+{
+    TEST("rect_layout: no active layout produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { 0.5f, 0.5f, 0.5f, 1.0f };
+    forge_ui_ctx_rect_layout(&ctx, color, SR_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_rect_layout_nan_color_no_advance(void)
+{
+    TEST("rect_layout: NaN color does not advance cursor");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { SR_LAYOUT_X, SR_LAYOUT_Y,
+                                 SR_LAYOUT_W, SR_LAYOUT_H };
+    ASSERT_TRUE(forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              SR_LAYOUT_PAD, SR_LAYOUT_GAP));
+    ForgeUiLayout *layout = &ctx.layout_stack[ctx.layout_depth - 1];
+    int items_before = layout->item_count;
+    float cursor_before = layout->cursor_y;
+    int before = ctx.vertex_count;
+    ForgeUiColor color = { NAN, 0.5f, 0.5f, 1.0f };
+    forge_ui_ctx_rect_layout(&ctx, color, SR_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    ASSERT_EQ_INT(layout->item_count, items_before);
+    ASSERT_NEAR(layout->cursor_y, cursor_before, 0.001f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ── Progress bar tests ─────────────────────────────────────────────────── */
+
+#define PB_TEST_X       10.0f   /* progress bar test rect x */
+#define PB_TEST_Y       20.0f   /* progress bar test rect y */
+#define PB_TEST_W      200.0f   /* progress bar test rect width */
+#define PB_TEST_H       20.0f   /* progress bar test rect height */
+#define PB_TEST_VAL     75.0f   /* test value for progress bar */
+#define PB_TEST_MAX    100.0f   /* test max for progress bar */
+#define PB_LAYOUT_SIZE  24.0f   /* layout size for progress bar layout tests */
+#define PB_LAYOUT_X     10.0f   /* layout rect x */
+#define PB_LAYOUT_Y     10.0f   /* layout rect y */
+#define PB_LAYOUT_W    300.0f   /* layout rect width */
+#define PB_LAYOUT_H    200.0f   /* layout rect height */
+#define PB_LAYOUT_PAD    4.0f   /* layout padding */
+#define PB_LAYOUT_GAP    2.0f   /* layout spacing */
+
+static void test_progress_bar_basic(void)
+{
+    TEST("progress_bar: basic rendering emits vertices with correct fill ratio");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.8f, 0.2f, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
+    /* Background + fill = 2 quads = 8 vertices */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 8);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    /* Verify fill quad x-extent: fill width = PB_TEST_W * (75/100) = 150 */
+    float expected_fill_w = PB_TEST_W * (PB_TEST_VAL / PB_TEST_MAX);
+    /* Fill quad is the second quad emitted (vertices 4..7 from 'before').
+     * Vertex 4 = top-left, vertex 5 = top-right of fill. */
+    float fill_left  = ctx.vertices[before + 4].pos_x;
+    float fill_right = ctx.vertices[before + 5].pos_x;
+    ASSERT_NEAR(fill_left, PB_TEST_X, 0.1f);
+    ASSERT_NEAR(fill_right, PB_TEST_X + expected_fill_w, 0.1f);
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_zero_value(void)
+{
+    TEST("progress_bar: value=0 emits only background");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.2f, 0.8f, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, 0.0f, PB_TEST_MAX, fill, rect);
+    /* Only background quad = 4 vertices */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_full_value(void)
+{
+    TEST("progress_bar: value=max emits background + fill");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.2f, 0.2f, 0.8f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_MAX, PB_TEST_MAX, fill, rect);
+    /* Background + fill = 8 vertices */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 8);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_over_max_clamped(void)
+{
+    TEST("progress_bar: value > max clamped to max");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.8f, 0.8f, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    /* Value 200 exceeds max 100 — should clamp, producing same as full */
+    forge_ui_ctx_progress_bar(&ctx, 200.0f, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count - before, 8);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_negative_value(void)
+{
+    TEST("progress_bar: negative value clamped to 0");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.8f, 0.2f, 0.8f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, -50.0f, PB_TEST_MAX, fill, rect);
+    /* Only background, no fill */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_zero_max_rejected(void)
+{
+    TEST("progress_bar: max_val=0 produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, 0.0f, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_negative_max_rejected(void)
+{
+    TEST("progress_bar: negative max_val produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, -100.0f, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_nan_value(void)
+{
+    TEST("progress_bar: NaN value treated as 0");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, NAN, PB_TEST_MAX, fill, rect);
+    /* NaN value → clamped to 0 → only background */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_nan_max_rejected(void)
+{
+    TEST("progress_bar: NaN max_val produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, NAN, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_inf_rect_rejected(void)
+{
+    TEST("progress_bar: INFINITY in rect produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, INFINITY, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_nan_rect_rejected(void)
+{
+    TEST("progress_bar: NaN in rect produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { NAN, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_null_ctx(void)
+{
+    TEST("progress_bar: NULL ctx does not crash");
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(NULL, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
+    ASSERT_TRUE(true); /* no crash = pass */
+}
+
+static void test_progress_bar_layout_basic(void)
+{
+    TEST("progress_bar_layout: emits vertices inside layout");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { PB_LAYOUT_X, PB_LAYOUT_Y,
+                                 PB_LAYOUT_W, PB_LAYOUT_H };
+    forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              PB_LAYOUT_PAD, PB_LAYOUT_GAP);
+    int before = ctx.vertex_count;
+    int idx_before = ctx.index_count;
+    ForgeUiColor fill = { 0.2f, 0.8f, 0.2f, 1.0f };
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, PB_TEST_MAX,
+                                      fill, PB_LAYOUT_SIZE);
+    /* Exact two-quad topology: background (4v, 6i) + fill (4v, 6i) */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 8);
+    ASSERT_EQ_INT(ctx.index_count - idx_before, 12);
+    /* Verify the layout wrapper forwarded value/max correctly by checking
+     * the fill quad's right edge.  Background = vertices [before..before+3],
+     * fill = vertices [before+4..before+7]. */
+    float bg_left = ctx.vertices[before].pos_x;
+    float bar_w = ctx.vertices[before + 1].pos_x - bg_left;
+    float fill_right = ctx.vertices[before + 4 + 1].pos_x;
+    float expected_fill_w = bar_w * (PB_TEST_VAL / PB_TEST_MAX);
+    ASSERT_NEAR(fill_right - bg_left, expected_fill_w, 0.5f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_layout_no_layout(void)
+{
+    TEST("progress_bar_layout: no active layout produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.2f, 0.8f, 0.2f, 1.0f };
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, PB_TEST_MAX,
+                                      fill, PB_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_layout_zero_max_rejected(void)
+{
+    TEST("progress_bar_layout: max_val=0 produces no vertices and no cursor advance");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { PB_LAYOUT_X, PB_LAYOUT_Y,
+                                 PB_LAYOUT_W, PB_LAYOUT_H };
+    ASSERT_TRUE(forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              PB_LAYOUT_PAD, PB_LAYOUT_GAP));
+    int before = ctx.vertex_count;
+    ForgeUiLayout *layout = &ctx.layout_stack[ctx.layout_depth - 1];
+    int items_before = layout->item_count;
+    float cursor_before = layout->cursor_y;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, 0.0f,
+                                      fill, PB_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    ASSERT_EQ_INT(layout->item_count, items_before);
+    ASSERT_NEAR(layout->cursor_y, cursor_before, 0.001f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_inf_value(void)
+{
+    TEST("progress_bar: +Inf value treated as 0 (clamped)");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.8f, 0.2f, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    /* +Inf value → isfinite fails → clamped to 0 → only background */
+    forge_ui_ctx_progress_bar(&ctx, INFINITY, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_neg_inf_value(void)
+{
+    TEST("progress_bar: -Inf value treated as 0 (clamped)");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.8f, 0.2f, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    /* -Inf value → isfinite fails → clamped to 0 → only background */
+    forge_ui_ctx_progress_bar(&ctx, -INFINITY, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count - before, 4);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_inf_max_rejected(void)
+{
+    TEST("progress_bar: +Inf max_val produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, INFINITY, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_neg_inf_max_rejected(void)
+{
+    TEST("progress_bar: -Inf max_val produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, -INFINITY, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_nan_fill_color_rejected(void)
+{
+    TEST("progress_bar: NaN in fill_color produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { NAN, 0.2f, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_inf_fill_color_rejected(void)
+{
+    TEST("progress_bar: Inf in fill_color produces no vertices");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    ForgeUiColor fill = { 0.8f, INFINITY, 0.2f, 1.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_fill_color_clamped(void)
+{
+    TEST("progress_bar: out-of-range fill_color components clamped to [0,1]");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    int before = ctx.vertex_count;
+    /* Components outside [0,1] — should be clamped, not rejected */
+    ForgeUiColor fill = { 1.5f, -0.3f, 0.5f, 2.0f };
+    ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
+    forge_ui_ctx_progress_bar(&ctx, PB_TEST_MAX, PB_TEST_MAX, fill, rect);
+    /* Should still emit background + fill = 8 vertices */
+    ASSERT_EQ_INT(ctx.vertex_count - before, 8);
+
+    /* Verify the fill quad colors are clamped: vertex indices 4..7 */
+    ASSERT_NEAR(ctx.vertices[before + 4].r, 1.0f, 0.001f);   /* 1.5 → 1.0 */
+    ASSERT_NEAR(ctx.vertices[before + 4].g, 0.0f, 0.001f);   /* -0.3 → 0.0 */
+    ASSERT_NEAR(ctx.vertices[before + 4].b, 0.5f, 0.001f);   /* 0.5 unchanged */
+    ASSERT_NEAR(ctx.vertices[before + 4].a, 1.0f, 0.001f);   /* 2.0 → 1.0 */
+
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_layout_cursor_advance(void)
+{
+    TEST("progress_bar_layout: advances layout cursor by size");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { PB_LAYOUT_X, PB_LAYOUT_Y,
+                                 PB_LAYOUT_W, PB_LAYOUT_H };
+    forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              PB_LAYOUT_PAD, PB_LAYOUT_GAP);
+
+    /* Draw two progress bars and verify the second starts below the first.
+     * Avoids probing with layout_next(0) which itself advances the cursor. */
+    int before1 = ctx.vertex_count;
+    int idx_before1 = ctx.index_count;
+    ForgeUiColor fill = { 0.2f, 0.8f, 0.2f, 1.0f };
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, PB_TEST_MAX,
+                                      fill, PB_LAYOUT_SIZE);
+    /* Exact two-quad topology per bar */
+    ASSERT_EQ_INT(ctx.vertex_count - before1, 8);
+    ASSERT_EQ_INT(ctx.index_count - idx_before1, 12);
+    /* Verify fill ratio on first bar */
+    float bg1_left = ctx.vertices[before1].pos_x;
+    float bg1_w = ctx.vertices[before1 + 1].pos_x - bg1_left;
+    float fill1_right = ctx.vertices[before1 + 4 + 1].pos_x;
+    float exp_fill1_w = bg1_w * (PB_TEST_VAL / PB_TEST_MAX);
+    ASSERT_NEAR(fill1_right - bg1_left, exp_fill1_w, 0.5f);
+
+    /* Second bar — its background top-left Y should be advanced */
+    int before2 = ctx.vertex_count;
+    int idx_before2 = ctx.index_count;
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, PB_TEST_MAX,
+                                      fill, PB_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count - before2, 8);
+    ASSERT_EQ_INT(ctx.index_count - idx_before2, 12);
+
+    /* The second bar's background Y should equal first bar's Y + size + gap.
+     * First bar background vertex 0 = top-left of first bar. */
+    float bar1_y = ctx.vertices[before1].pos_y;
+    float bar2_y = ctx.vertices[before2].pos_y;
+    float expected_bar2_y = bar1_y + PB_LAYOUT_SIZE + PB_LAYOUT_GAP;
+    ASSERT_NEAR(bar2_y, expected_bar2_y, 0.1f);
+
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_layout_inf_max_rejected(void)
+{
+    TEST("progress_bar_layout: +Inf max_val produces no vertices and no cursor advance");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { PB_LAYOUT_X, PB_LAYOUT_Y,
+                                 PB_LAYOUT_W, PB_LAYOUT_H };
+    ASSERT_TRUE(forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              PB_LAYOUT_PAD, PB_LAYOUT_GAP));
+    int before = ctx.vertex_count;
+    ForgeUiLayout *layout = &ctx.layout_stack[ctx.layout_depth - 1];
+    int items_before = layout->item_count;
+    float cursor_before = layout->cursor_y;
+    ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, INFINITY,
+                                      fill, PB_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    ASSERT_EQ_INT(layout->item_count, items_before);
+    ASSERT_NEAR(layout->cursor_y, cursor_before, 0.001f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_progress_bar_layout_nan_fill_no_advance(void)
+{
+    TEST("progress_bar_layout: NaN fill_color does not advance cursor");
+    if (!setup_atlas()) return;
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    ForgeUiRect layout_rect = { PB_LAYOUT_X, PB_LAYOUT_Y,
+                                 PB_LAYOUT_W, PB_LAYOUT_H };
+    ASSERT_TRUE(forge_ui_ctx_layout_push(&ctx, layout_rect,
+                              FORGE_UI_LAYOUT_VERTICAL,
+                              PB_LAYOUT_PAD, PB_LAYOUT_GAP));
+    int before = ctx.vertex_count;
+    ForgeUiLayout *layout = &ctx.layout_stack[ctx.layout_depth - 1];
+    int items_before = layout->item_count;
+    float cursor_before = layout->cursor_y;
+    ForgeUiColor fill = { NAN, 0.5f, 0.5f, 1.0f };
+    forge_ui_ctx_progress_bar_layout(&ctx, PB_TEST_VAL, PB_TEST_MAX,
+                                      fill, PB_LAYOUT_SIZE);
+    ASSERT_EQ_INT(ctx.vertex_count, before);
+    ASSERT_EQ_INT(layout->item_count, items_before);
+    ASSERT_NEAR(layout->cursor_y, cursor_before, 0.001f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -6762,6 +7486,45 @@ int main(int argc, char *argv[])
     test_slider_layout_inf_range_rejected();
     test_ascender_px_inf_pixel_height();
     test_ascender_px_nan_pixel_height();
+
+    /* Solid rect */
+    test_rect_basic();
+    test_rect_null_ctx();
+    test_rect_nan_rect_rejected();
+    test_rect_inf_rect_rejected();
+    test_rect_nan_color_rejected();
+    test_rect_inf_color_rejected();
+    test_rect_color_clamped();
+    test_rect_layout_basic();
+    test_rect_layout_no_layout();
+    test_rect_layout_nan_color_no_advance();
+
+    /* Progress bar */
+    test_progress_bar_basic();
+    test_progress_bar_zero_value();
+    test_progress_bar_full_value();
+    test_progress_bar_over_max_clamped();
+    test_progress_bar_negative_value();
+    test_progress_bar_zero_max_rejected();
+    test_progress_bar_negative_max_rejected();
+    test_progress_bar_nan_value();
+    test_progress_bar_nan_max_rejected();
+    test_progress_bar_inf_rect_rejected();
+    test_progress_bar_nan_rect_rejected();
+    test_progress_bar_null_ctx();
+    test_progress_bar_inf_value();
+    test_progress_bar_neg_inf_value();
+    test_progress_bar_inf_max_rejected();
+    test_progress_bar_neg_inf_max_rejected();
+    test_progress_bar_nan_fill_color_rejected();
+    test_progress_bar_inf_fill_color_rejected();
+    test_progress_bar_fill_color_clamped();
+    test_progress_bar_layout_basic();
+    test_progress_bar_layout_no_layout();
+    test_progress_bar_layout_zero_max_rejected();
+    test_progress_bar_layout_cursor_advance();
+    test_progress_bar_layout_inf_max_rejected();
+    test_progress_bar_layout_nan_fill_no_advance();
 
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",
             test_count, pass_count, fail_count);

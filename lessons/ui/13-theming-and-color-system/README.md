@@ -633,6 +633,12 @@ WCAG validation results.
    widget panel.  This demonstrates that theme changes take effect
    immediately without rebuilding the atlas or re-initializing the context.
 
+## What's next
+
+[UI Lesson 14 — Game UI](../14-game-ui/) uses all the controls and theming
+from lessons 1–13 to build common game UI patterns: health bars, inventory
+grids, HUD anchoring, action bars, and pause menus.
+
 ## Further reading
 
 - [UI Lesson 12 — Font Scaling and Spacing](../12-font-scaling-and-spacing/)

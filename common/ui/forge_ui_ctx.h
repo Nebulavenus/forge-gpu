@@ -599,6 +599,25 @@ static inline bool forge_ui_ctx_layout_pop(ForgeUiContext *ctx);
 static inline ForgeUiRect forge_ui_ctx_layout_next(ForgeUiContext *ctx,
                                                     float size);
 
+/* Draw a horizontal progress bar showing a filled portion of a track.
+ * The bar displays value/max_val as a proportion of the track filled
+ * from left to right.  Unlike a slider, the bar is non-interactive —
+ * it does not respond to mouse input.
+ *
+ * Draw elements: a background track rect (border color) and a filled
+ * rect overlaid from the left edge (fill_color).  The filled width is
+ * proportional to value/max_val.
+ *
+ * value:      current value (clamped to [0, max_val])
+ * max_val:    maximum value (must be > 0)
+ * fill_color: RGBA color for the filled portion
+ * rect:       bounding rectangle in screen pixels */
+static inline void forge_ui_ctx_progress_bar(ForgeUiContext *ctx,
+                                              float value,
+                                              float max_val,
+                                              ForgeUiColor fill_color,
+                                              ForgeUiRect rect);
+
 /* ── Layout-aware widget variants ──────────────────────────────────────── */
 /* These call forge_ui_ctx_layout_next() internally to obtain their rect,
  * so the caller only specifies content (label, ID, state) and a size.
@@ -635,6 +654,14 @@ static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
                                                float *value,
                                                float min_val, float max_val,
                                                float size);
+
+/* Progress bar placed by the current layout.  size is the widget height
+ * (vertical layout) or width (horizontal layout). */
+static inline void forge_ui_ctx_progress_bar_layout(ForgeUiContext *ctx,
+                                                     float value,
+                                                     float max_val,
+                                                     ForgeUiColor fill_color,
+                                                     float size);
 
 /* ── Panel API ─────────────────────────────────────────────────────────── */
 
@@ -1695,6 +1722,90 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
     return changed;
 }
 
+/* ── Solid rect ────────────────────────────────────────────────────────── */
+
+/* Draw a single solid-colored rectangle.  Use this for overlays, dividers,
+ * backgrounds, or any UI element that is just a flat colored quad.  Unlike
+ * forge_ui_ctx_progress_bar(), this emits one quad — no background track. */
+static inline void forge_ui_ctx_rect(ForgeUiContext *ctx,
+                                      ForgeUiRect rect,
+                                      ForgeUiColor color)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return;
+    if (!isfinite(color.r) || !isfinite(color.g) ||
+        !isfinite(color.b) || !isfinite(color.a)) return;
+
+    /* Clamp color components to [0,1] */
+    float r = color.r < 0.0f ? 0.0f : (color.r > 1.0f ? 1.0f : color.r);
+    float g = color.g < 0.0f ? 0.0f : (color.g > 1.0f ? 1.0f : color.g);
+    float b = color.b < 0.0f ? 0.0f : (color.b > 1.0f ? 1.0f : color.b);
+    float a = color.a < 0.0f ? 0.0f : (color.a > 1.0f ? 1.0f : color.a);
+
+    forge_ui__emit_rect(ctx, rect, r, g, b, a);
+}
+
+/* Layout-aware variant — consumes a slot from the active layout. */
+static inline void forge_ui_ctx_rect_layout(ForgeUiContext *ctx,
+                                             ForgeUiColor color,
+                                             float size)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (ctx->layout_depth <= 0) return;
+    if (!isfinite(color.r) || !isfinite(color.g) ||
+        !isfinite(color.b) || !isfinite(color.a)) return;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    forge_ui_ctx_rect(ctx, rect, color);
+}
+
+/* ── Progress bar implementation ───────────────────────────────────────── */
+
+static inline void forge_ui_ctx_progress_bar(ForgeUiContext *ctx,
+                                              float value,
+                                              float max_val,
+                                              ForgeUiColor fill_color,
+                                              ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return;
+    if (!isfinite(max_val) || !(max_val > 0.0f)) return;  /* rejects NaN and +Inf */
+    if (!isfinite(value)) value = 0.0f;
+
+    /* Sanitize fill_color — reject non-finite components, clamp to [0,1] */
+    if (!isfinite(fill_color.r) || !isfinite(fill_color.g) ||
+        !isfinite(fill_color.b) || !isfinite(fill_color.a)) return;
+    if (fill_color.r < 0.0f) fill_color.r = 0.0f;
+    if (fill_color.r > 1.0f) fill_color.r = 1.0f;
+    if (fill_color.g < 0.0f) fill_color.g = 0.0f;
+    if (fill_color.g > 1.0f) fill_color.g = 1.0f;
+    if (fill_color.b < 0.0f) fill_color.b = 0.0f;
+    if (fill_color.b > 1.0f) fill_color.b = 1.0f;
+    if (fill_color.a < 0.0f) fill_color.a = 0.0f;
+    if (fill_color.a > 1.0f) fill_color.a = 1.0f;
+
+    /* Clamp value to [0, max_val] */
+    if (value < 0.0f) value = 0.0f;
+    if (value > max_val) value = max_val;
+
+    float t = value / max_val;
+
+    /* Track background — uses border color for visual consistency with
+     * slider tracks.  Emitted first so the fill draws on top. */
+    forge_ui__emit_rect(ctx, rect,
+                        ctx->theme.border.r, ctx->theme.border.g,
+                        ctx->theme.border.b, ctx->theme.border.a);
+
+    /* Filled portion — proportional to value/max_val */
+    if (t > 0.0f) {
+        ForgeUiRect fill = { rect.x, rect.y, rect.w * t, rect.h };
+        forge_ui__emit_rect(ctx, fill,
+                            fill_color.r, fill_color.g,
+                            fill_color.b, fill_color.a);
+    }
+}
+
 static inline void forge_ui_ctx_set_keyboard(ForgeUiContext *ctx,
                                               const char *text_input,
                                               bool key_backspace,
@@ -2165,6 +2276,21 @@ static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
     if (!(max_val > min_val)) return false;  /* also rejects equal */
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_slider(ctx, label, value, min_val, max_val, rect);
+}
+
+static inline void forge_ui_ctx_progress_bar_layout(ForgeUiContext *ctx,
+                                                     float value,
+                                                     float max_val,
+                                                     ForgeUiColor fill_color,
+                                                     float size)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (ctx->layout_depth <= 0) return;  /* no active layout — no-op */
+    if (!isfinite(max_val) || !(max_val > 0.0f)) return;  /* rejects NaN and +Inf */
+    if (!isfinite(fill_color.r) || !isfinite(fill_color.g) ||
+        !isfinite(fill_color.b) || !isfinite(fill_color.a)) return;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    forge_ui_ctx_progress_bar(ctx, value, max_val, fill_color, rect);
 }
 
 /* ── Panel implementation ───────────────────────────────────────────────── */

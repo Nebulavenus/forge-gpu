@@ -178,6 +178,16 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   placed by the current layout
 - **`forge_ui_ctx_slider_layout(ctx, label, value, min, max, size)`** --
   Slider placed by the current layout
+- **`forge_ui_ctx_rect(ctx, rect, color)`** -- Draw a single solid-colored
+  rectangle (one quad, no background track). Use for overlays, dividers, and
+  backgrounds
+- **`forge_ui_ctx_rect_layout(ctx, color, size)`** -- Solid rect placed by
+  the current layout
+- **`forge_ui_ctx_progress_bar(ctx, value, max_val, fill_color, rect)`** --
+  Draw a non-interactive horizontal progress bar (filled portion proportional
+  to value/max_val)
+- **`forge_ui_ctx_progress_bar_layout(ctx, value, max_val, fill_color, size)`** --
+  Progress bar placed by the current layout
 - **`forge_ui_ctx_panel_begin(ctx, title, rect, scroll_y)`** -- Begin a
   panel: draw background and title bar, set clip rect, push layout for
   child widgets. Returns `true` on success
@@ -311,6 +321,8 @@ These are intentional simplifications for a learning library:
   Global scale factor, spacing struct, and DPI-independent layout
 - [`lessons/ui/13-theming-and-color-system/`](../../lessons/ui/13-theming-and-color-system/) --
   Centralized color palette, WCAG contrast validation, theme slot mapping
+- [`lessons/ui/14-game-ui/`](../../lessons/ui/14-game-ui/) -- Game UI patterns:
+  progress bars, inventory grids, HUD anchoring, action bars, pause menus
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy
