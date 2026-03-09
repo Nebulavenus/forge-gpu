@@ -1,0 +1,13 @@
+{
+  "width": 2048,
+  "height": 2048,
+  "format": "rgba8",
+  "mips": [
+    {
+      "level": 0,
+      "width": 2048,
+      "height": 2048,
+      "file": "WaterBottle_normal.png"
+    }
+  ]
+}

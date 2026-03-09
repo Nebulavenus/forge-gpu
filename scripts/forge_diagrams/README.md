@@ -8,7 +8,7 @@ diagrams that illustrate GPU pipelines, math concepts, UI layouts, and more.
 ```bash
 python scripts/forge_diagrams --lesson gpu/04     # generate diagrams for one lesson
 python scripts/forge_diagrams --lesson math/01    # math lesson
-python scripts/forge_diagrams --all               # regenerate all 255 diagrams
+python scripts/forge_diagrams --all               # regenerate all 261 diagrams
 python scripts/forge_diagrams --list              # list all registered diagrams
 ```
 
@@ -23,7 +23,7 @@ forge_diagrams/
 ├── __main__.py        CLI entry point, diagram registry (DIAGRAMS dict)
 ├── __init__.py        Package marker
 ├── _common.py         Shared theme (STYLE dict), helpers (setup_axes, save, etc.)
-├── gpu/               GPU lesson diagrams (25 lessons, 114 diagrams)
+├── gpu/               GPU lesson diagrams (26 lessons, 120 diagrams)
 │   ├── __init__.py    Re-exports all GPU diagram functions
 │   ├── lesson_03.py   Lesson 03 diagrams
 │   ├── lesson_04.py   Lesson 04 diagrams

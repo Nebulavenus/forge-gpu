@@ -123,6 +123,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/36-edge-detection)
     add_subdirectory(lessons/gpu/37-3d-picking)
     add_subdirectory(lessons/gpu/38-indirect-drawing)
+    add_subdirectory(lessons/gpu/39-pipeline-processed-assets)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────

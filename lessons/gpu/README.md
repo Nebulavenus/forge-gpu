@@ -60,6 +60,7 @@ portable C interface.
 | <img src="36-edge-detection/assets/screenshot.png" width="240" alt="Edge Detection"/> | [**36 — Edge Detection**](36-edge-detection/) | Sobel edge detection on G-buffer data, stencil X-ray vision, and Fresnel ghost silhouettes |
 | <img src="37-3d-picking/assets/screenshot.png" width="240" alt="3D Picking"/> | [**37 — 3D Picking**](37-3d-picking/) | GPU-based object picking with color-ID and stencil-ID methods, plus selection highlighting |
 | <img src="38-indirect-drawing/assets/screenshot.png" width="240" alt="Indirect Drawing"/> | [**38 — Indirect Drawing**](38-indirect-drawing/) | GPU-driven draw calls with compute frustum culling, indirect argument buffers, and dual-camera debug visualization |
+| <img src="39-pipeline-processed-assets/assets/screenshot.png" width="240" alt="Pipeline-Processed Assets"/> | [**39 — Pipeline-Processed Assets**](39-pipeline-processed-assets/) | Load .fmesh binary meshes and pipeline-processed textures, compare against raw glTF loading in split-screen |
 
 ## Prerequisites
 
@@ -231,6 +232,7 @@ the same pattern. Use these to build projects quickly:
 - **`/edge-detection`** — Sobel edge detection, stencil X-ray vision, Fresnel silhouettes
 - **`/3d-picking`** — GPU-based object selection with color-ID and stencil-ID methods
 - **`/forge-indirect-drawing`** — GPU-driven indirect draw calls with compute frustum culling
+- **`/forge-pipeline-assets`** — Load .fmesh binary meshes and pipeline-processed textures
 
 **How to use:**
 

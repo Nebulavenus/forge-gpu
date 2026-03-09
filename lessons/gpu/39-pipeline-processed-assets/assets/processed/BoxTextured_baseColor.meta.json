@@ -1,0 +1,13 @@
+{
+  "width": 256,
+  "height": 256,
+  "format": "rgba8",
+  "mips": [
+    {
+      "level": 0,
+      "width": 256,
+      "height": 256,
+      "file": "BoxTextured_baseColor.png"
+    }
+  ]
+}

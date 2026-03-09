@@ -115,6 +115,12 @@ __all__ = [
     "diagram_compute_to_render_pipeline",
     "diagram_split_screen_layout",
     "diagram_sphere_frustum_test",
+    "diagram_asset_pipeline_flow",
+    "diagram_bc7_block_compression",
+    "diagram_bc5_normal_z_reconstruction",
+    "diagram_fmesh_binary_layout",
+    "diagram_lod_distance_selection",
+    "diagram_tbn_gram_schmidt",
 ]
 
 from .lesson_03 import diagram_aspect_ratio, diagram_unit_circle
@@ -258,4 +264,12 @@ from .lesson_38 import (
     diagram_indirect_draw_concept,
     diagram_sphere_frustum_test,
     diagram_split_screen_layout,
+)
+from .lesson_39 import (
+    diagram_asset_pipeline_flow,
+    diagram_bc5_normal_z_reconstruction,
+    diagram_bc7_block_compression,
+    diagram_fmesh_binary_layout,
+    diagram_lod_distance_selection,
+    diagram_tbn_gram_schmidt,
 )

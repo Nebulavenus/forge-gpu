@@ -20,7 +20,7 @@ The following foundations, tooling, and lesson ranges are complete:
 
 ### Asset Pipeline Integration
 
-- [ ] **Lesson 39 — Pipeline-Processed Assets** — Loading BC7 (albedo) and BC5 (normal map) compressed textures from the asset pipeline; reconstructing normals from two-channel BC5 (`z = sqrt(1 - x² - y²)`); loading optimized `.fmesh` files with tangents and LODs; CMake `forge-assets` build dependency; comparing raw vs. processed asset quality and load times. From this lesson onward, all assets come through the pipeline. (depends on Asset Lesson 06)
+- [x] **Lesson 39 — Pipeline-Processed Assets** — Loading BC7 (albedo) and BC5 (normal map) compressed textures from the asset pipeline; reconstructing normals from two-channel BC5 (`z = sqrt(1 - x² - y²)`); loading optimized `.fmesh` files with tangents and LODs; CMake `forge-assets` build dependency; comparing raw vs. processed asset quality and load times. From this lesson onward, all assets come through the pipeline. (depends on Asset Lesson 06)
 
 ### Advanced Rendering (continued)
 
@@ -118,7 +118,7 @@ full plan. Summary:
 - [ ] `.gitignore` — `.forge-cache/`, `assets/processed/`, `assets/bundles/`
 - [ ] Process all existing models and textures through the pipeline
 - [ ] GPU Lesson 08 README hint pointing to the asset pipeline track
-- [ ] GPU Lesson 39 teaches loading pipeline-processed assets (BC7/BC5, .fmesh); pipeline mandate starts here
+- [x] GPU Lesson 39 teaches loading pipeline-processed assets (BC7/BC5, .fmesh); pipeline mandate starts here
 - [ ] Update skills (dev-new-lesson, dev-physics-lesson, dev-final-pass, dev-publish-lesson) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 
