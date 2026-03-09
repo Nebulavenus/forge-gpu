@@ -3,8 +3,8 @@
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 import numpy as np
+from matplotlib.patches import Rectangle
 
 from .._common import STYLE, save, setup_axes
 

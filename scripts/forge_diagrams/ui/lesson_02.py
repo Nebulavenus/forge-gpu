@@ -3,8 +3,8 @@
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import numpy as np
+from matplotlib.lines import Line2D
 
 from .._common import STYLE, save, setup_axes
 

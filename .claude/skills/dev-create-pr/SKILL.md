@@ -214,11 +214,21 @@ omissions.
      If errors are found in staged files, fix them, re-stage, and re-check.
      Never bypass lint rules.
 
-   - If any `scripts/*.py` files are staged, lint only those files:
+   - If any `scripts/*.py` or `pipeline/*.py` files are staged, lint only those files:
 
      ```bash
-     STAGED_PY=$(git diff --cached --name-only -- 'scripts/*.py')
+     STAGED_PY=$(git diff --cached --name-only -- 'scripts/*.py' 'pipeline/*.py' 'tests/pipeline/*.py')
      [ -n "$STAGED_PY" ] && ruff check $STAGED_PY && ruff format --check $STAGED_PY
+     ```
+
+     Fix issues if found.
+
+   - If any Python files are staged (`scripts/`, `pipeline/`, or `tests/pipeline/`),
+     run Pyright type checking:
+
+     ```bash
+     STAGED_PY=$(git diff --cached --name-only -- '*.py')
+     [ -n "$STAGED_PY" ] && pyright
      ```
 
      Fix issues if found.

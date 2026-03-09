@@ -376,7 +376,22 @@ ruff format --check scripts/
 
 ---
 
-## 13. Build and shader compilation
+## 13. Pyright type checking (if Python files were modified)
+
+If any Python files in `scripts/` or `pipeline/` were added or modified:
+
+```bash
+pyright
+```
+
+- [ ] No errors from `pyright`
+- [ ] No private import usage (`reportPrivateImportUsage`) — use the public
+  module (e.g. `mpatches.Circle` instead of `plt.Circle`)
+- [ ] No unresolved imports (`reportMissingImports`)
+
+---
+
+## 14. Build and shader compilation
 
 Verify the lesson compiles and shaders are up to date.
 
@@ -391,7 +406,7 @@ cmake --build build --target lesson_NN_name
 
 ---
 
-## 14. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
+## 15. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
 
 If the lesson has diagrams (check for `assets/*.png` files that are not
 screenshots), verify each diagram function against the README:
@@ -427,8 +442,9 @@ Final Pass Results — Lesson NN: Name
 10. Concept introduction  ✅ PASS
 11. Markdown lint         ✅ PASS
 12. Python lint           ⏭️  SKIP  (no scripts modified)
-13. Build & shaders       ✅ PASS
-14. Diagram correctness   ⏭️  SKIP  (no diagrams)
+13. Pyright types         ⏭️  SKIP  (no scripts modified)
+14. Build & shaders       ✅ PASS
+15. Diagram correctness   ⏭️  SKIP  (no diagrams)
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

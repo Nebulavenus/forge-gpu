@@ -33,7 +33,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pyright numpy matplotlib Pillow
+        run: |
+          pip install pyright numpy matplotlib Pillow
+          pip install -e ".[dev]"
 
       - name: Run Pyright
         run: pyright

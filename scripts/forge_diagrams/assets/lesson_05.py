@@ -319,7 +319,7 @@ def diagram_dependency_graph():
 
     # Draw nodes.
     for name, (x, y, color) in nodes.items():
-        circle = plt.Circle(
+        circle = mpatches.Circle(
             (x, y),
             0.4,
             facecolor=color,

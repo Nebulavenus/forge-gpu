@@ -2,8 +2,8 @@
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
 import numpy as np
+from matplotlib.patches import Circle
 
 from .._common import STYLE, save, setup_axes
 
