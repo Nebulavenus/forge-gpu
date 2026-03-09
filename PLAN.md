@@ -106,7 +106,7 @@ C library (`common/shapes/forge_shapes.h`).
 ### Core Pipeline
 
 - [x] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
-- [ ] **Asset Lesson 06 — Loading Processed Assets in C** — Reading `.fmesh` binary format and BC7/BC5 compressed textures from `assets/processed/`; header-only C loader (`common/pipeline/forge_pipeline.h`); CMake `forge-assets` target as a build dependency for GPU lessons 09+; integration test rendering a pipeline-processed model with normal mapping
+- [x] **Asset Lesson 06 — Loading Processed Assets in C** — Reading `.fmesh` binary format and BC7/BC5 compressed textures from `assets/processed/`; header-only C loader (`common/pipeline/forge_pipeline.h`); CMake `forge-assets` target as a build dependency for GPU lessons 09+; integration test rendering a pipeline-processed model with normal mapping
 
 ### Project Integration
 
