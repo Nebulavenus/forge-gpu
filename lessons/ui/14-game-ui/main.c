@@ -20,8 +20,8 @@
 
 /* ── Framebuffer dimensions ────────────────────────────────────────────── */
 
-#define FB_WIDTH   640            /* output image width in pixels */
-#define FB_HEIGHT  480            /* output image height in pixels */
+#define FB_WIDTH   800            /* output image width in pixels */
+#define FB_HEIGHT  600            /* output image height in pixels */
 #define HUD_WIDTH  1280           /* HUD demo uses 16:9 dimensions */
 #define HUD_HEIGHT 720            /* HUD demo height (16:9) */
 
@@ -42,9 +42,9 @@
 
 /* ── Inventory grid ────────────────────────────────────────────────────── */
 
-#define INV_COLS          5       /* inventory columns */
+#define INV_COLS          4       /* inventory columns */
 #define INV_ROWS          4       /* inventory rows */
-#define INV_SLOT_SIZE    52.0f    /* slot button width and height */
+#define INV_SLOT_SIZE    72.0f    /* slot button width and height */
 #define INV_SLOT_GAP      4.0f    /* gap between inventory slots */
 #define INV_PANEL_PAD    10.0f    /* panel padding around the grid */
 
@@ -134,11 +134,11 @@ static bool rasterize_to_bmp(ForgeUiContext *ctx,
         SDL_Log("Failed to create framebuffer for %s", filename);
         return false;
     }
-    /* Clear to a dark background matching the theme surface color */
+    /* Clear to surface_active — darker than bg so panels stand out */
     forge_raster_clear(&fb,
-                       ctx->theme.surface.r,
-                       ctx->theme.surface.g,
-                       ctx->theme.surface.b,
+                       ctx->theme.surface_active.r,
+                       ctx->theme.surface_active.g,
+                       ctx->theme.surface_active.b,
                        1.0f);
 
     ForgeRasterTexture tex;
@@ -235,10 +235,10 @@ static bool render_status_bars(const ForgeUiFont *font)
 
 /* Item data — NULL means the slot is empty */
 static const char *INVENTORY_ITEMS[INV_ROWS][INV_COLS] = {
-    { "Sword",  "Shield", "Helm",   NULL,     NULL     },
-    { "Potion", "Potion", "Arrow",  "Arrow",  NULL     },
-    { "Ring",   NULL,     "Scroll", NULL,     "Gem"    },
-    { NULL,     NULL,     NULL,     NULL,     NULL     },
+    { "Sword",  "Shield", "Helm",   NULL     },
+    { "Potion", "Potion", "Arrow",  "Arrow"  },
+    { "Ring",   NULL,     "Scroll", "Gem"    },
+    { NULL,     NULL,     NULL,     NULL     },
 };
 
 static bool render_inventory(const ForgeUiFont *font)
