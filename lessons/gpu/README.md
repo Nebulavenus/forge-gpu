@@ -68,6 +68,7 @@ portable C interface.
 
 - **C programming** — Comfortable with structs, pointers, and functions (see [Intro to C](../engine/01-intro-to-c/))
 - **Basic 3D math** — Understanding of vectors helps (see [Math Lessons](../math/))
+
 **No prior graphics experience needed.** These lessons start from the beginning.
 
 ### Tools
