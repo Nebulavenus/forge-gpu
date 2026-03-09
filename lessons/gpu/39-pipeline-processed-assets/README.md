@@ -18,11 +18,11 @@
 
 ![Pipeline vs raw split-screen comparison](assets/screenshot.png)
 
-Split-screen mode (the default) renders a WaterBottle model using both
-paths. The left half uses the pipeline path (.fmesh + processed textures
-with normal mapping), the right half uses the raw path (glTF + PNG, no
-normal map). Surface detail from the normal map is visible only on the
-pipeline side.
+Split-screen mode (the default) renders the WaterBottle and BoxTextured
+models through both paths. The left half uses the pipeline path (.fmesh +
+processed textures), while the right half uses the raw path (glTF + PNG,
+no normal map). WaterBottle shows extra surface detail from its normal map
+on the pipeline side, while BoxTextured falls back to a flat normal texture.
 
 ## Key concepts
 

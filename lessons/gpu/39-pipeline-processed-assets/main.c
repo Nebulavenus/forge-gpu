@@ -96,12 +96,12 @@
 #define PITCH_CLAMP        1.5f
 #define MAX_DELTA_TIME     0.1f
 
-/* Initial camera position — angled view of the model */
-#define CAM_START_X        0.0f
-#define CAM_START_Y        0.15f
-#define CAM_START_Z        0.5f
+/* Initial camera position — angled view showing both models */
+#define CAM_START_X        0.25f
+#define CAM_START_Y        0.25f
+#define CAM_START_Z        0.8f
 #define CAM_START_YAW_DEG  0.0f
-#define CAM_START_PITCH_DEG 0.0f
+#define CAM_START_PITCH_DEG -10.0f
 
 /* Lighting */
 #define LIGHT_DIR_X        0.6f
@@ -174,8 +174,17 @@
 
 /* Box model offset — render BoxTextured offset to the right */
 #define BOX_OFFSET_X       0.5f
-#define BOX_OFFSET_Y       0.0f
 #define BOX_SCALE          0.15f  /* BoxTextured is large, scale down */
+
+/* Vertical offsets — raise objects so they sit ON the ground plane (y=0).
+ * Each offset equals the model's half-height after scaling.
+ * WaterBottle: ±0.130 in Y at scale 1.0 → raise by 0.13.
+ * BoxTextured: ±0.5 in Y at scale 0.15 → raise by 0.075. */
+#define WATER_Y_OFFSET     0.13f
+#define BOX_Y_OFFSET       0.075f
+
+/* Split-screen divider */
+#define DIVIDER_WIDTH      2      /* divider strip width in pixels */
 
 /* ── Shader resource counts ───────────────────────────────────────────── */
 
@@ -353,6 +362,7 @@ typedef struct AppState {
     SDL_GPUTexture          *depth_texture;         /* main pass depth (window-sized) */
     SDL_GPUTexture          *shadow_depth_texture;  /* shadow map (SHADOW_MAP_SIZE) */
     SDL_GPUTexture          *white_texture;         /* 1x1 white placeholder */
+    SDL_GPUTexture          *flat_normal_texture;   /* 1x1 (128,128,255) flat normal */
     SDL_GPUSampler          *sampler;               /* linear wrap for diffuse textures */
     SDL_GPUSampler          *shadow_sampler;        /* comparison sampler for shadow PCF */
     SDL_GPUSampler          *normal_sampler;        /* linear clamp for normal maps */
@@ -811,6 +821,101 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
     return texture;
 }
 
+/* ── 1x1 flat-normal placeholder texture ────────────────────────────── */
+/* A normal map that decodes to (0, 0, 1) in tangent space — i.e. "use
+ * the surface normal as-is."  Stored as (128, 128, 255, 255) which maps
+ * to (0.5, 0.5, 1.0) in [0..1], and after the shader's * 2 - 1 gives
+ * exactly (0, 0, 1).  The white texture (255, 255, 255) would decode to
+ * (1, 1, 1) → a diagonal — producing wrong normals for models without
+ * a normal map. */
+
+static SDL_GPUTexture *create_flat_normal_texture(SDL_GPUDevice *device)
+{
+    SDL_GPUTextureCreateInfo tex_info;
+    SDL_zero(tex_info);
+    tex_info.type                 = SDL_GPU_TEXTURETYPE_2D;
+    /* Normal maps must NOT be sRGB — they store linear direction data. */
+    tex_info.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    tex_info.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tex_info.width                = WHITE_TEX_DIM;
+    tex_info.height               = WHITE_TEX_DIM;
+    tex_info.layer_count_or_depth = WHITE_TEX_LAYERS;
+    tex_info.num_levels           = WHITE_TEX_LEVELS;
+
+    SDL_GPUTexture *texture = SDL_CreateGPUTexture(device, &tex_info);
+    if (!texture) {
+        SDL_Log("Failed to create flat normal texture: %s", SDL_GetError());
+        return NULL;
+    }
+
+    /* (128, 128, 255, 255) = tangent-space (0, 0, 1) after * 2 - 1 */
+    Uint8 flat_pixel[BYTES_PER_PIXEL] = { 128, 128, 255, 255 };
+
+    SDL_GPUTransferBufferCreateInfo xfer_info;
+    SDL_zero(xfer_info);
+    xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    xfer_info.size  = sizeof(flat_pixel);
+
+    SDL_GPUTransferBuffer *transfer = SDL_CreateGPUTransferBuffer(device, &xfer_info);
+    if (!transfer) {
+        SDL_Log("Failed to create flat normal transfer: %s", SDL_GetError());
+        SDL_ReleaseGPUTexture(device, texture);
+        return NULL;
+    }
+
+    void *mapped = SDL_MapGPUTransferBuffer(device, transfer, false);
+    if (!mapped) {
+        SDL_Log("Failed to map flat normal transfer: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        SDL_ReleaseGPUTexture(device, texture);
+        return NULL;
+    }
+    SDL_memcpy(mapped, flat_pixel, sizeof(flat_pixel));
+    SDL_UnmapGPUTransferBuffer(device, transfer);
+
+    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
+    if (!cmd) {
+        SDL_Log("Failed to acquire cmd for flat normal texture: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        SDL_ReleaseGPUTexture(device, texture);
+        return NULL;
+    }
+
+    SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+    if (!copy) {
+        SDL_Log("Failed to begin copy pass for flat normal: %s", SDL_GetError());
+        SDL_CancelGPUCommandBuffer(cmd);
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        SDL_ReleaseGPUTexture(device, texture);
+        return NULL;
+    }
+
+    SDL_GPUTextureTransferInfo tex_src;
+    SDL_zero(tex_src);
+    tex_src.transfer_buffer = transfer;
+    tex_src.pixels_per_row  = WHITE_TEX_DIM;
+    tex_src.rows_per_layer  = WHITE_TEX_DIM;
+
+    SDL_GPUTextureRegion tex_dst;
+    SDL_zero(tex_dst);
+    tex_dst.texture = texture;
+    tex_dst.w       = WHITE_TEX_DIM;
+    tex_dst.h       = WHITE_TEX_DIM;
+    tex_dst.d       = 1;
+
+    SDL_UploadToGPUTexture(copy, &tex_src, &tex_dst, false);
+    SDL_EndGPUCopyPass(copy);
+
+    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+        SDL_Log("Failed to submit flat normal upload: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+        SDL_ReleaseGPUTexture(device, texture);
+        return NULL;
+    }
+    SDL_ReleaseGPUTransferBuffer(device, transfer);
+    return texture;
+}
+
 /* ── LOD selection ────────────────────────────────────────────────────── */
 
 /* Select the appropriate LOD level based on camera distance to the model.
@@ -955,9 +1060,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         }
     }
 
-    /* ── 7. White placeholder texture ─────────────────────────────────── */
+    /* ── 7. Placeholder textures ──────────────────────────────────────── */
     state->white_texture = create_white_texture(device);
     if (!state->white_texture) goto fail_cleanup;
+
+    state->flat_normal_texture = create_flat_normal_texture(device);
+    if (!state->flat_normal_texture) goto fail_cleanup;
 
     /* ── 8. Create all shaders (10 total) ─────────────────────────────── */
 
@@ -1458,7 +1566,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
                      "%sassets/processed/WaterBottle_normal.png", base_path);
         state->pipe_water.normal_tex = load_pipeline_texture(device, tex_path, false);
         if (!state->pipe_water.normal_tex) {
-            state->pipe_water.normal_tex = state->white_texture;
+            state->pipe_water.normal_tex = state->flat_normal_texture;
         }
 
         state->pipe_water.current_lod = 0;
@@ -1497,7 +1605,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         if (!state->pipe_box.diffuse_tex) {
             state->pipe_box.diffuse_tex = state->white_texture;
         }
-        state->pipe_box.normal_tex = state->white_texture;
+        state->pipe_box.normal_tex = state->flat_normal_texture;
         state->pipe_box.current_lod = 0;
     }
 
@@ -1683,7 +1791,7 @@ fail_cleanup:
         if (state->raw_water.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->raw_water.vertex_buffer);
         forge_gltf_free(&state->raw_water.scene);
 
-        if (state->pipe_box.normal_tex && state->pipe_box.normal_tex != state->white_texture)
+        if (state->pipe_box.normal_tex && state->pipe_box.normal_tex != state->flat_normal_texture)
             SDL_ReleaseGPUTexture(device, state->pipe_box.normal_tex);
         if (state->pipe_box.diffuse_tex && state->pipe_box.diffuse_tex != state->white_texture)
             SDL_ReleaseGPUTexture(device, state->pipe_box.diffuse_tex);
@@ -1691,7 +1799,7 @@ fail_cleanup:
         if (state->pipe_box.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->pipe_box.vertex_buffer);
         forge_pipeline_free_mesh(&state->pipe_box.mesh);
 
-        if (state->pipe_water.normal_tex && state->pipe_water.normal_tex != state->white_texture)
+        if (state->pipe_water.normal_tex && state->pipe_water.normal_tex != state->flat_normal_texture)
             SDL_ReleaseGPUTexture(device, state->pipe_water.normal_tex);
         if (state->pipe_water.diffuse_tex && state->pipe_water.diffuse_tex != state->white_texture)
             SDL_ReleaseGPUTexture(device, state->pipe_water.diffuse_tex);
@@ -1706,6 +1814,7 @@ fail_cleanup:
         if (state->pipeline_shadow_raw) SDL_ReleaseGPUGraphicsPipeline(device, state->pipeline_shadow_raw);
         if (state->pipeline_sky)        SDL_ReleaseGPUGraphicsPipeline(device, state->pipeline_sky);
         if (state->pipeline_grid)       SDL_ReleaseGPUGraphicsPipeline(device, state->pipeline_grid);
+        if (state->flat_normal_texture)  SDL_ReleaseGPUTexture(device, state->flat_normal_texture);
         if (state->white_texture)       SDL_ReleaseGPUTexture(device, state->white_texture);
         if (state->shadow_sampler)      SDL_ReleaseGPUSampler(device, state->shadow_sampler);
         if (state->normal_sampler)      SDL_ReleaseGPUSampler(device, state->normal_sampler);
@@ -1940,6 +2049,81 @@ static void draw_raw_model(SDL_GPURenderPass *pass,
     SDL_DrawGPUIndexedPrimitives(pass, model->index_count, 1, 0, 0, 0);
 }
 
+/* ── Helper: draw sky gradient + grid floor with a given VP ────────────── */
+/* Renders the background sky triangle and the procedural grid floor into
+ * the specified viewport/scissor region.  Called once per viewport — in
+ * split-screen mode, each half calls this with its own VP so the grid
+ * perspective matches the objects rendered in that half. */
+
+static void draw_sky_and_grid(SDL_GPURenderPass *pass,
+                               SDL_GPUCommandBuffer *cmd,
+                               AppState *state,
+                               mat4 vp,
+                               mat4 light_vp,
+                               const float *light_dir_n,
+                               SDL_GPUViewport viewport,
+                               SDL_Rect scissor)
+{
+    SDL_SetGPUViewport(pass, &viewport);
+    SDL_SetGPUScissor(pass, &scissor);
+
+    /* Sky — fullscreen triangle, renders behind everything at depth 1.0 */
+    SDL_BindGPUGraphicsPipeline(pass, state->pipeline_sky);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+
+    /* Grid floor — procedural pattern with Blinn-Phong and shadow */
+    SDL_BindGPUGraphicsPipeline(pass, state->pipeline_grid);
+
+    GridVertUniforms gvu;
+    gvu.vp = vp;
+    SDL_PushGPUVertexUniformData(cmd, 0, &gvu, sizeof(gvu));
+
+    GridFragUniforms gfu;
+    gfu.line_color[0] = GRID_LINE_R;
+    gfu.line_color[1] = GRID_LINE_G;
+    gfu.line_color[2] = GRID_LINE_B;
+    gfu.line_color[3] = 1.0f;
+    gfu.bg_color[0] = GRID_BG_R;
+    gfu.bg_color[1] = GRID_BG_G;
+    gfu.bg_color[2] = GRID_BG_B;
+    gfu.bg_color[3] = 0.5f;
+    gfu.light_dir[0] = light_dir_n[0];
+    gfu.light_dir[1] = light_dir_n[1];
+    gfu.light_dir[2] = light_dir_n[2];
+    gfu.light_dir[3] = 0.0f;
+    gfu.eye_pos[0] = state->cam_position.x;
+    gfu.eye_pos[1] = state->cam_position.y;
+    gfu.eye_pos[2] = state->cam_position.z;
+    gfu.eye_pos[3] = 0.0f;
+    gfu.light_vp      = light_vp;
+    gfu.grid_spacing  = GRID_SPACING;
+    gfu.line_width    = GRID_LINE_WIDTH;
+    gfu.fade_distance = GRID_FADE_DIST;
+    gfu.ambient       = GRID_AMBIENT;
+    gfu.shininess     = GRID_SHININESS;
+    gfu.specular_str  = GRID_SPECULAR_STR;
+    gfu.shadow_texel  = 1.0f / (float)SHADOW_MAP_SIZE;
+    gfu._pad = 0.0f;
+    SDL_PushGPUFragmentUniformData(cmd, 0, &gfu, sizeof(gfu));
+
+    SDL_GPUTextureSamplerBinding shadow_bind;
+    shadow_bind.texture = state->shadow_depth_texture;
+    shadow_bind.sampler = state->shadow_sampler;
+    SDL_BindGPUFragmentSamplers(pass, 0, &shadow_bind, 1);
+
+    SDL_GPUBufferBinding grid_vb;
+    SDL_zero(grid_vb);
+    grid_vb.buffer = state->grid_vertex_buf;
+    SDL_BindGPUVertexBuffers(pass, 0, &grid_vb, 1);
+
+    SDL_GPUBufferBinding grid_ib;
+    SDL_zero(grid_ib);
+    grid_ib.buffer = state->grid_index_buf;
+    SDL_BindGPUIndexBuffer(pass, &grid_ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+
+    SDL_DrawGPUIndexedPrimitives(pass, GRID_NUM_INDICES, 1, 0, 0, 0);
+}
+
 /* ════════════════════════════════════════════════════════════════════════
  *  SDL_AppIterate — Update camera, render shadow + scene passes
  * ════════════════════════════════════════════════════════════════════════ */
@@ -2015,10 +2199,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         SHADOW_NEAR, SHADOW_LIGHT_DIST * SHADOW_FAR_MULT);
     mat4 light_vp = mat4_multiply(light_proj, light_view);
 
-    /* Model transforms */
-    mat4 water_model = mat4_identity();  /* WaterBottle at origin */
+    /* Model transforms — raise each object by its half-height so it
+     * sits on the ground plane (y=0) instead of being half-buried. */
+    mat4 water_model = mat4_translate(vec3_create(0.0f, WATER_Y_OFFSET, 0.0f));
     mat4 box_model = mat4_multiply(
-        mat4_translate(vec3_create(BOX_OFFSET_X, BOX_OFFSET_Y, 0.0f)),
+        mat4_translate(vec3_create(BOX_OFFSET_X, BOX_Y_OFFSET, 0.0f)),
         mat4_scale(vec3_create(BOX_SCALE, BOX_SCALE, BOX_SCALE)));
 
     /* ── Resize depth texture if window changed ──────────────────────── */
@@ -2099,8 +2284,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             if (state->render_mode == MODE_PIPELINE) {
                 /* Full viewport — pipeline path only */
                 SDL_GPUViewport vp = { 0, 0, (float)sc_w, (float)sc_h, 0.0f, 1.0f };
-                SDL_SetGPUViewport(pass, &vp);
                 SDL_Rect scissor = { 0, 0, (int)sc_w, (int)sc_h };
+
+                draw_sky_and_grid(pass, cmd, state, cam_vp, light_vp,
+                                  light_dir_n, vp, scissor);
+
+                SDL_SetGPUViewport(pass, &vp);
                 SDL_SetGPUScissor(pass, &scissor);
 
                 draw_pipeline_model(pass, cmd, state, &state->pipe_water,
@@ -2111,8 +2300,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             else if (state->render_mode == MODE_RAW) {
                 /* Full viewport — raw path only */
                 SDL_GPUViewport vp = { 0, 0, (float)sc_w, (float)sc_h, 0.0f, 1.0f };
-                SDL_SetGPUViewport(pass, &vp);
                 SDL_Rect scissor = { 0, 0, (int)sc_w, (int)sc_h };
+
+                draw_sky_and_grid(pass, cmd, state, cam_vp, light_vp,
+                                  light_dir_n, vp, scissor);
+
+                SDL_SetGPUViewport(pass, &vp);
                 SDL_SetGPUScissor(pass, &scissor);
 
                 draw_raw_model(pass, cmd, state, &state->raw_water,
@@ -2121,19 +2314,27 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                box_model, cam_vp, light_vp, light_dir_n, false);
             }
             else {
-                /* Split-screen: left = pipeline, right = raw */
+                /* Split-screen: left = pipeline, right = raw.
+                 * A narrow divider strip at the center stays at the clear
+                 * color so the two halves are visually distinct. */
                 Uint32 half_w = sc_w / 2;
+                int div_half = DIVIDER_WIDTH / 2;
 
                 /* Left half — pipeline */
                 {
-                    float half_aspect = (float)half_w / (float)(sc_h > 0 ? sc_h : 1);
+                    Uint32 left_w = half_w - (Uint32)div_half;
+                    float half_aspect = (float)left_w / (float)(sc_h > 0 ? sc_h : 1);
                     mat4 half_proj = mat4_perspective(FOV_DEG * FORGE_DEG2RAD,
                                                       half_aspect, NEAR_PLANE, FAR_PLANE);
                     mat4 half_vp = mat4_multiply(half_proj, view);
 
-                    SDL_GPUViewport vp = { 0, 0, (float)half_w, (float)sc_h, 0.0f, 1.0f };
+                    SDL_GPUViewport vp = { 0, 0, (float)left_w, (float)sc_h, 0.0f, 1.0f };
+                    SDL_Rect scissor = { 0, 0, (int)left_w, (int)sc_h };
+
+                    draw_sky_and_grid(pass, cmd, state, half_vp, light_vp,
+                                      light_dir_n, vp, scissor);
+
                     SDL_SetGPUViewport(pass, &vp);
-                    SDL_Rect scissor = { 0, 0, (int)half_w, (int)sc_h };
                     SDL_SetGPUScissor(pass, &scissor);
 
                     draw_pipeline_model(pass, cmd, state, &state->pipe_water,
@@ -2144,15 +2345,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
                 /* Right half — raw */
                 {
-                    Uint32 right_w = sc_w - half_w;
+                    Uint32 right_x = half_w + (Uint32)div_half;
+                    Uint32 right_w = sc_w - right_x;
                     float half_aspect = (float)right_w / (float)(sc_h > 0 ? sc_h : 1);
                     mat4 half_proj = mat4_perspective(FOV_DEG * FORGE_DEG2RAD,
                                                       half_aspect, NEAR_PLANE, FAR_PLANE);
                     mat4 half_vp = mat4_multiply(half_proj, view);
 
-                    SDL_GPUViewport vp = { (float)half_w, 0, (float)right_w, (float)sc_h, 0.0f, 1.0f };
+                    SDL_GPUViewport vp = { (float)right_x, 0, (float)right_w, (float)sc_h, 0.0f, 1.0f };
+                    SDL_Rect scissor = { (int)right_x, 0, (int)right_w, (int)sc_h };
+
+                    draw_sky_and_grid(pass, cmd, state, half_vp, light_vp,
+                                      light_dir_n, vp, scissor);
+
                     SDL_SetGPUViewport(pass, &vp);
-                    SDL_Rect scissor = { (int)half_w, 0, (int)right_w, (int)sc_h };
                     SDL_SetGPUScissor(pass, &scissor);
 
                     draw_raw_model(pass, cmd, state, &state->raw_water,
@@ -2160,71 +2366,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     draw_raw_model(pass, cmd, state, &state->raw_box,
                                    box_model, half_vp, light_vp, light_dir_n, false);
                 }
-            }
-
-            /* ── Sky (fullscreen triangle, behind everything) ─────────── */
-            {
-                SDL_GPUViewport vp = { 0, 0, (float)sc_w, (float)sc_h, 0.0f, 1.0f };
-                SDL_SetGPUViewport(pass, &vp);
-                SDL_Rect scissor = { 0, 0, (int)sc_w, (int)sc_h };
-                SDL_SetGPUScissor(pass, &scissor);
-
-                SDL_BindGPUGraphicsPipeline(pass, state->pipeline_sky);
-                SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-            }
-
-            /* ── Grid floor ───────────────────────────────────────────── */
-            {
-                SDL_BindGPUGraphicsPipeline(pass, state->pipeline_grid);
-
-                GridVertUniforms gvu;
-                gvu.vp = cam_vp;
-                SDL_PushGPUVertexUniformData(cmd, 0, &gvu, sizeof(gvu));
-
-                GridFragUniforms gfu;
-                gfu.line_color[0] = GRID_LINE_R;
-                gfu.line_color[1] = GRID_LINE_G;
-                gfu.line_color[2] = GRID_LINE_B;
-                gfu.line_color[3] = 1.0f;
-                gfu.bg_color[0] = GRID_BG_R;
-                gfu.bg_color[1] = GRID_BG_G;
-                gfu.bg_color[2] = GRID_BG_B;
-                gfu.bg_color[3] = 0.5f;
-                gfu.light_dir[0] = light_dir_n[0];
-                gfu.light_dir[1] = light_dir_n[1];
-                gfu.light_dir[2] = light_dir_n[2];
-                gfu.light_dir[3] = 0.0f;
-                gfu.eye_pos[0] = state->cam_position.x;
-                gfu.eye_pos[1] = state->cam_position.y;
-                gfu.eye_pos[2] = state->cam_position.z;
-                gfu.eye_pos[3] = 0.0f;
-                gfu.light_vp      = light_vp;
-                gfu.grid_spacing  = GRID_SPACING;
-                gfu.line_width    = GRID_LINE_WIDTH;
-                gfu.fade_distance = GRID_FADE_DIST;
-                gfu.ambient       = GRID_AMBIENT;
-                gfu.shininess     = GRID_SHININESS;
-                gfu.specular_str  = GRID_SPECULAR_STR;
-                gfu.shadow_texel  = 1.0f / (float)SHADOW_MAP_SIZE;
-                gfu._pad = 0.0f;
-                SDL_PushGPUFragmentUniformData(cmd, 0, &gfu, sizeof(gfu));
-
-                SDL_GPUTextureSamplerBinding shadow_bind;
-                shadow_bind.texture = state->shadow_depth_texture;
-                shadow_bind.sampler = state->shadow_sampler;
-                SDL_BindGPUFragmentSamplers(pass, 0, &shadow_bind, 1);
-
-                SDL_GPUBufferBinding grid_vb;
-                SDL_zero(grid_vb);
-                grid_vb.buffer = state->grid_vertex_buf;
-                SDL_BindGPUVertexBuffers(pass, 0, &grid_vb, 1);
-
-                SDL_GPUBufferBinding grid_ib;
-                SDL_zero(grid_ib);
-                grid_ib.buffer = state->grid_index_buf;
-                SDL_BindGPUIndexBuffer(pass, &grid_ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
-
-                SDL_DrawGPUIndexedPrimitives(pass, GRID_NUM_INDICES, 1, 0, 0, 0);
             }
 
             SDL_EndGPURenderPass(pass);
@@ -2287,7 +2428,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     forge_gltf_free(&state->raw_water.scene);
 
     /* ── Pipeline model resources ─────────────────────────────────────── */
-    if (state->pipe_box.normal_tex && state->pipe_box.normal_tex != state->white_texture)
+    if (state->pipe_box.normal_tex && state->pipe_box.normal_tex != state->flat_normal_texture)
         SDL_ReleaseGPUTexture(device, state->pipe_box.normal_tex);
     if (state->pipe_box.diffuse_tex && state->pipe_box.diffuse_tex != state->white_texture)
         SDL_ReleaseGPUTexture(device, state->pipe_box.diffuse_tex);
@@ -2295,7 +2436,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     if (state->pipe_box.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->pipe_box.vertex_buffer);
     forge_pipeline_free_mesh(&state->pipe_box.mesh);
 
-    if (state->pipe_water.normal_tex && state->pipe_water.normal_tex != state->white_texture)
+    if (state->pipe_water.normal_tex && state->pipe_water.normal_tex != state->flat_normal_texture)
         SDL_ReleaseGPUTexture(device, state->pipe_water.normal_tex);
     if (state->pipe_water.diffuse_tex && state->pipe_water.diffuse_tex != state->white_texture)
         SDL_ReleaseGPUTexture(device, state->pipe_water.diffuse_tex);
@@ -2304,6 +2445,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     forge_pipeline_free_mesh(&state->pipe_water.mesh);
 
     /* ── Shared resources ─────────────────────────────────────────────── */
+    if (state->flat_normal_texture)  SDL_ReleaseGPUTexture(device, state->flat_normal_texture);
     if (state->white_texture)       SDL_ReleaseGPUTexture(device, state->white_texture);
     if (state->normal_sampler)      SDL_ReleaseGPUSampler(device, state->normal_sampler);
     if (state->shadow_sampler)      SDL_ReleaseGPUSampler(device, state->shadow_sampler);
