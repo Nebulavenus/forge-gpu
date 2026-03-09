@@ -162,6 +162,7 @@ forge-gpu/
 │   ├── config.py          # TOML configuration loader
 │   ├── plugin.py          # Plugin base class, registry, discovery
 │   ├── scanner.py         # File scanning and fingerprinting
+│   ├── bundler.py         # Asset bundle packing and compression
 │   └── plugins/           # Built-in asset type plugins
 ├── common/
 │   ├── math/              # Math library (header-only, documented)

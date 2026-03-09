@@ -175,9 +175,10 @@ When no `--lesson` flag is given, run the full parallel sweep described below.
 This review runs as **parallel agents** — each agent owns one review area and
 works independently. Launch all agents at once, then collect results.
 
-### Agent 1: Project structure trees
+### Agent 1: Project structure trees and root README
 
-**Goal:** Verify every project structure tree matches the actual filesystem.
+**Goal:** Verify every project structure tree matches the actual filesystem,
+and verify the root README library lists are current.
 
 1. **Find all structure trees** — search for `├──` or `└──` in:
    - `CLAUDE.md`
@@ -185,7 +186,7 @@ works independently. Launch all agents at once, then collect results.
    - `scripts/forge_diagrams/README.md`
    - Any other `README.md` that contains a tree
    - Note: the root `README.md` is intentionally minimal and does NOT contain
-     a structure tree or lesson lists — do not add them back.
+     a structure tree or full lesson lists — do not add them back.
 
 2. **For each tree**, extract the listed paths and compare against the real
    filesystem:
@@ -194,22 +195,31 @@ works independently. Launch all agents at once, then collect results.
    - **Stale entries** — paths listed in the tree that no longer exist
    - **Wrong descriptions** — comments that don't match the directory contents
 
-3. **Lesson lists** — verify each track's own README lists all lessons for
+3. **Root README library list** — the root `README.md` has a "What you'll get"
+   section that lists shared libraries as inline links like
+   `[math](common/math/)`. Verify this list matches the actual `common/*/`
+   directories that have a README (i.e. are real library modules, not empty
+   or placeholder dirs). Flag any `common/` library that exists and is
+   documented but is missing from the root README's library list.
+   Note: the root README is intentionally minimal — no structure trees,
+   no full lesson lists, no skills tables. Do not add them back.
+
+4. **Lesson lists** — verify each track's own README lists all lessons for
    that track. The GPU track (`lessons/gpu/README.md`) uses a screenshot
    gallery table (thumbnail + name + description). Other tracks use markdown
    tables. Check that every `lessons/<track>/NN-*` directory has a row.
 
-4. **Skills lists** — the GPU track README (`lessons/gpu/README.md`) has a
+5. **Skills lists** — the GPU track README (`lessons/gpu/README.md`) has a
    "Available skills" bullet list mapping each lesson to its Claude Code skill.
    Verify that every lesson with a matching skill in `.claude/skills/` has an
    entry in this list. Cross-reference by globbing `.claude/skills/*/SKILL.md`
    for skills that reference a GPU lesson.
 
-5. **Report** each finding with file, line number, and what's wrong.
+6. **Report** each finding with file, line number, and what's wrong.
 
-6. **If `--fix`:** Edit the trees to match reality. Add missing entries, remove
-   stale ones, fix descriptions. Do not rewrite working trees — only patch the
-   diffs.
+7. **If `--fix`:** Edit the trees to match reality. Add missing entries, remove
+   stale ones, fix descriptions. Add missing libraries to the root README
+   lists. Do not rewrite working trees — only patch the diffs.
 
 ### Agent 2: PLAN.md and lesson PLANs
 
@@ -236,54 +246,39 @@ works independently. Launch all agents at once, then collect results.
 4. **If `--fix`:** Update the root PLAN.md. Leave lesson PLANs as-is (they
    serve as historical records of how the lesson was built).
 
-### Agent 3a: Dev skill documentation
+### Agents 3a–3d: Skill documentation (batched)
 
-**Goal:** Verify `dev-*` skill SKILL.md files reference correct paths and
-patterns.
+**Goal:** Verify all skill SKILL.md files reference correct paths and patterns.
 
-There are ~60 skills total — too many for one agent's context window. Split
-into two agents: 3a handles `dev-*` skills, 3b handles `forge-*` and other
-skills. Launch both in parallel.
+**CRITICAL: Context limit batching.** There are 60+ skills. A single agent
+reading all of them will hit context limits and fail. Split skill verification
+into **batches of ~10 skills per agent**. Launch all batch agents in parallel.
 
-1. **Glob** `.claude/skills/dev-*/SKILL.md`
+**How to batch:**
 
-2. **For each skill**, check:
-   - **File path references** — every path mentioned in the skill doc should
-     exist in the repo. Flag paths to deleted or moved files.
-   - **Code examples** — import paths, function names, and CLI commands should
-     be current. Check that referenced modules, functions, and CLI flags exist.
+1. Glob all skill directories: `ls -d .claude/skills/*/`
+2. Sort alphabetically and split into groups of 10
+3. Launch one agent per group, giving it the explicit list of 10 skill paths
+
+Each batch agent does the same work:
+
+1. **For each skill in its batch**, read the SKILL.md and check:
+   - **File path references** — every path mentioned should exist in the repo.
+     Flag paths to deleted or moved files.
    - **Cross-references** — references to other skills (e.g. "use
      `/dev-create-diagram`") should name skills that actually exist.
    - **Lesson references** — lesson numbers and names should match actual
      directories (e.g. "based on Lesson 28" should link to a real lesson).
-   - **Outdated patterns** — instructions that describe a workflow that has
-     since been replaced (e.g. referencing monolithic files when the repo
-     switched to per-file organization).
 
-3. **Report** each finding with skill name, line number, and issue.
+2. **Work efficiently** — scan for path references, verify against the
+   filesystem, move on. Don't read every line in detail — focus on paths
+   and cross-refs.
 
-4. **If `--fix`:** Update path references and code examples. Do NOT rewrite
-   skill logic or workflows — only fix factual inaccuracies.
+3. **Report** each finding with skill name and issue. Report "No issues" if
+   the batch is clean.
 
-### Agent 3b: Forge skill documentation
-
-**Goal:** Verify `forge-*` and other non-dev skill SKILL.md files reference
-correct paths and patterns.
-
-1. **Glob** `.claude/skills/forge-*/SKILL.md` and any remaining skills not
-   covered by Agent 3a (e.g. `3d-picking`, `edge-detection`).
-
-2. **Same checks as Agent 3a** — file paths, code examples, cross-references,
-   lesson references, outdated patterns.
-
-3. **Work efficiently** — there are ~40 forge-* skills. Scan each for path
-   references and cross-refs, verify against the filesystem, move on. Don't
-   read every line in detail.
-
-4. **Report** each finding with skill name, line number, and issue.
-
-5. **If `--fix`:** Update path references and code examples. Do NOT rewrite
-   skill logic or workflows — only fix factual inaccuracies.
+4. **If `--fix`:** Update path references. Do NOT rewrite skill logic or
+   workflows — only fix factual inaccuracies.
 
 ### Agent 4: README coverage
 
@@ -350,11 +345,11 @@ After all agents complete, combine their findings into a single report:
 Documentation Review Summary
 ═══════════════════════════════════════════
 
-Project Structure Trees:        X issues found
-Plans:                          X issues found
-Skill Documentation:            X issues found
-README Coverage:                X issues found
-CLAUDE.md Consistency:          X issues found
+Project Structure Trees + Root README:  X issues found
+Plans:                                 X issues found
+Skill Documentation:                   X issues found
+README Coverage:                       X issues found
+CLAUDE.md Consistency:                  X issues found
 
 Total:                          X issues found (Y auto-fixed)
 
