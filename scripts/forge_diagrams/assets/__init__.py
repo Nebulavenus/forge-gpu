@@ -12,6 +12,8 @@ __all__ = [
     "diagram_bundle_layout",
     "diagram_random_vs_sequential",
     "diagram_dependency_graph",
+    "diagram_material_data_flow",
+    "diagram_fmesh_v2_layout",
 ]
 
 from .lesson_02 import (
@@ -30,3 +32,4 @@ from .lesson_05 import (
     diagram_dependency_graph,
     diagram_random_vs_sequential,
 )
+from .lesson_07 import diagram_fmesh_v2_layout, diagram_material_data_flow

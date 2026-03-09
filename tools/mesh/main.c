@@ -4,7 +4,12 @@
  * Reads an OBJ or glTF/GLB file, generates an indexed mesh via vertex
  * deduplication, optimizes the index/vertex layout for GPU efficiency,
  * generates MikkTSpace tangent vectors, produces LOD levels via mesh
- * simplification, and writes a binary .fmesh file with a .meta.json sidecar.
+ * simplification, and writes a binary .fmesh v2 file with submesh tables,
+ * a .fmat material sidecar, and a .meta.json metadata sidecar.
+ *
+ * v2 format adds multi-primitive support: a single .fmesh can contain
+ * multiple submeshes (one per glTF primitive), each with its own material
+ * index.  LOD generation and optimization operate per-submesh.
  *
  * Built as a reusable project-level tool at tools/mesh/ — not scoped to
  * a single lesson.  The Python pipeline plugin invokes it as a subprocess.
@@ -23,7 +28,7 @@
 
 #include <SDL3/SDL.h>
 #include <stdint.h>
-#include <stdio.h>
+/* stdio.h no longer needed — all I/O uses SDL_IOStream */
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,14 +42,14 @@
 
 #define FMESH_MAGIC         "FMSH"
 #define FMESH_MAGIC_SIZE    4
-#define FMESH_VERSION       1
+#define FMESH_VERSION       2
 #define FMESH_FLAG_TANGENTS (1u << 0)
 
 #define MAX_LOD_LEVELS      8
+#define MAX_SUBMESHES       64
 #define DEFAULT_LOD_RATIOS  { 1.0f }
 
 #define HEADER_SIZE         32  /* bytes */
-#define LOD_ENTRY_SIZE      12  /* bytes per LOD */
 
 /* meshopt_optimizeOverdraw threshold: allow up to 5% vertex-cache degradation
  * to improve overdraw.  1.0 = no overdraw optimization; higher = more
@@ -71,13 +76,23 @@ typedef struct MeshVertex {
     float tangent[4]; /* xyz = tangent direction, w = sign/handedness */
 } MeshVertex;
 
-/* ── LOD entry for the binary header ─────────────────────────────────────── */
+/* ── Submesh entry — tracks one primitive's index range and material ────── */
 
-typedef struct LodEntry {
-    unsigned int index_count;
-    unsigned int index_offset;  /* byte offset from start of index data */
-    float        target_error;
-} LodEntry;
+typedef struct SubmeshEntry {
+    unsigned int first_index;     /* first index in the merged index buffer */
+    unsigned int index_count;     /* number of indices for this submesh */
+    int          material_index;  /* index into scene materials, -1 = none */
+} SubmeshEntry;
+
+/* ── LOD-submesh entry for the v2 binary format ──────────────────────────── */
+/* One entry per (LOD, submesh) pair.  Stored as lod_count * submesh_count
+ * entries in row-major order: all submeshes for LOD 0, then LOD 1, etc. */
+
+typedef struct LodSubmeshEntry {
+    unsigned int index_count;     /* number of indices for this submesh at this LOD */
+    unsigned int index_offset;    /* byte offset into the index data section */
+    int          material_index;  /* material for this submesh */
+} LodSubmeshEntry;
 
 /* ── Input format detection ──────────────────────────────────────────────── */
 
@@ -119,15 +134,18 @@ typedef struct ToolOptions {
 
 static bool parse_args(int argc, char *argv[], ToolOptions *opts);
 static bool process_mesh(const ToolOptions *opts);
-static bool write_fmesh(const char *path, const MeshVertex *vertices,
-                         unsigned int vertex_count, unsigned int vertex_stride,
-                         const unsigned int *indices,
-                         const LodEntry *lods, int lod_count,
-                         unsigned int flags);
+static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
+                            unsigned int vertex_count, unsigned int vertex_stride,
+                            const unsigned int *indices,
+                            int lod_count, int submesh_count,
+                            const LodSubmeshEntry *lod_submeshes,
+                            const float *lod_errors,
+                            unsigned int flags);
+static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene);
 static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              unsigned int vertex_count, unsigned int vertex_stride,
-                             bool has_tangents, const LodEntry *lods, int lod_count,
-                             const float *lod_ratios,
+                             bool has_tangents, int lod_count,
+                             const float *lod_ratios, int submesh_count,
                              unsigned int original_vertex_count);
 static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
                                const unsigned int *indices, unsigned int index_count);
@@ -317,7 +335,8 @@ static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
                                const unsigned int *indices, unsigned int index_count)
 {
     /* Zero out tangent data before MikkTSpace writes to it */
-    for (unsigned int i = 0; i < vertex_count; i++) {
+    unsigned int i;
+    for (i = 0; i < vertex_count; i++) {
         vertices[i].tangent[0] = 0.0f;
         vertices[i].tangent[1] = 0.0f;
         vertices[i].tangent[2] = 0.0f;
@@ -349,7 +368,43 @@ static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
     return true;
 }
 
-/* ── Main processing pipeline ────────────────────────────────────────────── */
+/* ── Binary helper ───────────────────────────────────────────────────────── */
+
+/* Write a uint32 in little-endian byte order to an SDL I/O stream.
+ * SDL_IOStream handles locale-independent output and consistent
+ * newline behavior across platforms. */
+static bool write_u32_le(SDL_IOStream *io, uint32_t val)
+{
+    uint8_t bytes[4];
+    bytes[0] = (uint8_t)(val);
+    bytes[1] = (uint8_t)(val >> 8);
+    bytes[2] = (uint8_t)(val >> 16);
+    bytes[3] = (uint8_t)(val >> 24);
+    return SDL_WriteIO(io, bytes, 4) == 4;
+}
+
+/* Write a signed int32 in little-endian byte order. Material indices
+ * can be -1 (no material), so we need signed support. */
+static bool write_i32_le(SDL_IOStream *io, int32_t val)
+{
+    uint32_t uval;
+    memcpy(&uval, &val, sizeof(uval));
+    return write_u32_le(io, uval);
+}
+
+/* ── Filename extraction helper ──────────────────────────────────────────── */
+
+/* Return a pointer to the filename portion of a path (after the last
+ * directory separator).  Returns the original pointer if no separator. */
+static const char *basename_from_path(const char *path)
+{
+    const char *name = path;
+    const char *slash = strrchr(path, '/');
+    if (slash) name = slash + 1;
+    const char *backslash = strrchr(name, '\\');
+    if (backslash) name = backslash + 1;
+    return name;
+}
 
 /* ── Load OBJ into MeshVertex + index buffers ───────────────────────────── */
 
@@ -392,15 +447,18 @@ static bool load_obj(const char *path, bool deduplicate, bool verbose,
         return false;
     }
 
-    for (unsigned int i = 0; i < original_vertex_count; i++) {
-        raw_vertices[i].position[0] = obj_mesh.vertices[i].position.x;
-        raw_vertices[i].position[1] = obj_mesh.vertices[i].position.y;
-        raw_vertices[i].position[2] = obj_mesh.vertices[i].position.z;
-        raw_vertices[i].normal[0]   = obj_mesh.vertices[i].normal.x;
-        raw_vertices[i].normal[1]   = obj_mesh.vertices[i].normal.y;
-        raw_vertices[i].normal[2]   = obj_mesh.vertices[i].normal.z;
-        raw_vertices[i].uv[0]       = obj_mesh.vertices[i].uv.x;
-        raw_vertices[i].uv[1]       = obj_mesh.vertices[i].uv.y;
+    {
+        unsigned int i;
+        for (i = 0; i < original_vertex_count; i++) {
+            raw_vertices[i].position[0] = obj_mesh.vertices[i].position.x;
+            raw_vertices[i].position[1] = obj_mesh.vertices[i].position.y;
+            raw_vertices[i].position[2] = obj_mesh.vertices[i].position.z;
+            raw_vertices[i].normal[0]   = obj_mesh.vertices[i].normal.x;
+            raw_vertices[i].normal[1]   = obj_mesh.vertices[i].normal.y;
+            raw_vertices[i].normal[2]   = obj_mesh.vertices[i].normal.z;
+            raw_vertices[i].uv[0]       = obj_mesh.vertices[i].uv.x;
+            raw_vertices[i].uv[1]       = obj_mesh.vertices[i].uv.y;
+        }
     }
 
     /* OBJ data no longer needed — we've copied everything into MeshVertex */
@@ -462,8 +520,11 @@ static bool load_obj(const char *path, bool deduplicate, bool verbose,
             *out_vertices = NULL;
             return false;
         }
-        for (unsigned int i = 0; i < original_vertex_count; i++) {
-            (*out_indices)[i] = i;
+        {
+            unsigned int i;
+            for (i = 0; i < original_vertex_count; i++) {
+                (*out_indices)[i] = i;
+            }
         }
     }
 
@@ -481,164 +542,234 @@ static bool load_obj(const char *path, bool deduplicate, bool verbose,
     return true;
 }
 
-/* ── Load glTF/GLB into MeshVertex + index buffers ──────────────────────── */
+/* ── Load glTF/GLB into MeshVertex + index buffers (multi-primitive) ───── */
 
 static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                       MeshVertex **out_vertices, unsigned int *out_vertex_count,
                       unsigned int **out_indices, unsigned int *out_index_count,
                       unsigned int *out_original_vertex_count,
-                      bool *out_has_tangents)
+                      bool *out_has_tangents,
+                      SubmeshEntry *out_submeshes, int *out_submesh_count,
+                      ForgeGltfScene *out_scene)
 {
-    ForgeGltfScene scene;
-    if (!forge_gltf_load(path, &scene)) {
+    if (!forge_gltf_load(path, out_scene)) {
         SDL_Log("Error: failed to load glTF '%s'", path);
         return false;
     }
 
-    if (scene.primitive_count == 0) {
+    if (out_scene->primitive_count == 0) {
         SDL_Log("Error: glTF scene has no primitives");
-        forge_gltf_free(&scene);
+        forge_gltf_free(out_scene);
         return false;
     }
 
-    /* Process the first primitive. Multi-primitive scenes (multiple
-     * materials) would need one .fmesh per primitive — a future extension.
-     * For now, take the first and warn if there are more. */
-    if (scene.primitive_count > 1 && verbose) {
-        SDL_Log("Note: glTF has %d primitives; processing only the first",
-                scene.primitive_count);
-    }
-
-    ForgeGltfPrimitive *prim = &scene.primitives[0];
-    unsigned int prim_vert_count  = prim->vertex_count;
-    unsigned int prim_index_count = prim->index_count;
-
-    if (prim_vert_count == 0) {
-        SDL_Log("Error: glTF primitive has no vertices");
-        forge_gltf_free(&scene);
+    if (out_scene->primitive_count > MAX_SUBMESHES) {
+        SDL_Log("Error: glTF has %d primitives (max %d)",
+                out_scene->primitive_count, MAX_SUBMESHES);
+        forge_gltf_free(out_scene);
         return false;
     }
 
-    *out_original_vertex_count = prim_vert_count;
-    *out_has_tangents = prim->has_tangents;
+    /* ── First pass: count total vertices and indices across all primitives
+     * so we can allocate merged buffers upfront.  Use 64-bit accumulators
+     * to detect overflow before truncating to 32-bit. */
+    Uint64 total_verts_64 = 0;
+    Uint64 total_indices_64 = 0;
+    bool any_has_tangents = false;
+    bool all_have_tangents = true;
+    int prim_count = out_scene->primitive_count;
+    int p;
+
+    for (p = 0; p < prim_count; p++) {
+        ForgeGltfPrimitive *prim = &out_scene->primitives[p];
+        total_verts_64 += prim->vertex_count;
+
+        if (prim->index_count > 0 && prim->indices) {
+            total_indices_64 += prim->index_count;
+        } else {
+            /* Non-indexed primitive: will generate identity indices */
+            total_indices_64 += prim->vertex_count;
+        }
+
+        if (prim->has_tangents) {
+            any_has_tangents = true;
+        } else {
+            all_have_tangents = false;
+        }
+    }
+
+    if (total_verts_64 > SDL_MAX_UINT32 || total_indices_64 > SDL_MAX_UINT32) {
+        SDL_Log("Error: merged vertex/index counts overflow 32-bit "
+                "(verts=%" SDL_PRIu64 ", indices=%" SDL_PRIu64 ")",
+                total_verts_64, total_indices_64);
+        forge_gltf_free(out_scene);
+        return false;
+    }
+
+    unsigned int total_verts   = (unsigned int)total_verts_64;
+    unsigned int total_indices = (unsigned int)total_indices_64;
+
+    if (total_verts == 0) {
+        SDL_Log("Error: glTF scene has no vertices across %d primitives",
+                prim_count);
+        forge_gltf_free(out_scene);
+        return false;
+    }
+
+    *out_original_vertex_count = total_verts;
+    /* If any primitive is missing tangents, MikkTSpace should regenerate
+     * for the whole mesh — so we need ALL primitives to have tangents. */
+    *out_has_tangents = all_have_tangents;
 
     if (verbose) {
-        SDL_Log("Input: %u vertices, %u indices (%u triangles) from '%s'",
-                prim_vert_count, prim_index_count, prim_index_count / 3, path);
-        if (prim->has_tangents) {
-            SDL_Log("  glTF provides tangent vectors — skipping MikkTSpace");
+        SDL_Log("Input: %u vertices, %u indices (%u triangles) across "
+                "%d primitives from '%s'",
+                total_verts, total_indices, total_indices / 3,
+                prim_count, path);
+        if (all_have_tangents) {
+            SDL_Log("  glTF provides tangent vectors on all primitives");
+        } else if (any_has_tangents) {
+            SDL_Log("  glTF provides tangent vectors on some primitives "
+                    "(MikkTSpace will regenerate for consistency)");
         }
     }
 
-    /* Convert ForgeGltfVertex to MeshVertex (same layout: pos/normal/uv).
-     * If glTF provides tangents, copy them too. */
-    MeshVertex *verts = (MeshVertex *)SDL_calloc(
-        prim_vert_count, sizeof(MeshVertex));
+    /* ── Allocate merged buffers ─────────────────────────────────────────── */
+    MeshVertex *verts = (MeshVertex *)SDL_calloc(total_verts, sizeof(MeshVertex));
     if (!verts) {
-        SDL_Log("Error: allocation failed for %u vertices", prim_vert_count);
-        forge_gltf_free(&scene);
+        SDL_Log("Error: allocation failed for %u vertices", total_verts);
+        forge_gltf_free(out_scene);
         return false;
     }
 
-    for (unsigned int i = 0; i < prim_vert_count; i++) {
-        verts[i].position[0] = prim->vertices[i].position.x;
-        verts[i].position[1] = prim->vertices[i].position.y;
-        verts[i].position[2] = prim->vertices[i].position.z;
-        verts[i].normal[0]   = prim->vertices[i].normal.x;
-        verts[i].normal[1]   = prim->vertices[i].normal.y;
-        verts[i].normal[2]   = prim->vertices[i].normal.z;
-        verts[i].uv[0]       = prim->vertices[i].uv.x;
-        verts[i].uv[1]       = prim->vertices[i].uv.y;
-
-        if (prim->has_tangents && prim->tangents) {
-            verts[i].tangent[0] = prim->tangents[i].x;
-            verts[i].tangent[1] = prim->tangents[i].y;
-            verts[i].tangent[2] = prim->tangents[i].z;
-            verts[i].tangent[3] = prim->tangents[i].w;
-        }
+    unsigned int *idx_buf = (unsigned int *)SDL_malloc(
+        sizeof(unsigned int) * total_indices);
+    if (!idx_buf) {
+        SDL_Log("Error: allocation failed for %u indices", total_indices);
+        SDL_free(verts);
+        forge_gltf_free(out_scene);
+        return false;
     }
 
-    /* Convert indices to uint32. glTF primitives may use uint16 or uint32
-     * index stride, and may have no indices at all (non-indexed draw). */
-    unsigned int idx_count;
-    unsigned int *idx_buf;
+    /* ── Second pass: copy vertex/index data from each primitive ─────────
+     * Each primitive's indices are offset by the cumulative vertex count
+     * so they reference the correct position in the merged vertex buffer. */
+    unsigned int vert_offset = 0;
+    unsigned int idx_offset = 0;
+    *out_submesh_count = 0;
 
-    if (prim_index_count > 0 && prim->indices) {
-        idx_count = prim_index_count;
-        idx_buf = (unsigned int *)SDL_malloc(sizeof(unsigned int) * idx_count);
-        if (!idx_buf) {
-            SDL_Log("Error: allocation failed for index buffer");
-            SDL_free(verts);
-            forge_gltf_free(&scene);
-            return false;
+    for (p = 0; p < prim_count; p++) {
+        ForgeGltfPrimitive *prim = &out_scene->primitives[p];
+        unsigned int pv_count = prim->vertex_count;
+        unsigned int pi_count;
+        unsigned int i;
+
+        /* Copy vertices into the merged buffer */
+        for (i = 0; i < pv_count; i++) {
+            unsigned int dst = vert_offset + i;
+            verts[dst].position[0] = prim->vertices[i].position.x;
+            verts[dst].position[1] = prim->vertices[i].position.y;
+            verts[dst].position[2] = prim->vertices[i].position.z;
+            verts[dst].normal[0]   = prim->vertices[i].normal.x;
+            verts[dst].normal[1]   = prim->vertices[i].normal.y;
+            verts[dst].normal[2]   = prim->vertices[i].normal.z;
+            verts[dst].uv[0]       = prim->vertices[i].uv.x;
+            verts[dst].uv[1]       = prim->vertices[i].uv.y;
+
+            /* Only copy tangents into the merged buffer when ALL primitives
+             * supply them.  If some are missing, tangents will be regenerated
+             * by MikkTSpace later.  Including partial tangent data in the
+             * remap key would prevent deduplication of otherwise-identical
+             * vertices across primitive boundaries. */
+            if (all_have_tangents && prim->has_tangents && prim->tangents) {
+                verts[dst].tangent[0] = prim->tangents[i].x;
+                verts[dst].tangent[1] = prim->tangents[i].y;
+                verts[dst].tangent[2] = prim->tangents[i].z;
+                verts[dst].tangent[3] = prim->tangents[i].w;
+            }
         }
 
-        if (prim->index_stride == 2) {
-            const Uint16 *src = (const Uint16 *)prim->indices;
-            for (unsigned int i = 0; i < idx_count; i++) {
-                idx_buf[i] = (unsigned int)src[i];
-            }
-        } else if (prim->index_stride == 4) {
-            const Uint32 *src = (const Uint32 *)prim->indices;
-            for (unsigned int i = 0; i < idx_count; i++) {
-                idx_buf[i] = (unsigned int)src[i];
+        /* Copy indices, adjusting by the vertex offset so they reference
+         * the correct vertices in the merged buffer */
+        if (prim->index_count > 0 && prim->indices) {
+            pi_count = prim->index_count;
+            if (prim->index_stride == 2) {
+                const Uint16 *src = (const Uint16 *)prim->indices;
+                for (i = 0; i < pi_count; i++) {
+                    idx_buf[idx_offset + i] = (unsigned int)src[i] + vert_offset;
+                }
+            } else if (prim->index_stride == 4) {
+                const Uint32 *src = (const Uint32 *)prim->indices;
+                for (i = 0; i < pi_count; i++) {
+                    idx_buf[idx_offset + i] = (unsigned int)src[i] + vert_offset;
+                }
+            } else {
+                SDL_Log("Error: primitive %d has unexpected index stride %u "
+                        "(expected 2 or 4)", p, prim->index_stride);
+                SDL_free(verts);
+                SDL_free(idx_buf);
+                forge_gltf_free(out_scene);
+                return false;
             }
         } else {
-            SDL_Log("Error: unexpected glTF index stride %u (expected 2 or 4)",
-                    prim->index_stride);
+            /* Non-indexed primitive: generate identity indices offset by
+             * the cumulative vertex count */
+            pi_count = pv_count;
+            for (i = 0; i < pi_count; i++) {
+                idx_buf[idx_offset + i] = vert_offset + i;
+            }
+        }
+
+        /* Validate: this primitive's index count must be a multiple of 3 */
+        if (pi_count == 0 || pi_count % 3 != 0) {
+            SDL_Log("Error: primitive %d has %u indices "
+                    "(expected non-zero multiple of 3)", p, pi_count);
+            SDL_free(verts);
             SDL_free(idx_buf);
-            SDL_free(verts);
-            forge_gltf_free(&scene);
+            forge_gltf_free(out_scene);
             return false;
         }
-    } else {
-        /* Non-indexed primitive: generate identity indices */
-        idx_count = prim_vert_count;
-        idx_buf = (unsigned int *)SDL_malloc(sizeof(unsigned int) * idx_count);
-        if (!idx_buf) {
-            SDL_Log("Error: allocation failed for identity index buffer");
-            SDL_free(verts);
-            forge_gltf_free(&scene);
-            return false;
+
+        /* Record submesh entry for this primitive */
+        out_submeshes[*out_submesh_count].first_index    = idx_offset;
+        out_submeshes[*out_submesh_count].index_count    = pi_count;
+        out_submeshes[*out_submesh_count].material_index = prim->material_index;
+        (*out_submesh_count)++;
+
+        if (verbose) {
+            SDL_Log("  Primitive %d: %u verts, %u indices, material %d",
+                    p, pv_count, pi_count, prim->material_index);
         }
-        for (unsigned int i = 0; i < idx_count; i++) {
-            idx_buf[i] = i;
-        }
+
+        vert_offset += pv_count;
+        idx_offset  += pi_count;
     }
 
-    /* Validate triangle mesh: index count must be a non-zero multiple of 3 */
-    if (idx_count == 0 || idx_count % 3 != 0) {
-        SDL_Log("Error: glTF has %u indices (expected non-zero multiple of 3)",
-                idx_count);
-        SDL_free(idx_buf);
-        SDL_free(verts);
-        forge_gltf_free(&scene);
-        return false;
-    }
+    /* NOTE: We do NOT free the scene here — caller needs the material data
+     * for write_fmat().  Caller is responsible for forge_gltf_free(). */
 
-    /* glTF data no longer needed */
-    forge_gltf_free(&scene);
-
-    /* glTF vertices are already indexed, but deduplication can still help
-     * if the exporter produced redundant vertices. */
+    /* ── Optional deduplication on the merged buffer ─────────────────────
+     * glTF vertices are already indexed per-primitive, but deduplication
+     * can still merge vertices shared across primitive boundaries. */
     if (deduplicate) {
         unsigned int *remap = (unsigned int *)SDL_malloc(
-            sizeof(unsigned int) * prim_vert_count);
+            sizeof(unsigned int) * total_verts);
         if (!remap) {
             SDL_Log("Error: allocation failed for remap table");
             SDL_free(verts);
             SDL_free(idx_buf);
+            forge_gltf_free(out_scene);
             return false;
         }
 
         size_t unique = meshopt_generateVertexRemap(
-            remap, idx_buf, idx_count,
-            verts, prim_vert_count, sizeof(MeshVertex));
+            remap, idx_buf, total_indices,
+            verts, total_verts, sizeof(MeshVertex));
 
         MeshVertex *deduped = (MeshVertex *)SDL_calloc(
             unique, sizeof(MeshVertex));
         unsigned int *new_indices = (unsigned int *)SDL_malloc(
-            sizeof(unsigned int) * idx_count);
+            sizeof(unsigned int) * total_indices);
 
         if (!deduped || !new_indices) {
             SDL_Log("Error: allocation failed for remapped buffers");
@@ -647,12 +778,13 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
             SDL_free(idx_buf);
             SDL_free(deduped);
             SDL_free(new_indices);
+            forge_gltf_free(out_scene);
             return false;
         }
 
-        meshopt_remapVertexBuffer(deduped, verts, prim_vert_count,
+        meshopt_remapVertexBuffer(deduped, verts, total_verts,
                                    sizeof(MeshVertex), remap);
-        meshopt_remapIndexBuffer(new_indices, idx_buf, idx_count, remap);
+        meshopt_remapIndexBuffer(new_indices, idx_buf, total_indices, remap);
 
         SDL_free(remap);
         SDL_free(verts);
@@ -660,16 +792,16 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         verts   = deduped;
         idx_buf = new_indices;
         *out_vertex_count = (unsigned int)unique;
-        *out_index_count  = idx_count;
+        *out_index_count  = total_indices;
 
         if (verbose) {
-            float ratio = (float)unique / (float)prim_vert_count;
+            float ratio = (float)unique / (float)total_verts;
             SDL_Log("Deduplication: %u -> %zu vertices (%.1f%% of original)",
-                    prim_vert_count, unique, (double)(ratio * 100.0f));
+                    total_verts, unique, (double)(ratio * 100.0f));
         }
     } else {
-        *out_vertex_count = prim_vert_count;
-        *out_index_count  = idx_count;
+        *out_vertex_count = total_verts;
+        *out_index_count  = total_indices;
 
         if (verbose) {
             SDL_Log("Deduplication: skipped (--no-deduplicate)");
@@ -697,73 +829,98 @@ static bool process_mesh(const ToolOptions *opts)
     unsigned int  vertex_count = 0;
     unsigned int  index_count  = 0;
     unsigned int  original_vertex_count = 0;
-    bool          gltf_has_tangents = false; /* true if glTF provided tangents */
+    bool          gltf_has_tangents = false;
+
+    /* Submesh tracking — OBJ produces 1 submesh, glTF can produce many */
+    SubmeshEntry  submeshes[MAX_SUBMESHES];
+    int           submesh_count = 0;
+
+    /* glTF scene kept alive for material extraction (write_fmat).
+     * Heap-allocated because ForgeGltfScene is too large for the stack
+     * (materials, nodes, skins with path arrays and matrices). */
+    ForgeGltfScene *gltf_scene = NULL;
+    bool            has_gltf_scene = false;
+
+    memset(submeshes, 0, sizeof(submeshes));
 
     /* ── Step 1–3: Load and deduplicate ──────────────────────────────────
-     * OBJ: de-indexed → deduplicate → indexed mesh
-     * glTF: already indexed → optional deduplication */
+     * OBJ: de-indexed -> deduplicate -> indexed mesh (single submesh)
+     * glTF: already indexed -> optional deduplication (multi-submesh) */
     if (format == FORMAT_GLTF) {
-        if (!load_gltf(opts->input_path, opts->deduplicate, opts->verbose,
-                       &vertices, &vertex_count, &indices, &index_count,
-                       &original_vertex_count, &gltf_has_tangents)) {
+        gltf_scene = (ForgeGltfScene *)SDL_calloc(1, sizeof(ForgeGltfScene));
+        if (!gltf_scene) {
+            SDL_Log("Error: allocation failed for glTF scene");
             return false;
         }
+        if (!load_gltf(opts->input_path, opts->deduplicate, opts->verbose,
+                       &vertices, &vertex_count, &indices, &index_count,
+                       &original_vertex_count, &gltf_has_tangents,
+                       submeshes, &submesh_count, gltf_scene)) {
+            SDL_free(gltf_scene);
+            return false;
+        }
+        has_gltf_scene = true;
     } else {
         if (!load_obj(opts->input_path, opts->deduplicate, opts->verbose,
                       &vertices, &vertex_count, &indices, &index_count,
                       &original_vertex_count)) {
             return false;
         }
+        /* OBJ produces a single submesh covering all indices */
+        submesh_count = 1;
+        submeshes[0].first_index    = 0;
+        submeshes[0].index_count    = index_count;
+        submeshes[0].material_index = -1;
     }
 
     /* ── Step 4: Index/vertex optimization ───────────────────────────────
-     * Three passes that reorder data for better GPU performance:
-     *
-     * 1. Vertex cache: Reorder triangles so consecutive triangles share
-     *    vertices that are still in the GPU's post-transform cache.
-     *
-     * 2. Overdraw: Reorder triangles to minimize pixels shaded multiple
-     *    times. Requires position data for occlusion estimation.
-     *
-     * 3. Vertex fetch: Reorder the vertex buffer itself so vertices are
-     *    accessed in roughly sequential order, improving memory locality. */
+     * Vertex cache and overdraw run per-submesh because each submesh is
+     * a separate draw call.  Vertex fetch runs on the full merged buffer
+     * because all submeshes share one vertex buffer. */
     if (opts->optimize) {
-        /* Pass 1: Vertex cache optimization */
-        meshopt_optimizeVertexCache(indices, indices, index_count, vertex_count);
+        int s;
+        for (s = 0; s < submesh_count; s++) {
+            unsigned int *sub_idx = indices + submeshes[s].first_index;
+            unsigned int  sub_cnt = submeshes[s].index_count;
 
-        /* Pass 2: Overdraw optimization — needs positions and the stride
-         * between consecutive position entries in the vertex buffer */
-        meshopt_optimizeOverdraw(indices, indices, index_count,
-                                  &vertices[0].position[0],
-                                  vertex_count, sizeof(MeshVertex),
-                                  OVERDRAW_THRESHOLD);
+            /* Pass 1: Vertex cache optimization — reorder triangles so
+             * consecutive triangles share vertices in the post-transform cache */
+            meshopt_optimizeVertexCache(sub_idx, sub_idx, sub_cnt, vertex_count);
+
+            /* Pass 2: Overdraw optimization — reorder triangles to reduce
+             * pixels shaded multiple times */
+            meshopt_optimizeOverdraw(sub_idx, sub_idx, sub_cnt,
+                                      &vertices[0].position[0],
+                                      vertex_count, sizeof(MeshVertex),
+                                      OVERDRAW_THRESHOLD);
+        }
 
         /* Pass 3: Vertex fetch optimization — reorders the vertex buffer
-         * and updates indices to match */
+         * so vertices are accessed sequentially, improving memory locality.
+         * Runs on the entire merged buffer (all submeshes share vertices). */
         meshopt_optimizeVertexFetch(vertices, indices, index_count,
                                      vertices, vertex_count, sizeof(MeshVertex));
 
         if (opts->verbose) {
-            SDL_Log("Optimization: vertex cache + overdraw + fetch complete");
+            SDL_Log("Optimization: per-submesh cache/overdraw + "
+                    "global fetch complete");
         }
     }
 
     /* ── Step 5: Tangent generation ──────────────────────────────────────
      * MikkTSpace computes per-vertex tangent vectors from the mesh's
-     * positions, normals, and UVs. The tangent frame (tangent, bitangent,
-     * normal) is essential for normal mapping — it defines the coordinate
-     * system that transforms tangent-space normal map values into world
-     * space.
-     *
-     * We run this after optimization because the index buffer is now in
-     * its final order, and MikkTSpace uses the indices to identify shared
-     * vertices and average their tangent contributions. */
-    bool has_tangents = gltf_has_tangents; /* glTF may already provide them */
+     * positions, normals, and UVs. We run this after optimization because
+     * the index buffer is now in its final order. */
+    bool has_tangents = gltf_has_tangents;
 
     if (opts->generate_tangents && !gltf_has_tangents) {
         if (!generate_tangents(vertices, vertex_count, indices, index_count)) {
             SDL_free(vertices);
             SDL_free(indices);
+            if (has_gltf_scene) {
+                forge_gltf_free(gltf_scene);
+                SDL_free(gltf_scene);
+            }
             return false;
         }
         has_tangents = true;
@@ -775,87 +932,138 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_Log("Tangent generation: skipped (glTF provides tangent vectors)");
     }
 
-    /* ── Step 6: LOD generation ──────────────────────────────────────────
-     * Each LOD level simplifies the base mesh to a target triangle count.
-     * meshopt_simplify uses edge collapse to progressively remove vertices
-     * while preserving the mesh's visual shape as much as possible.
+    /* ── Step 6: LOD generation (per-submesh per LOD) ────────────────────
+     * For each LOD level, simplify each submesh independently. The result
+     * is a 2D table: lod_count x submesh_count LodSubmeshEntry values.
      *
-     * LOD 0 is always the full-detail mesh. Additional LODs are generated
-     * for each ratio < 1.0 in the --lod-levels list. */
-    LodEntry lods[MAX_LOD_LEVELS];
-    memset(lods, 0, sizeof(lods));
+     * LOD 0 is always the full-detail mesh. Additional LODs simplify each
+     * submesh to a reduced triangle count using meshopt_simplify. */
+    int total_lod_submeshes = opts->lod_count * submesh_count;
+    LodSubmeshEntry *lod_submeshes = (LodSubmeshEntry *)SDL_calloc(
+        (size_t)total_lod_submeshes, sizeof(LodSubmeshEntry));
+    float *lod_errors = (float *)SDL_calloc(
+        (size_t)opts->lod_count, sizeof(float));
 
-    /* We'll concatenate all LOD index buffers into one allocation.
-     * Worst case: each LOD has as many indices as the base mesh.
-     * Guard against integer overflow for very large meshes. */
-    if (index_count > SDL_MAX_UINT32 / (unsigned int)opts->lod_count) {
-        SDL_Log("Error: index count %u too large for %d LOD levels",
-                index_count, opts->lod_count);
+    if (!lod_submeshes || !lod_errors) {
+        SDL_Log("Error: allocation failed for LOD-submesh table");
+        SDL_free(lod_submeshes);
+        SDL_free(lod_errors);
         SDL_free(vertices);
         SDL_free(indices);
+        if (has_gltf_scene) {
+            forge_gltf_free(gltf_scene);
+            SDL_free(gltf_scene);
+        }
         return false;
     }
+
+    /* Worst case: each LOD has as many indices as the base mesh.
+     * Guard against byte-offset overflow: the serialized submesh
+     * index_offset is a 32-bit byte offset, so total LOD index data
+     * must fit in UINT32_MAX bytes. */
+    Uint64 max_total_bytes = (Uint64)index_count
+                           * (Uint64)opts->lod_count
+                           * (Uint64)sizeof(unsigned int);
+    if (max_total_bytes > SDL_MAX_UINT32) {
+        SDL_Log("Error: LOD index data would exceed 32-bit byte offset "
+                "(%u indices x %d LODs x 4 bytes = %" SDL_PRIu64 ")",
+                index_count, opts->lod_count, max_total_bytes);
+        SDL_free(lod_submeshes);
+        SDL_free(lod_errors);
+        SDL_free(vertices);
+        SDL_free(indices);
+        if (has_gltf_scene) {
+            forge_gltf_free(gltf_scene);
+            SDL_free(gltf_scene);
+        }
+        return false;
+    }
+
     unsigned int max_total_indices = index_count * (unsigned int)opts->lod_count;
     unsigned int *all_indices = (unsigned int *)SDL_malloc(
         sizeof(unsigned int) * max_total_indices);
     if (!all_indices) {
         SDL_Log("Error: allocation failed for LOD index data");
+        SDL_free(lod_submeshes);
+        SDL_free(lod_errors);
         SDL_free(vertices);
         SDL_free(indices);
+        if (has_gltf_scene) {
+            forge_gltf_free(gltf_scene);
+            SDL_free(gltf_scene);
+        }
         return false;
     }
 
-    unsigned int total_index_count = 0;
+    unsigned int total_output_indices = 0;
 
-    for (int lod = 0; lod < opts->lod_count; lod++) {
-        float ratio = opts->lod_ratios[lod];
+    {
+        int lod;
+        for (lod = 0; lod < opts->lod_count; lod++) {
+            float ratio = opts->lod_ratios[lod];
+            float max_error_this_lod = 0.0f;
+            int s;
 
-        if (ratio >= 1.0f) {
-            /* LOD 0 (full detail): copy the base indices directly */
-            memcpy(all_indices + total_index_count, indices,
-                   sizeof(unsigned int) * index_count);
+            for (s = 0; s < submesh_count; s++) {
+                int entry_idx = lod * submesh_count + s;
+                unsigned int sub_first = submeshes[s].first_index;
+                unsigned int sub_count = submeshes[s].index_count;
+                unsigned int *dest = all_indices + total_output_indices;
 
-            lods[lod].index_count  = index_count;
-            lods[lod].index_offset = total_index_count * (unsigned int)sizeof(unsigned int);
-            lods[lod].target_error = 0.0f;
+                if (ratio >= 1.0f) {
+                    /* Full detail: copy this submesh's indices directly */
+                    memcpy(dest, indices + sub_first,
+                           sizeof(unsigned int) * sub_count);
 
-            if (opts->verbose) {
-                SDL_Log("LOD %d: %u indices (ratio %.2f, full detail)",
-                        lod, index_count, (double)ratio);
+                    lod_submeshes[entry_idx].index_count  = sub_count;
+                    lod_submeshes[entry_idx].index_offset =
+                        total_output_indices * (unsigned int)sizeof(unsigned int);
+                    lod_submeshes[entry_idx].material_index =
+                        submeshes[s].material_index;
+                } else {
+                    /* Simplified: target a reduced triangle count for
+                     * this submesh */
+                    unsigned int target = (unsigned int)(
+                        (float)sub_count * ratio);
+                    /* Round down to a multiple of 3 (complete triangles) */
+                    target = (target / 3) * 3;
+                    if (target < 3) target = 3;
+
+                    float result_error = 0.0f;
+
+                    unsigned int simplified = (unsigned int)meshopt_simplify(
+                        dest,
+                        indices + sub_first, sub_count,
+                        &vertices[0].position[0],
+                        vertex_count,
+                        sizeof(MeshVertex),
+                        target,
+                        SIMPLIFY_TARGET_ERROR,
+                        0,      /* options: default */
+                        &result_error);
+
+                    lod_submeshes[entry_idx].index_count  = simplified;
+                    lod_submeshes[entry_idx].index_offset =
+                        total_output_indices * (unsigned int)sizeof(unsigned int);
+                    lod_submeshes[entry_idx].material_index =
+                        submeshes[s].material_index;
+
+                    if (result_error > max_error_this_lod) {
+                        max_error_this_lod = result_error;
+                    }
+                }
+
+                if (opts->verbose) {
+                    SDL_Log("LOD %d submesh %d: %u indices (ratio %.2f)",
+                            lod, s, lod_submeshes[entry_idx].index_count,
+                            (double)ratio);
+                }
+
+                total_output_indices += lod_submeshes[entry_idx].index_count;
             }
-        } else {
-            /* Simplified LOD: target a reduced triangle count */
-            unsigned int target_index_count =
-                (unsigned int)((float)index_count * ratio);
-            /* Round down to a multiple of 3 (complete triangles) */
-            target_index_count = (target_index_count / 3) * 3;
-            if (target_index_count < 3) target_index_count = 3;
 
-            float result_error = 0.0f;
-
-            unsigned int simplified_count = (unsigned int)meshopt_simplify(
-                all_indices + total_index_count,
-                indices, index_count,
-                &vertices[0].position[0],
-                vertex_count,
-                sizeof(MeshVertex),
-                target_index_count,
-                SIMPLIFY_TARGET_ERROR,
-                0,      /* options: default */
-                &result_error);
-
-            lods[lod].index_count  = simplified_count;
-            lods[lod].index_offset = total_index_count * (unsigned int)sizeof(unsigned int);
-            lods[lod].target_error = result_error;
-
-            if (opts->verbose) {
-                SDL_Log("LOD %d: %u indices (ratio %.2f, target %u, error %.6f)",
-                        lod, simplified_count, (double)ratio,
-                        target_index_count, (double)result_error);
-            }
+            lod_errors[lod] = max_error_this_lod;
         }
-
-        total_index_count += lods[lod].index_count;
     }
 
     /* Base indices no longer needed — LOD data is in all_indices */
@@ -875,133 +1083,372 @@ static bool process_mesh(const ToolOptions *opts)
         vertex_stride = (unsigned int)VERTEX_STRIDE_NO_TAN;
     }
 
-    /* ── Step 8: Write binary .fmesh ─────────────────────────────────────*/
-    bool ok = write_fmesh(opts->output_path, vertices, vertex_count,
-                           vertex_stride, all_indices,
-                           lods, opts->lod_count, flags);
+    /* ── Step 8: Write binary .fmesh v2 ──────────────────────────────────*/
+    bool ok = write_fmesh_v2(opts->output_path, vertices, vertex_count,
+                              vertex_stride, all_indices,
+                              opts->lod_count, submesh_count,
+                              lod_submeshes, lod_errors, flags);
     if (!ok) {
         SDL_free(vertices);
         SDL_free(all_indices);
+        SDL_free(lod_submeshes);
+        SDL_free(lod_errors);
+        if (has_gltf_scene) {
+            forge_gltf_free(gltf_scene);
+            SDL_free(gltf_scene);
+        }
         return false;
     }
 
-    /* ── Step 9: Write .meta.json sidecar ────────────────────────────────*/
+    /* ── Step 9: Write .fmat material sidecar (glTF only) ────────────────*/
+    if (has_gltf_scene && gltf_scene->material_count > 0) {
+        ok = write_fmat(opts->output_path, gltf_scene);
+        if (!ok) {
+            SDL_Log("Error: failed to write .fmat sidecar");
+            SDL_free(vertices);
+            SDL_free(all_indices);
+            SDL_free(lod_submeshes);
+            SDL_free(lod_errors);
+            if (has_gltf_scene) {
+                forge_gltf_free(gltf_scene);
+                SDL_free(gltf_scene);
+            }
+            return false;
+        }
+    }
+
+    /* ── Step 10: Write .meta.json sidecar ───────────────────────────────*/
     ok = write_meta_json(opts->output_path, opts->input_path,
-                          vertex_count, vertex_stride,
-                          has_tangents,
-                          lods, opts->lod_count, opts->lod_ratios,
+                          vertex_count, vertex_stride, has_tangents,
+                          opts->lod_count, opts->lod_ratios, submesh_count,
                           original_vertex_count);
 
     if (ok && opts->verbose) {
-        SDL_Log("Output: '%s' (%u vertices, %u LODs, stride %u bytes)",
-                opts->output_path, vertex_count, opts->lod_count, vertex_stride);
+        SDL_Log("Output: '%s' (%u vertices, %d submeshes, %d LODs, "
+                "stride %u bytes)",
+                opts->output_path, vertex_count, submesh_count,
+                opts->lod_count, vertex_stride);
     }
 
     SDL_free(vertices);
     SDL_free(all_indices);
+    SDL_free(lod_submeshes);
+    SDL_free(lod_errors);
+    if (has_gltf_scene) {
+        forge_gltf_free(gltf_scene);
+        SDL_free(gltf_scene);
+    }
     return ok;
 }
 
-/* ── Binary .fmesh writer ────────────────────────────────────────────────── */
+/* ── Binary .fmesh v2 writer ─────────────────────────────────────────────── */
 
-/* Write a uint32 in little-endian byte order using standard C I/O.
- * This avoids depending on SDL_IOStream / SDL_WriteU32LE, which are not
- * available in the SDL3 shim used for console-only builds. */
-static bool write_u32_le(FILE *fp, uint32_t val)
+static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
+                            unsigned int vertex_count, unsigned int vertex_stride,
+                            const unsigned int *indices,
+                            int lod_count, int submesh_count,
+                            const LodSubmeshEntry *lod_submeshes,
+                            const float *lod_errors,
+                            unsigned int flags)
 {
-    uint8_t bytes[4];
-    bytes[0] = (uint8_t)(val);
-    bytes[1] = (uint8_t)(val >> 8);
-    bytes[2] = (uint8_t)(val >> 16);
-    bytes[3] = (uint8_t)(val >> 24);
-    return fwrite(bytes, 1, 4, fp) == 4;
-}
-
-static bool write_fmesh(const char *path, const MeshVertex *vertices,
-                         unsigned int vertex_count, unsigned int vertex_stride,
-                         const unsigned int *indices,
-                         const LodEntry *lods, int lod_count,
-                         unsigned int flags)
-{
-    FILE *fp = fopen(path, "wb");
-    if (!fp) {
-        SDL_Log("Error: failed to open '%s' for writing", path);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("Error: failed to open '%s' for writing: %s",
+                path, SDL_GetError());
         return false;
     }
 
     /* ── Header (32 bytes) ───────────────────────────────────────────────
-     *   magic:         4 bytes  "FMSH"
-     *   version:       4 bytes  uint32
-     *   vertex_count:  4 bytes  uint32
-     *   vertex_stride: 4 bytes  uint32
-     *   lod_count:     4 bytes  uint32
-     *   flags:         4 bytes  uint32
-     *   reserved:      8 bytes  padding */
-    uint8_t reserved[8];
+     *   magic:          4 bytes  "FMSH"
+     *   version:        4 bytes  uint32 (2)
+     *   vertex_count:   4 bytes  uint32
+     *   vertex_stride:  4 bytes  uint32
+     *   lod_count:      4 bytes  uint32
+     *   flags:          4 bytes  uint32
+     *   submesh_count:  4 bytes  uint32  (NEW in v2)
+     *   reserved:       4 bytes  padding (shrunk from 8 to 4) */
+    uint8_t reserved[4];
     memset(reserved, 0, sizeof(reserved));
 
     bool ok = true;
-    ok = ok && (fwrite(FMESH_MAGIC, 1, FMESH_MAGIC_SIZE, fp) == FMESH_MAGIC_SIZE);
-    ok = ok && write_u32_le(fp, FMESH_VERSION);
-    ok = ok && write_u32_le(fp, vertex_count);
-    ok = ok && write_u32_le(fp, vertex_stride);
-    ok = ok && write_u32_le(fp, (uint32_t)lod_count);
-    ok = ok && write_u32_le(fp, flags);
-    ok = ok && (fwrite(reserved, 1, sizeof(reserved), fp) == sizeof(reserved));
+    ok = ok && (SDL_WriteIO(io, FMESH_MAGIC, FMESH_MAGIC_SIZE) == FMESH_MAGIC_SIZE);
+    ok = ok && write_u32_le(io, FMESH_VERSION);
+    ok = ok && write_u32_le(io, vertex_count);
+    ok = ok && write_u32_le(io, vertex_stride);
+    ok = ok && write_u32_le(io, (uint32_t)lod_count);
+    ok = ok && write_u32_le(io, flags);
+    ok = ok && write_u32_le(io, (uint32_t)submesh_count);
+    ok = ok && (SDL_WriteIO(io, reserved, sizeof(reserved)) == sizeof(reserved));
 
     if (!ok) {
         SDL_Log("Error: failed writing .fmesh header");
-        fclose(fp);
+        SDL_CloseIO(io);
         return false;
     }
 
-    /* ── LOD entries (12 bytes each) ─────────────────────────────────────
-     * Each entry stores the index count, byte offset into the index data
-     * section, and the simplification error metric. */
-    for (int i = 0; i < lod_count; i++) {
-        ok = ok && write_u32_le(fp, lods[i].index_count);
-        ok = ok && write_u32_le(fp, lods[i].index_offset);
+    /* ── LOD-submesh table ───────────────────────────────────────────────
+     * For each LOD:
+     *   target_error (float as u32)
+     *   For each submesh:
+     *     index_count (u32)
+     *     index_offset (u32) — byte offset into index section
+     *     material_index (i32) */
+    {
+        int lod;
+        for (lod = 0; lod < lod_count; lod++) {
+            /* Write target error as float bits */
+            uint32_t error_bits;
+            memcpy(&error_bits, &lod_errors[lod], sizeof(error_bits));
+            ok = ok && write_u32_le(io, error_bits);
 
-        /* Write float as raw bytes in little-endian. */
-        uint32_t error_bits;
-        memcpy(&error_bits, &lods[i].target_error, sizeof(error_bits));
-        ok = ok && write_u32_le(fp, error_bits);
+            int s;
+            for (s = 0; s < submesh_count; s++) {
+                int entry_idx = lod * submesh_count + s;
+                ok = ok && write_u32_le(io, lod_submeshes[entry_idx].index_count);
+                ok = ok && write_u32_le(io, lod_submeshes[entry_idx].index_offset);
+                ok = ok && write_i32_le(io, (int32_t)lod_submeshes[entry_idx].material_index);
+            }
+        }
     }
 
     if (!ok) {
-        SDL_Log("Error: failed writing LOD entries");
-        fclose(fp);
+        SDL_Log("Error: failed writing LOD-submesh table");
+        SDL_CloseIO(io);
         return false;
     }
 
     /* ── Vertex data ─────────────────────────────────────────────────────
      * Write each vertex using only the fields indicated by vertex_stride.
      * Without tangents we write 8 floats; with tangents we write 12. */
-    for (unsigned int i = 0; i < vertex_count; i++) {
-        if (fwrite(&vertices[i], 1, (size_t)vertex_stride, fp) != (size_t)vertex_stride) {
-            SDL_Log("Error: failed writing vertex %u", i);
-            fclose(fp);
-            return false;
+    {
+        unsigned int i;
+        for (i = 0; i < vertex_count; i++) {
+            if (SDL_WriteIO(io, &vertices[i], (size_t)vertex_stride) != (size_t)vertex_stride) {
+                SDL_Log("Error: failed writing vertex %u", i);
+                SDL_CloseIO(io);
+                return false;
+            }
         }
     }
 
     /* ── Index data ──────────────────────────────────────────────────────
      * All LOD index buffers are concatenated. Each index is a uint32
      * referencing the shared vertex buffer above. */
-    unsigned int total_indices = 0;
-    for (int i = 0; i < lod_count; i++) {
-        total_indices += lods[i].index_count;
-    }
+    {
+        unsigned int total_indices = 0;
+        int lod, s;
+        for (lod = 0; lod < lod_count; lod++) {
+            for (s = 0; s < submesh_count; s++) {
+                int entry_idx = lod * submesh_count + s;
+                total_indices += lod_submeshes[entry_idx].index_count;
+            }
+        }
 
-    for (unsigned int i = 0; i < total_indices; i++) {
-        if (!write_u32_le(fp, indices[i])) {
-            SDL_Log("Error: failed writing index %u", i);
-            fclose(fp);
-            return false;
+        unsigned int i;
+        for (i = 0; i < total_indices; i++) {
+            if (!write_u32_le(io, indices[i])) {
+                SDL_Log("Error: failed writing index %u", i);
+                SDL_CloseIO(io);
+                return false;
+            }
         }
     }
 
-    fclose(fp);
+    if (!SDL_FlushIO(io)) {
+        SDL_Log("Error: flush failed on '%s': %s", path, SDL_GetError());
+        SDL_CloseIO(io);
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("Error: failed to close '%s': %s", path, SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+/* ── Material sidecar writer (.fmat) ─────────────────────────────────────── */
+
+/* Write a JSON sidecar file containing material data extracted from the
+ * glTF scene.  The .fmat file sits next to the .fmesh with the same stem:
+ *   model.fmesh -> model.fmat
+ *
+ * GPU lesson code reads this to set up material uniforms and bind textures
+ * for each submesh draw call. */
+/* Write a JSON-escaped string value (with surrounding quotes) to an SDL
+ * I/O stream.  Handles backslash, double-quote, and control characters
+ * (U+0000..U+001F). */
+static void write_json_string(SDL_IOStream *io, const char *s)
+{
+    SDL_WriteIO(io, "\"", 1);
+    if (s) {
+        for (const char *c = s; *c != '\0'; c++) {
+            switch (*c) {
+            case '"':  SDL_WriteIO(io, "\\\"", 2); break;
+            case '\\': SDL_WriteIO(io, "\\\\", 2); break;
+            case '\b': SDL_WriteIO(io, "\\b", 2);  break;
+            case '\f': SDL_WriteIO(io, "\\f", 2);  break;
+            case '\n': SDL_WriteIO(io, "\\n", 2);  break;
+            case '\r': SDL_WriteIO(io, "\\r", 2);  break;
+            case '\t': SDL_WriteIO(io, "\\t", 2);  break;
+            default:
+                if ((unsigned char)*c < 0x20) {
+                    SDL_IOprintf(io, "\\u%04x", (unsigned char)*c);
+                } else {
+                    SDL_WriteIO(io, c, 1);
+                }
+                break;
+            }
+        }
+    }
+    SDL_WriteIO(io, "\"", 1);
+}
+
+static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene)
+{
+    /* Build the .fmat path by replacing the .fmesh extension */
+    size_t path_len = strlen(fmesh_path);
+    const char *dot = strrchr(fmesh_path, '.');
+    size_t stem_len = dot ? (size_t)(dot - fmesh_path) : path_len;
+
+    size_t fmat_len = stem_len + 6; /* ".fmat\0" */
+    char *fmat_path = (char *)SDL_malloc(fmat_len);
+    if (!fmat_path) {
+        SDL_Log("Error: allocation failed for .fmat path");
+        return false;
+    }
+    SDL_snprintf(fmat_path, fmat_len, "%.*s.fmat", (int)stem_len, fmesh_path);
+
+    SDL_IOStream *io = SDL_IOFromFile(fmat_path, "wb");
+    if (!io) {
+        SDL_Log("Error: failed to open '%s' for writing: %s",
+                fmat_path, SDL_GetError());
+        SDL_free(fmat_path);
+        return false;
+    }
+
+    int mat_count = scene->material_count;
+    int m;
+
+    SDL_IOprintf(io, "{\n");
+    SDL_IOprintf(io, "  \"version\": 1,\n");
+    SDL_IOprintf(io, "  \"materials\": [\n");
+
+    for (m = 0; m < mat_count; m++) {
+        const ForgeGltfMaterial *mat = &scene->materials[m];
+
+        /* Use full relative paths from glTF material */
+        const char *base_tex = mat->has_texture
+            ? mat->texture_path : NULL;
+        const char *mr_tex = mat->has_metallic_roughness
+            ? mat->metallic_roughness_path : NULL;
+        const char *norm_tex = mat->has_normal_map
+            ? mat->normal_map_path : NULL;
+        const char *occ_tex = mat->has_occlusion
+            ? mat->occlusion_path : NULL;
+        const char *emis_tex = (mat->has_emissive && mat->emissive_path[0])
+            ? mat->emissive_path : NULL;
+
+        /* Alpha mode string */
+        const char *alpha_str = "OPAQUE";
+        if (mat->alpha_mode == FORGE_GLTF_ALPHA_MASK) {
+            alpha_str = "MASK";
+        } else if (mat->alpha_mode == FORGE_GLTF_ALPHA_BLEND) {
+            alpha_str = "BLEND";
+        }
+
+        SDL_IOprintf(io, "    {\n");
+        SDL_IOprintf(io, "      \"name\": ");
+        write_json_string(io, mat->name);
+        SDL_IOprintf(io, ",\n");
+        SDL_IOprintf(io, "      \"base_color_factor\": [%.6f, %.6f, %.6f, %.6f],\n",
+                (double)mat->base_color[0], (double)mat->base_color[1],
+                (double)mat->base_color[2], (double)mat->base_color[3]);
+
+        if (base_tex) {
+            SDL_IOprintf(io, "      \"base_color_texture\": ");
+            write_json_string(io, base_tex);
+            SDL_IOprintf(io, ",\n");
+        } else {
+            SDL_IOprintf(io, "      \"base_color_texture\": null,\n");
+        }
+
+        SDL_IOprintf(io, "      \"metallic_factor\": %.6f,\n",
+                (double)mat->metallic_factor);
+        SDL_IOprintf(io, "      \"roughness_factor\": %.6f,\n",
+                (double)mat->roughness_factor);
+
+        if (mr_tex) {
+            SDL_IOprintf(io, "      \"metallic_roughness_texture\": ");
+            write_json_string(io, mr_tex);
+            SDL_IOprintf(io, ",\n");
+        } else {
+            SDL_IOprintf(io, "      \"metallic_roughness_texture\": null,\n");
+        }
+
+        if (norm_tex) {
+            SDL_IOprintf(io, "      \"normal_texture\": ");
+            write_json_string(io, norm_tex);
+            SDL_IOprintf(io, ",\n");
+        } else {
+            SDL_IOprintf(io, "      \"normal_texture\": null,\n");
+        }
+        SDL_IOprintf(io, "      \"normal_scale\": %.6f,\n",
+                (double)mat->normal_scale);
+
+        if (occ_tex) {
+            SDL_IOprintf(io, "      \"occlusion_texture\": ");
+            write_json_string(io, occ_tex);
+            SDL_IOprintf(io, ",\n");
+        } else {
+            SDL_IOprintf(io, "      \"occlusion_texture\": null,\n");
+        }
+        SDL_IOprintf(io, "      \"occlusion_strength\": %.6f,\n",
+                (double)mat->occlusion_strength);
+
+        SDL_IOprintf(io, "      \"emissive_factor\": [%.6f, %.6f, %.6f],\n",
+                (double)mat->emissive_factor[0],
+                (double)mat->emissive_factor[1],
+                (double)mat->emissive_factor[2]);
+
+        if (emis_tex) {
+            SDL_IOprintf(io, "      \"emissive_texture\": ");
+            write_json_string(io, emis_tex);
+            SDL_IOprintf(io, ",\n");
+        } else {
+            SDL_IOprintf(io, "      \"emissive_texture\": null,\n");
+        }
+
+        SDL_IOprintf(io, "      \"alpha_mode\": ");
+        write_json_string(io, alpha_str);
+        SDL_IOprintf(io, ",\n");
+        SDL_IOprintf(io, "      \"alpha_cutoff\": %.6f,\n",
+                (double)mat->alpha_cutoff);
+        SDL_IOprintf(io, "      \"double_sided\": %s\n",
+                mat->double_sided ? "true" : "false");
+
+        if (m + 1 < mat_count) {
+            SDL_IOprintf(io, "    },\n");
+        } else {
+            SDL_IOprintf(io, "    }\n");
+        }
+    }
+
+    SDL_IOprintf(io, "  ]\n");
+    SDL_IOprintf(io, "}\n");
+
+    if (SDL_GetIOStatus(io) == SDL_IO_STATUS_ERROR) {
+        SDL_Log("Error: write error on '%s': %s", fmat_path, SDL_GetError());
+        SDL_CloseIO(io);
+        SDL_free(fmat_path);
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("Error: failed to close '%s': %s", fmat_path, SDL_GetError());
+        SDL_free(fmat_path);
+        return false;
+    }
+    SDL_Log("Wrote materials: '%s' (%d materials)", fmat_path, mat_count);
+    SDL_free(fmat_path);
     return true;
 }
 
@@ -1009,17 +1456,13 @@ static bool write_fmesh(const char *path, const MeshVertex *vertices,
 
 static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              unsigned int vertex_count, unsigned int vertex_stride,
-                             bool has_tangents, const LodEntry *lods, int lod_count,
-                             const float *lod_ratios,
+                             bool has_tangents, int lod_count,
+                             const float *lod_ratios, int submesh_count,
                              unsigned int original_vertex_count)
 {
     /* Build the .meta.json path by replacing the .fmesh extension.
-     * Example: "model.fmesh" -> "model.meta.json"
-     * This matches the Python pipeline convention where the sidecar sits
-     * next to the output with the same stem. */
+     * Example: "model.fmesh" -> "model.meta.json" */
     size_t path_len = strlen(fmesh_path);
-
-    /* Find the last '.' to strip the extension */
     const char *dot = strrchr(fmesh_path, '.');
     size_t stem_len = dot ? (size_t)(dot - fmesh_path) : path_len;
 
@@ -1029,60 +1472,59 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
         SDL_Log("Error: allocation failed for meta path");
         return false;
     }
-    snprintf(meta_path, meta_len, "%.*s.meta.json", (int)stem_len, fmesh_path);
+    SDL_snprintf(meta_path, meta_len, "%.*s.meta.json", (int)stem_len, fmesh_path);
 
-    FILE *fp = fopen(meta_path, "w");
-    if (!fp) {
-        SDL_Log("Error: failed to open '%s' for writing", meta_path);
+    SDL_IOStream *io = SDL_IOFromFile(meta_path, "wb");
+    if (!io) {
+        SDL_Log("Error: failed to open '%s' for writing: %s",
+                meta_path, SDL_GetError());
         SDL_free(meta_path);
         return false;
     }
 
-    /* Extract just the filename from the source path for the JSON.
-     * Reject filenames with characters that would break JSON strings. */
-    const char *source_name = source_path;
-    const char *slash = strrchr(source_path, '/');
-    if (slash) source_name = slash + 1;
-    const char *backslash = strrchr(source_name, '\\');
-    if (backslash) source_name = backslash + 1;
-
-    for (const char *p = source_name; *p; p++) {
-        if (*p == '"' || *p == '\\' || (unsigned char)*p < 0x20) {
-            SDL_Log("Error: source filename contains characters that "
-                    "cannot be safely embedded in JSON: '%s'", source_name);
-            fclose(fp);
-            SDL_free(meta_path);
-            return false;
-        }
-    }
+    /* Extract just the filename from the source path for the JSON. */
+    const char *source_name = basename_from_path(source_path);
 
     float dedup_ratio = (original_vertex_count > 0)
         ? (float)vertex_count / (float)original_vertex_count
         : 0.0f;
 
-    fprintf(fp, "{\n");
-    fprintf(fp, "  \"source\": \"%s\",\n", source_name);
-    fprintf(fp, "  \"vertex_count\": %u,\n", vertex_count);
-    fprintf(fp, "  \"vertex_stride\": %u,\n", vertex_stride);
-    fprintf(fp, "  \"has_tangents\": %s,\n", has_tangents ? "true" : "false");
-    fprintf(fp, "  \"lods\": [\n");
+    SDL_IOprintf(io, "{\n");
+    SDL_IOprintf(io, "  \"source\": ");
+    write_json_string(io, source_name);
+    SDL_IOprintf(io, ",\n");
+    SDL_IOprintf(io, "  \"format_version\": %d,\n", FMESH_VERSION);
+    SDL_IOprintf(io, "  \"vertex_count\": %u,\n", vertex_count);
+    SDL_IOprintf(io, "  \"vertex_stride\": %u,\n", vertex_stride);
+    SDL_IOprintf(io, "  \"has_tangents\": %s,\n", has_tangents ? "true" : "false");
+    SDL_IOprintf(io, "  \"submesh_count\": %d,\n", submesh_count);
+    SDL_IOprintf(io, "  \"lod_count\": %d,\n", lod_count);
+    SDL_IOprintf(io, "  \"lod_ratios\": [");
 
-    for (int i = 0; i < lod_count; i++) {
-        fprintf(fp, "    {\"level\": %d, \"index_count\": %u, "
-                     "\"target_ratio\": %.2f, \"error\": %.6f}",
-                i, lods[i].index_count,
-                (double)lod_ratios[i],
-                (double)lods[i].target_error);
-        if (i + 1 < lod_count) fprintf(fp, ",");
-        fprintf(fp, "\n");
+    {
+        int i;
+        for (i = 0; i < lod_count; i++) {
+            if (i > 0) SDL_IOprintf(io, ", ");
+            SDL_IOprintf(io, "%.2f", (double)lod_ratios[i]);
+        }
     }
 
-    fprintf(fp, "  ],\n");
-    fprintf(fp, "  \"original_vertex_count\": %u,\n", original_vertex_count);
-    fprintf(fp, "  \"dedup_ratio\": %.2f\n", (double)dedup_ratio);
-    fprintf(fp, "}\n");
+    SDL_IOprintf(io, "],\n");
+    SDL_IOprintf(io, "  \"original_vertex_count\": %u,\n", original_vertex_count);
+    SDL_IOprintf(io, "  \"dedup_ratio\": %.2f\n", (double)dedup_ratio);
+    SDL_IOprintf(io, "}\n");
 
-    fclose(fp);
+    if (SDL_GetIOStatus(io) == SDL_IO_STATUS_ERROR) {
+        SDL_Log("Error: write error on '%s': %s", meta_path, SDL_GetError());
+        SDL_CloseIO(io);
+        SDL_free(meta_path);
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("Error: failed to close '%s': %s", meta_path, SDL_GetError());
+        SDL_free(meta_path);
+        return false;
+    }
     SDL_Log("Wrote metadata: '%s'", meta_path);
     SDL_free(meta_path);
     return true;

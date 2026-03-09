@@ -128,20 +128,47 @@ typedef enum ForgeGltfAlphaMode {
 } ForgeGltfAlphaMode;
 
 /* ── Material ─────────────────────────────────────────────────────────────── */
-/* Basic PBR material: base color + optional texture path.
- * We store the file path (not a GPU texture) so the caller can load
+/* PBR metallic-roughness material (glTF 2.0 core specification).
+ * We store file paths (not GPU textures) so the caller can load
  * textures using whatever method they prefer. */
 
 typedef struct ForgeGltfMaterial {
     float base_color[4];                       /* RGBA, default (1,1,1,1) */
     char  texture_path[FORGE_GLTF_PATH_SIZE];  /* empty = no texture */
-    bool  has_texture;
-    char  name[FORGE_GLTF_NAME_SIZE];
+    bool  has_texture;                         /* true if base color texture set */
+    char  name[FORGE_GLTF_NAME_SIZE];          /* material name from glTF */
     ForgeGltfAlphaMode alpha_mode;             /* OPAQUE, MASK, or BLEND  */
     float              alpha_cutoff;           /* MASK threshold (def 0.5)*/
     bool               double_sided;           /* render both faces?      */
     char  normal_map_path[FORGE_GLTF_PATH_SIZE]; /* empty = no normal map */
     bool  has_normal_map;                      /* true if normalTexture set */
+
+    /* Normal texture scale — multiplier for the sampled normal XY
+     * components.  Default 1.0 per glTF spec.  Values < 1.0 flatten
+     * the normal map effect, values > 1.0 exaggerate it. */
+    float normal_scale;
+
+    /* PBR metallic-roughness factors.  metallicFactor defaults to 1.0
+     * and roughnessFactor defaults to 1.0 per the glTF spec.  These
+     * are multiplied with the corresponding texture values if present. */
+    float metallic_factor;
+    float roughness_factor;
+    char  metallic_roughness_path[FORGE_GLTF_PATH_SIZE]; /* empty = none */
+    bool  has_metallic_roughness;              /* true if MR texture set */
+
+    /* Occlusion texture — baked ambient occlusion stored in the R channel.
+     * Strength (default 1.0) scales the occlusion effect: 0.0 = no
+     * occlusion, 1.0 = full occlusion from the texture. */
+    char  occlusion_path[FORGE_GLTF_PATH_SIZE];
+    bool  has_occlusion;
+    float occlusion_strength;
+
+    /* Emissive — light emitted by the surface.  emissive_factor is an
+     * RGB multiplier (default 0,0,0 = no emission).  When a texture is
+     * present, the final emission is texture RGB × emissive_factor. */
+    float emissive_factor[3];
+    char  emissive_path[FORGE_GLTF_PATH_SIZE];
+    bool  has_emissive;
 } ForgeGltfMaterial;
 
 /* ── Node ─────────────────────────────────────────────────────────────────── */
@@ -341,7 +368,41 @@ static Uint8 *read_binary(const char *path, Uint32 *out_size)
 static void build_path(char *out, size_t out_size,
                                     const char *base_dir, const char *relative)
 {
-    SDL_snprintf(out, (int)out_size, "%s%s", base_dir, relative);
+    SDL_snprintf(out, out_size, "%s%s", base_dir, relative);
+}
+
+/* Resolve a glTF texture reference to a file path.
+ * Follows the chain: textureInfo.index → textures[i].source → images[j].uri.
+ * Returns true and fills out_path if the full chain resolves, false otherwise. */
+static bool forge_gltf__resolve_texture(const cJSON *tex_info,
+                                         const cJSON *textures_arr,
+                                         const cJSON *images_arr,
+                                         const char *base_dir,
+                                         char *out_path, size_t out_size)
+{
+    if (!tex_info || !out_path || out_size == 0)
+        return false;
+    if (!cJSON_IsArray(textures_arr))
+        return false;
+    const cJSON *idx = cJSON_GetObjectItemCaseSensitive(tex_info, "index");
+    if (!cJSON_IsNumber(idx) || idx->valueint < 0)
+        return false;
+    const cJSON *tex_obj = cJSON_GetArrayItem(textures_arr, idx->valueint);
+    if (!tex_obj)
+        return false;
+    const cJSON *source = cJSON_GetObjectItemCaseSensitive(tex_obj, "source");
+    if (!cJSON_IsNumber(source) || source->valueint < 0)
+        return false;
+    if (!cJSON_IsArray(images_arr))
+        return false;
+    const cJSON *img = cJSON_GetArrayItem(images_arr, source->valueint);
+    if (!img)
+        return false;
+    const cJSON *uri = cJSON_GetObjectItemCaseSensitive(img, "uri");
+    if (!cJSON_IsString(uri))
+        return false;
+    build_path(out_path, out_size, base_dir, uri->valuestring);
+    return true;
 }
 
 static void get_base_dir(char *base_dir, size_t base_dir_size,
@@ -575,7 +636,8 @@ static bool forge_gltf__parse_materials(const cJSON *root,
         const cJSON *mat = cJSON_GetArrayItem(mats, i);
         ForgeGltfMaterial *m = &scene->materials[i];
 
-        /* Defaults: opaque white, no texture, single-sided. */
+        /* Defaults per glTF 2.0 spec: opaque white, fully metallic,
+         * fully rough, no textures, single-sided, no emission. */
         m->base_color[0] = 1.0f;
         m->base_color[1] = 1.0f;
         m->base_color[2] = 1.0f;
@@ -587,6 +649,19 @@ static bool forge_gltf__parse_materials(const cJSON *root,
         m->double_sided = false;
         m->normal_map_path[0] = '\0';
         m->has_normal_map = false;
+        m->normal_scale = 1.0f;
+        m->metallic_factor = 1.0f;
+        m->roughness_factor = 1.0f;
+        m->metallic_roughness_path[0] = '\0';
+        m->has_metallic_roughness = false;
+        m->occlusion_path[0] = '\0';
+        m->has_occlusion = false;
+        m->occlusion_strength = 1.0f;
+        m->emissive_factor[0] = 0.0f;
+        m->emissive_factor[1] = 0.0f;
+        m->emissive_factor[2] = 0.0f;
+        m->emissive_path[0] = '\0';
+        m->has_emissive = false;
         copy_name(m->name, sizeof(m->name), mat);
 
         /* ── Alpha mode (glTF 2.0 core) ─────────────────────────────── */
@@ -611,21 +686,54 @@ static bool forge_gltf__parse_materials(const cJSON *root,
         if (cJSON_IsBool(ds))
             m->double_sided = cJSON_IsTrue(ds);
 
+        /* ── pbrMetallicRoughness (optional per glTF spec) ─────────── */
         const cJSON *pbr = cJSON_GetObjectItemCaseSensitive(
             mat, "pbrMetallicRoughness");
-        if (!pbr) continue;
-
-        /* Base color factor. */
-        const cJSON *factor = cJSON_GetObjectItemCaseSensitive(
-            pbr, "baseColorFactor");
-        if (cJSON_IsArray(factor) && cJSON_GetArraySize(factor) == 4) {
-            /* Defaults if individual elements are malformed. */
-            const float defaults[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-            for (int fi = 0; fi < 4; fi++) {
-                const cJSON *elem = cJSON_GetArrayItem(factor, fi);
-                m->base_color[fi] = elem ? (float)elem->valuedouble
-                                         : defaults[fi];
+        if (pbr) {
+            /* Base color factor. */
+            const cJSON *factor = cJSON_GetObjectItemCaseSensitive(
+                pbr, "baseColorFactor");
+            if (cJSON_IsArray(factor) && cJSON_GetArraySize(factor) == 4) {
+                for (int fi = 0; fi < 4; fi++) {
+                    const cJSON *elem = cJSON_GetArrayItem(factor, fi);
+                    if (!cJSON_IsNumber(elem)) continue;
+                    m->base_color[fi] = (float)elem->valuedouble;
+                    if (m->base_color[fi] < 0.0f) m->base_color[fi] = 0.0f;
+                    if (m->base_color[fi] > 1.0f) m->base_color[fi] = 1.0f;
+                }
             }
+
+            /* Metallic factor (default 1.0, clamped to [0, 1]). */
+            const cJSON *mf = cJSON_GetObjectItemCaseSensitive(
+                pbr, "metallicFactor");
+            if (cJSON_IsNumber(mf)) {
+                m->metallic_factor = (float)mf->valuedouble;
+                if (m->metallic_factor < 0.0f) m->metallic_factor = 0.0f;
+                if (m->metallic_factor > 1.0f) m->metallic_factor = 1.0f;
+            }
+
+            /* Roughness factor (default 1.0, clamped to [0, 1]). */
+            const cJSON *rf = cJSON_GetObjectItemCaseSensitive(
+                pbr, "roughnessFactor");
+            if (cJSON_IsNumber(rf)) {
+                m->roughness_factor = (float)rf->valuedouble;
+                if (m->roughness_factor < 0.0f) m->roughness_factor = 0.0f;
+                if (m->roughness_factor > 1.0f) m->roughness_factor = 1.0f;
+            }
+
+            /* Base color texture. */
+            m->has_texture = forge_gltf__resolve_texture(
+                cJSON_GetObjectItemCaseSensitive(pbr, "baseColorTexture"),
+                textures_arr, images_arr, base_dir,
+                m->texture_path, sizeof(m->texture_path));
+
+            /* Metallic-roughness texture (G=roughness, B=metallic). */
+            m->has_metallic_roughness = forge_gltf__resolve_texture(
+                cJSON_GetObjectItemCaseSensitive(
+                    pbr, "metallicRoughnessTexture"),
+                textures_arr, images_arr, base_dir,
+                m->metallic_roughness_path,
+                sizeof(m->metallic_roughness_path));
         }
 
         /* ── Approximate KHR_materials_transmission as alpha blend ──── */
@@ -648,71 +756,72 @@ static bool forge_gltf__parse_materials(const cJSON *root,
             }
         }
 
-        /* Base color texture (resolve to file path). */
-        const cJSON *tex_info = cJSON_GetObjectItemCaseSensitive(
-            pbr, "baseColorTexture");
-        if (tex_info && cJSON_IsArray(textures_arr)) {
-            const cJSON *idx = cJSON_GetObjectItemCaseSensitive(tex_info, "index");
-            if (cJSON_IsNumber(idx)) {
-                const cJSON *tex_obj = cJSON_GetArrayItem(
-                    textures_arr, idx->valueint);
-                if (tex_obj) {
-                    const cJSON *source = cJSON_GetObjectItemCaseSensitive(
-                        tex_obj, "source");
-                    if (cJSON_IsNumber(source) && cJSON_IsArray(images_arr)) {
-                        const cJSON *img = cJSON_GetArrayItem(
-                            images_arr, source->valueint);
-                        if (img) {
-                            const cJSON *uri = cJSON_GetObjectItemCaseSensitive(
-                                img, "uri");
-                            if (cJSON_IsString(uri)) {
-                                build_path(
-                                    m->texture_path,
-                                    sizeof(m->texture_path),
-                                    base_dir, uri->valuestring);
-                                m->has_texture = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        /* Normal texture (resolve to file path).
-         * glTF stores normalTexture at the material level (not inside
+        /* ── Normal texture + scale ──────────────────────────────────── */
+        /* glTF stores normalTexture at the material level (not inside
          * pbrMetallicRoughness).  The normal map stores tangent-space
          * normals that add surface detail without extra geometry. */
         {
             const cJSON *norm_tex_info = cJSON_GetObjectItemCaseSensitive(
                 mat, "normalTexture");
-            if (norm_tex_info && cJSON_IsArray(textures_arr)) {
-                const cJSON *nidx = cJSON_GetObjectItemCaseSensitive(
-                    norm_tex_info, "index");
-                if (cJSON_IsNumber(nidx)) {
-                    const cJSON *tex_obj = cJSON_GetArrayItem(
-                        textures_arr, nidx->valueint);
-                    if (tex_obj) {
-                        const cJSON *source =
-                            cJSON_GetObjectItemCaseSensitive(
-                                tex_obj, "source");
-                        if (cJSON_IsNumber(source)
-                            && cJSON_IsArray(images_arr)) {
-                            const cJSON *img = cJSON_GetArrayItem(
-                                images_arr, source->valueint);
-                            if (img) {
-                                const cJSON *nuri =
-                                    cJSON_GetObjectItemCaseSensitive(
-                                        img, "uri");
-                                if (cJSON_IsString(nuri)) {
-                                    build_path(
-                                        m->normal_map_path,
-                                        sizeof(m->normal_map_path),
-                                        base_dir, nuri->valuestring);
-                                    m->has_normal_map = true;
-                                }
-                            }
-                        }
+            m->has_normal_map = forge_gltf__resolve_texture(
+                norm_tex_info, textures_arr, images_arr, base_dir,
+                m->normal_map_path, sizeof(m->normal_map_path));
+            if (norm_tex_info) {
+                const cJSON *ns = cJSON_GetObjectItemCaseSensitive(
+                    norm_tex_info, "scale");
+                if (cJSON_IsNumber(ns))
+                    m->normal_scale = (float)ns->valuedouble;
+            }
+        }
+
+        /* ── Occlusion texture + strength ────────────────────────────── */
+        /* Ambient occlusion stored in the R channel.  The strength
+         * scalar (default 1.0) controls the occlusion intensity. */
+        {
+            const cJSON *occ_tex_info = cJSON_GetObjectItemCaseSensitive(
+                mat, "occlusionTexture");
+            m->has_occlusion = forge_gltf__resolve_texture(
+                occ_tex_info, textures_arr, images_arr, base_dir,
+                m->occlusion_path, sizeof(m->occlusion_path));
+            if (occ_tex_info) {
+                const cJSON *os = cJSON_GetObjectItemCaseSensitive(
+                    occ_tex_info, "strength");
+                if (cJSON_IsNumber(os)) {
+                    m->occlusion_strength = (float)os->valuedouble;
+                    if (m->occlusion_strength < 0.0f)
+                        m->occlusion_strength = 0.0f;
+                    if (m->occlusion_strength > 1.0f)
+                        m->occlusion_strength = 1.0f;
+                }
+            }
+        }
+
+        /* ── Emissive texture + factor ───────────────────────────────── */
+        /* emissiveFactor is an RGB multiplier (default 0,0,0).  When
+         * an emissive texture is present, final emission is the texture
+         * RGB multiplied by emissiveFactor. */
+        {
+            const cJSON *em_tex_info = cJSON_GetObjectItemCaseSensitive(
+                mat, "emissiveTexture");
+            m->has_emissive = forge_gltf__resolve_texture(
+                em_tex_info, textures_arr, images_arr, base_dir,
+                m->emissive_path, sizeof(m->emissive_path));
+
+            const cJSON *ef = cJSON_GetObjectItemCaseSensitive(
+                mat, "emissiveFactor");
+            if (cJSON_IsArray(ef) && cJSON_GetArraySize(ef) == 3) {
+                for (int ei = 0; ei < 3; ei++) {
+                    const cJSON *elem = cJSON_GetArrayItem(ef, ei);
+                    if (cJSON_IsNumber(elem)) {
+                        m->emissive_factor[ei] = (float)elem->valuedouble;
+                        if (m->emissive_factor[ei] < 0.0f)
+                            m->emissive_factor[ei] = 0.0f;
                     }
+                }
+                if (m->emissive_factor[0] > 0.0f ||
+                    m->emissive_factor[1] > 0.0f ||
+                    m->emissive_factor[2] > 0.0f) {
+                    m->has_emissive = true;
                 }
             }
         }

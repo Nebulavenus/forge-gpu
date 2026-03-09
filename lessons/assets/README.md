@@ -58,6 +58,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 04 | [Procedural Geometry](04-procedural-geometry/) | C | Header-only parametric geometry library: sphere, icosphere, cylinder, cone, torus, plane, cube, capsule |
 | 05 | [Asset Bundles](05-asset-bundles/) | Python | Packing processed assets into `.forgepak` bundles with zstd compression, random-access TOC, and dependency tracking |
 | 06 | [Loading Processed Assets](06-loading-processed-assets/) | C library | Header-only C loader for .fmesh meshes and pipeline-processed textures; `forge_pipeline.h` |
+| 07 | [Materials](07-materials/) | C + Python | Full PBR material support: glTF parser extensions, multi-primitive mesh processing, .fmesh v2 submesh table, .fmat material sidecars |
 
 ## Building
 

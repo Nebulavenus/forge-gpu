@@ -131,45 +131,68 @@ static void write_f32(uint8_t *buf, size_t offset, float value)
     memcpy(buf + offset, &value, sizeof(value));
 }
 
-/* Write a minimal .fmesh file to disk.
+/* Write a signed int32 to a buffer at the given offset */
+static void write_i32(uint8_t *buf, size_t offset, int32_t value)
+{
+    memcpy(buf + offset, &value, sizeof(value));
+}
+
+/* Write a minimal v2 .fmesh file to disk.
  * Returns true on success. Caller provides the path.
  *
- * with_tangents: if true, stride = 48 and tangent data is written
- * lod_count:     number of LOD levels (each gets 3 indices for the triangle)
+ * with_tangents:  if true, stride = 48 and tangent data is written
+ * lod_count:      number of LOD levels (each gets 3 indices per submesh)
+ * submesh_count:  number of submeshes (each gets the same 3-index triangle)
  */
-static bool write_test_fmesh(const char *path, bool with_tangents, int lod_count)
+static bool write_test_fmesh_ex(const char *path, bool with_tangents,
+                                 int lod_count, int submesh_count)
 {
     uint32_t vertex_count = 3;
     uint32_t stride = with_tangents ? 48 : 32;
     uint32_t flags  = with_tangents ? FORGE_PIPELINE_FLAG_TANGENTS : 0;
-    uint32_t indices_per_lod = 3;
-    uint32_t total_indices = (uint32_t)lod_count * indices_per_lod;
+    uint32_t indices_per_submesh = 3;
+    uint32_t total_indices = (uint32_t)(lod_count * submesh_count)
+                           * indices_per_submesh;
 
-    /* Compute sizes — use the library's own constants */
-    size_t header_size     = FORGE_PIPELINE_HEADER_SIZE;
-    size_t lod_section     = (size_t)lod_count * FORGE_PIPELINE_LOD_ENTRY_SIZE;
+    /* v2 LOD-submesh table: per LOD = 4 (target_error) + submesh_count * 12 */
+    size_t per_lod_size = sizeof(uint32_t)
+                        + (size_t)submesh_count * 3 * sizeof(uint32_t);
+    size_t header_size      = FORGE_PIPELINE_HEADER_SIZE;
+    size_t lod_section      = (size_t)lod_count * per_lod_size;
     size_t vertex_data_size = (size_t)vertex_count * stride;
     size_t index_data_size  = (size_t)total_indices * sizeof(uint32_t);
-    size_t total_size       = header_size + lod_section + vertex_data_size + index_data_size;
+    size_t total_size       = header_size + lod_section
+                            + vertex_data_size + index_data_size;
 
     uint8_t *buf = (uint8_t *)SDL_calloc(1, total_size);
     if (!buf) return false;
 
     /* Header (32 bytes) */
-    memcpy(buf, "FMSH", 4);                  /* magic */
-    write_u32(buf, 4,  1);                    /* version */
-    write_u32(buf, 8,  vertex_count);         /* vertex_count */
-    write_u32(buf, 12, stride);               /* vertex_stride */
-    write_u32(buf, 16, (uint32_t)lod_count);  /* lod_count */
-    write_u32(buf, 20, flags);                /* flags */
-    /* bytes 24-31: reserved (already zero from calloc) */
+    memcpy(buf, "FMSH", 4);                       /* magic */
+    write_u32(buf, 4,  FORGE_PIPELINE_FMESH_VERSION); /* version = 2 */
+    write_u32(buf, 8,  vertex_count);              /* vertex_count */
+    write_u32(buf, 12, stride);                    /* vertex_stride */
+    write_u32(buf, 16, (uint32_t)lod_count);       /* lod_count */
+    write_u32(buf, 20, flags);                     /* flags */
+    write_u32(buf, 24, (uint32_t)submesh_count);   /* submesh_count */
+    /* bytes 28-31: reserved (already zero from calloc) */
 
-    /* LOD entries */
-    for (int i = 0; i < lod_count; i++) {
-        size_t off = header_size + (size_t)i * FORGE_PIPELINE_LOD_ENTRY_SIZE;
-        write_u32(buf, off + 0, indices_per_lod);                         /* index_count */
-        write_u32(buf, off + 4, (uint32_t)(i * indices_per_lod * 4));     /* index_offset (bytes) */
-        write_f32(buf, off + 8, (float)i * 0.01f);                        /* target_error */
+    /* LOD-submesh table */
+    size_t p = header_size;
+    uint32_t running_index_offset = 0;
+    for (int lod = 0; lod < lod_count; lod++) {
+        /* target_error */
+        write_f32(buf, p, (float)lod * 0.01f);
+        p += sizeof(uint32_t);
+
+        /* Per-submesh entries */
+        for (int s = 0; s < submesh_count; s++) {
+            write_u32(buf, p + 0, indices_per_submesh);       /* index_count */
+            write_u32(buf, p + 4, running_index_offset);      /* index_offset (bytes) */
+            write_i32(buf, p + 8, (int32_t)s);                /* material_index */
+            p += 3 * sizeof(uint32_t);
+            running_index_offset += indices_per_submesh * sizeof(uint32_t);
+        }
     }
 
     /* Vertex data */
@@ -225,10 +248,11 @@ static bool write_test_fmesh(const char *path, bool with_tangents, int lod_count
         write_f32(buf, v2 + 44, 1.0f);
     }
 
-    /* Index data: (0, 1, 2) repeated for each LOD */
+    /* Index data: (0, 1, 2) repeated for each LOD × submesh */
     size_t idata_off = vdata_off + vertex_data_size;
-    for (int i = 0; i < lod_count; i++) {
-        size_t base = idata_off + (size_t)i * indices_per_lod * sizeof(uint32_t);
+    for (uint32_t i = 0; i < total_indices / indices_per_submesh; i++) {
+        size_t base = idata_off + (size_t)i * indices_per_submesh
+                    * sizeof(uint32_t);
         write_u32(buf, base + 0,  0);
         write_u32(buf, base + 4,  1);
         write_u32(buf, base + 8,  2);
@@ -241,6 +265,13 @@ static bool write_test_fmesh(const char *path, bool with_tangents, int lod_count
     }
     SDL_free(buf);
     return ok;
+}
+
+/* Convenience wrapper: single-submesh v2 .fmesh */
+static bool write_test_fmesh(const char *path, bool with_tangents,
+                              int lod_count)
+{
+    return write_test_fmesh_ex(path, with_tangents, lod_count, 1);
 }
 
 /* Write a broken .fmesh with custom header fields for error testing */
@@ -262,6 +293,8 @@ static bool write_broken_fmesh(const char *path,
     if (file_size >= 16) write_u32(buf, 12, stride);
     if (file_size >= 20) write_u32(buf, 16, lod_count);
     if (file_size >= 24) write_u32(buf, 20, flags);
+    if (file_size >= 28) write_u32(buf, 24, 1); /* submesh_count (v2) */
+    /* bytes 28-31: reserved (already zero) */
 
     bool ok = SDL_SaveFile(path, buf, file_size);
     if (!ok) {
@@ -297,9 +330,11 @@ static void test_load_mesh_no_tangents(void)
     ASSERT_UINT_EQ(mesh.vertex_count, 3);
     ASSERT_UINT_EQ(mesh.vertex_stride, 32);
     ASSERT_UINT_EQ(mesh.lod_count, 1);
+    ASSERT_UINT_EQ(mesh.submesh_count, 1);
     ASSERT_TRUE((mesh.flags & FORGE_PIPELINE_FLAG_TANGENTS) == 0);
     ASSERT_NOT_NULL(mesh.vertices);
     ASSERT_NOT_NULL(mesh.indices);
+    ASSERT_NOT_NULL(mesh.submeshes);
 
     /* Verify index values */
     ASSERT_UINT_EQ(mesh.indices[0], 0);
@@ -496,7 +531,7 @@ static void test_load_mesh_invalid_magic(void)
     temp_path(path, sizeof(path), "test_pipeline_bad_magic.fmesh");
     TEST("load_mesh_invalid_magic");
 
-    ASSERT_TRUE(write_broken_fmesh(path, "NOPE", 1, 3, 32, 1, 0, 128));
+    ASSERT_TRUE(write_broken_fmesh(path, "NOPE", 2, 3, 32, 1, 0, 128));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -526,7 +561,7 @@ static void test_load_mesh_invalid_stride(void)
     temp_path(path, sizeof(path), "test_pipeline_bad_stride.fmesh");
     TEST("load_mesh_invalid_stride");
 
-    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 64, 1, 0, 128));
+    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 64, 1, 0, 128));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -542,7 +577,7 @@ static void test_load_mesh_truncated_header(void)
     TEST("load_mesh_truncated_header");
 
     /* Write only 16 bytes — less than the 32-byte header */
-    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 32, 1, 0, 16));
+    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 32, 1, 0, 16));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -557,11 +592,11 @@ static void test_load_mesh_truncated_data(void)
     temp_path(path, sizeof(path), "test_pipeline_trunc_data.fmesh");
     TEST("load_mesh_truncated_data");
 
-    /* Write a valid header with 3 vertices, stride 32, 1 LOD,
-     * but only 48 bytes total — not enough for LOD entry + vertex data.
-     * Need: 32 (header) + 12 (1 LOD) + 96 (3*32 vertices) + 12 (3 indices)
-     *     = 152 bytes minimum.  We provide only 48. */
-    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 32, 1, 0, 48));
+    /* Write a valid header with 3 vertices, stride 32, 1 LOD, 1 submesh,
+     * but only 48 bytes total — not enough for LOD-submesh table + vertex data.
+     * Need: 32 (header) + 16 (1 LOD × 1 submesh) + 96 (3*32 verts) + 12 (3 idx)
+     *     = 156 bytes minimum.  We provide only 48. */
+    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 32, 1, 0, 48));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -577,7 +612,7 @@ static void test_load_mesh_too_many_lods(void)
     TEST("load_mesh_too_many_lods");
 
     /* lod_count = 99, exceeds FORGE_PIPELINE_MAX_LODS (8) */
-    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 32, 99, 0, 128));
+    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 32, 99, 0, 128));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -593,7 +628,7 @@ static void test_load_mesh_stride_tan_without_flag(void)
     TEST("load_mesh_stride_tan_without_flag");
 
     /* stride = 48 (tangent stride) but flags = 0 (no TANGENTS flag) */
-    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 48, 1, 0, 256));
+    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 48, 1, 0, 256));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -602,43 +637,14 @@ static void test_load_mesh_stride_tan_without_flag(void)
     END_TEST();
 }
 
-static void test_load_mesh_invalid_lod_offset(void)
+static void test_load_mesh_v1_rejected(void)
 {
     char path[512];
-    temp_path(path, sizeof(path), "test_pipeline_bad_lod_off.fmesh");
-    TEST("load_mesh_invalid_lod_offset");
+    temp_path(path, sizeof(path), "test_pipeline_v1_reject.fmesh");
+    TEST("load_mesh_v1_rejected");
 
-    /* Write a valid-looking file but with a bad LOD index_offset.
-     * We build a 1-LOD file manually with index_offset = 99 instead of 0. */
-    uint32_t vertex_count = 3;
-    uint32_t stride = 32;
-    uint32_t lod_count = 1;
-    uint32_t indices_per_lod = 3;
-
-    size_t header_size     = FORGE_PIPELINE_HEADER_SIZE;
-    size_t lod_section     = (size_t)lod_count * FORGE_PIPELINE_LOD_ENTRY_SIZE;
-    size_t vertex_data_size = (size_t)vertex_count * stride;
-    size_t index_data_size  = (size_t)indices_per_lod * sizeof(uint32_t);
-    size_t total_size       = header_size + lod_section + vertex_data_size + index_data_size;
-
-    uint8_t *buf = (uint8_t *)SDL_calloc(1, total_size);
-    ASSERT_NOT_NULL(buf);
-
-    /* Header */
-    memcpy(buf, "FMSH", 4);
-    write_u32(buf, 4,  1);             /* version */
-    write_u32(buf, 8,  vertex_count);
-    write_u32(buf, 12, stride);
-    write_u32(buf, 16, lod_count);
-    write_u32(buf, 20, 0);             /* flags */
-
-    /* LOD entry with bad offset (should be 0, set to 99) */
-    write_u32(buf, header_size + 0, indices_per_lod);  /* index_count */
-    write_u32(buf, header_size + 4, 99);               /* index_offset (INVALID) */
-    write_f32(buf, header_size + 8, 0.0f);             /* target_error */
-
-    ASSERT_TRUE(SDL_SaveFile(path, buf, total_size));
-    SDL_free(buf);
+    /* Write a v1 header — should be rejected since we only support v2 */
+    ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 32, 1, 0, 128));
 
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
@@ -683,10 +689,12 @@ static void test_free_mesh_zeroes(void)
     ASSERT_NULL(mesh.vertices);
     ASSERT_NULL(mesh.indices);
     ASSERT_NULL(mesh.lods);
+    ASSERT_NULL(mesh.submeshes);
     ASSERT_UINT_EQ(mesh.vertex_count, 0);
     ASSERT_UINT_EQ(mesh.vertex_stride, 0);
     ASSERT_UINT_EQ(mesh.lod_count, 0);
     ASSERT_UINT_EQ(mesh.flags, 0);
+    ASSERT_UINT_EQ(mesh.submesh_count, 0);
 
     cleanup_file(path);
     END_TEST();
@@ -1170,6 +1178,342 @@ static void test_free_texture_zeroes(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Submesh Accessors
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_submesh_single(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_sub1.fmesh");
+    TEST("submesh_single");
+
+    ASSERT_TRUE(write_test_fmesh(path, false, 1));
+
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(forge_pipeline_load_mesh(path, &mesh));
+
+    ASSERT_UINT_EQ(forge_pipeline_submesh_count(&mesh), 1);
+    ASSERT_NOT_NULL(mesh.submeshes);
+
+    const ForgePipelineSubmesh *sub = forge_pipeline_lod_submesh(&mesh, 0, 0);
+    ASSERT_NOT_NULL(sub);
+    ASSERT_UINT_EQ(sub->index_count, 3);
+    ASSERT_UINT_EQ(sub->index_offset, 0);
+    ASSERT_INT_EQ(sub->material_index, 0);
+
+    /* Out-of-range returns NULL */
+    ASSERT_NULL(forge_pipeline_lod_submesh(&mesh, 0, 1));
+    ASSERT_NULL(forge_pipeline_lod_submesh(&mesh, 1, 0));
+
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_submesh_multiple(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_sub3.fmesh");
+    TEST("submesh_multiple");
+
+    ASSERT_TRUE(write_test_fmesh_ex(path, false, 2, 3));
+
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(forge_pipeline_load_mesh(path, &mesh));
+
+    ASSERT_UINT_EQ(mesh.submesh_count, 3);
+    ASSERT_UINT_EQ(mesh.lod_count, 2);
+
+    /* Each submesh in each LOD should have 3 indices */
+    for (uint32_t lod = 0; lod < mesh.lod_count; lod++) {
+        for (uint32_t s = 0; s < mesh.submesh_count; s++) {
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&mesh, lod, s);
+            ASSERT_NOT_NULL(sub);
+            ASSERT_UINT_EQ(sub->index_count, 3);
+            ASSERT_INT_EQ(sub->material_index, (int32_t)s);
+        }
+    }
+
+    /* LOD aggregate: 3 submeshes × 3 indices = 9 per LOD */
+    ASSERT_UINT_EQ(mesh.lods[0].index_count, 9);
+    ASSERT_UINT_EQ(mesh.lods[1].index_count, 9);
+
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_submesh_count_null(void)
+{
+    TEST("submesh_count_null");
+    ASSERT_UINT_EQ(forge_pipeline_submesh_count(NULL), 0);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Material Loading
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Helper: write a .fmat JSON file for testing */
+static bool write_test_fmat(const char *path)
+{
+    const char *json =
+        "{\n"
+        "  \"version\": 1,\n"
+        "  \"materials\": [\n"
+        "    {\n"
+        "      \"name\": \"Metal\",\n"
+        "      \"base_color_factor\": [0.8, 0.2, 0.1, 1.0],\n"
+        "      \"base_color_texture\": \"metal_albedo.png\",\n"
+        "      \"metallic_factor\": 0.9,\n"
+        "      \"roughness_factor\": 0.3,\n"
+        "      \"metallic_roughness_texture\": \"metal_orm.png\",\n"
+        "      \"normal_texture\": \"metal_normal.png\",\n"
+        "      \"normal_scale\": 1.5,\n"
+        "      \"occlusion_texture\": \"metal_orm.png\",\n"
+        "      \"occlusion_strength\": 0.8,\n"
+        "      \"emissive_factor\": [1.0, 0.5, 0.0],\n"
+        "      \"emissive_texture\": \"metal_emissive.png\",\n"
+        "      \"alpha_mode\": \"OPAQUE\",\n"
+        "      \"alpha_cutoff\": 0.5,\n"
+        "      \"double_sided\": false\n"
+        "    },\n"
+        "    {\n"
+        "      \"name\": \"Glass\",\n"
+        "      \"base_color_factor\": [1.0, 1.0, 1.0, 0.5],\n"
+        "      \"base_color_texture\": null,\n"
+        "      \"metallic_factor\": 0.0,\n"
+        "      \"roughness_factor\": 0.1,\n"
+        "      \"metallic_roughness_texture\": null,\n"
+        "      \"normal_texture\": null,\n"
+        "      \"normal_scale\": 1.0,\n"
+        "      \"occlusion_texture\": null,\n"
+        "      \"occlusion_strength\": 1.0,\n"
+        "      \"emissive_factor\": [0.0, 0.0, 0.0],\n"
+        "      \"emissive_texture\": null,\n"
+        "      \"alpha_mode\": \"BLEND\",\n"
+        "      \"alpha_cutoff\": 0.5,\n"
+        "      \"double_sided\": true\n"
+        "    }\n"
+        "  ]\n"
+        "}\n";
+
+    return SDL_SaveFile(path, json, SDL_strlen(json));
+}
+
+static void test_load_materials_valid(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_mats.fmat");
+    TEST("load_materials_valid");
+
+    ASSERT_TRUE(write_test_fmat(path));
+
+    ForgePipelineMaterialSet set;
+    ASSERT_TRUE(forge_pipeline_load_materials(path, &set));
+
+    ASSERT_UINT_EQ(set.material_count, 2);
+    ASSERT_NOT_NULL(set.materials);
+
+    /* Material 0: Metal */
+    ForgePipelineMaterial *m0 = &set.materials[0];
+    ASSERT_TRUE(strcmp(m0->name, "Metal") == 0);
+    ASSERT_FLOAT_EQ(m0->base_color_factor[0], 0.8f);
+    ASSERT_FLOAT_EQ(m0->base_color_factor[3], 1.0f);
+    ASSERT_TRUE(strcmp(m0->base_color_texture, "metal_albedo.png") == 0);
+    ASSERT_FLOAT_EQ(m0->metallic_factor, 0.9f);
+    ASSERT_FLOAT_EQ(m0->roughness_factor, 0.3f);
+    ASSERT_TRUE(strcmp(m0->metallic_roughness_texture, "metal_orm.png") == 0);
+    ASSERT_TRUE(strcmp(m0->normal_texture, "metal_normal.png") == 0);
+    ASSERT_FLOAT_EQ(m0->normal_scale, 1.5f);
+    ASSERT_FLOAT_EQ(m0->occlusion_strength, 0.8f);
+    ASSERT_FLOAT_EQ(m0->emissive_factor[0], 1.0f);
+    ASSERT_FLOAT_EQ(m0->emissive_factor[1], 0.5f);
+    ASSERT_FLOAT_EQ(m0->emissive_factor[2], 0.0f);
+    ASSERT_TRUE(strcmp(m0->emissive_texture, "metal_emissive.png") == 0);
+    ASSERT_INT_EQ(m0->alpha_mode, FORGE_PIPELINE_ALPHA_OPAQUE);
+    ASSERT_FLOAT_EQ(m0->alpha_cutoff, 0.5f);
+    ASSERT_TRUE(!m0->double_sided);
+
+    /* Material 1: Glass */
+    ForgePipelineMaterial *m1 = &set.materials[1];
+    ASSERT_TRUE(strcmp(m1->name, "Glass") == 0);
+    ASSERT_FLOAT_EQ(m1->base_color_factor[3], 0.5f);
+    ASSERT_TRUE(m1->base_color_texture[0] == '\0');  /* null texture */
+    ASSERT_FLOAT_EQ(m1->metallic_factor, 0.0f);
+    ASSERT_INT_EQ(m1->alpha_mode, FORGE_PIPELINE_ALPHA_BLEND);
+    ASSERT_TRUE(m1->double_sided);
+
+    forge_pipeline_free_materials(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_materials_null_args(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "whatever.fmat");
+    TEST("load_materials_null_args");
+
+    ForgePipelineMaterialSet set;
+    ASSERT_TRUE(!forge_pipeline_load_materials(NULL, &set));
+    ASSERT_TRUE(!forge_pipeline_load_materials(path, NULL));
+
+    END_TEST();
+}
+
+static void test_load_materials_bad_version(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_mats_badver.fmat");
+    TEST("load_materials_bad_version");
+
+    const char *json = "{ \"version\": 99, \"materials\": [] }";
+    ASSERT_TRUE(SDL_SaveFile(path, json, SDL_strlen(json)));
+
+    ForgePipelineMaterialSet set;
+    ASSERT_TRUE(!forge_pipeline_load_materials(path, &set));
+
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_materials_defaults(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_mats_defaults.fmat");
+    TEST("load_materials_defaults");
+
+    /* Minimal material — omit most optional fields */
+    const char *json =
+        "{\n"
+        "  \"version\": 1,\n"
+        "  \"materials\": [\n"
+        "    { \"name\": \"Bare\" }\n"
+        "  ]\n"
+        "}\n";
+    ASSERT_TRUE(SDL_SaveFile(path, json, SDL_strlen(json)));
+
+    ForgePipelineMaterialSet set;
+    ASSERT_TRUE(forge_pipeline_load_materials(path, &set));
+
+    ASSERT_UINT_EQ(set.material_count, 1);
+    ForgePipelineMaterial *m = &set.materials[0];
+
+    /* Verify defaults */
+    ASSERT_FLOAT_EQ(m->base_color_factor[0], 1.0f);
+    ASSERT_FLOAT_EQ(m->base_color_factor[3], 1.0f);
+    ASSERT_FLOAT_EQ(m->metallic_factor, 1.0f);
+    ASSERT_FLOAT_EQ(m->roughness_factor, 1.0f);
+    ASSERT_FLOAT_EQ(m->normal_scale, 1.0f);
+    ASSERT_FLOAT_EQ(m->occlusion_strength, 1.0f);
+    ASSERT_FLOAT_EQ(m->emissive_factor[0], 0.0f);
+    ASSERT_INT_EQ(m->alpha_mode, FORGE_PIPELINE_ALPHA_OPAQUE);
+    ASSERT_FLOAT_EQ(m->alpha_cutoff, 0.5f);
+    ASSERT_TRUE(!m->double_sided);
+    ASSERT_TRUE(m->base_color_texture[0] == '\0');
+
+    forge_pipeline_free_materials(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_materials_malformed_arrays(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_mats_malformed.fmat");
+    TEST("load_materials_malformed_arrays");
+
+    /* base_color_factor has a string element and emissive_factor has only 2
+     * elements.  The loader must not crash — non-numeric elements fall back
+     * to defaults and short arrays still produce valid output. */
+    const char *json =
+        "{\n"
+        "  \"version\": 1,\n"
+        "  \"materials\": [\n"
+        "    {\n"
+        "      \"name\": \"Bad\",\n"
+        "      \"base_color_factor\": [0.5, \"oops\", null, 0.9],\n"
+        "      \"emissive_factor\": [0.1, 0.2]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n";
+    ASSERT_TRUE(SDL_SaveFile(path, json, SDL_strlen(json)));
+
+    ForgePipelineMaterialSet set;
+    ASSERT_TRUE(forge_pipeline_load_materials(path, &set));
+
+    ASSERT_UINT_EQ(set.material_count, 1);
+    ForgePipelineMaterial *m = &set.materials[0];
+
+    /* Element 0 is numeric — should parse */
+    ASSERT_FLOAT_EQ(m->base_color_factor[0], 0.5f);
+    /* Element 1 is a string — falls back to default (1.0) */
+    ASSERT_FLOAT_EQ(m->base_color_factor[1], 1.0f);
+    /* Element 2 is null — falls back to default (1.0) */
+    ASSERT_FLOAT_EQ(m->base_color_factor[2], 1.0f);
+    /* Element 3 is numeric — should parse */
+    ASSERT_FLOAT_EQ(m->base_color_factor[3], 0.9f);
+
+    /* emissive_factor has only 2 elements — the loader requires >= 3,
+     * so the entire array is rejected and all components get default 0.0 */
+    ASSERT_FLOAT_EQ(m->emissive_factor[0], 0.0f);
+    ASSERT_FLOAT_EQ(m->emissive_factor[1], 0.0f);
+    ASSERT_FLOAT_EQ(m->emissive_factor[2], 0.0f);
+
+    forge_pipeline_free_materials(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_materials_non_numeric_factors(void)
+{
+    char path[512];
+    temp_path(path, sizeof(path), "test_pipeline_mats_nonnumeric.fmat");
+    TEST("load_materials_non_numeric_factors");
+
+    /* All numeric factor fields set to strings or null — must not crash,
+     * must fall back to spec defaults. */
+    const char *json =
+        "{\n"
+        "  \"version\": 1,\n"
+        "  \"materials\": [\n"
+        "    {\n"
+        "      \"name\": \"Weird\",\n"
+        "      \"metallic_factor\": \"high\",\n"
+        "      \"roughness_factor\": null,\n"
+        "      \"normal_scale\": false,\n"
+        "      \"occlusion_strength\": [1, 2, 3],\n"
+        "      \"alpha_cutoff\": \"half\"\n"
+        "    }\n"
+        "  ]\n"
+        "}\n";
+    ASSERT_TRUE(SDL_SaveFile(path, json, SDL_strlen(json)));
+
+    ForgePipelineMaterialSet set;
+    ASSERT_TRUE(forge_pipeline_load_materials(path, &set));
+
+    ForgePipelineMaterial *m = &set.materials[0];
+    ASSERT_FLOAT_EQ(m->metallic_factor, 1.0f);
+    ASSERT_FLOAT_EQ(m->roughness_factor, 1.0f);
+    ASSERT_FLOAT_EQ(m->normal_scale, 1.0f);
+    ASSERT_FLOAT_EQ(m->occlusion_strength, 1.0f);
+    ASSERT_FLOAT_EQ(m->alpha_cutoff, 0.5f);
+
+    forge_pipeline_free_materials(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_free_materials_null(void)
+{
+    TEST("free_materials_null");
+    forge_pipeline_free_materials(NULL);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -1208,7 +1552,7 @@ int main(int argc, char *argv[])
     test_load_mesh_truncated_data();
     test_load_mesh_too_many_lods();
     test_load_mesh_stride_tan_without_flag();
-    test_load_mesh_invalid_lod_offset();
+    test_load_mesh_v1_rejected();
 
     /* ── Mesh free (2 tests) ── */
     SDL_Log("\nMesh free:");
@@ -1220,6 +1564,22 @@ int main(int argc, char *argv[])
     test_has_tangents();
     test_lod_index_count_out_of_range();
     test_lod_indices_out_of_range();
+
+    /* ── Submesh accessors (3 tests) ── */
+    SDL_Log("\nSubmesh accessors:");
+    test_submesh_single();
+    test_submesh_multiple();
+    test_submesh_count_null();
+
+    /* ── Material loading (5 tests) ── */
+    SDL_Log("\nMaterial loading:");
+    test_load_materials_valid();
+    test_load_materials_null_args();
+    test_load_materials_bad_version();
+    test_load_materials_defaults();
+    test_load_materials_malformed_arrays();
+    test_load_materials_non_numeric_factors();
+    test_free_materials_null();
 
     /* ── Texture loading: valid files (3 tests) ── */
     SDL_Log("\nTexture loading — valid files:");

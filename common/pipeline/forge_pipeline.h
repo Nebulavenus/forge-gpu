@@ -2,7 +2,8 @@
  * forge_pipeline.h — Asset pipeline runtime library for forge-gpu
  *
  * Loads processed assets produced by the forge-gpu asset pipeline:
- *   - .fmesh files (optimised meshes with LOD levels and optional tangents)
+ *   - .fmesh v2 files (optimised meshes with submeshes, LODs, tangents)
+ *   - .fmat files (PBR material sidecars — JSON)
  *   - Texture files with .meta.json sidecars (mip chains, format metadata)
  *
  * This is a header-only library.  In exactly ONE .c file, define
@@ -39,11 +40,10 @@
 
 /* .fmesh binary format identifiers */
 #define FORGE_PIPELINE_FMESH_MAGIC   "FMSH"
-#define FORGE_PIPELINE_FMESH_VERSION 1
+#define FORGE_PIPELINE_FMESH_VERSION 2
 
 /* .fmesh header layout sizes (bytes) */
 #define FORGE_PIPELINE_HEADER_SIZE    32
-#define FORGE_PIPELINE_LOD_ENTRY_SIZE 12
 
 /* Vertex stride values — determines whether tangent data is present.
  * Stride 32: position(12) + normal(12) + uv(8)
@@ -57,12 +57,19 @@
 /* .fmesh magic identifier size */
 #define FORGE_PIPELINE_FMESH_MAGIC_SIZE 4
 
-/* Size of the reserved padding at the end of the .fmesh header (bytes) */
-#define FORGE_PIPELINE_HEADER_RESERVED 8
+/* Size of the reserved padding at the end of the .fmesh v2 header (bytes).
+ * In v2, 4 bytes of the original 8-byte reserved field became submesh_count,
+ * leaving 4 bytes of padding. */
+#define FORGE_PIPELINE_HEADER_RESERVED 4
 
 /* Upper bounds for validation */
 #define FORGE_PIPELINE_MAX_LODS       8
+#define FORGE_PIPELINE_MAX_SUBMESHES  64
+#define FORGE_PIPELINE_MAX_MATERIALS  256
 #define FORGE_PIPELINE_MAX_MIP_LEVELS 16
+
+/* .fmat material sidecar format version */
+#define FORGE_PIPELINE_FMAT_VERSION   1
 
 /* ── Mesh types ────────────────────────────────────────────────────────── */
 
@@ -83,10 +90,12 @@ typedef struct ForgePipelineVertexTan {
     float tangent[4];  /* xyz = tangent direction, w = bitangent sign (±1) */
 } ForgePipelineVertexTan;
 
-/* One LOD entry from the .fmesh file. */
+/* One LOD entry — aggregated from the per-submesh data.
+ * index_count is the sum of all submesh index_counts for this LOD.
+ * index_offset is the byte offset of the first submesh in this LOD. */
 typedef struct ForgePipelineLod {
-    uint32_t index_count;  /* number of indices in this LOD level */
-    uint32_t index_offset; /* byte offset into the concatenated index section */
+    uint32_t index_count;  /* total indices across all submeshes in this LOD */
+    uint32_t index_offset; /* byte offset of the first submesh's indices */
     float    target_error; /* meshoptimizer simplification error metric */
 } ForgePipelineLod;
 
@@ -100,15 +109,63 @@ typedef struct ForgePipelineLod {
  *       ForgePipelineVertex *v = (ForgePipelineVertex *)mesh.vertices;
  *   }
  */
+/* Per-submesh index range within a single LOD level.
+ * The .fmesh v2 format stores lod_count × submesh_count of these entries. */
+typedef struct ForgePipelineSubmesh {
+    uint32_t index_count;     /* number of indices for this submesh */
+    uint32_t index_offset;    /* byte offset into the index section */
+    int32_t  material_index;  /* index into a ForgePipelineMaterialSet, -1 = none */
+} ForgePipelineSubmesh;
+
 typedef struct ForgePipelineMesh {
     void             *vertices;     /* vertex array (cast to Vertex or VertexTan) */
     uint32_t         *indices;      /* all LOD indices concatenated (uint32) */
     uint32_t          vertex_count; /* number of vertices in the array */
     uint32_t          vertex_stride;/* bytes per vertex (32 or 48) */
-    ForgePipelineLod *lods;         /* LOD table (lod_count entries) */
+    ForgePipelineLod *lods;         /* target_error per LOD (lod_count entries) */
     uint32_t          lod_count;    /* number of LOD levels (1..MAX_LODS) */
     uint32_t          flags;        /* bit field (see FORGE_PIPELINE_FLAG_*) */
+
+    /* Submesh data. Flat array indexed as
+     * submeshes[lod * submesh_count + submesh_idx]. */
+    ForgePipelineSubmesh *submeshes;     /* lod_count × submesh_count entries */
+    uint32_t              submesh_count; /* number of submeshes (primitives) */
 } ForgePipelineMesh;
+
+/* ── Material types ───────────────────────────────────────────────────── */
+
+/* Alpha blending mode — matches glTF 2.0 spec values. */
+#define FORGE_PIPELINE_ALPHA_OPAQUE 0
+#define FORGE_PIPELINE_ALPHA_MASK   1
+#define FORGE_PIPELINE_ALPHA_BLEND  2
+
+/* Maximum path length for texture references in .fmat files. */
+#define FORGE_PIPELINE_MAT_PATH_SIZE 512
+
+/* A single PBR metallic-roughness material loaded from a .fmat sidecar. */
+typedef struct ForgePipelineMaterial {
+    char  name[64];                                       /* material name (for debugging) */
+    float base_color_factor[4];                           /* RGBA multiplier (default 1,1,1,1) */
+    char  base_color_texture[FORGE_PIPELINE_MAT_PATH_SIZE]; /* relative path, empty = none */
+    float metallic_factor;                                /* 0 = dielectric, 1 = metal (default 1) */
+    float roughness_factor;                               /* 0 = mirror, 1 = rough (default 1) */
+    char  metallic_roughness_texture[FORGE_PIPELINE_MAT_PATH_SIZE]; /* B=metallic G=roughness */
+    char  normal_texture[FORGE_PIPELINE_MAT_PATH_SIZE];   /* tangent-space normal map path */
+    float normal_scale;                                   /* normal map XY multiplier (default 1) */
+    char  occlusion_texture[FORGE_PIPELINE_MAT_PATH_SIZE]; /* AO in R channel, empty = none */
+    float occlusion_strength;                             /* AO blend: 0 = none, 1 = full (default 1) */
+    float emissive_factor[3];                             /* RGB emission multiplier (default 0,0,0) */
+    char  emissive_texture[FORGE_PIPELINE_MAT_PATH_SIZE]; /* emissive texture path, empty = none */
+    int   alpha_mode;                                     /* FORGE_PIPELINE_ALPHA_OPAQUE/MASK/BLEND */
+    float alpha_cutoff;                                   /* MASK threshold (default 0.5) */
+    bool  double_sided;                                   /* render both faces if true */
+} ForgePipelineMaterial;
+
+/* Collection of materials loaded from a .fmat sidecar file. */
+typedef struct ForgePipelineMaterialSet {
+    ForgePipelineMaterial *materials;
+    uint32_t               material_count;
+} ForgePipelineMaterialSet;
 
 /* ── Texture types ─────────────────────────────────────────────────────── */
 
@@ -180,6 +237,41 @@ uint32_t forge_pipeline_lod_index_count(const ForgePipelineMesh *mesh,
  */
 const uint32_t *forge_pipeline_lod_indices(const ForgePipelineMesh *mesh,
                                            uint32_t lod);
+
+/*
+ * forge_pipeline_submesh_count — Get the number of submeshes in the mesh.
+ *
+ * Each submesh corresponds to a glTF primitive with its own material.
+ */
+uint32_t forge_pipeline_submesh_count(const ForgePipelineMesh *mesh);
+
+/*
+ * forge_pipeline_lod_submesh — Get a submesh entry for a specific LOD.
+ *
+ * Returns a pointer to the submesh entry at (lod, submesh_idx),
+ * or NULL if either index is out of range.
+ */
+const ForgePipelineSubmesh *forge_pipeline_lod_submesh(
+    const ForgePipelineMesh *mesh, uint32_t lod, uint32_t submesh_idx);
+
+/*
+ * forge_pipeline_load_materials — Load a .fmat JSON material sidecar.
+ *
+ * Reads the file at `path`, parses the material array, and populates
+ * `set` with allocated material data.  The caller owns the memory and
+ * must call forge_pipeline_free_materials() when done.
+ *
+ * Returns true on success, false on any error (logged via SDL_Log).
+ */
+bool forge_pipeline_load_materials(const char *path,
+                                    ForgePipelineMaterialSet *set);
+
+/*
+ * forge_pipeline_free_materials — Release all memory owned by a material set.
+ *
+ * Safe to call on a zeroed or already-freed set.
+ */
+void forge_pipeline_free_materials(ForgePipelineMaterialSet *set);
 
 /*
  * forge_pipeline_load_texture — Load texture metadata and raw mip files.
@@ -280,12 +372,12 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     }
     p += FORGE_PIPELINE_FMESH_MAGIC_SIZE;
 
-    /* Version */
+    /* Version — v2 only */
     uint32_t version = forge_pipeline__read_u32_le(p);
     p += sizeof(uint32_t);
     if (version != FORGE_PIPELINE_FMESH_VERSION) {
         SDL_Log("forge_pipeline_load_mesh: '%s' has unsupported version %u "
-                "(expected %d)", path, version, FORGE_PIPELINE_FMESH_VERSION);
+                "(expected %u)", path, version, FORGE_PIPELINE_FMESH_VERSION);
         SDL_free(file_data);
         return false;
     }
@@ -321,8 +413,16 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     uint32_t flags = forge_pipeline__read_u32_le(p);
     p += sizeof(uint32_t);
 
-    /* Skip reserved padding at end of 32-byte header */
-    p += FORGE_PIPELINE_HEADER_RESERVED;
+    /* Submesh count (v2 header field) + 4 bytes reserved padding */
+    uint32_t submesh_count = forge_pipeline__read_u32_le(p);
+    p += sizeof(uint32_t);
+    if (submesh_count == 0 || submesh_count > FORGE_PIPELINE_MAX_SUBMESHES) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' has invalid submesh_count %u "
+                "(max %d)", path, submesh_count, FORGE_PIPELINE_MAX_SUBMESHES);
+        SDL_free(file_data);
+        return false;
+    }
+    p += FORGE_PIPELINE_HEADER_RESERVED; /* remaining reserved padding */
 
     /* ── Validate tangent flag / stride consistency ───────────────── */
     bool has_tangents = (flags & FORGE_PIPELINE_FLAG_TANGENTS) != 0;
@@ -341,21 +441,44 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
         return false;
     }
 
-    /* ── Validate file size against expected data ─────────────────── */
-    size_t lod_section_size = (size_t)lod_count * FORGE_PIPELINE_LOD_ENTRY_SIZE;
-    size_t vertex_section_size = (size_t)vertex_count * vertex_stride;
+    /* ── Validate file size against LOD-submesh table ─────────────
+     *
+     * v2 LOD-submesh table layout (per LOD):
+     *   target_error:   4 bytes (float as u32)
+     *   per submesh:    12 bytes (index_count u32, index_offset u32, material_index i32)
+     *
+     * Total per LOD = 4 + submesh_count * 12 */
+    /* Use 64-bit intermediate arithmetic to detect overflow on 32-bit
+     * builds where size_t is 32 bits.  All operands originate from
+     * untrusted file data (vertex_count, vertex_stride, lod_count,
+     * submesh_count) so every multiply/add must be checked. */
+    uint64_t per_lod_size_64 = (uint64_t)sizeof(uint32_t)
+                             + (uint64_t)submesh_count * 3 * sizeof(uint32_t);
+    uint64_t lod_section_size_64 = (uint64_t)lod_count * per_lod_size_64;
+    uint64_t vertex_section_size_64 = (uint64_t)vertex_count * vertex_stride;
 
-    /* We need the LOD entries to compute total indices, so first check
-     * that the file is large enough to contain the LOD table. */
-    size_t min_size_for_lods = FORGE_PIPELINE_HEADER_SIZE + lod_section_size;
-    if (file_size < min_size_for_lods) {
-        SDL_Log("forge_pipeline_load_mesh: '%s' too small for LOD table "
-                "(%zu bytes, need %zu)", path, file_size, min_size_for_lods);
+    if (per_lod_size_64 > SIZE_MAX || lod_section_size_64 > SIZE_MAX
+        || vertex_section_size_64 > SIZE_MAX) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' header values cause "
+                "size overflow", path);
         SDL_free(file_data);
         return false;
     }
 
-    /* ── Read LOD entries ─────────────────────────────────────────── */
+    size_t per_lod_size = (size_t)per_lod_size_64;
+    size_t lod_section_size = (size_t)lod_section_size_64;
+    size_t vertex_section_size = (size_t)vertex_section_size_64;
+
+    size_t min_size_for_lods = FORGE_PIPELINE_HEADER_SIZE + lod_section_size;
+    if (file_size < min_size_for_lods) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' too small for LOD-submesh "
+                "table (%zu bytes, need %zu)", path, file_size,
+                min_size_for_lods);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* ── Read LOD-submesh table ──────────────────────────────────── */
     ForgePipelineLod *lods = (ForgePipelineLod *)SDL_calloc(
         lod_count, sizeof(ForgePipelineLod));
     if (!lods) {
@@ -364,37 +487,170 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
         return false;
     }
 
-    size_t total_indices = 0;
-    size_t expected_index_offset = 0;
-    for (uint32_t i = 0; i < lod_count; i++) {
-        lods[i].index_count  = forge_pipeline__read_u32_le(p);
-        p += sizeof(uint32_t);
-        lods[i].index_offset = forge_pipeline__read_u32_le(p);
-        p += sizeof(uint32_t);
-        lods[i].target_error = forge_pipeline__read_f32_le(p);
-        p += sizeof(uint32_t); /* float stored as uint32 bits */
+    size_t total_submesh_entries = (size_t)lod_count * submesh_count;
+    ForgePipelineSubmesh *submeshes = (ForgePipelineSubmesh *)SDL_calloc(
+        total_submesh_entries, sizeof(ForgePipelineSubmesh));
+    if (!submeshes) {
+        SDL_Log("forge_pipeline_load_mesh: allocation failed for submeshes");
+        SDL_free(lods);
+        SDL_free(file_data);
+        return false;
+    }
 
-        /* Validate that index_offset is aligned and contiguous */
-        if ((lods[i].index_offset % sizeof(uint32_t)) != 0 ||
-            (size_t)lods[i].index_offset != expected_index_offset) {
-            SDL_Log("forge_pipeline_load_mesh: '%s' has invalid index_offset "
-                    "for LOD %u (got %u, expected %zu)",
-                    path, i, lods[i].index_offset, expected_index_offset);
+    uint64_t total_indices = 0;
+    for (uint32_t lod = 0; lod < lod_count; lod++) {
+        /* target_error (float stored as uint32 bits) */
+        lods[lod].target_error = forge_pipeline__read_f32_le(p);
+        p += sizeof(uint32_t);
+
+        /* Per-submesh entries */
+        for (uint32_t s = 0; s < submesh_count; s++) {
+            size_t idx = (size_t)lod * submesh_count + s;
+            submeshes[idx].index_count  = forge_pipeline__read_u32_le(p);
+            p += sizeof(uint32_t);
+            submeshes[idx].index_offset = forge_pipeline__read_u32_le(p);
+            p += sizeof(uint32_t);
+            /* material_index is signed (int32_t), stored as uint32 bits */
+            uint32_t mat_bits = forge_pipeline__read_u32_le(p);
+            SDL_memcpy(&submeshes[idx].material_index, &mat_bits,
+                       sizeof(int32_t));
+            p += sizeof(uint32_t);
+
+            /* Validate index_offset is 4-byte aligned (uint32 indices) */
+            if ((submeshes[idx].index_offset % 4) != 0) {
+                SDL_Log("forge_pipeline_load_mesh: '%s' submesh %u (lod %u) "
+                        "has misaligned index_offset %u (must be 4-byte "
+                        "aligned)", path, s, lod,
+                        submeshes[idx].index_offset);
+                SDL_free(submeshes);
+                SDL_free(lods);
+                SDL_free(file_data);
+                return false;
+            }
+
+            total_indices += submeshes[idx].index_count;
+        }
+
+        /* Populate legacy LOD fields by summing submesh data for this LOD.
+         * index_count = sum of all submesh index_counts for this LOD.
+         * index_offset = minimum index_offset among submeshes. */
+        uint64_t lod_idx_count  = 0;
+        uint32_t lod_idx_offset = UINT32_MAX;
+        for (uint32_t s = 0; s < submesh_count; s++) {
+            size_t idx = (size_t)lod * submesh_count + s;
+            lod_idx_count += submeshes[idx].index_count;
+            if (submeshes[idx].index_offset < lod_idx_offset) {
+                lod_idx_offset = submeshes[idx].index_offset;
+            }
+        }
+        if (lod_idx_count > UINT32_MAX) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' lod %u index count "
+                    "overflow (%" SDL_PRIu64 ")", path, lod, lod_idx_count);
+            SDL_free(submeshes);
             SDL_free(lods);
             SDL_free(file_data);
             return false;
         }
-        expected_index_offset += (size_t)lods[i].index_count * sizeof(uint32_t);
-        total_indices += lods[i].index_count;
+        lods[lod].index_count  = (uint32_t)lod_idx_count;
+        lods[lod].index_offset = (lod_idx_offset == UINT32_MAX)
+                                   ? 0 : lod_idx_offset;
     }
 
+    /* ── Validate submesh index ranges against total index count ── */
+    for (uint32_t lod = 0; lod < lod_count; lod++) {
+        for (uint32_t s = 0; s < submesh_count; s++) {
+            size_t idx = (size_t)lod * submesh_count + s;
+            uint32_t sub_offset = submeshes[idx].index_offset;
+            uint32_t sub_count  = submeshes[idx].index_count;
+            /* index_offset is in bytes; convert to index units.
+             * Use 64-bit to avoid wraparound on 32-bit builds. */
+            uint64_t first_index = (uint64_t)sub_offset / 4u;
+            uint64_t range_end   = first_index + (uint64_t)sub_count;
+            if (range_end > total_indices) {
+                SDL_Log("forge_pipeline_load_mesh: '%s' submesh %u (lod %u) "
+                        "index range [%" SDL_PRIu64 "..%" SDL_PRIu64
+                        ") exceeds total index count %" SDL_PRIu64,
+                        path, s, lod, first_index, range_end, total_indices);
+                SDL_free(submeshes);
+                SDL_free(lods);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+    }
+
+    /* ── Validate contiguous submesh spans per LOD ──────────────── */
+    /* Use a temporary copy so the original submeshes array keeps its file
+     * order — sorting in-place would change the order returned by
+     * forge_pipeline_lod_submesh(). */
+    ForgePipelineSubmesh *sort_tmp = (ForgePipelineSubmesh *)SDL_malloc(
+        sizeof(ForgePipelineSubmesh) * submesh_count);
+    if (!sort_tmp) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' allocation failed for "
+                "contiguity check", path);
+        SDL_free(submeshes);
+        SDL_free(lods);
+        SDL_free(file_data);
+        return false;
+    }
+    for (uint32_t lod = 0; lod < lod_count; lod++) {
+        /* Copy this LOD's submeshes into the temp buffer */
+        SDL_memcpy(sort_tmp,
+                   &submeshes[(size_t)lod * submesh_count],
+                   sizeof(ForgePipelineSubmesh) * submesh_count);
+        /* Bubble-sort by index_offset.  Submesh count per LOD is small
+         * (typically 1-8), so a simple sort is fine. */
+        for (uint32_t i = 0; i < submesh_count; i++) {
+            for (uint32_t j = i + 1; j < submesh_count; j++) {
+                if (sort_tmp[j].index_offset < sort_tmp[i].index_offset) {
+                    ForgePipelineSubmesh swap = sort_tmp[i];
+                    sort_tmp[i] = sort_tmp[j];
+                    sort_tmp[j] = swap;
+                }
+            }
+        }
+        /* Verify each submesh's end equals the next submesh's start.
+         * Use 64-bit arithmetic to avoid overflow when index_count * 4
+         * exceeds UINT32_MAX. */
+        for (uint32_t s = 0; s + 1 < submesh_count; s++) {
+            uint64_t cur_end = (uint64_t)sort_tmp[s].index_offset
+                             + (uint64_t)sort_tmp[s].index_count * 4;
+            if (cur_end != (uint64_t)sort_tmp[s + 1].index_offset) {
+                SDL_Log("forge_pipeline_load_mesh: '%s' lod %u submeshes %u "
+                        "and %u are not contiguous (end %" SDL_PRIu64
+                        " != offset %u)",
+                        path, lod, s, s + 1, cur_end,
+                        sort_tmp[s + 1].index_offset);
+                SDL_free(sort_tmp);
+                SDL_free(submeshes);
+                SDL_free(lods);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+    }
+    SDL_free(sort_tmp);
+
     /* ── Validate full file size ──────────────────────────────────── */
-    size_t index_section_size = total_indices * sizeof(uint32_t);
-    size_t expected_size = FORGE_PIPELINE_HEADER_SIZE + lod_section_size
-                         + vertex_section_size + index_section_size;
+    uint64_t index_section_size_64 = total_indices * (uint64_t)sizeof(uint32_t);
+    uint64_t expected_size_64 = (uint64_t)FORGE_PIPELINE_HEADER_SIZE
+                              + lod_section_size_64
+                              + vertex_section_size_64
+                              + index_section_size_64;
+    if (index_section_size_64 > SIZE_MAX || expected_size_64 > SIZE_MAX) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' data sections cause "
+                "size overflow", path);
+        SDL_free(submeshes);
+        SDL_free(lods);
+        SDL_free(file_data);
+        return false;
+    }
+    size_t index_section_size = (size_t)index_section_size_64;
+    size_t expected_size = (size_t)expected_size_64;
     if (file_size < expected_size) {
         SDL_Log("forge_pipeline_load_mesh: '%s' is truncated "
                 "(%zu bytes, expected %zu)", path, file_size, expected_size);
+        SDL_free(submeshes);
         SDL_free(lods);
         SDL_free(file_data);
         return false;
@@ -405,6 +661,7 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     if (!vertices) {
         SDL_Log("forge_pipeline_load_mesh: allocation failed for vertices "
                 "(%zu bytes)", vertex_section_size);
+        SDL_free(submeshes);
         SDL_free(lods);
         SDL_free(file_data);
         return false;
@@ -418,20 +675,36 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
         SDL_Log("forge_pipeline_load_mesh: allocation failed for indices "
                 "(%zu bytes)", index_section_size);
         SDL_free(vertices);
+        SDL_free(submeshes);
         SDL_free(lods);
         SDL_free(file_data);
         return false;
     }
     SDL_memcpy(indices, p, index_section_size);
 
+    for (size_t i = 0; i < total_indices; i++) {
+        if (indices[i] >= vertex_count) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' index %zu out of bounds "
+                    "(%u >= vertex_count %u)", path, i, indices[i], vertex_count);
+            SDL_free(indices);
+            SDL_free(vertices);
+            SDL_free(submeshes);
+            SDL_free(lods);
+            SDL_free(file_data);
+            return false;
+        }
+    }
+
     /* ── Populate output struct ───────────────────────────────────── */
-    mesh->vertices     = vertices;
-    mesh->indices      = indices;
-    mesh->vertex_count = vertex_count;
+    mesh->vertices      = vertices;
+    mesh->indices       = indices;
+    mesh->vertex_count  = vertex_count;
     mesh->vertex_stride = vertex_stride;
-    mesh->lods         = lods;
-    mesh->lod_count    = lod_count;
-    mesh->flags        = flags;
+    mesh->lods          = lods;
+    mesh->lod_count     = lod_count;
+    mesh->flags         = flags;
+    mesh->submeshes     = submeshes;
+    mesh->submesh_count = submesh_count;
 
     SDL_free(file_data);
     return true;
@@ -445,6 +718,7 @@ void forge_pipeline_free_mesh(ForgePipelineMesh *mesh)
     SDL_free(mesh->vertices);
     SDL_free(mesh->indices);
     SDL_free(mesh->lods);
+    SDL_free(mesh->submeshes);
     SDL_memset(mesh, 0, sizeof(*mesh));
 }
 
@@ -475,6 +749,231 @@ const uint32_t *forge_pipeline_lod_indices(const ForgePipelineMesh *mesh,
      * Divide by sizeof(uint32_t) to get the element offset. */
     uint32_t element_offset = mesh->lods[lod].index_offset / sizeof(uint32_t);
     return mesh->indices + element_offset;
+}
+
+uint32_t forge_pipeline_submesh_count(const ForgePipelineMesh *mesh)
+{
+    if (!mesh) {
+        return 0;
+    }
+    return mesh->submesh_count;
+}
+
+const ForgePipelineSubmesh *forge_pipeline_lod_submesh(
+    const ForgePipelineMesh *mesh, uint32_t lod, uint32_t submesh_idx)
+{
+    if (!mesh || !mesh->submeshes ||
+        lod >= mesh->lod_count || submesh_idx >= mesh->submesh_count) {
+        return NULL;
+    }
+    return &mesh->submeshes[(size_t)lod * mesh->submesh_count + submesh_idx];
+}
+
+/* ── Helper: copy a cJSON string into a fixed buffer, or empty it ──────── */
+static void forge_pipeline__copy_json_str(const cJSON *item,
+                                           char *out, size_t out_size)
+{
+    if (!out || out_size == 0) return;
+    if (cJSON_IsString(item) && item->valuestring &&
+        item->valuestring[0] != '\0') {
+        SDL_strlcpy(out, item->valuestring, out_size);
+    } else {
+        out[0] = '\0';
+    }
+}
+
+bool forge_pipeline_load_materials(const char *path,
+                                    ForgePipelineMaterialSet *set)
+{
+    if (!path) {
+        SDL_Log("forge_pipeline_load_materials: path is NULL");
+        return false;
+    }
+    if (!set) {
+        SDL_Log("forge_pipeline_load_materials: set is NULL");
+        return false;
+    }
+    SDL_memset(set, 0, sizeof(*set));
+
+    /* Load file */
+    size_t file_size = 0;
+    char *file_data = (char *)SDL_LoadFile(path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_materials: failed to load '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+
+    /* Parse JSON */
+    cJSON *root = cJSON_ParseWithLength(file_data, file_size);
+    SDL_free(file_data);
+    if (!root) {
+        SDL_Log("forge_pipeline_load_materials: failed to parse '%s'", path);
+        return false;
+    }
+
+    /* Validate version */
+    cJSON *j_version = cJSON_GetObjectItemCaseSensitive(root, "version");
+    if (!cJSON_IsNumber(j_version) ||
+        j_version->valueint != FORGE_PIPELINE_FMAT_VERSION) {
+        SDL_Log("forge_pipeline_load_materials: '%s' has unsupported version "
+                "(expected %d)", path, FORGE_PIPELINE_FMAT_VERSION);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Materials array */
+    cJSON *j_materials = cJSON_GetObjectItemCaseSensitive(root, "materials");
+    if (!cJSON_IsArray(j_materials)) {
+        SDL_Log("forge_pipeline_load_materials: '%s' missing materials array",
+                path);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    uint32_t count = (uint32_t)cJSON_GetArraySize(j_materials);
+    if (count == 0) {
+        /* Valid: meshes may have no materials (all submeshes use
+         * material_index = -1).  Return an empty material set. */
+        set->material_count = 0;
+        set->materials      = NULL;
+        cJSON_Delete(root);
+        return true;
+    }
+    if (count > FORGE_PIPELINE_MAX_MATERIALS) {
+        SDL_Log("forge_pipeline_load_materials: '%s' has %u materials (max %d)",
+                path, count, FORGE_PIPELINE_MAX_MATERIALS);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Allocate */
+    ForgePipelineMaterial *mats = (ForgePipelineMaterial *)SDL_calloc(
+        count, sizeof(ForgePipelineMaterial));
+    if (!mats) {
+        SDL_Log("forge_pipeline_load_materials: allocation failed");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Parse each material */
+    uint32_t i = 0;
+    cJSON *j_mat = NULL;
+    cJSON_ArrayForEach(j_mat, j_materials) {
+        if (i >= count) break; /* guard against iteration overshoot */
+        ForgePipelineMaterial *m = &mats[i];
+
+        /* Name */
+        forge_pipeline__copy_json_str(
+            cJSON_GetObjectItemCaseSensitive(j_mat, "name"),
+            m->name, sizeof(m->name));
+
+        /* Base color factor (default white) */
+        cJSON *j_bcf = cJSON_GetObjectItemCaseSensitive(j_mat,
+                                                         "base_color_factor");
+        if (cJSON_IsArray(j_bcf) && cJSON_GetArraySize(j_bcf) >= 4) {
+            for (int c = 0; c < 4; c++) {
+                cJSON *elem = cJSON_GetArrayItem(j_bcf, c);
+                m->base_color_factor[c] = cJSON_IsNumber(elem)
+                    ? (float)elem->valuedouble : 1.0f;
+            }
+        } else {
+            m->base_color_factor[0] = 1.0f;
+            m->base_color_factor[1] = 1.0f;
+            m->base_color_factor[2] = 1.0f;
+            m->base_color_factor[3] = 1.0f;
+        }
+
+        /* Texture paths */
+        forge_pipeline__copy_json_str(
+            cJSON_GetObjectItemCaseSensitive(j_mat, "base_color_texture"),
+            m->base_color_texture, sizeof(m->base_color_texture));
+        forge_pipeline__copy_json_str(
+            cJSON_GetObjectItemCaseSensitive(j_mat,
+                                             "metallic_roughness_texture"),
+            m->metallic_roughness_texture,
+            sizeof(m->metallic_roughness_texture));
+        forge_pipeline__copy_json_str(
+            cJSON_GetObjectItemCaseSensitive(j_mat, "normal_texture"),
+            m->normal_texture, sizeof(m->normal_texture));
+        forge_pipeline__copy_json_str(
+            cJSON_GetObjectItemCaseSensitive(j_mat, "occlusion_texture"),
+            m->occlusion_texture, sizeof(m->occlusion_texture));
+        forge_pipeline__copy_json_str(
+            cJSON_GetObjectItemCaseSensitive(j_mat, "emissive_texture"),
+            m->emissive_texture, sizeof(m->emissive_texture));
+
+        /* Scalar factors */
+        cJSON *j_val;
+        j_val = cJSON_GetObjectItemCaseSensitive(j_mat, "metallic_factor");
+        m->metallic_factor = cJSON_IsNumber(j_val)
+                                 ? (float)j_val->valuedouble : 1.0f;
+
+        j_val = cJSON_GetObjectItemCaseSensitive(j_mat, "roughness_factor");
+        m->roughness_factor = cJSON_IsNumber(j_val)
+                                  ? (float)j_val->valuedouble : 1.0f;
+
+        j_val = cJSON_GetObjectItemCaseSensitive(j_mat, "normal_scale");
+        m->normal_scale = cJSON_IsNumber(j_val)
+                              ? (float)j_val->valuedouble : 1.0f;
+
+        j_val = cJSON_GetObjectItemCaseSensitive(j_mat, "occlusion_strength");
+        m->occlusion_strength = cJSON_IsNumber(j_val)
+                                    ? (float)j_val->valuedouble : 1.0f;
+
+        /* Emissive factor (default black) */
+        cJSON *j_ef = cJSON_GetObjectItemCaseSensitive(j_mat,
+                                                        "emissive_factor");
+        if (cJSON_IsArray(j_ef) && cJSON_GetArraySize(j_ef) >= 3) {
+            for (int c = 0; c < 3; c++) {
+                cJSON *elem = cJSON_GetArrayItem(j_ef, c);
+                m->emissive_factor[c] = cJSON_IsNumber(elem)
+                    ? (float)elem->valuedouble : 0.0f;
+            }
+        } else {
+            m->emissive_factor[0] = 0.0f;
+            m->emissive_factor[1] = 0.0f;
+            m->emissive_factor[2] = 0.0f;
+        }
+
+        /* Alpha mode */
+        cJSON *j_am = cJSON_GetObjectItemCaseSensitive(j_mat, "alpha_mode");
+        if (cJSON_IsString(j_am)) {
+            if (SDL_strcmp(j_am->valuestring, "MASK") == 0) {
+                m->alpha_mode = FORGE_PIPELINE_ALPHA_MASK;
+            } else if (SDL_strcmp(j_am->valuestring, "BLEND") == 0) {
+                m->alpha_mode = FORGE_PIPELINE_ALPHA_BLEND;
+            } else {
+                m->alpha_mode = FORGE_PIPELINE_ALPHA_OPAQUE;
+            }
+        } else {
+            m->alpha_mode = FORGE_PIPELINE_ALPHA_OPAQUE;
+        }
+
+        j_val = cJSON_GetObjectItemCaseSensitive(j_mat, "alpha_cutoff");
+        m->alpha_cutoff = cJSON_IsNumber(j_val)
+                              ? (float)j_val->valuedouble : 0.5f;
+
+        j_val = cJSON_GetObjectItemCaseSensitive(j_mat, "double_sided");
+        m->double_sided = cJSON_IsBool(j_val) ? cJSON_IsTrue(j_val) : false;
+
+        i++;
+    }
+
+    set->materials      = mats;
+    set->material_count = count;
+
+    cJSON_Delete(root);
+    return true;
+}
+
+void forge_pipeline_free_materials(ForgePipelineMaterialSet *set)
+{
+    if (!set) {
+        return;
+    }
+    SDL_free(set->materials);
+    SDL_memset(set, 0, sizeof(*set));
 }
 
 /* ── Helper: build the .meta.json sidecar path from the image path ────
@@ -767,6 +1266,15 @@ bool forge_pipeline_load_texture(const char *path,
         if (!data) {
             SDL_Log("forge_pipeline_load_texture: failed to load mip %u "
                     "from '%s': %s", i, mip_path, SDL_GetError());
+            SDL_free(mip_path);
+            ok = false;
+            break;
+        }
+
+        if (data_size > UINT32_MAX) {
+            SDL_Log("forge_pipeline_load_texture: mip %u of '%s' exceeds "
+                    "4 GB size limit", i, path);
+            SDL_free(data);
             SDL_free(mip_path);
             ok = false;
             break;

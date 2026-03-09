@@ -218,6 +218,37 @@ class MeshPlugin(AssetPlugin):
 
         metadata["meta_file"] = meta_path.name
 
+        # -- Read material sidecar (.fmat) ----------------------------------
+        fmat_path = output_path.with_suffix(".fmat")
+        if fmat_path.exists():
+            try:
+                fmat_data = json.loads(fmat_path.read_text(encoding="utf-8"))
+                if not isinstance(fmat_data, dict):
+                    raise ValueError(
+                        f"top-level .fmat JSON must be an object, "
+                        f"got {type(fmat_data).__name__}"
+                    )
+                materials = fmat_data.get("materials", [])
+                if not isinstance(materials, list):
+                    raise TypeError(
+                        f"expected 'materials' to be a list, "
+                        f"got {type(materials).__name__}"
+                    )
+                material_count = len(materials)
+                metadata["material_file"] = fmat_path.name
+                metadata["material_count"] = material_count
+                log.debug(
+                    "  material sidecar loaded: %s (%d materials)",
+                    fmat_path.name,
+                    material_count,
+                )
+            except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+                log.warning(
+                    "Could not read material sidecar %s: %s",
+                    fmat_path,
+                    exc,
+                )
+
         return AssetResult(
             source=source,
             output=output_path,
