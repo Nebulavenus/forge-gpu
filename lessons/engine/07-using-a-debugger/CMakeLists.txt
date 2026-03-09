@@ -6,7 +6,10 @@
 
 add_executable(07-using-a-debugger main.c)
 target_include_directories(07-using-a-debugger PRIVATE ${FORGE_COMMON_DIR})
-target_link_libraries(07-using-a-debugger PRIVATE SDL3::SDL3 m)
+target_link_libraries(07-using-a-debugger PRIVATE SDL3::SDL3)
+if(NOT MSVC)
+    target_link_libraries(07-using-a-debugger PRIVATE m)
+endif()
 
 if(TARGET SDL3::SDL3-shared)
     add_custom_command(TARGET 07-using-a-debugger POST_BUILD

@@ -27,4 +27,7 @@ target_include_directories(forge_mesh_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/cJSON
     ${mikktspace_SOURCE_DIR})
 target_link_libraries(forge_mesh_tool PRIVATE
-    SDL3::SDL3 meshoptimizer m)
+    SDL3::SDL3 meshoptimizer)
+if(NOT MSVC)
+    target_link_libraries(forge_mesh_tool PRIVATE m)
+endif()

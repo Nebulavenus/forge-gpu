@@ -18,6 +18,7 @@
  */
 
 #include <SDL3/SDL.h>
+#include <math.h>    /* NAN */
 #include <stdio.h>   /* remove() for cleaning up test BMP files */
 #include "ui/forge_ui.h"
 
@@ -1714,7 +1715,7 @@ static void test_rasterize_nan_height(void)
     TEST("forge_ui_rasterize_glyph rejects NaN pixel_height");
     if (!font_loaded) return;
     ForgeUiGlyphBitmap bmp;
-    float nan_val = 0.0f / 0.0f;
+    float nan_val = NAN;
     bool result = forge_ui_rasterize_glyph(&test_font, 0, nan_val, NULL, &bmp);
     ASSERT_TRUE(!result);
 }
