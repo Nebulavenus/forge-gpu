@@ -95,9 +95,37 @@ static int fail_count = 0;
 /* ── Atlas test parameters ───────────────────────────────────────────────── */
 #define ATLAS_PIXEL_HEIGHT  32.0f  /* render glyphs at 32px for atlas tests */
 #define ATLAS_PADDING       1      /* 1 pixel padding between glyphs */
+#define ATLAS_SINGLE_COUNT  1      /* single-entry codepoint count for edge-case tests */
+#define ATLAS_OVERSAMPLE_1X 1      /* no oversampling for edge-case tests */
 #define ASCII_START         32     /* first printable ASCII codepoint */
 #define ASCII_END           126    /* last printable ASCII codepoint */
 #define ASCII_COUNT         (ASCII_END - ASCII_START + 1) /* 95 glyphs */
+
+/* ── Rasterizer test constants ────────────────────────────────────────── */
+#define TEST_RASTER_PIXEL_HEIGHT      64.0f
+#define TEST_RASTER_SUPERSAMPLE       4
+#define TEST_RASTER_SUPERSAMPLE_NONE  1
+#define TEST_RASTER_SUPERSAMPLE_HIGH  8
+#define TEST_RASTER_OVERFLOW_HEIGHT   5.0e8f
+#define TEST_BMP_OVERFLOW_DIM         65536
+
+/* ── Layout test constants ────────────────────────────────────────────── */
+#define TEST_LAYOUT_ORIGIN_X    100.0f
+#define TEST_LAYOUT_ORIGIN_Y    200.0f
+#define TEST_LAYOUT_MAX_WIDTH   500.0f
+#define TEST_LAYOUT_COLOR_R     1.0f
+#define TEST_LAYOUT_COLOR_G     1.0f
+#define TEST_LAYOUT_COLOR_B     1.0f
+#define TEST_LAYOUT_COLOR_A     1.0f
+#define TEST_CUSTOM_COLOR_R     0.5f
+#define TEST_CUSTOM_COLOR_G     0.25f
+#define TEST_CUSTOM_COLOR_B     0.75f
+#define TEST_CUSTOM_COLOR_A     1.0f
+
+/* ── Shelf pack test constants ────────────────────────────────────────── */
+#define TEST_SHELF_ATLAS_SIZE     256
+#define TEST_SHELF_OVERSIZED_DIM  300
+#define TEST_SHELF_GLYPH_SMALL    20
 
 /* ── Test font path ──────────────────────────────────────────────────────── */
 
@@ -475,10 +503,10 @@ static void test_raster_basic(void)
 
     Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
     ForgeUiRasterOpts opts;
-    opts.supersample_level = 4;
+    opts.supersample_level = TEST_RASTER_SUPERSAMPLE;
 
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, TEST_RASTER_PIXEL_HEIGHT, &opts, &bmp);
     ASSERT_TRUE(result);
     ASSERT_TRUE(bmp.width > 0);
     ASSERT_TRUE(bmp.height > 0);
@@ -505,10 +533,10 @@ static void test_raster_donut(void)
 
     Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'O');
     ForgeUiRasterOpts opts;
-    opts.supersample_level = 1; /* binary — easier to verify hole */
+    opts.supersample_level = TEST_RASTER_SUPERSAMPLE_NONE; /* binary — easier to verify hole */
 
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, TEST_RASTER_PIXEL_HEIGHT, &opts, &bmp);
     ASSERT_TRUE(result);
     ASSERT_TRUE(bmp.width > 0 && bmp.height > 0);
 
@@ -530,7 +558,7 @@ static void test_raster_whitespace(void)
 
     Uint16 idx = forge_ui_ttf_glyph_index(&test_font, ' ');
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, NULL, &bmp);
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, TEST_RASTER_PIXEL_HEIGHT, NULL, &bmp);
     ASSERT_TRUE(result);
     ASSERT_TRUE(bmp.width == 0);
     ASSERT_TRUE(bmp.height == 0);
@@ -547,10 +575,10 @@ static void test_raster_antialiasing(void)
 
     Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
     ForgeUiRasterOpts opts;
-    opts.supersample_level = 4;
+    opts.supersample_level = TEST_RASTER_SUPERSAMPLE;
 
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, TEST_RASTER_PIXEL_HEIGHT, &opts, &bmp);
     ASSERT_TRUE(result);
 
     /* With 4x4 supersampling, edge pixels should have values between 1-254.
@@ -576,10 +604,10 @@ static void test_raster_no_aa(void)
 
     Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
     ForgeUiRasterOpts opts;
-    opts.supersample_level = 1;
+    opts.supersample_level = TEST_RASTER_SUPERSAMPLE_NONE;
 
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, &opts, &bmp);
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, TEST_RASTER_PIXEL_HEIGHT, &opts, &bmp);
     ASSERT_TRUE(result);
 
     bool all_binary = true;
@@ -614,7 +642,7 @@ static void test_raster_default_opts(void)
 
     Uint16 idx = forge_ui_ttf_glyph_index(&test_font, 'A');
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(&test_font, idx, 64.0f, NULL, &bmp);
+    bool result = forge_ui_rasterize_glyph(&test_font, idx, TEST_RASTER_PIXEL_HEIGHT, NULL, &bmp);
     ASSERT_TRUE(result);
     ASSERT_TRUE(bmp.width > 0);
 
@@ -1247,7 +1275,7 @@ static void test_layout_wrapping(void)
     SDL_memset(&opts, 0, sizeof(opts));
     opts.max_width = m_one.width * 3.5f;
     opts.alignment = FORGE_UI_TEXT_ALIGN_LEFT;
-    opts.r = 1.0f; opts.g = 1.0f; opts.b = 1.0f; opts.a = 1.0f;
+    opts.r = TEST_LAYOUT_COLOR_R; opts.g = TEST_LAYOUT_COLOR_G; opts.b = TEST_LAYOUT_COLOR_B; opts.a = TEST_LAYOUT_COLOR_A;
 
     ForgeUiTextLayout layout;
     bool result = forge_ui_text_layout(&test_atlas, "ABCDE", 0.0f, 0.0f,
@@ -1271,8 +1299,8 @@ static void test_layout_origin(void)
     TEST("text_layout: vertex positions offset by origin (x, y)");
     ASSERT_TRUE(atlas_built);
 
-    float ox = 100.0f;
-    float oy = 200.0f;
+    float ox = TEST_LAYOUT_ORIGIN_X;
+    float oy = TEST_LAYOUT_ORIGIN_Y;
 
     ForgeUiTextLayout layout;
     bool result = forge_ui_text_layout(&test_atlas, "A", ox, oy,
@@ -1331,7 +1359,7 @@ static void test_layout_vertex_color(void)
 
     ForgeUiTextOpts opts;
     SDL_memset(&opts, 0, sizeof(opts));
-    opts.r = 0.5f; opts.g = 0.25f; opts.b = 0.75f; opts.a = 1.0f;
+    opts.r = TEST_CUSTOM_COLOR_R; opts.g = TEST_CUSTOM_COLOR_G; opts.b = TEST_CUSTOM_COLOR_B; opts.a = TEST_CUSTOM_COLOR_A;
 
     ForgeUiTextLayout layout;
     bool result = forge_ui_text_layout(&test_atlas, "A", 0.0f, 0.0f,
@@ -1339,8 +1367,8 @@ static void test_layout_vertex_color(void)
     ASSERT_TRUE(result);
 
     for (int i = 0; i < layout.vertex_count; i++) {
-        if (layout.vertices[i].r != 0.5f || layout.vertices[i].g != 0.25f ||
-            layout.vertices[i].b != 0.75f || layout.vertices[i].a != 1.0f) {
+        if (layout.vertices[i].r != TEST_CUSTOM_COLOR_R || layout.vertices[i].g != TEST_CUSTOM_COLOR_G ||
+            layout.vertices[i].b != TEST_CUSTOM_COLOR_B || layout.vertices[i].a != TEST_CUSTOM_COLOR_A) {
             SDL_Log("    FAIL: vertex %d color mismatch (line %d)", i, __LINE__);
             fail_count++;
             forge_ui_text_layout_free(&layout);
@@ -1445,9 +1473,9 @@ static void test_layout_center_alignment(void)
 
     ForgeUiTextOpts opts_left;
     SDL_memset(&opts_left, 0, sizeof(opts_left));
-    opts_left.max_width = 500.0f;
+    opts_left.max_width = TEST_LAYOUT_MAX_WIDTH;
     opts_left.alignment = FORGE_UI_TEXT_ALIGN_LEFT;
-    opts_left.r = 1.0f; opts_left.g = 1.0f; opts_left.b = 1.0f; opts_left.a = 1.0f;
+    opts_left.r = TEST_LAYOUT_COLOR_R; opts_left.g = TEST_LAYOUT_COLOR_G; opts_left.b = TEST_LAYOUT_COLOR_B; opts_left.a = TEST_LAYOUT_COLOR_A;
 
     ForgeUiTextOpts opts_center = opts_left;
     opts_center.alignment = FORGE_UI_TEXT_ALIGN_CENTER;
@@ -1475,8 +1503,8 @@ static void test_layout_right_alignment(void)
 
     ForgeUiTextOpts opts;
     SDL_memset(&opts, 0, sizeof(opts));
-    opts.max_width = 500.0f;
-    opts.r = 1.0f; opts.g = 1.0f; opts.b = 1.0f; opts.a = 1.0f;
+    opts.max_width = TEST_LAYOUT_MAX_WIDTH;
+    opts.r = TEST_LAYOUT_COLOR_R; opts.g = TEST_LAYOUT_COLOR_G; opts.b = TEST_LAYOUT_COLOR_B; opts.a = TEST_LAYOUT_COLOR_A;
 
     ForgeUiTextLayout layout_center, layout_right;
 
@@ -1628,7 +1656,7 @@ static void test_measure_wrapping(void)
     ForgeUiTextOpts opts;
     SDL_memset(&opts, 0, sizeof(opts));
     opts.max_width = m_nowrap.width * 0.4f;
-    opts.r = 1.0f; opts.g = 1.0f; opts.b = 1.0f; opts.a = 1.0f;
+    opts.r = TEST_LAYOUT_COLOR_R; opts.g = TEST_LAYOUT_COLOR_G; opts.b = TEST_LAYOUT_COLOR_B; opts.a = TEST_LAYOUT_COLOR_A;
 
     ForgeUiTextMetrics m_wrap = forge_ui_text_measure(&test_atlas,
                                                        "ABCDEFGH", &opts);
@@ -1680,7 +1708,7 @@ static void test_rasterize_null_font(void)
 {
     TEST("forge_ui_rasterize_glyph rejects NULL font");
     ForgeUiGlyphBitmap bmp;
-    bool result = forge_ui_rasterize_glyph(NULL, 0, 32.0f, NULL, &bmp);
+    bool result = forge_ui_rasterize_glyph(NULL, 0, ATLAS_PIXEL_HEIGHT, NULL, &bmp);
     ASSERT_TRUE(!result);
 }
 
@@ -1688,7 +1716,7 @@ static void test_rasterize_null_out(void)
 {
     TEST("forge_ui_rasterize_glyph rejects NULL out_bitmap");
     if (!font_loaded) return;
-    bool result = forge_ui_rasterize_glyph(&test_font, 0, 32.0f, NULL, NULL);
+    bool result = forge_ui_rasterize_glyph(&test_font, 0, ATLAS_PIXEL_HEIGHT, NULL, NULL);
     ASSERT_TRUE(!result);
 }
 
@@ -1732,7 +1760,8 @@ static void test_atlas_build_null_font(void)
     TEST("forge_ui_atlas_build rejects NULL font");
     ForgeUiFontAtlas atlas;
     Uint32 cp = 'A';
-    bool result = forge_ui_atlas_build(NULL, 32.0f, &cp, 1, 1, &atlas);
+    bool result = forge_ui_atlas_build(NULL, ATLAS_PIXEL_HEIGHT, &cp,
+                                       ATLAS_SINGLE_COUNT, ATLAS_OVERSAMPLE_1X, &atlas);
     ASSERT_TRUE(!result);
 }
 
@@ -1741,7 +1770,8 @@ static void test_atlas_build_null_atlas(void)
     TEST("forge_ui_atlas_build rejects NULL out_atlas");
     if (!font_loaded) return;
     Uint32 cp = 'A';
-    bool result = forge_ui_atlas_build(&test_font, 32.0f, &cp, 1, 1, NULL);
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT, &cp,
+                                       ATLAS_SINGLE_COUNT, ATLAS_OVERSAMPLE_1X, NULL);
     ASSERT_TRUE(!result);
 }
 
@@ -1750,7 +1780,8 @@ static void test_atlas_build_null_codepoints(void)
     TEST("forge_ui_atlas_build rejects NULL codepoints");
     if (!font_loaded) return;
     ForgeUiFontAtlas atlas;
-    bool result = forge_ui_atlas_build(&test_font, 32.0f, NULL, 1, 1, &atlas);
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT, NULL,
+                                       ATLAS_SINGLE_COUNT, ATLAS_OVERSAMPLE_1X, &atlas);
     ASSERT_TRUE(!result);
 }
 
@@ -1760,7 +1791,8 @@ static void test_atlas_build_zero_count(void)
     if (!font_loaded) return;
     ForgeUiFontAtlas atlas;
     Uint32 cp = 'A';
-    bool result = forge_ui_atlas_build(&test_font, 32.0f, &cp, 0, 1, &atlas);
+    bool result = forge_ui_atlas_build(&test_font, ATLAS_PIXEL_HEIGHT, &cp,
+                                       0, ATLAS_OVERSAMPLE_1X, &atlas);
     ASSERT_TRUE(!result);
 }
 
@@ -1810,7 +1842,7 @@ static void test_raster_supersample_overflow_returns_false(void)
 
     Uint16 gi = forge_ui_ttf_glyph_index(&test_font, 'A');
     ForgeUiRasterOpts opts;
-    opts.supersample_level = 8;
+    opts.supersample_level = TEST_RASTER_SUPERSAMPLE_HIGH;
 
     /* pixel_height = 5e8 produces bmp_w ~ 341 million.
      * INT_MAX / 8 = 268435455.  bmp_w > INT_MAX/8, so either the
@@ -1818,7 +1850,7 @@ static void test_raster_supersample_overflow_returns_false(void)
      * Before the fix, bmp_w * ss would overflow int → tiny allocation
      * → heap overwrite during rasterization. */
     ForgeUiGlyphBitmap bitmap;
-    bool result = forge_ui_rasterize_glyph(&test_font, gi, 5.0e8f,
+    bool result = forge_ui_rasterize_glyph(&test_font, gi, TEST_RASTER_OVERFLOW_HEIGHT,
                                             &opts, &bitmap);
     ASSERT_TRUE(!result);
     /* Verify no partial state leaked */
@@ -1850,7 +1882,7 @@ static void test_bmp_write_overflow_dimensions_rejected(void)
      * Before the fix, 32-bit row_stride * height wrapped to 0 → zero-byte
      * allocation → pixel copy overwrites heap. */
     bool result = forge_ui__write_grayscale_bmp(path, dummy,
-                                                 65536, 65536);
+                                                 TEST_BMP_OVERFLOW_DIM, TEST_BMP_OVERFLOW_DIM);
     ASSERT_TRUE(!result);
 
     /* Clean up in case the file was somehow created */
@@ -1932,11 +1964,13 @@ static void test_shelf_pack_rejects_oversized_glyph(void)
      * overwrite. */
     ForgeUi__GlyphEntry entry;
     SDL_memset(&entry, 0, sizeof(entry));
-    entry.bitmap.width  = 300;
-    entry.bitmap.height = 20;
+    entry.bitmap.width  = TEST_SHELF_OVERSIZED_DIM;
+    entry.bitmap.height = TEST_SHELF_GLYPH_SMALL;
     entry.bitmap.pixels = (Uint8 *)1;  /* non-NULL to avoid whitespace skip */
 
-    bool result = forge_ui__shelf_pack(&entry, 1, 256, 256, 1);
+    bool result = forge_ui__shelf_pack(&entry, ATLAS_SINGLE_COUNT,
+                                       TEST_SHELF_ATLAS_SIZE, TEST_SHELF_ATLAS_SIZE,
+                                       ATLAS_PADDING);
     ASSERT_TRUE(!result);
 }
 
@@ -1946,11 +1980,13 @@ static void test_shelf_pack_rejects_oversized_height(void)
 
     ForgeUi__GlyphEntry entry;
     SDL_memset(&entry, 0, sizeof(entry));
-    entry.bitmap.width  = 20;
-    entry.bitmap.height = 300;
+    entry.bitmap.width  = TEST_SHELF_GLYPH_SMALL;
+    entry.bitmap.height = TEST_SHELF_OVERSIZED_DIM;
     entry.bitmap.pixels = (Uint8 *)1;
 
-    bool result = forge_ui__shelf_pack(&entry, 1, 256, 256, 1);
+    bool result = forge_ui__shelf_pack(&entry, ATLAS_SINGLE_COUNT,
+                                       TEST_SHELF_ATLAS_SIZE, TEST_SHELF_ATLAS_SIZE,
+                                       ATLAS_PADDING);
     ASSERT_TRUE(!result);
 }
 

@@ -188,6 +188,22 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   to value/max_val)
 - **`forge_ui_ctx_progress_bar_layout(ctx, value, max_val, fill_color, size)`** --
   Progress bar placed by the current layout
+- **`forge_ui_ctx_separator(ctx, rect)`** -- Draw a 1px horizontal divider
+  line centered vertically in the rect, using the theme's border color
+- **`forge_ui_ctx_separator_layout(ctx, size)`** -- Separator placed by the
+  current layout
+- **`forge_ui_ctx_tree_push(ctx, label, open, rect)`** -- Begin a collapsible
+  tree node with a +/- indicator and label. Toggles `*open` on click. Pushes
+  an ID scope. Returns the current value of `*open`
+- **`forge_ui_ctx_tree_push_layout(ctx, label, open, size)`** -- Tree node
+  placed by the current layout
+- **`forge_ui_ctx_tree_pop(ctx)`** -- End a tree node: pops the ID scope
+  pushed by `tree_push`. Must be called after every `tree_push`
+- **`forge_ui_ctx_sparkline(ctx, values, count, min, max, color, rect)`** --
+  Draw a mini line graph of float values. Each sample maps to a vertical
+  position; consecutive samples are connected by thin quads
+- **`forge_ui_ctx_sparkline_layout(ctx, values, count, min, max, color,
+  size)`** -- Sparkline placed by the current layout
 - **`forge_ui_ctx_panel_begin(ctx, title, rect, scroll_y)`** -- Begin a
   panel: draw background and title bar, set clip rect, push layout for
   child widgets. Returns `true` on success
@@ -323,6 +339,9 @@ These are intentional simplifications for a learning library:
   Centralized color palette, WCAG contrast validation, theme slot mapping
 - [`lessons/ui/14-game-ui/`](../../lessons/ui/14-game-ui/) -- Game UI patterns:
   progress bars, inventory grids, HUD anchoring, action bars, pause menus
+- [`lessons/ui/15-dev-ui/`](../../lessons/ui/15-dev-ui/) -- Dev UI patterns:
+  collapsible tree nodes, property editors, console logs, sparkline graphs,
+  scene tree views
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

@@ -64,10 +64,10 @@
  * sentinel is clamped to 0 internally but skips the "use theme" path. */
 #define FORGE_UI_LAYOUT_EXPLICIT_ZERO  -1.0f
 
-/* Maximum nesting depth for the ID seed stack.  8 levels is enough for
- * most UI hierarchies (e.g. window > panel > row > widget).  The stack
- * is bounds-checked at runtime with SDL_Log on overflow/underflow. */
-#define FORGE_UI_ID_STACK_MAX_DEPTH  8
+/* Maximum nesting depth for the ID seed stack.  32 levels supports deep
+ * tree node hierarchies (e.g. window > panel > row > tree > tree > widget).
+ * The stack is bounds-checked at runtime with SDL_Log on overflow/underflow. */
+#define FORGE_UI_ID_STACK_MAX_DEPTH  32
 
 /* ── Checkbox style ────────────────────────────────────────────────────── */
 
@@ -133,6 +133,14 @@
 /* Pixels scrolled per unit of mouse wheel delta */
 #define FORGE_UI_SCROLL_SPEED  30.0f
 
+/* ── Separator / tree / sparkline widget constants ─────────────────────── */
+
+#define FORGE_UI_SEPARATOR_THICKNESS   1.0f   /* separator line height (px) */
+#define FORGE_UI_TREE_INDICATOR_PAD    4.0f   /* left padding for +/- indicator (unscaled px) */
+#define FORGE_UI_TREE_LABEL_OFFSET    18.0f   /* label start offset from left edge (unscaled px) */
+#define FORGE_UI_SPARKLINE_LINE_WIDTH  2.0f   /* sparkline line thickness (unscaled px) */
+#define FORGE_UI_SPARKLINE_COL_CAP   200      /* max column quads per segment (safety cap) */
+
 /* ── Scaling and spacing ───────────────────────────────────────────────── */
 
 /* Multiply a base spacing value by the context's global scale factor.
@@ -150,10 +158,10 @@
  * system produces ForgeUiRects, and widget functions consume them --
  * this is the common currency for positioning in the UI. */
 typedef struct ForgeUiRect {
-    float x;  /* left edge */
-    float y;  /* top edge */
-    float w;  /* width */
-    float h;  /* height */
+    float x;  /* left edge in screen pixels (0 = left of window) */
+    float y;  /* top edge in screen pixels (0 = top of window, y increases downward) */
+    float w;  /* width in screen pixels (>= 0 for valid rendering) */
+    float h;  /* height in screen pixels (>= 0 for valid rendering) */
 } ForgeUiRect;
 
 /* Layout direction — determines which axis the cursor advances along
@@ -181,13 +189,13 @@ typedef enum ForgeUiLayoutDirection {
 typedef struct ForgeUiLayout {
     ForgeUiRect              rect;         /* total layout region */
     ForgeUiLayoutDirection   direction;    /* vertical or horizontal */
-    float                    padding;      /* inset from all four edges */
-    float                    spacing;      /* gap between consecutive widgets */
-    float                    cursor_x;     /* current placement x position */
-    float                    cursor_y;     /* current placement y position */
-    float                    remaining_w;  /* width left for more widgets */
-    float                    remaining_h;  /* height left for more widgets */
-    int                      item_count;   /* widgets placed so far (for spacing) */
+    float                    padding;      /* inset from all four edges, in screen pixels (pre-scaled) */
+    float                    spacing;      /* gap between consecutive widgets, in screen pixels (pre-scaled) */
+    float                    cursor_x;     /* current placement x position in absolute screen pixels */
+    float                    cursor_y;     /* current placement y position in absolute screen pixels */
+    float                    remaining_w;  /* width left for more widgets, in screen pixels */
+    float                    remaining_h;  /* height left for more widgets, in screen pixels */
+    int                      item_count;   /* widgets placed so far; spacing is added when item_count > 0 */
 } ForgeUiLayout;
 
 /* Spacing constants for consistent widget layout.
@@ -222,8 +230,8 @@ typedef struct ForgeUiPanel {
     ForgeUiRect  rect;           /* outer bounds (background fill) */
     ForgeUiRect  content_rect;   /* inner bounds after title bar and padding */
     float       *scroll_y;       /* pointer to caller's scroll offset */
-    float        content_height; /* total height of child widgets (set by panel_end) */
-    Uint32       id;             /* widget ID hash (for pre-clamp matching across frames) */
+    float        content_height; /* total height of child widgets in pixels (set by panel_end; compared against content_rect.h to determine scrollbar need) */
+    Uint32       id;             /* widget ID hash for this panel; used to match scroll pre-clamp state across frames */
 } ForgeUiPanel;
 
 /* Application-owned text input state.
@@ -338,6 +346,16 @@ typedef struct ForgeUiContext {
     bool         _panel_active;
     ForgeUiPanel _panel;
     float        _panel_content_start_y;
+
+    /* Internal tree node state.  _tree_call_depth tracks how many
+     * tree_push calls are currently outstanding (awaiting tree_pop).
+     * _tree_scope_pushed[i] records whether push_id succeeded for
+     * the i-th tree_push call, so tree_pop only calls pop_id when
+     * a scope was actually pushed.  This decouples tree nesting from
+     * ID stack depth, allowing tree_push/tree_pop to pair correctly
+     * even when push_id fails (stack full). */
+    int  _tree_call_depth;
+    bool _tree_scope_pushed[FORGE_UI_ID_STACK_MAX_DEPTH];
 
     /* Layout stack — automatic widget positioning.
      *
@@ -662,6 +680,87 @@ static inline void forge_ui_ctx_progress_bar_layout(ForgeUiContext *ctx,
                                                      float max_val,
                                                      ForgeUiColor fill_color,
                                                      float size);
+
+/* Solid-colored rectangle placed by the current layout.  size is the
+ * widget height (vertical layout) or width (horizontal layout). */
+static inline void forge_ui_ctx_rect_layout(ForgeUiContext *ctx,
+                                             ForgeUiColor color,
+                                             float size);
+
+/* ── Separator ─────────────────────────────────────────────────────────── */
+
+/* Draw a thin horizontal divider line spanning the widget rect.
+ * Uses the theme's border color.  The line is 1px tall, centered
+ * vertically within the rect.  Non-interactive.
+ *
+ * rect: bounding rectangle — the line spans the full width */
+static inline void forge_ui_ctx_separator(ForgeUiContext *ctx,
+                                           ForgeUiRect rect);
+
+/* Separator placed by the current layout. */
+static inline void forge_ui_ctx_separator_layout(ForgeUiContext *ctx,
+                                                  float size);
+
+/* ── Tree node ─────────────────────────────────────────────────────────── */
+
+/* Begin a collapsible tree node with a clickable header.
+ *
+ * Draws a header row with an expand/collapse indicator (+ or -) and a
+ * text label.  Clicking the header toggles *open.  When *open is true,
+ * the caller should emit child widgets between tree_push and tree_pop;
+ * when false, skip them (tree_pop must still be called).
+ *
+ * tree_push pushes an ID scope so child widgets get unique IDs.
+ *
+ * label: header text (also used as widget ID via FNV-1a hash)
+ * open:  pointer to caller-owned bool (toggled on click)
+ * rect:  bounding rectangle for the header row
+ *
+ * Returns the current value of *open (true = expanded). */
+static inline bool forge_ui_ctx_tree_push(ForgeUiContext *ctx,
+                                           const char *label,
+                                           bool *open,
+                                           ForgeUiRect rect);
+
+/* Layout-aware tree_push.  Returns the current value of *open. */
+static inline bool forge_ui_ctx_tree_push_layout(ForgeUiContext *ctx,
+                                                  const char *label,
+                                                  bool *open,
+                                                  float size);
+
+/* End a tree node scope.  Must be called after every tree_push,
+ * regardless of the open state.  Pops the ID scope pushed by
+ * tree_push. */
+static inline void forge_ui_ctx_tree_pop(ForgeUiContext *ctx);
+
+/* ── Sparkline ─────────────────────────────────────────────────────────── */
+
+/* Draw a mini line graph of float values within a rectangle.
+ *
+ * The sparkline maps each value to a vertical position in [rect.y,
+ * rect.y + rect.h] and draws line segments connecting consecutive
+ * samples.  Each "line" segment is actually a thin quad (2 triangles)
+ * so it renders through the standard vertex/index pipeline.
+ *
+ * values:     array of float samples (oldest first)
+ * count:      number of samples (must be >= 2)
+ * min_val:    value mapped to the bottom of the rect
+ * max_val:    value mapped to the top of the rect
+ * line_color: RGBA color for the line segments
+ * rect:       bounding rectangle in screen pixels */
+static inline void forge_ui_ctx_sparkline(ForgeUiContext *ctx,
+                                           const float *values, int count,
+                                           float min_val, float max_val,
+                                           ForgeUiColor line_color,
+                                           ForgeUiRect rect);
+
+/* Sparkline placed by the current layout. */
+static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
+                                                  const float *values,
+                                                  int count,
+                                                  float min_val, float max_val,
+                                                  ForgeUiColor line_color,
+                                                  float size);
 
 /* ── Panel API ─────────────────────────────────────────────────────────── */
 
@@ -1210,6 +1309,7 @@ static inline void forge_ui_ctx_free(ForgeUiContext *ctx)
     ctx->scroll_delta = 0.0f;
     ctx->has_clip = false;
     ctx->_panel_active = false;
+    ctx->_tree_call_depth = 0;
     SDL_memset(&ctx->_panel, 0, sizeof(ctx->_panel));
     ctx->_panel_content_start_y = 0.0f;
 }
@@ -1291,6 +1391,7 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
     ctx->scroll_delta = 0.0f;
     ctx->has_clip = false;
     ctx->_panel_active = false;
+    ctx->_tree_call_depth = 0;
     ctx->_panel.scroll_y = NULL;
     SDL_memset(&ctx->_panel.rect, 0, sizeof(ctx->_panel.rect));
     SDL_memset(&ctx->_panel.content_rect, 0, sizeof(ctx->_panel.content_rect));
@@ -2612,6 +2713,284 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
 
     /* ── Pop the ID scope pushed by panel_begin ────────────────────────── */
     forge_ui_pop_id(ctx);
+}
+
+/* ── Separator implementation ───────────────────────────────────────────── */
+
+static inline void forge_ui_ctx_separator(ForgeUiContext *ctx,
+                                           ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return;
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+
+    /* 1px line centered vertically within the rect — clamp thickness
+     * so we never draw taller than the available rect height. */
+    float thickness = rect.h < FORGE_UI_SEPARATOR_THICKNESS
+        ? rect.h : FORGE_UI_SEPARATOR_THICKNESS;
+    float line_y = rect.y + (rect.h - thickness) * 0.5f;
+    ForgeUiRect line = { rect.x, line_y, rect.w, thickness };
+    forge_ui__emit_rect(ctx, line,
+                        ctx->theme.border.r, ctx->theme.border.g,
+                        ctx->theme.border.b, ctx->theme.border.a);
+}
+
+static inline void forge_ui_ctx_separator_layout(ForgeUiContext *ctx,
+                                                  float size)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (ctx->layout_depth <= 0) return;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    forge_ui_ctx_separator(ctx, rect);
+}
+
+/* ── Tree node implementation ──────────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_tree_push(ForgeUiContext *ctx,
+                                           const char *label,
+                                           bool *open,
+                                           ForgeUiRect rect)
+{
+    if (!ctx) return false;
+
+    /* Record this tree_push call so tree_pop can match it.  Track
+     * whether push_id actually succeeded — tree_pop only calls
+     * pop_id for levels that were actually pushed. */
+    int call_idx = ctx->_tree_call_depth;
+    bool pushed_scope = false;
+
+    if (call_idx >= FORGE_UI_ID_STACK_MAX_DEPTH) {
+        SDL_Log("forge_ui_ctx_tree_push: tree nesting %d exceeds max %d",
+                call_idx, FORGE_UI_ID_STACK_MAX_DEPTH);
+        ctx->_tree_call_depth++;
+        return false;
+    }
+
+    if (!ctx->atlas || !label || !open || label[0] == '\0') {
+        pushed_scope = forge_ui_push_id(ctx, label ? label : "__tree_err");
+        ctx->_tree_scope_pushed[call_idx] = pushed_scope;
+        ctx->_tree_call_depth++;
+        return false;
+    }
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) {
+        pushed_scope = forge_ui_push_id(ctx, label);
+        ctx->_tree_scope_pushed[call_idx] = pushed_scope;
+        ctx->_tree_call_depth++;
+        return false;
+    }
+
+    Uint32 id = forge_ui_hash_id(ctx, label);
+
+    /* ── Hit testing (same pattern as button) ──────────────────────────── */
+    bool mouse_over = forge_ui__widget_mouse_over(ctx, rect);
+    if (mouse_over) {
+        ctx->next_hot = id;
+    }
+
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    if (mouse_pressed && ctx->next_hot == id) {
+        ctx->active = id;
+    }
+
+    /* Toggle on click */
+    if (ctx->active == id && !ctx->mouse_down) {
+        if (mouse_over) {
+            *open = !(*open);
+        }
+        ctx->active = FORGE_UI_ID_NONE;
+    }
+
+    /* ── Draw background ───────────────────────────────────────────────── */
+    ForgeUiColor bg = forge_ui__surface_color(ctx, id);
+    forge_ui__emit_rect(ctx, rect, bg.r, bg.g, bg.b, bg.a);
+
+    /* ── Draw expand/collapse indicator ─────────────────────────────────── */
+    /* Small square at the left edge showing "+" (collapsed) or "-" (expanded).
+     * The indicator is a text character, vertically centered in the rect.
+     * Centering uses the same (ascender + metrics.height) approach as buttons. */
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+    ForgeUiTextMetrics ind_m = forge_ui_text_measure(ctx->atlas, "-", NULL);
+    float ind_x = rect.x + FORGE_UI_SCALED(ctx, FORGE_UI_TREE_INDICATOR_PAD);
+    float text_y = rect.y + (rect.h - ind_m.height) * 0.5f + ascender_px;
+    forge_ui_ctx_label(ctx, *open ? "-" : "+", ind_x, text_y);
+
+    /* ── Draw label text ───────────────────────────────────────────────── */
+    float label_x = rect.x + FORGE_UI_SCALED(ctx, FORGE_UI_TREE_LABEL_OFFSET);
+
+    /* Extract display text (strip ## suffix if present) */
+    const char *disp_end = forge_ui__display_end(label);
+    int disp_len = (int)(disp_end - label);
+    char disp_buf[256];
+    if (disp_len >= (int)sizeof(disp_buf))
+        disp_len = (int)sizeof(disp_buf) - 1;
+    SDL_memcpy(disp_buf, label, (size_t)disp_len);
+    disp_buf[disp_len] = '\0';
+
+    forge_ui_ctx_label(ctx, disp_buf, label_x, text_y);
+
+    /* ── Push ID scope for children ────────────────────────────────────── */
+    pushed_scope = forge_ui_push_id(ctx, label);
+    ctx->_tree_scope_pushed[call_idx] = pushed_scope;
+    ctx->_tree_call_depth++;
+
+    return *open;
+}
+
+static inline bool forge_ui_ctx_tree_push_layout(ForgeUiContext *ctx,
+                                                  const char *label,
+                                                  bool *open,
+                                                  float size)
+{
+    if (!ctx || !ctx->atlas) {
+        /* Delegate to tree_push for scope tracking even on error */
+        ForgeUiRect dummy = { 0, 0, 0, 0 };
+        return forge_ui_ctx_tree_push(ctx, label, open, dummy);
+    }
+    if (ctx->layout_depth <= 0 || !label || !open || label[0] == '\0') {
+        /* Delegate to tree_push for scope tracking even on error,
+         * but always return false — we cannot render without a layout. */
+        ForgeUiRect dummy = { 0, 0, 0, 0 };
+        forge_ui_ctx_tree_push(ctx, label, open, dummy);
+        return false;
+    }
+    /* Validate widget inputs before layout_next() to avoid advancing
+     * the layout cursor for widgets that cannot render. */
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_tree_push(ctx, label, open, rect);
+}
+
+static inline void forge_ui_ctx_tree_pop(ForgeUiContext *ctx)
+{
+    if (!ctx) return;
+    if (ctx->_tree_call_depth <= 0) return;
+
+    ctx->_tree_call_depth--;
+    int call_idx = ctx->_tree_call_depth;
+
+    /* Only pop if the matching tree_push actually succeeded in pushing
+     * an ID scope.  _tree_scope_pushed[call_idx] records whether
+     * push_id succeeded for this tree_push call.  Without this check,
+     * a failed push_id (stack full) would cause pop_id to remove a
+     * parent scope, corrupting all subsequent widget IDs. */
+    if (call_idx < FORGE_UI_ID_STACK_MAX_DEPTH &&
+        ctx->_tree_scope_pushed[call_idx]) {
+        ctx->_tree_scope_pushed[call_idx] = false;
+        forge_ui_pop_id(ctx);
+    }
+}
+
+/* ── Sparkline implementation ──────────────────────────────────────────── */
+
+static inline void forge_ui_ctx_sparkline(ForgeUiContext *ctx,
+                                           const float *values, int count,
+                                           float min_val, float max_val,
+                                           ForgeUiColor line_color,
+                                           ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !values || count < 2) return;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return;
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    if (!isfinite(min_val) || !isfinite(max_val)) return;
+    if (max_val <= min_val) return;
+    if (!isfinite(line_color.r) || !isfinite(line_color.g) ||
+        !isfinite(line_color.b) || !isfinite(line_color.a)) return;
+
+    /* Clamp color components to [0,1] for consistency with other widgets */
+    if (line_color.r < 0.0f) line_color.r = 0.0f;
+    if (line_color.r > 1.0f) line_color.r = 1.0f;
+    if (line_color.g < 0.0f) line_color.g = 0.0f;
+    if (line_color.g > 1.0f) line_color.g = 1.0f;
+    if (line_color.b < 0.0f) line_color.b = 0.0f;
+    if (line_color.b > 1.0f) line_color.b = 1.0f;
+    if (line_color.a < 0.0f) line_color.a = 0.0f;
+    if (line_color.a > 1.0f) line_color.a = 1.0f;
+
+    /* Draw background using border color */
+    forge_ui__emit_rect(ctx, rect,
+                        ctx->theme.border.r, ctx->theme.border.g,
+                        ctx->theme.border.b, ctx->theme.border.a);
+
+    float range = max_val - min_val;
+    float line_w = FORGE_UI_SCALED(ctx, FORGE_UI_SPARKLINE_LINE_WIDTH);
+
+    /* Map a value to a y-coordinate (bottom = min, top = max).
+     * The y-axis is inverted in screen space: rect.y is the top. */
+    #define SPARK_Y(v) \
+        (rect.y + rect.h - ((((v) - min_val) / range) * rect.h))
+
+    float step_x = rect.w / (float)(count - 1);
+
+    for (int i = 0; i < count - 1; i++) {
+        float v0 = values[i];
+        float v1 = values[i + 1];
+        if (!isfinite(v0)) v0 = min_val;
+        if (!isfinite(v1)) v1 = min_val;
+        if (v0 < min_val) v0 = min_val;
+        if (v0 > max_val) v0 = max_val;
+        if (v1 < min_val) v1 = min_val;
+        if (v1 > max_val) v1 = max_val;
+
+        float x0 = rect.x + step_x * (float)i;
+        float y0 = SPARK_Y(v0);
+        float x1 = rect.x + step_x * (float)(i + 1);
+        float y1 = SPARK_Y(v1);
+
+        /* Draw the segment as a series of 1px-wide column quads,
+         * interpolating the y position linearly.  This produces a
+         * clean diagonal line at any slope. */
+        float half_w = line_w * 0.5f;
+        float span = x1 - x0;
+        if (span < 1.0f) span = 1.0f;
+        int n_cols = (int)SDL_ceilf(span);
+        if (n_cols < 1) n_cols = 1;
+        if (n_cols > FORGE_UI_SPARKLINE_COL_CAP) n_cols = FORGE_UI_SPARKLINE_COL_CAP;
+
+        for (int c = 0; c < n_cols; c++) {
+            float t0 = (float)c / (float)n_cols;
+            float t1 = (float)(c + 1) / (float)n_cols;
+            float cy0 = y0 + (y1 - y0) * t0;
+            float cy1 = y0 + (y1 - y0) * t1;
+            float top = (cy0 < cy1 ? cy0 : cy1) - half_w;
+            float bot = (cy0 < cy1 ? cy1 : cy0) + half_w;
+            /* Clamp to sparkline rect to prevent bleed */
+            if (top < rect.y) top = rect.y;
+            if (bot > rect.y + rect.h) bot = rect.y + rect.h;
+            if (bot <= top) continue;
+            ForgeUiRect col_rect = {
+                x0 + span * t0,
+                top,
+                span * (t1 - t0),
+                bot - top
+            };
+            forge_ui__emit_rect(ctx, col_rect,
+                                line_color.r, line_color.g,
+                                line_color.b, line_color.a);
+        }
+    }
+
+    #undef SPARK_Y
+}
+
+static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
+                                                  const float *values,
+                                                  int count,
+                                                  float min_val, float max_val,
+                                                  ForgeUiColor line_color,
+                                                  float size)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (ctx->layout_depth <= 0) return;
+    /* Validate widget inputs before layout_next() to avoid advancing
+     * the layout cursor for widgets that cannot render. */
+    if (!values || count < 2) return;
+    if (!isfinite(min_val) || !isfinite(max_val) || max_val <= min_val) return;
+    if (!isfinite(line_color.r) || !isfinite(line_color.g) ||
+        !isfinite(line_color.b) || !isfinite(line_color.a)) return;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    forge_ui_ctx_sparkline(ctx, values, count, min_val, max_val, line_color, rect);
 }
 
 /* ── Theme setter (declared in forge_ui_theme.h) ───────────────────────── */

@@ -59,6 +59,7 @@ earlier ones. Reusable code moves into the shared UI library at
 | 12 | [Font Scaling and Spacing](12-font-scaling-and-spacing/) | Global scale factor, ForgeUiSpacing struct, FORGE_UI_SCALED macro, atlas rebuild at different scales, themed spacing defaults |
 | 13 | [Theming and Color System](13-theming-and-color-system/) | ForgeUiColor and ForgeUiTheme structs, centralized color palette, WCAG 2.1 contrast ratio math (sRGB linearization, relative luminance), programmatic accessibility validation, theme slot-to-widget mapping |
 | 14 | [Game UI](14-game-ui/) | Progress bars for player stats, inventory grids with nested layouts, HUD anchoring at screen edges, action bars, pause menu overlays, proportional layout for resolution independence |
+| 15 | [Dev UI](15-dev-ui/) | Collapsible tree nodes, property editors with inspector panels, scrollable console logs with colored severity levels, performance overlays with sparkline graphs, hierarchical scene tree views |
 
 ## Building
 

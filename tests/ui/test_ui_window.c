@@ -238,14 +238,14 @@ static bool setup_atlas(void)
  * The callback receives the ctx, wctx, and user data pointer. */
 typedef void (*frame_fn)(ForgeUiContext *, ForgeUiWindowContext *, void *);
 
-static void run_frame(float mx, float my, bool mouse_down,
+static bool run_frame(float mx, float my, bool mouse_down,
                       frame_fn fn, void *user_data)
 {
     ForgeUiContext ctx;
     if (!forge_ui_ctx_init(&ctx, &test_atlas)) {
         SDL_Log("    FAIL: forge_ui_ctx_init failed");
         fail_count++;
-        return;
+        return false;
     }
 
     ForgeUiWindowContext wctx;
@@ -253,7 +253,7 @@ static void run_frame(float mx, float my, bool mouse_down,
         SDL_Log("    FAIL: forge_ui_wctx_init failed");
         forge_ui_ctx_free(&ctx);
         fail_count++;
-        return;
+        return false;
     }
 
     forge_ui_ctx_begin(&ctx, mx, my, mouse_down);
@@ -266,6 +266,7 @@ static void run_frame(float mx, float my, bool mouse_down,
 
     forge_ui_wctx_free(&wctx);
     forge_ui_ctx_free(&ctx);
+    return true;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

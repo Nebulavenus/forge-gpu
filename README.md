@@ -99,7 +99,7 @@ system everything runs on.
 - **[GPU](lessons/gpu/)** — Rendering from a triangle to shadow maps, reflections, animation, and stencil effects
 - **[Math](lessons/math/)** — Vectors, matrices, quaternions, projections, color spaces, noise, Bézier curves
 - **[Engine](lessons/engine/)** — CMake, C fundamentals, debugging, RenderDoc, git
-- **[UI](lessons/ui/)** — Immediate-mode UI from TTF parsing to draggable windows
+- **[UI](lessons/ui/)** — Immediate-mode UI from TTF parsing to draggable windows and developer tools
 - **[Physics](lessons/physics/)** — Particles, rigid bodies, collisions, constraints
 - **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry, asset bundles
 

@@ -40,7 +40,7 @@
 
 /* RGBA color with float components in [0, 1]. */
 typedef struct ForgeUiColor {
-    float r;  /* red channel,   0.0 (none) to 1.0 (full) */
+    float r;  /* red channel,   0.0 (none) to 1.0 (full), sRGB color space */
     float g;  /* green channel, 0.0 (none) to 1.0 (full) */
     float b;  /* blue channel,  0.0 (none) to 1.0 (full) */
     float a;  /* alpha channel, 0.0 (transparent) to 1.0 (opaque) */

@@ -141,6 +141,7 @@ add_subdirectory(lessons/ui/11-widget-id-system)
 add_subdirectory(lessons/ui/12-font-scaling-and-spacing)
 add_subdirectory(lessons/ui/13-theming-and-color-system)
 add_subdirectory(lessons/ui/14-game-ui)
+add_subdirectory(lessons/ui/15-dev-ui)
 
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────
 # Reusable C tools for the asset pipeline (invoked as subprocesses by Python

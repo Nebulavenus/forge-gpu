@@ -395,6 +395,13 @@ in the working directory.
    overlap or get clipped at small sizes and add minimum-size clamps to fix
    them.
 
+## What's next
+
+[UI Lesson 15 — Dev UI](../15-dev-ui/) builds developer-facing tools:
+collapsible tree nodes for scene hierarchies, property editors with inline
+controls, scrollable console logs with colored severity levels, and sparkline
+graphs for performance overlays.
+
 ## Further reading
 
 - [UI Lesson 08 — Layout](../08-layout/) covers the layout stack in detail,
