@@ -66,11 +66,9 @@ portable C interface.
 
 ### Knowledge
 
-- **C programming** — Comfortable with structs, pointers, and functions
+- **C programming** — Comfortable with structs, pointers, and functions (see [Intro to C](../engine/01-intro-to-c/))
 - **Basic 3D math** — Understanding of vectors helps (see [Math Lessons](../math/))
-- **Willingness to learn** — GPU programming has a learning curve, but these lessons guide you through it
-
-**No prior graphics experience needed!** These lessons start from the very beginning.
+**No prior graphics experience needed.** These lessons start from the beginning.
 
 ### Tools
 
