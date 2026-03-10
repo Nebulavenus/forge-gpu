@@ -1,8 +1,12 @@
 # Physics Library (`common/physics/`)
 
-Header-only physics simulation library for forge-gpu. Built lesson by lesson,
-covering particle dynamics, rigid body simulation, collision detection, and
-contact resolution.
+Header-only physics simulation library for forge-gpu. The physics lessons
+teach concepts; this library is what remains when the learning is done. Every
+lesson extends it, and it is the primary deliverable of the physics track.
+
+The library must be robust, correct, performant, tested, safe, and valid.
+Every function implements a named algorithm, cites its source, handles
+degenerate inputs, and has corresponding tests in `tests/physics/`.
 
 ## Usage
 
@@ -34,6 +38,11 @@ as functions are implemented.*
 - **Naming** — `forge_physics_` prefix for functions, `ForgePhysics` for types
 - **No allocations** — Functions operate on caller-owned data
 - **Deterministic** — Fixed timestep input produces identical output
+- **Numerically safe** — No unguarded divisions, no unvalidated normalizations,
+  values with physical bounds are clamped
+- **Tested** — Every function has tests for correctness, edge cases,
+  conservation, determinism, and collision-specific behavior in
+  `tests/physics/`
 
 ## Where It's Used
 

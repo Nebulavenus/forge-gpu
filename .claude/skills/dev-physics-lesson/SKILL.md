@@ -4,20 +4,26 @@ description: Add a physics lesson — particle dynamics, rigid bodies, collision
 argument-hint: "[number] [topic-name] [description]"
 ---
 
-Create a new physics lesson that teaches a simulation concept and renders it
-in real time with SDL GPU. Physics lessons are interactive programs — the
-learner sees objects moving, colliding, and reacting under physical forces.
+Every physics lesson produces two things: **library code** and a **demo
+program**. The library — `common/physics/forge_physics.h` — is the crown
+jewel. The lessons teach concepts; the library is what remains when the
+learning is done. It must be robust, thorough, correct, performant, tested,
+safe, and valid. The demo program visualizes the library in action, rendered
+in real time with SDL GPU.
 
 **When to use this skill:**
 
 - You need to teach particle dynamics, rigid body physics, or collision detection
 - A learner wants to understand integration, forces, impulses, or constraints
 - The concept benefits from a live 3D visualization showing behavior over time
-- A lesson should build on the `common/physics/` header-only library
+- New functionality needs to be added to `common/physics/forge_physics.h`
 
 **Smart behavior:**
 
 - Before creating a lesson, check if an existing physics lesson already covers it
+- **Library first, demo second.** Design, implement, document, and test the
+  library code before writing a single line of the demo program. The demo
+  exercises the library — it does not replace it.
 - Physics lessons are visual — every concept must be observable in the running program
 - Focus on *why* the math works, not just the code — connect equations to behavior
 - Use simple geometric shapes (cubes, spheres, capsules) — the physics is the star
@@ -71,18 +77,133 @@ lessons/physics/NN-topic-name/
     compiled/
 ```
 
-### 3. Create the physics library code (when applicable)
+### 3. Design and implement the physics library code
 
-If this lesson introduces new physics types or functions, add them to
-`common/physics/forge_physics.h` (create the file for Lesson 01).
+Every physics lesson adds to `common/physics/forge_physics.h`. This is not
+optional — it is the primary deliverable. The demo program exists to exercise
+and visualize the library; the library is what ships.
 
-**Library conventions:**
+For the first physics lesson, create the file. For subsequent lessons, extend
+it. Design the API before writing the demo. The demo calls the library — never
+the reverse.
 
-- **Header-only**: `static inline` functions in `.h` files
-- **Documented**: Summary, parameters, returns, usage example for every function
-- **Naming**: `forge_physics_` prefix for functions, `ForgePhysics` for types
-- **Tested**: Add or update tests under `tests/physics/`
-- **Uses forge_math**: Build on `common/math/forge_math.h` for vec3, quat, mat4
+#### Library standards
+
+These standards are non-negotiable. The physics library is safety-critical
+code — incorrect integration, missed edge cases, or division by zero produce
+simulations that explode, tunnel through geometry, or silently drift. Every
+function must be defensible.
+
+**Correctness:**
+
+- Every function must implement a named, well-understood algorithm (symplectic
+  Euler, Verlet, GJK, sequential impulse). Cite the source in the doc comment
+  — a textbook, paper, or established reference.
+- Equations in the README must correspond exactly to the code. If the README
+  shows $v(t + \Delta t) = v(t) + a \cdot \Delta t$, the code must compute
+  that expression in that order. No silent rearrangements.
+- Collision detection must handle degenerate cases: zero-length normals,
+  coincident positions, zero-radius shapes, zero-mass bodies. Document what
+  each function does when given degenerate input.
+- Integration must preserve physical invariants where the algorithm guarantees
+  it. Symplectic Euler preserves phase-space volume — verify this in tests
+  by checking energy over long runs.
+
+**Numerical safety:**
+
+- Never divide without checking the denominator. Guard `1.0f / mass` with an
+  `inv_mass` field precomputed at construction, where `mass == 0` means
+  infinite mass (static object) and `inv_mass == 0`.
+- Normalize vectors only after checking length > epsilon. Use `vec3_length()`
+  and compare against `1e-6f` before calling `vec3_normalize()`.
+- Clamp values that have physical bounds: restitution to `[0, 1]`, damping
+  to `[0, 1]`, penetration depth to `>= 0`. Document the valid range in the
+  parameter comment.
+- Use `fabsf()` for float comparisons, not `==`. Two floats are "equal" if
+  `fabsf(a - b) < epsilon`.
+
+**Performance:**
+
+- Precompute values that do not change per-frame: inverse mass, inverse
+  inertia tensor, bounding radii.
+- Avoid `sqrtf()` when the squared value suffices — distance comparisons,
+  broadphase overlap tests, and radius checks should use squared distances.
+- Broadphase before narrowphase: never run O(n) narrowphase tests when a
+  spatial partition or sort-and-sweep can reject pairs early.
+- Profile-guided decisions only. Do not optimise speculatively — measure
+  first. But do not pessimise either: an O(n^2) all-pairs check is
+  unacceptable when n > 64.
+
+**Safety and validation:**
+
+- Every public function documents its preconditions. If `dt` must be positive,
+  say so. If a pointer must be non-NULL, say so.
+- Init functions (`forge_physics_particle_create`, etc.) must produce a valid
+  object with all fields initialised — no partially constructed state.
+- Functions that mutate state (integration, impulse application) must leave
+  the object in a valid state even if called with extreme inputs (very large
+  dt, very large forces). Clamp or early-return rather than producing NaN
+  or infinity.
+- Never read uninitialised memory. Every struct field must have an explicit
+  initial value in the init function.
+
+**Header-only implementation:**
+
+- `static inline` for all functions — no separate `.c` compilation unit
+- Guard with `#ifndef FORGE_PHYSICS_H` / `#define` / `#endif`
+- Include only `"math/forge_math.h"` and standard C headers
+- No heap allocation — functions operate on caller-owned data
+- Deterministic: identical inputs and fixed timestep produce identical outputs
+
+**Documentation (every function, no exceptions):**
+
+```c
+/* Apply gravitational acceleration to a particle.
+ *
+ * Adds gravity * mass to the particle's force accumulator. Static
+ * particles (inv_mass == 0) are unaffected.
+ *
+ * This uses Newton's second law: F = m * g. The force accumulator
+ * stores the total force; integration divides by mass to get
+ * acceleration.
+ *
+ * Parameters:
+ *   p       — particle to apply gravity to (must not be NULL)
+ *   gravity — gravitational acceleration, typically (0, -9.81, 0)
+ *
+ * Usage:
+ *   forge_physics_apply_gravity(&particle, (vec3){0, -9.81f, 0});
+ *
+ * See: Physics Lesson 01 — Point Particles
+ * Ref: Millington, "Game Physics Engine Development", Ch. 3
+ */
+static inline void forge_physics_apply_gravity(ForgePhysicsParticle *p,
+                                               vec3 gravity)
+{
+    if (p->inv_mass == 0.0f) return;  /* static — no forces apply */
+    /* F = m * g, but we accumulate force and divide by mass later */
+    p->force_accum = vec3_add(p->force_accum,
+                              vec3_scale(gravity, p->mass));
+}
+```
+
+Every doc comment must include:
+
+- Summary (one sentence — what it does)
+- Algorithm or physical law being implemented
+- Parameters with types, valid ranges, and nullability
+- Return value (if any) with units
+- Usage example
+- Cross-reference to the lesson that introduces it
+- Reference to the source material (textbook, paper)
+
+**Naming:**
+
+- Functions: `forge_physics_verb_noun()` — e.g. `forge_physics_integrate()`,
+  `forge_physics_apply_gravity()`, `forge_physics_collide_sphere_plane()`
+- Types: `ForgePhysicsNoun` — e.g. `ForgePhysicsParticle`,
+  `ForgePhysicsContact`, `ForgePhysicsRigidBody`
+- Constants: `FORGE_PHYSICS_UPPER` — e.g. `FORGE_PHYSICS_MAX_CONTACTS`
 
 **Core types to establish in Lesson 01:**
 
@@ -109,6 +230,96 @@ typedef struct ForgePhysicsParticle {
 
 #endif /* FORGE_PHYSICS_H */
 ```
+
+#### Testing the library (MANDATORY)
+
+The physics library is tested independently of the demo program. Tests
+validate correctness, edge cases, numerical stability, and determinism.
+Every function added to `forge_physics.h` must have corresponding tests
+in `tests/physics/test_physics.c`.
+
+**Test categories (every function must have all applicable categories):**
+
+1. **Basic correctness** — Known inputs produce expected outputs within
+   tolerance. Use hand-computed reference values, not "whatever the code
+   outputs."
+
+   ```c
+   /* Gravity on a 2 kg particle for 1 second should produce v = -9.81 m/s */
+   ForgePhysicsParticle p = forge_physics_particle_create(
+       (vec3){0, 10, 0},  /* position */
+       2.0f,              /* mass */
+       0.0f,              /* damping */
+       1.0f);             /* restitution */
+   forge_physics_apply_gravity(&p, (vec3){0, -9.81f, 0});
+   forge_physics_integrate(&p, 1.0f);
+   ASSERT_NEAR(p.velocity.y, -9.81f, 1e-4f);
+   ```
+
+2. **Edge cases** — Zero mass (static), zero dt, zero-length vectors,
+   coincident positions, maximum velocity, very large forces.
+
+   ```c
+   /* Static particle (inv_mass == 0) must not move under any force */
+   ForgePhysicsParticle p = forge_physics_particle_create(
+       (vec3){5, 0, 0},   /* position */
+       0.0f,              /* mass (0 → static) */
+       0.0f,              /* damping */
+       1.0f);             /* restitution */
+   forge_physics_apply_gravity(&p, (vec3){0, -9.81f, 0});
+   forge_physics_integrate(&p, 1.0f);
+   ASSERT_NEAR(p.position.x, 5.0f, 1e-6f);
+   ASSERT_NEAR(p.velocity.y, 0.0f, 1e-6f);
+   ```
+
+3. **Conservation and stability** — Run a closed system for thousands of
+   steps. Total energy (kinetic + potential) should remain bounded for
+   symplectic integrators. Explicit check: no NaN, no infinity, no
+   position > 1e6.
+
+   ```c
+   /* 10000 steps of a bouncing ball — energy must not grow unboundedly */
+   for (int i = 0; i < 10000; i++) {
+       forge_physics_apply_gravity(&p, gravity);
+       forge_physics_integrate(&p, PHYSICS_DT);
+       /* ... collision with ground ... */
+   }
+   float energy = kinetic_energy(&p) + potential_energy(&p, gravity);
+   ASSERT(energy < initial_energy * 1.1f); /* bounded growth */
+   ASSERT(!isnan(p.position.x) && !isinf(p.position.x));
+   ```
+
+4. **Determinism** — Two runs with identical inputs must produce identical
+   outputs, bit-for-bit. This is a requirement for replay systems and
+   debugging.
+
+   ```c
+   /* Two particles with identical setup must produce identical state */
+   ForgePhysicsParticle a = make_test_particle();
+   ForgePhysicsParticle b = make_test_particle();
+   for (int i = 0; i < 1000; i++) {
+       step(&a, PHYSICS_DT);
+       step(&b, PHYSICS_DT);
+   }
+   ASSERT(vec3_equal(a.position, b.position));
+   ASSERT(vec3_equal(a.velocity, b.velocity));
+   ASSERT(a.inv_mass == b.inv_mass);
+   ```
+
+5. **Collision-specific** — Normals point from B to A. Penetration depth
+   is non-negative. Post-resolution velocity respects restitution. Tangential
+   velocity is preserved (or reduced by friction, not reversed).
+
+**Test infrastructure:**
+
+- Test file: `tests/physics/test_physics.c`
+- Register in root `CMakeLists.txt` as `test_physics`
+- Use the same `ASSERT_NEAR` / test macros as `tests/math/test_math.c`
+- Run: `cmake --build build --target test_physics && ctest --test-dir build -R physics`
+- Tests must pass before the demo program is written
+
+For the first physics lesson, also create `common/physics/README.md` with
+the full API reference, following the format of `common/math/README.md`.
 
 ### 4. Create the demo program (`main.c`)
 
@@ -529,7 +740,7 @@ build\lessons\physics\NN-topic-name\Debug\NN-topic-name.exe
 
 ```bash
 # Compile shaders
-python scripts/compile_shaders.py physics/NN
+python scripts/compile_shaders.py physics/NN-topic-name
 
 # Build
 cmake -B build
@@ -583,23 +794,7 @@ frames[0].save("animation.gif", save_all=True, append_images=frames[1:],
 
 Copy output to `lessons/physics/NN-topic-name/assets/`.
 
-### 12. Update the physics library (when applicable)
-
-If this lesson introduces reusable types or functions, add them to
-`common/physics/forge_physics.h`:
-
-- **Header-only**: `static inline` functions in `.h` files
-- **Documented**: Summary, parameters, returns, usage example
-- **Naming**: `forge_physics_` prefix for public API, `ForgePhysics` for types
-- **Tested**: Add or update tests under `tests/physics/`
-
-For the first physics lesson, also create:
-
-- `common/physics/README.md` — API reference
-- `tests/physics/test_physics.c` — unit tests for the physics library
-- Register the test in root `CMakeLists.txt`
-
-### 13. Verify key topics are fully explained
+### 12. Verify key topics are fully explained
 
 **Before finalizing, launch a verification agent** using the Task tool
 (`subagent_type: "general-purpose"`). Give the agent the paths to the lesson's
@@ -619,7 +814,7 @@ For the first physics lesson, also create:
 
 **The lesson is incomplete until every key topic passes all four checks.**
 
-### 14. Run markdown linting
+### 13. Run markdown linting
 
 Use the `/dev-markdown-lint` skill to check all markdown files:
 

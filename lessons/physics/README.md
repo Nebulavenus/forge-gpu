@@ -30,8 +30,10 @@ capsules) so the simulation behavior is front and center.
   frame rate.
 - **Interactive** — Every lesson supports pause (Space), reset (R), and slow
   motion (T) so learners can observe and experiment with the simulation.
-- **Library-driven** — Reusable physics code lives in `common/physics/` and
-  grows lesson by lesson, just like the math library.
+- **Library-driven** — `forge_physics.h` is the primary deliverable of every
+  lesson. The lessons teach; the library is what remains. It must be robust,
+  correct, performant, and tested. Every lesson extends it, and tests must
+  pass before the demo program is written.
 
 ## Lessons
 
