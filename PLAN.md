@@ -68,19 +68,26 @@ with tested, documented functions.
 
 A new header-only library (`common/audio/`) built lesson by lesson, covering
 sound playback, mixing, spatial audio, and music systems. Uses SDL3 audio
-streams as the backend.
+streams as the backend. Same quality bar as `forge_physics.h` — every function
+documented, tested, numerically safe.
+
+Every lesson renders an SDL GPU scene with Blinn-Phong lighting, a grid floor,
+shadow mapping, and camera controls. Audio parameters are controlled through
+forge UI panels (`common/ui/`). If a lesson needs a UI widget that does not
+exist (waveform display, VU meter, frequency plot), the widget is added to
+`common/ui/` as part of that lesson.
 
 ### Fundamentals
 
-- [ ] **Audio Lesson 01 — Audio Basics** — PCM audio fundamentals; sample rate, bit depth, channels; loading WAV files; playing a sound with SDL audio streams; `forge_audio_` API scaffolding in `common/audio/forge_audio.h`
-- [ ] **Audio Lesson 02 — Sound Effects** — Triggering one-shot and looping sounds; managing multiple concurrent audio streams; volume control and fade in/out; fire-and-forget playback API
-- [ ] **Audio Lesson 03 — Audio Mixing** — Combining multiple audio sources into a single output; per-channel volume and panning; master volume; clipping prevention and normalization
+- [ ] **Audio Lesson 01 — Audio Basics** — PCM audio fundamentals; sample rate, bit depth, channels; loading WAV files; playing a sound with SDL audio streams; `forge_audio_` API scaffolding in `common/audio/forge_audio.h`; forge UI panel with play/pause and volume slider
+- [ ] **Audio Lesson 02 — Sound Effects** — Triggering one-shot and looping sounds; managing multiple concurrent audio streams; volume control and fade in/out; fire-and-forget playback API; UI panel showing active source list with per-source volume
+- [ ] **Audio Lesson 03 — Audio Mixing** — Combining multiple audio sources into a single output; per-channel volume and panning; master volume; clipping prevention and normalization; UI mixer panel with per-channel sliders and VU meters
 
 ### Spatial & Advanced
 
-- [ ] **Audio Lesson 04 — Spatial Audio** — Distance-based attenuation (linear, inverse, exponential); stereo panning from 3D position; Doppler effect; listener orientation and position
-- [ ] **Audio Lesson 05 — Music and Streaming** — Streaming large audio files from disk (OGG/MP3 decoding); crossfading between tracks; looping with intro sections; adaptive music layers that respond to game state
-- [ ] **Audio Lesson 06 — DSP Effects** — Low-pass and high-pass filters; reverb (simple delay-line); echo and chorus; applying effects per-source and on the master bus; underwater/muffled presets
+- [ ] **Audio Lesson 04 — Spatial Audio** — Distance-based attenuation (linear, inverse, exponential); stereo panning from 3D position; Doppler effect; listener orientation and position; 3D scene with visible sound source markers; camera position as listener
+- [ ] **Audio Lesson 05 — Music and Streaming** — Streaming large audio files from disk (OGG/MP3 decoding); crossfading between tracks; looping with intro sections; adaptive music layers that respond to game state; UI track selector with crossfade controls
+- [ ] **Audio Lesson 06 — DSP Effects** — Low-pass and high-pass filters; reverb (simple delay-line); echo and chorus; applying effects per-source and on the master bus; underwater/muffled presets; UI panel with filter cutoff sliders and wet/dry mix
 
 ## Asset Pipeline — Remaining
 

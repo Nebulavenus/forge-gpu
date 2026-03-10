@@ -155,6 +155,7 @@ forge-gpu/
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
 │   ├── physics/           # Physics simulation (particles, rigid bodies, collisions)
+│   ├── audio/             # Audio programming (playback, mixing, spatial, DSP)
 │   ├── assets/            # Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── pipeline/              # Asset pipeline library (Python, pip-installable)
@@ -170,18 +171,20 @@ forge-gpu/
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
 │   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout, panels, windows)
 │   ├── physics/           # Physics library (particles, rigid bodies, collisions)
+│   ├── audio/             # Audio library (playback, mixing, spatial audio, DSP)
 │   ├── pipeline/          # Pipeline runtime library (.fmesh + texture loader)
 │   ├── shapes/            # Procedural geometry (sphere, torus, capsule, etc.)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster, ui, shapes, pipeline)
+├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics, audio, shapes, pipeline)
 ├── scripts/
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
 │       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_39.py)
 │       ├── math/          # Math lesson diagrams
 │       ├── ui/            # UI lesson diagrams
 │       ├── engine/        # Engine lesson diagrams
+│       ├── audio/         # Audio lesson diagrams
 │       └── assets/        # Asset pipeline lesson diagrams
 ├── tools/
 │   ├── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
@@ -271,6 +274,21 @@ after any HLSL change — the C build does not auto-detect shader changes.
 - Add reusable physics code to `common/physics/` as the track grows
 - Capture both screenshots AND animated GIFs (physics is dynamic)
 - Cross-reference math lessons for vectors, quaternions, and integration theory
+
+### Audio lessons (lessons/audio/)
+
+- Use **/dev-audio-lesson** skill to scaffold
+- Interactive programs with SDL GPU scenes and forge UI control panels
+- Every lesson includes Blinn-Phong lighting, grid floor, shadow map, camera
+  controls, and a forge UI panel as a rendering/UI baseline
+- Camera position doubles as the audio listener position for spatial lessons
+- All audio output goes through SDL3 audio streams — no third-party audio libs
+- `forge_audio.h` is a header-only library that grows lesson by lesson, with
+  the same quality bar as `forge_physics.h` (documented, tested, numerically safe)
+- UI widgets for audio controls (volume sliders, waveform displays, VU meters);
+  if a needed widget does not exist in `common/ui/`, add it as part of the lesson
+- Add reusable audio code to `common/audio/` as the track grows
+- Cross-reference math lessons for vectors (spatial audio) and signal processing
 
 ### Asset pipeline lessons (lessons/assets/)
 
