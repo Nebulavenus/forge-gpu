@@ -72,9 +72,11 @@ the relevant test files. Each agent works independently and reports findings.
 
 ### Agent 5: Resource cleanup
 
-- Every `malloc`/`calloc`/`realloc` has a matching `free` on every exit path
-- Every dynamically allocated array inside a struct is freed when the struct
-  is destroyed
+- Every `SDL_malloc`/`SDL_calloc`/`SDL_realloc` has a matching `SDL_free` on
+  every exit path — bare `malloc`/`free` must not be used; the codebase uses
+  SDL's allocation functions exclusively
+- Every dynamically allocated array inside a struct is freed with `SDL_free`
+  when the struct is destroyed
 - Early-return paths release all resources allocated before the return
 - Cleanup functions handle partially initialized state (NULL fields)
 
