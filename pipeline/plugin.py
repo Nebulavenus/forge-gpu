@@ -85,7 +85,7 @@ class PluginRegistry:
 
     def __init__(self) -> None:
         self._plugins: dict[str, AssetPlugin] = {}
-        self._ext_map: dict[str, AssetPlugin] = {}
+        self._ext_map: dict[str, list[AssetPlugin]] = {}
 
     # -- Registration -------------------------------------------------------
 
@@ -93,7 +93,9 @@ class PluginRegistry:
         """Add *plugin* to the registry.
 
         Raises ``ValueError`` if a plugin with the same name is already
-        registered or if an extension is already claimed by another plugin.
+        registered.  Multiple plugins may handle the same extension —
+        all of them will be invoked when a file with that extension is
+        processed.
         """
         if not plugin.name:
             raise ValueError("Plugin must have a non-empty 'name' attribute")
@@ -101,18 +103,10 @@ class PluginRegistry:
         if plugin.name in self._plugins:
             raise ValueError(f"Duplicate plugin name: {plugin.name!r}")
 
-        for ext in plugin.extensions:
-            ext_lower = ext.lower()
-            if ext_lower in self._ext_map:
-                existing = self._ext_map[ext_lower].name
-                raise ValueError(
-                    f"Extension {ext!r} is already claimed by plugin {existing!r}"
-                )
-
-        # Commit only after all validations pass.
+        # Commit after name validation passes.
         self._plugins[plugin.name] = plugin
         for ext in plugin.extensions:
-            self._ext_map[ext.lower()] = plugin
+            self._ext_map.setdefault(ext.lower(), []).append(plugin)
 
         log.debug(
             "Registered plugin %r (extensions: %s)", plugin.name, plugin.extensions
@@ -124,9 +118,14 @@ class PluginRegistry:
         """Return the plugin with *name*, or ``None``."""
         return self._plugins.get(name)
 
-    def get_by_extension(self, ext: str) -> AssetPlugin | None:
-        """Return the plugin that handles *ext* (e.g. ``".png"``), or ``None``."""
-        return self._ext_map.get(ext.lower())
+    def get_by_extension(self, ext: str) -> list[AssetPlugin]:
+        """Return all plugins that handle *ext* (e.g. ``".png"``).
+
+        Returns an empty list if no plugin handles the extension.
+        Multiple plugins may share an extension — for example, a mesh
+        plugin and an animation plugin both handle ``.gltf``.
+        """
+        return list(self._ext_map.get(ext.lower(), []))
 
     @property
     def plugins(self) -> list[AssetPlugin]:

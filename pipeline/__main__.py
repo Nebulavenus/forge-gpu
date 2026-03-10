@@ -68,6 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scan and report without processing",
     )
     parser.add_argument(
+        "--plugin",
+        type=str,
+        default=None,
+        help="Only run this plugin (by name, e.g. --plugin animation)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -140,12 +146,19 @@ def _fingerprint_with_settings(content_hash: str, settings: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _process_files(files, registry, config) -> tuple[int, int, set]:
+def _process_files(
+    files,
+    registry,
+    config,
+    cache,
+    *,
+    plugin_filter: str | None = None,
+) -> tuple[int, int, set]:
     """Run plugins on NEW and CHANGED files.
 
-    Returns *(success_count, error_count, succeeded_paths)* where
-    *succeeded_paths* is the set of ``ScannedFile.relative`` paths that
-    were processed without error.
+    Returns *(success_count, error_count, succeeded_keys)* where
+    *succeeded_keys* is the set of ``"relative:plugin_name"`` cache keys
+    that were processed without error.
     """
     to_process = [f for f in files if f.status is not FileStatus.UNCHANGED]
     if not to_process:
@@ -155,30 +168,55 @@ def _process_files(files, registry, config) -> tuple[int, int, set]:
 
     success = 0
     errors = 0
-    succeeded: set[Path] = set()
+    succeeded: set[str] = set()
 
     for f in to_process:
-        plugin = registry.get_by_extension(f.extension)
-        if plugin is None:
+        plugins = registry.get_by_extension(f.extension)
+        if not plugins:
             log.warning("No plugin for %s — skipping", f.relative)
             continue
 
-        # Build the output subdirectory mirroring the source tree structure.
-        relative_dir = f.relative.parent
-        output_subdir = config.output_dir / relative_dir
-        output_subdir.mkdir(parents=True, exist_ok=True)
+        for plugin in plugins:
+            # If --plugin was given, skip plugins that don't match.
+            if plugin_filter is not None and plugin.name != plugin_filter:
+                continue
 
-        # Get plugin-specific settings from the config.
-        settings = config.plugin_settings.get(plugin.name, {})
+            # Check per-plugin cache — skip if this (file, plugin) pair
+            # is already up to date.
+            settings = config.plugin_settings.get(plugin.name, {})
+            combined = _fingerprint_with_settings(f.fingerprint, settings)
+            cache_key = f"{f.relative}:{plugin.name}"
+            cached = cache.get(Path(cache_key))
+            if cached == combined:
+                continue
 
-        try:
-            result = plugin.process(f.path, output_subdir, settings)
-            log.info("  [OK] %s -> %s", f.relative, result.output.name)
-            success += 1
-            succeeded.add(f.relative)
-        except Exception:
-            log.exception("  [FAIL] %s", f.relative)
-            errors += 1
+            # Build the output subdirectory mirroring the source tree.
+            relative_dir = f.relative.parent
+            output_subdir = config.output_dir / relative_dir
+            output_subdir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                result = plugin.process(f.path, output_subdir, settings)
+                processed = result.metadata.get("processed", True)
+                if processed:
+                    log.info(
+                        "  [OK] %s (%s) -> %s",
+                        f.relative,
+                        plugin.name,
+                        result.output.name,
+                    )
+                    success += 1
+                    succeeded.add(cache_key)
+                else:
+                    log.info(
+                        "  [SKIP] %s (%s): %s",
+                        f.relative,
+                        plugin.name,
+                        result.metadata.get("reason", "not processed"),
+                    )
+            except Exception:
+                log.exception("  [FAIL] %s (%s)", f.relative, plugin.name)
+                errors += 1
 
     return success, errors, succeeded
 
@@ -364,9 +402,9 @@ def main(argv: list[str] | None = None) -> int:
         }
         for f in files:
             label = status_labels[f.status]
-            plugin = registry.get_by_extension(f.extension)
-            plugin_name = plugin.name if plugin else "?"
-            print(f"  {label}  {f.relative}  ({plugin_name})")
+            plugins = registry.get_by_extension(f.extension)
+            plugin_names = ", ".join(p.name for p in plugins) if plugins else "?"
+            print(f"  {label}  {f.relative}  ({plugin_names})")
 
     # -- Processing ---------------------------------------------------------
     if args.dry_run:
@@ -376,18 +414,25 @@ def main(argv: list[str] | None = None) -> int:
             print("\nAll files up to date — nothing to process.")
     elif new_count + changed_count > 0:
         print(f"\nProcessing {new_count + changed_count} file(s)...")
-        success, errors, succeeded = _process_files(files, registry, config)
+        success, errors, succeeded = _process_files(
+            files,
+            registry,
+            config,
+            cache,
+            plugin_filter=args.plugin,
+        )
 
-        # Update the fingerprint cache only for files that were processed
-        # successfully.  The cache key combines the source content hash with
-        # a digest of the plugin settings so that config changes (e.g.
-        # max_size, output_format) trigger reprocessing automatically.
+        # Update the fingerprint cache only for (file, plugin) pairs that
+        # were processed successfully.  The cache key combines the source
+        # content hash with a digest of the plugin settings so that config
+        # changes (e.g. max_size, output_format) trigger reprocessing.
         for f in files:
-            if f.relative in succeeded:
-                plugin = registry.get_by_extension(f.extension)
-                settings = config.plugin_settings.get(plugin.name, {}) if plugin else {}
-                combined = _fingerprint_with_settings(f.fingerprint, settings)
-                cache.set(f.relative, combined)
+            for plugin in registry.get_by_extension(f.extension):
+                cache_key = f"{f.relative}:{plugin.name}"
+                if cache_key in succeeded:
+                    settings = config.plugin_settings.get(plugin.name, {})
+                    combined = _fingerprint_with_settings(f.fingerprint, settings)
+                    cache.set(Path(cache_key), combined)
         cache.save()
 
         print(

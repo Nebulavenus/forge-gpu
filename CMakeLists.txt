@@ -149,6 +149,7 @@ add_subdirectory(lessons/ui/15-dev-ui)
 # lessons — so the pipeline and any lesson can use them.
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(tools/mesh)
+    add_subdirectory(tools/anim)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

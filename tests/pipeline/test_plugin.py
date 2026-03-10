@@ -31,8 +31,9 @@ def test_register_and_lookup():
     reg.register(TexturePlugin())
 
     assert reg.get_by_name("texture") is not None
-    assert reg.get_by_extension(".png") is not None
-    assert reg.get_by_extension(".PNG") is not None  # case-insensitive
+    assert len(reg.get_by_extension(".png")) == 1
+    assert reg.get_by_extension(".png")[0].name == "texture"
+    assert len(reg.get_by_extension(".PNG")) == 1  # case-insensitive
 
 
 def test_duplicate_name_raises():
@@ -42,16 +43,21 @@ def test_duplicate_name_raises():
         reg.register(TexturePlugin())
 
 
-def test_duplicate_extension_raises():
+def test_multiple_plugins_per_extension():
+    """Two plugins can handle the same extension without conflict."""
     reg = PluginRegistry()
-    reg.register(TexturePlugin())
+    reg.register(MeshPlugin())  # handles .gltf
 
-    class AnotherPng(AssetPlugin):
-        name = "other"
-        extensions = [".png"]
+    class AnimPlugin(AssetPlugin):
+        name = "animation"
+        extensions = [".gltf", ".glb"]
 
-    with pytest.raises(ValueError, match="already claimed"):
-        reg.register(AnotherPng())
+    reg.register(AnimPlugin())
+
+    plugins = reg.get_by_extension(".gltf")
+    assert len(plugins) == 2
+    names = {p.name for p in plugins}
+    assert names == {"mesh", "animation"}
 
 
 def test_no_name_raises():
@@ -84,7 +90,33 @@ def test_get_by_name_miss():
 
 def test_get_by_extension_miss():
     reg = PluginRegistry()
-    assert reg.get_by_extension(".xyz") is None
+    assert reg.get_by_extension(".xyz") == []
+
+
+def test_get_by_extension_returns_list():
+    """get_by_extension always returns a list, even for a single plugin."""
+    reg = PluginRegistry()
+    reg.register(TexturePlugin())
+
+    result = reg.get_by_extension(".png")
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+    result_miss = reg.get_by_extension(".xyz")
+    assert isinstance(result_miss, list)
+    assert len(result_miss) == 0
+
+
+def test_get_by_extension_returns_copy():
+    """Mutating the returned list must not affect the registry."""
+    reg = PluginRegistry()
+    reg.register(TexturePlugin())
+
+    result = reg.get_by_extension(".png")
+    result.clear()
+
+    # Internal state should be unaffected.
+    assert len(reg.get_by_extension(".png")) == 1
 
 
 # -- Discovery tests --------------------------------------------------------
@@ -110,7 +142,7 @@ class DemoPlugin(AssetPlugin):
 
     assert count == 1
     assert reg.get_by_name("demo") is not None
-    assert reg.get_by_extension(".demo") is not None
+    assert len(reg.get_by_extension(".demo")) == 1
 
 
 def test_discover_skips_underscored_files(tmp_path: Path):

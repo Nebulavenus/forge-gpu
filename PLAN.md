@@ -10,7 +10,7 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Engine Lessons 01–11** — From Intro to C through Git & Version Control
 - **UI Lessons 01–13** — From TTF Parsing through Theming and Color System
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Asset Lessons 01–06** — From Pipeline Scaffold through Loading Processed Assets
+- **Asset Lessons 01–08** — From Pipeline Scaffold through Animations
 
 ## GPU Lessons — Remaining
 
@@ -107,6 +107,8 @@ C library (`common/shapes/forge_shapes.h`).
 
 - [x] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
 - [x] **Asset Lesson 06 — Loading Processed Assets in C** — Reading `.fmesh` binary format and BC7/BC5 compressed textures from `assets/processed/`; header-only C loader (`common/pipeline/forge_pipeline.h`); CMake `forge-assets` target as a build dependency for GPU lessons 09+; integration test rendering a pipeline-processed model with normal mapping
+- [x] **Asset Lesson 07 — Materials** — Full PBR material support: glTF parser extensions for materials, multi-primitive mesh processing, .fmesh v2 submesh table, .fmat material sidecars
+- [x] **Asset Lesson 08 — Animations** — glTF animation parsing in `forge_gltf.h` and runtime evaluation in `forge_gltf_anim.h`: channels, samplers, binary search keyframes, lerp/slerp interpolation, looping, TRS application to nodes
 
 ### Project Integration
 
@@ -124,7 +126,7 @@ full plan. Summary:
 
 ### Web Frontend
 
-- [ ] **Asset Lesson 07 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
-- [ ] **Asset Lesson 08 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
-- [ ] **Asset Lesson 09 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
-- [ ] **Asset Lesson 10 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+- [ ] **Asset Lesson 09 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
+- [ ] **Asset Lesson 10 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
+- [ ] **Asset Lesson 11 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
+- [ ] **Asset Lesson 12 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern

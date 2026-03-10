@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include "math/forge_math.h"
 #include "gltf/forge_gltf.h"
+#include "gltf/forge_gltf_anim.h"
 
 /* ── Test Framework (MSVC C99 compatible) ────────────────────────────────── */
 
@@ -326,6 +327,73 @@ static void test_invalid_component_type(void)
     remove_temp_gltf(&tg);
 
     /* Scene loads but primitive is skipped due to bad componentType. */
+    ASSERT_TRUE(ok);
+    ASSERT_INT_EQ(scene->primitive_count, 0);
+
+    forge_gltf_free(scene);
+    SDL_free(scene);
+    END_TEST();
+}
+
+/* ── Misaligned float accessor is rejected ────────────────────────────────── */
+/* A float (4-byte) accessor at a 1-byte-aligned offset should be rejected.
+ * The glTF spec requires data to be aligned to the component size. */
+
+static void test_accessor_misaligned(void)
+{
+    /* Binary layout: 1 padding byte, then 3 floats (VEC3) at offset 1,
+     * then 3 uint16 indices at offset 13.  Total = 19 bytes. */
+    Uint8 bin_data[19];
+    const char *json;
+    TempGltf tg;
+    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
+    if (!scene) {
+        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
+        test_failed++;
+        return;
+    }
+    bool wrote;
+    bool ok;
+
+    TEST("float accessor at misaligned offset is rejected");
+
+    SDL_memset(bin_data, 0, sizeof(bin_data));
+
+    /* bufferView 0 starts at byte 1 — not 4-byte aligned.
+     * The accessor references this view for POSITION (VEC3 float). */
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 1, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 1, \"byteLength\": 12},"
+        "    {\"buffer\": 0, \"byteOffset\": 13, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_misalign.bin\","
+        "                 \"byteLength\": 19}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
+                             "test_misalign", &tg);
+    ASSERT_TRUE(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene);
+    remove_temp_gltf(&tg);
+
+    /* Scene loads but the misaligned POSITION accessor is rejected,
+     * so no primitive is created. */
     ASSERT_TRUE(ok);
     ASSERT_INT_EQ(scene->primitive_count, 0);
 
@@ -2437,6 +2505,721 @@ static void test_cesiumman_skin(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Animation tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Synthetic animation parsing ─────────────────────────────────────────── */
+/* A minimal glTF with one animation: 3 translation keyframes on node 0.
+ *
+ * Binary layout:
+ *   Bytes 0-35:   3 positions (VEC3 float × 3 verts)
+ *   Bytes 36-41:  3 indices (uint16 × 3)
+ *   Bytes 44-55:  3 timestamps (float × 3): 0.0, 0.5, 1.0
+ *   Bytes 56-91:  3 translations (VEC3 float × 3): (0,0,0), (1,2,3), (2,4,6)
+ *
+ * 2 bytes padding after indices to align floats to 4 bytes. */
+
+static void test_anim_parse_synthetic(void)
+{
+    /* Build binary data. */
+    float positions[9] = {0,0,0, 1,0,0, 0,1,0};
+    Uint16 indices[3]  = {0, 1, 2};
+    Uint16 pad = 0;
+    float timestamps[3] = {0.0f, 0.5f, 1.0f};
+    float translations[9] = {0,0,0, 1,2,3, 2,4,6};
+
+    /* Total: 36 + 6 + 2 + 12 + 36 = 92 bytes */
+    Uint8 bin[92];
+    SDL_memcpy(bin,      positions,    36);
+    SDL_memcpy(bin + 36, indices,       6);
+    SDL_memcpy(bin + 42, &pad,          2);
+    SDL_memcpy(bin + 44, timestamps,   12);
+    SDL_memcpy(bin + 56, translations, 36);
+
+    const char *json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"},"
+        "    {\"bufferView\": 2, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"SCALAR\"},"
+        "    {\"bufferView\": 3, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6},"
+        "    {\"buffer\": 0, \"byteOffset\": 44, \"byteLength\": 12},"
+        "    {\"buffer\": 0, \"byteOffset\": 56, \"byteLength\": 36}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_anim.bin\", \"byteLength\": 92}],"
+        "  \"animations\": [{"
+        "    \"name\": \"Move\","
+        "    \"samplers\": [{"
+        "      \"input\": 2, \"output\": 3,"
+        "      \"interpolation\": \"LINEAR\""
+        "    }],"
+        "    \"channels\": [{"
+        "      \"sampler\": 0,"
+        "      \"target\": {\"node\": 0, \"path\": \"translation\"}"
+        "    }]"
+        "  }]"
+        "}";
+
+    TempGltf tg;
+    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
+    if (!scene) {
+        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
+        test_failed++;
+        return;
+    }
+
+    TEST("synthetic animation: parse count and metadata");
+
+    bool wrote = write_temp_gltf(json, bin, sizeof(bin), "test_anim", &tg);
+    ASSERT_TRUE(wrote);
+
+    bool ok = forge_gltf_load(tg.gltf_path, scene);
+    remove_temp_gltf(&tg);
+    ASSERT_TRUE(ok);
+
+    ASSERT_INT_EQ(scene->animation_count, 1);
+    ASSERT_TRUE(SDL_strcmp(scene->animations[0].name, "Move") == 0);
+    ASSERT_INT_EQ(scene->animations[0].sampler_count, 1);
+    ASSERT_INT_EQ(scene->animations[0].channel_count, 1);
+    ASSERT_INT_EQ(scene->animations[0].samplers[0].keyframe_count, 3);
+    ASSERT_INT_EQ(scene->animations[0].samplers[0].value_components, 3);
+    ASSERT_INT_EQ((int)scene->animations[0].samplers[0].interpolation,
+                  (int)FORGE_GLTF_INTERP_LINEAR);
+    ASSERT_INT_EQ(scene->animations[0].channels[0].target_node, 0);
+    ASSERT_INT_EQ((int)scene->animations[0].channels[0].target_path,
+                  (int)FORGE_GLTF_ANIM_TRANSLATION);
+    ASSERT_FLOAT_EQ(scene->animations[0].duration, 1.0f);
+
+    /* Verify data pointers reference the correct values. */
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].timestamps[0], 0.0f);
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].timestamps[1], 0.5f);
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].timestamps[2], 1.0f);
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[0], 0.0f);
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[3], 1.0f);
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[4], 2.0f);
+    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[5], 3.0f);
+
+    forge_gltf_free(scene);
+    SDL_free(scene);
+    END_TEST();
+}
+
+/* ── CesiumMilkTruck animation parsing ───────────────────────────────────── */
+
+static void test_truck_animation(void)
+{
+    const char *base;
+    char path[FORGE_GLTF_PATH_SIZE];
+    ForgeGltfScene *scene;
+    bool ok;
+
+    TEST("CesiumMilkTruck animation (2 rotation channels, 31 keyframes)");
+
+    base = SDL_GetBasePath();
+    if (!base) {
+        SDL_Log("    SKIP (SDL_GetBasePath failed)");
+        test_passed++;
+        return;
+    }
+
+    SDL_snprintf(path, sizeof(path),
+                 "%sassets/CesiumMilkTruck/CesiumMilkTruck.gltf", base);
+
+    scene = SDL_calloc(1, sizeof(*scene));
+    if (!scene) {
+        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
+        test_failed++;
+        return;
+    }
+
+    ok = forge_gltf_load(path, scene);
+    if (!ok) {
+        SDL_Log("    SKIP (model not found at %s)", path);
+        SDL_free(scene);
+        test_passed++;
+        return;
+    }
+
+    ASSERT_INT_EQ(scene->animation_count, 1);
+    ASSERT_TRUE(SDL_strcmp(scene->animations[0].name, "Wheels") == 0);
+    ASSERT_INT_EQ(scene->animations[0].channel_count, 2);
+
+    /* Both channels target rotation. */
+    ASSERT_INT_EQ((int)scene->animations[0].channels[0].target_path,
+                  (int)FORGE_GLTF_ANIM_ROTATION);
+    ASSERT_INT_EQ((int)scene->animations[0].channels[1].target_path,
+                  (int)FORGE_GLTF_ANIM_ROTATION);
+
+    /* Both samplers should have 31 keyframes. */
+    int si0 = scene->animations[0].channels[0].sampler_index;
+    int si1 = scene->animations[0].channels[1].sampler_index;
+    ASSERT_INT_EQ(scene->animations[0].samplers[si0].keyframe_count, 31);
+    ASSERT_INT_EQ(scene->animations[0].samplers[si1].keyframe_count, 31);
+
+    /* Wheel animation duration is 1.25 seconds (the 3.708s in L31 is the
+     * path-following duration, not the glTF animation clip duration). */
+    ASSERT_FLOAT_EQ(scene->animations[0].duration, 1.25f);
+
+    forge_gltf_free(scene);
+    SDL_free(scene);
+    END_TEST();
+}
+
+/* ── CesiumMan animation parsing ─────────────────────────────────────────── */
+
+static void test_cesiumman_animation(void)
+{
+    const char *base;
+    char path[FORGE_GLTF_PATH_SIZE];
+    ForgeGltfScene *scene;
+    bool ok;
+
+    TEST("CesiumMan animation (57 channels)");
+
+    base = SDL_GetBasePath();
+    if (!base) {
+        SDL_Log("    SKIP (SDL_GetBasePath failed)");
+        test_passed++;
+        return;
+    }
+
+    SDL_snprintf(path, sizeof(path),
+                 "%sassets/CesiumMan/CesiumMan.gltf", base);
+
+    scene = SDL_calloc(1, sizeof(*scene));
+    if (!scene) {
+        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
+        test_failed++;
+        return;
+    }
+
+    ok = forge_gltf_load(path, scene);
+    if (!ok) {
+        SDL_Log("    SKIP (model not found at %s)", path);
+        SDL_free(scene);
+        test_passed++;
+        return;
+    }
+
+    ASSERT_INT_EQ(scene->animation_count, 1);
+    ASSERT_INT_EQ(scene->animations[0].channel_count, 57);
+    ASSERT_TRUE(scene->animations[0].duration > 0.0f);
+
+    forge_gltf_free(scene);
+    SDL_free(scene);
+    END_TEST();
+}
+
+/* ── Evaluation: vec3 linear interpolation ───────────────────────────────── */
+
+static void test_eval_vec3_linear(void)
+{
+    float ts[3]  = {0.0f, 0.5f, 1.0f};
+    float vals[9] = {0,0,0, 2,4,6, 4,8,12};
+    ForgeGltfAnimSampler samp;
+    vec3 result;
+
+    TEST("eval vec3 linear: start, midpoint, end, and clamp");
+
+    SDL_memset(&samp, 0, sizeof(samp));
+    samp.timestamps      = ts;
+    samp.values           = vals;
+    samp.keyframe_count   = 3;
+    samp.value_components = 3;
+    samp.interpolation    = FORGE_GLTF_INTERP_LINEAR;
+
+    /* At start (t=0). */
+    result = forge_gltf_anim_eval_vec3(&samp, 0.0f);
+    ASSERT_VEC3_EQ(result, vec3_create(0, 0, 0));
+
+    /* At end (t=1). */
+    result = forge_gltf_anim_eval_vec3(&samp, 1.0f);
+    ASSERT_VEC3_EQ(result, vec3_create(4, 8, 12));
+
+    /* Midpoint of first interval (t=0.25). */
+    result = forge_gltf_anim_eval_vec3(&samp, 0.25f);
+    ASSERT_VEC3_EQ(result, vec3_create(1, 2, 3));
+
+    /* Clamp before start. */
+    result = forge_gltf_anim_eval_vec3(&samp, -1.0f);
+    ASSERT_VEC3_EQ(result, vec3_create(0, 0, 0));
+
+    /* Clamp after end. */
+    result = forge_gltf_anim_eval_vec3(&samp, 5.0f);
+    ASSERT_VEC3_EQ(result, vec3_create(4, 8, 12));
+
+    END_TEST();
+}
+
+/* ── Evaluation: vec3 step interpolation ─────────────────────────────────── */
+
+static void test_eval_vec3_step(void)
+{
+    float ts[3]  = {0.0f, 0.5f, 1.0f};
+    float vals[9] = {1,1,1, 2,2,2, 3,3,3};
+    ForgeGltfAnimSampler samp;
+    vec3 result;
+
+    TEST("eval vec3 step: holds previous value until next keyframe");
+
+    SDL_memset(&samp, 0, sizeof(samp));
+    samp.timestamps      = ts;
+    samp.values           = vals;
+    samp.keyframe_count   = 3;
+    samp.value_components = 3;
+    samp.interpolation    = FORGE_GLTF_INTERP_STEP;
+
+    /* Between first and second keyframe — holds first value. */
+    result = forge_gltf_anim_eval_vec3(&samp, 0.25f);
+    ASSERT_VEC3_EQ(result, vec3_create(1, 1, 1));
+
+    /* Between second and third keyframe — holds second value. */
+    result = forge_gltf_anim_eval_vec3(&samp, 0.75f);
+    ASSERT_VEC3_EQ(result, vec3_create(2, 2, 2));
+
+    END_TEST();
+}
+
+/* ── Evaluation: quaternion linear (slerp) ───────────────────────────────── */
+
+static void test_eval_quat_linear(void)
+{
+    /* glTF quaternion order: [x, y, z, w].
+     * Two keyframes: identity (0,0,0,1) and 90° around Y (0,sin45,0,cos45). */
+    float ts[2] = {0.0f, 1.0f};
+    float sin45 = 0.70710678f;
+    float cos45 = 0.70710678f;
+    float vals[8] = {
+        0.0f, 0.0f, 0.0f, 1.0f,       /* identity */
+        0.0f, sin45, 0.0f, cos45       /* 90° around Y */
+    };
+    ForgeGltfAnimSampler samp;
+    quat result;
+    float len;
+
+    TEST("eval quat slerp: midpoint produces 45-degree rotation, normalized");
+
+    SDL_memset(&samp, 0, sizeof(samp));
+    samp.timestamps      = ts;
+    samp.values           = vals;
+    samp.keyframe_count   = 2;
+    samp.value_components = 4;
+    samp.interpolation    = FORGE_GLTF_INTERP_LINEAR;
+
+    /* At start — identity quaternion. */
+    result = forge_gltf_anim_eval_quat(&samp, 0.0f);
+    ASSERT_TRUE(quat_eq(result, quat_create(1, 0, 0, 0)));
+
+    /* At end — 90° around Y. */
+    result = forge_gltf_anim_eval_quat(&samp, 1.0f);
+    ASSERT_TRUE(quat_eq(result, quat_create(cos45, 0, sin45, 0)));
+
+    /* Midpoint — should be 45° around Y.
+     * sin(22.5°) ≈ 0.3827, cos(22.5°) ≈ 0.9239. */
+    result = forge_gltf_anim_eval_quat(&samp, 0.5f);
+    len = SDL_sqrtf(result.w*result.w + result.x*result.x
+                  + result.y*result.y + result.z*result.z);
+    ASSERT_FLOAT_EQ(len, 1.0f);  /* normalized */
+    ASSERT_TRUE(SDL_fabsf(result.y - 0.3827f) < 0.01f);
+    ASSERT_TRUE(SDL_fabsf(result.w - 0.9239f) < 0.01f);
+
+    END_TEST();
+}
+
+/* ── Evaluation: quaternion component order ──────────────────────────────── */
+
+static void test_eval_quat_component_order(void)
+{
+    /* Verify glTF [x,y,z,w] → forge_math quat(w,x,y,z) conversion.
+     * Store a quaternion (0.1, 0.2, 0.3, 0.9) in glTF order. */
+    float ts[1] = {0.0f};
+    float vals[4] = {0.1f, 0.2f, 0.3f, 0.9f}; /* glTF: x,y,z,w */
+    ForgeGltfAnimSampler samp;
+    quat result;
+
+    TEST("eval quat component order: glTF [x,y,z,w] → forge_math (w,x,y,z)");
+
+    SDL_memset(&samp, 0, sizeof(samp));
+    samp.timestamps      = ts;
+    samp.values           = vals;
+    samp.keyframe_count   = 1;
+    samp.value_components = 4;
+    samp.interpolation    = FORGE_GLTF_INTERP_LINEAR;
+
+    result = forge_gltf_anim_eval_quat(&samp, 0.0f);
+    ASSERT_FLOAT_EQ(result.w, 0.9f);
+    ASSERT_FLOAT_EQ(result.x, 0.1f);
+    ASSERT_FLOAT_EQ(result.y, 0.2f);
+    ASSERT_FLOAT_EQ(result.z, 0.3f);
+
+    END_TEST();
+}
+
+/* ── Apply: translation channel updates node ─────────────────────────────── */
+
+static void test_apply_translation(void)
+{
+    float ts[2]  = {0.0f, 1.0f};
+    float vals[6] = {0,0,0, 3,6,9};
+    ForgeGltfAnimation anim;
+    ForgeGltfNode nodes[1];
+
+    TEST("apply animation: translation channel updates node TRS");
+
+    SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(nodes, 0, sizeof(nodes));
+
+    /* Set up node with identity TRS. */
+    nodes[0].translation = vec3_create(0, 0, 0);
+    nodes[0].rotation    = quat_create(1, 0, 0, 0);
+    nodes[0].scale_xyz   = vec3_create(1, 1, 1);
+
+    /* Set up a single translation sampler + channel. */
+    anim.samplers[0].timestamps      = ts;
+    anim.samplers[0].values           = vals;
+    anim.samplers[0].keyframe_count   = 2;
+    anim.samplers[0].value_components = 3;
+    anim.samplers[0].interpolation    = FORGE_GLTF_INTERP_LINEAR;
+    anim.sampler_count = 1;
+
+    anim.channels[0].target_node  = 0;
+    anim.channels[0].target_path  = FORGE_GLTF_ANIM_TRANSLATION;
+    anim.channels[0].sampler_index = 0;
+    anim.channel_count = 1;
+
+    anim.duration = 1.0f;
+    SDL_strlcpy(anim.name, "Test", sizeof(anim.name));
+
+    /* Apply at t=0.5 (midpoint). */
+    forge_gltf_anim_apply(&anim, nodes, 1, 0.5f, false);
+
+    ASSERT_VEC3_EQ(nodes[0].translation, vec3_create(1.5f, 3.0f, 4.5f));
+
+    END_TEST();
+}
+
+/* ── Apply: loop wraps time ──────────────────────────────────────────────── */
+
+static void test_apply_loop(void)
+{
+    float ts[2]  = {0.0f, 1.0f};
+    float vals[6] = {0,0,0, 10,0,0};
+    ForgeGltfAnimation anim;
+    ForgeGltfNode nodes[1];
+
+    TEST("apply animation: loop wraps time past duration");
+
+    SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(nodes, 0, sizeof(nodes));
+
+    nodes[0].translation = vec3_create(0, 0, 0);
+    nodes[0].rotation    = quat_create(1, 0, 0, 0);
+    nodes[0].scale_xyz   = vec3_create(1, 1, 1);
+
+    anim.samplers[0].timestamps      = ts;
+    anim.samplers[0].values           = vals;
+    anim.samplers[0].keyframe_count   = 2;
+    anim.samplers[0].value_components = 3;
+    anim.samplers[0].interpolation    = FORGE_GLTF_INTERP_LINEAR;
+    anim.sampler_count = 1;
+
+    anim.channels[0].target_node  = 0;
+    anim.channels[0].target_path  = FORGE_GLTF_ANIM_TRANSLATION;
+    anim.channels[0].sampler_index = 0;
+    anim.channel_count = 1;
+
+    anim.duration = 1.0f;
+    SDL_strlcpy(anim.name, "Loop", sizeof(anim.name));
+
+    /* t=1.5 with loop → wraps to 0.5 → translation = (5,0,0). */
+    forge_gltf_anim_apply(&anim, nodes, 1, 1.5f, true);
+
+    ASSERT_VEC3_EQ(nodes[0].translation, vec3_create(5.0f, 0.0f, 0.0f));
+
+    END_TEST();
+}
+
+/* ── Apply: clamp at duration ────────────────────────────────────────────── */
+
+static void test_apply_clamp(void)
+{
+    float ts[2]  = {0.0f, 1.0f};
+    float vals[6] = {0,0,0, 10,0,0};
+    ForgeGltfAnimation anim;
+    ForgeGltfNode nodes[1];
+
+    TEST("apply animation: clamp holds last value past duration");
+
+    SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(nodes, 0, sizeof(nodes));
+
+    nodes[0].translation = vec3_create(0, 0, 0);
+    nodes[0].rotation    = quat_create(1, 0, 0, 0);
+    nodes[0].scale_xyz   = vec3_create(1, 1, 1);
+
+    anim.samplers[0].timestamps      = ts;
+    anim.samplers[0].values           = vals;
+    anim.samplers[0].keyframe_count   = 2;
+    anim.samplers[0].value_components = 3;
+    anim.samplers[0].interpolation    = FORGE_GLTF_INTERP_LINEAR;
+    anim.sampler_count = 1;
+
+    anim.channels[0].target_node  = 0;
+    anim.channels[0].target_path  = FORGE_GLTF_ANIM_TRANSLATION;
+    anim.channels[0].sampler_index = 0;
+    anim.channel_count = 1;
+
+    anim.duration = 1.0f;
+    SDL_strlcpy(anim.name, "Clamp", sizeof(anim.name));
+
+    /* t=5.0 without loop → clamps to 1.0 → translation = (10,0,0). */
+    forge_gltf_anim_apply(&anim, nodes, 1, 5.0f, false);
+
+    ASSERT_VEC3_EQ(nodes[0].translation, vec3_create(10.0f, 0.0f, 0.0f));
+
+    END_TEST();
+}
+
+/* ── Evaluation: quaternion step interpolation ────────────────────────────── */
+
+static void test_eval_quat_step(void)
+{
+    /* Two keyframes: identity and 90° around Y.
+     * glTF order: [x, y, z, w]. */
+    float ts[2] = {0.0f, 1.0f};
+    float sin45 = 0.70710678f;
+    float cos45 = 0.70710678f;
+    float vals[8] = {
+        0.0f, 0.0f, 0.0f, 1.0f,
+        0.0f, sin45, 0.0f, cos45
+    };
+    ForgeGltfAnimSampler samp;
+    quat result;
+
+    TEST("eval quat step: holds previous quaternion until next keyframe");
+
+    SDL_memset(&samp, 0, sizeof(samp));
+    samp.timestamps      = ts;
+    samp.values           = vals;
+    samp.keyframe_count   = 2;
+    samp.value_components = 4;
+    samp.interpolation    = FORGE_GLTF_INTERP_STEP;
+
+    /* At t=0.5 (between keyframes) — should hold the identity quaternion. */
+    result = forge_gltf_anim_eval_quat(&samp, 0.5f);
+    ASSERT_TRUE(quat_eq(result, quat_create(1, 0, 0, 0)));
+
+    END_TEST();
+}
+
+/* ── Apply: rotation channel updates node ────────────────────────────────── */
+
+static void test_apply_rotation(void)
+{
+    /* Single rotation keyframe at t=0: 90° around Y.
+     * glTF order: [x, y, z, w]. */
+    float ts[1]  = {0.0f};
+    float sin45 = 0.70710678f;
+    float cos45 = 0.70710678f;
+    float vals[4] = {0.0f, sin45, 0.0f, cos45};
+    ForgeGltfAnimation anim;
+    ForgeGltfNode nodes[1];
+
+    TEST("apply animation: rotation channel updates node quaternion");
+
+    SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(nodes, 0, sizeof(nodes));
+
+    nodes[0].translation = vec3_create(0, 0, 0);
+    nodes[0].rotation    = quat_create(1, 0, 0, 0);
+    nodes[0].scale_xyz   = vec3_create(1, 1, 1);
+
+    anim.samplers[0].timestamps      = ts;
+    anim.samplers[0].values           = vals;
+    anim.samplers[0].keyframe_count   = 1;
+    anim.samplers[0].value_components = 4;
+    anim.samplers[0].interpolation    = FORGE_GLTF_INTERP_LINEAR;
+    anim.sampler_count = 1;
+
+    anim.channels[0].target_node  = 0;
+    anim.channels[0].target_path  = FORGE_GLTF_ANIM_ROTATION;
+    anim.channels[0].sampler_index = 0;
+    anim.channel_count = 1;
+
+    anim.duration = 0.0f;
+    SDL_strlcpy(anim.name, "Rot", sizeof(anim.name));
+
+    forge_gltf_anim_apply(&anim, nodes, 1, 0.0f, false);
+
+    /* quat_create(w, x, y, z) — expect 90° Y rotation. */
+    ASSERT_TRUE(quat_eq(nodes[0].rotation,
+                         quat_create(cos45, 0, sin45, 0)));
+
+    END_TEST();
+}
+
+/* ── Apply: scale channel updates node ───────────────────────────────────── */
+
+static void test_apply_scale(void)
+{
+    float ts[2]  = {0.0f, 1.0f};
+    float vals[6] = {1,1,1, 2,3,4};
+    ForgeGltfAnimation anim;
+    ForgeGltfNode nodes[1];
+
+    TEST("apply animation: scale channel updates node scale_xyz");
+
+    SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(nodes, 0, sizeof(nodes));
+
+    nodes[0].translation = vec3_create(0, 0, 0);
+    nodes[0].rotation    = quat_create(1, 0, 0, 0);
+    nodes[0].scale_xyz   = vec3_create(1, 1, 1);
+
+    anim.samplers[0].timestamps      = ts;
+    anim.samplers[0].values           = vals;
+    anim.samplers[0].keyframe_count   = 2;
+    anim.samplers[0].value_components = 3;
+    anim.samplers[0].interpolation    = FORGE_GLTF_INTERP_LINEAR;
+    anim.sampler_count = 1;
+
+    anim.channels[0].target_node  = 0;
+    anim.channels[0].target_path  = FORGE_GLTF_ANIM_SCALE;
+    anim.channels[0].sampler_index = 0;
+    anim.channel_count = 1;
+
+    anim.duration = 1.0f;
+    SDL_strlcpy(anim.name, "Scale", sizeof(anim.name));
+
+    /* At t=1.0 — scale should be (2,3,4). */
+    forge_gltf_anim_apply(&anim, nodes, 1, 1.0f, false);
+
+    ASSERT_VEC3_EQ(nodes[0].scale_xyz, vec3_create(2.0f, 3.0f, 4.0f));
+
+    END_TEST();
+}
+
+/* ── Apply: out-of-range target_node is skipped gracefully ───────────────── */
+
+static void test_apply_bad_target(void)
+{
+    float ts[1]  = {0.0f};
+    float vals[3] = {5, 5, 5};
+    ForgeGltfAnimation anim;
+    ForgeGltfNode nodes[1];
+
+    TEST("apply animation: out-of-range target_node is skipped");
+
+    SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(nodes, 0, sizeof(nodes));
+
+    nodes[0].translation = vec3_create(0, 0, 0);
+    nodes[0].rotation    = quat_create(1, 0, 0, 0);
+    nodes[0].scale_xyz   = vec3_create(1, 1, 1);
+
+    anim.samplers[0].timestamps      = ts;
+    anim.samplers[0].values           = vals;
+    anim.samplers[0].keyframe_count   = 1;
+    anim.samplers[0].value_components = 3;
+    anim.samplers[0].interpolation    = FORGE_GLTF_INTERP_LINEAR;
+    anim.sampler_count = 1;
+
+    /* Channel targets node 99, but we only have 1 node. */
+    anim.channels[0].target_node  = 99;
+    anim.channels[0].target_path  = FORGE_GLTF_ANIM_TRANSLATION;
+    anim.channels[0].sampler_index = 0;
+    anim.channel_count = 1;
+
+    anim.duration = 0.0f;
+    SDL_strlcpy(anim.name, "Bad", sizeof(anim.name));
+
+    /* Should not crash, and node should be unmodified. */
+    forge_gltf_anim_apply(&anim, nodes, 1, 0.0f, false);
+
+    ASSERT_VEC3_EQ(nodes[0].translation, vec3_create(0, 0, 0));
+
+    END_TEST();
+}
+
+/* ── No animations in file ───────────────────────────────────────────────── */
+
+static void test_no_animations(void)
+{
+    float positions[9] = {0,0,0, 1,0,0, 0,1,0};
+    Uint16 indices[3]  = {0, 1, 2};
+    Uint8 bin[42];
+    const char *json;
+    TempGltf tg;
+    ForgeGltfScene *scene;
+    bool wrote;
+    bool ok;
+
+    TEST("glTF without animations: animation_count == 0");
+
+    SDL_memcpy(bin, positions, 36);
+    SDL_memcpy(bin + 36, indices, 6);
+
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_noanim.bin\", \"byteLength\": 42}]"
+        "}";
+
+    scene = SDL_calloc(1, sizeof(*scene));
+    if (!scene) {
+        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
+        test_failed++;
+        return;
+    }
+
+    wrote = write_temp_gltf(json, bin, sizeof(bin), "test_noanim", &tg);
+    ASSERT_TRUE(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene);
+    remove_temp_gltf(&tg);
+    ASSERT_TRUE(ok);
+
+    ASSERT_INT_EQ(scene->animation_count, 0);
+
+    forge_gltf_free(scene);
+    SDL_free(scene);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -2459,6 +3242,7 @@ int main(int argc, char *argv[])
 
     /* Accessor validation */
     test_invalid_component_type();
+    test_accessor_misaligned();
     test_accessor_exceeds_buffer_view();
     test_buffer_view_exceeds_buffer();
     test_missing_buffer_view_byte_length();
@@ -2498,6 +3282,27 @@ int main(int argc, char *argv[])
 
     /* Skin parsing */
     test_cesiumman_skin();
+
+    /* Animation parsing */
+    test_no_animations();
+    test_anim_parse_synthetic();
+    test_truck_animation();
+    test_cesiumman_animation();
+
+    /* Animation evaluation */
+    test_eval_vec3_linear();
+    test_eval_vec3_step();
+    test_eval_quat_linear();
+    test_eval_quat_component_order();
+    test_eval_quat_step();
+
+    /* Animation apply */
+    test_apply_translation();
+    test_apply_rotation();
+    test_apply_scale();
+    test_apply_loop();
+    test_apply_clamp();
+    test_apply_bad_target();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");

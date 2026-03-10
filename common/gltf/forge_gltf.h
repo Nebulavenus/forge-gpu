@@ -48,6 +48,9 @@
 #define FORGE_GLTF_MAX_BUFFERS    16
 #define FORGE_GLTF_MAX_SKINS      8
 #define FORGE_GLTF_MAX_JOINTS     128
+#define FORGE_GLTF_MAX_ANIMATIONS     16
+#define FORGE_GLTF_MAX_ANIM_CHANNELS  128
+#define FORGE_GLTF_MAX_ANIM_SAMPLERS  128
 #define FORGE_GLTF_JOINTS_PER_VERT 4
 
 /* glTF 2.0 spec default for alphaCutoff when alphaMode is MASK. */
@@ -204,6 +207,59 @@ typedef struct ForgeGltfSkin {
     mat4 inverse_bind_matrices[FORGE_GLTF_MAX_JOINTS];
 } ForgeGltfSkin;
 
+/* ── Animation ────────────────────────────────────────────────────────────── */
+/* glTF stores animations as a set of channels, each binding a sampler to a
+ * node property (translation, rotation, or scale).  A sampler holds the
+ * keyframe timestamps and output values with an interpolation mode.
+ *
+ * Data pointers reference the loaded binary buffers — no copying needed.
+ * They remain valid for the lifetime of the ForgeGltfScene. */
+
+/* Animation channel target path — which TRS component to animate. */
+typedef enum ForgeGltfAnimPath {
+    FORGE_GLTF_ANIM_TRANSLATION = 0,
+    FORGE_GLTF_ANIM_ROTATION    = 1,
+    FORGE_GLTF_ANIM_SCALE       = 2
+} ForgeGltfAnimPath;
+
+/* Component counts for animation target paths. */
+#define FORGE_GLTF_ANIM_VEC3_COMPONENTS 3  /* translation and scale */
+#define FORGE_GLTF_ANIM_QUAT_COMPONENTS 4  /* rotation */
+
+/* Sampler interpolation mode.  CUBICSPLINE is not supported — the parser
+ * logs a warning and skips the sampler entirely. */
+typedef enum ForgeGltfInterpolation {
+    FORGE_GLTF_INTERP_LINEAR = 0,  /* lerp for vec3, slerp for quat */
+    FORGE_GLTF_INTERP_STEP   = 1   /* hold previous value until next keyframe */
+} ForgeGltfInterpolation;
+
+/* An animation sampler: keyframe timestamps paired with output values.
+ * Pointers reference data inside scene->buffers[] (not owned). */
+typedef struct ForgeGltfAnimSampler {
+    const float           *timestamps;      /* keyframe_count floats              */
+    const float           *values;          /* keyframe_count × value_components  */
+    int                    keyframe_count;
+    int                    value_components; /* 3 for translation/scale, 4 for rotation */
+    ForgeGltfInterpolation interpolation;
+} ForgeGltfAnimSampler;
+
+/* An animation channel: binds a sampler to a node property. */
+typedef struct ForgeGltfAnimChannel {
+    int               target_node;   /* index into scene->nodes[] */
+    ForgeGltfAnimPath target_path;   /* which TRS component       */
+    int               sampler_index; /* index into parent animation's samplers[] */
+} ForgeGltfAnimChannel;
+
+/* A named animation clip containing samplers and channels. */
+typedef struct ForgeGltfAnimation {
+    char                  name[FORGE_GLTF_NAME_SIZE];
+    float                 duration;  /* max timestamp across all samplers */
+    ForgeGltfAnimSampler  samplers[FORGE_GLTF_MAX_ANIM_SAMPLERS];
+    int                   sampler_count;
+    ForgeGltfAnimChannel  channels[FORGE_GLTF_MAX_ANIM_CHANNELS];
+    int                   channel_count;
+} ForgeGltfAnimation;
+
 /* ── Binary buffer ────────────────────────────────────────────────────────── */
 /* A loaded .bin file referenced by the glTF. */
 
@@ -237,6 +293,9 @@ typedef struct ForgeGltfScene {
 
     ForgeGltfSkin      skins[FORGE_GLTF_MAX_SKINS];
     int                skin_count;
+
+    ForgeGltfAnimation animations[FORGE_GLTF_MAX_ANIMATIONS];
+    int                animation_count;
 } ForgeGltfScene;
 
 /* ── API ──────────────────────────────────────────────────────────────────── */
@@ -568,7 +627,28 @@ static const void *forge_gltf__get_accessor(
     if (out_component_type) *out_component_type = comp->valueint;
     if (out_num_components) *out_num_components = num_components;
 
-    return scene->buffers[bi].data + bv_offset + (Uint32)acc_offset;
+    /* Validate alignment.  The glTF spec requires accessor byte offsets
+     * to be aligned to the component size (e.g. 4 bytes for floats).
+     * A malformed file violating this would cause undefined behavior on
+     * strict-alignment architectures (ARM, MIPS).  Reject rather than
+     * risk a bus error. */
+    Uint32 total_offset = bv_offset + (Uint32)acc_offset;
+    if (comp_size > 1) {
+        if ((total_offset % (Uint32)comp_size) != 0) {
+            SDL_Log("forge_gltf: accessor %d data at offset %u is not aligned "
+                    "to %d-byte boundary",
+                    accessor_idx, total_offset, comp_size);
+            return NULL;
+        }
+        if (count > 1 && (byte_stride % comp_size) != 0) {
+            SDL_Log("forge_gltf: accessor %d byteStride %d is not aligned "
+                    "to %d-byte components",
+                    accessor_idx, byte_stride, comp_size);
+            return NULL;
+        }
+    }
+
+    return scene->buffers[bi].data + total_offset;
 }
 
 /* ── Parse binary buffers ────────────────────────────────────────────────── */
@@ -1388,6 +1468,233 @@ static bool forge_gltf__parse_skins(const cJSON *root, ForgeGltfScene *scene)
     return true;
 }
 
+/* ── Parse animations ────────────────────────────────────────────────────── */
+
+static bool forge_gltf__parse_animations(const cJSON *root,
+                                          ForgeGltfScene *scene)
+{
+    const cJSON *anims = cJSON_GetObjectItemCaseSensitive(root, "animations");
+    if (!cJSON_IsArray(anims)) {
+        scene->animation_count = 0;
+        return true; /* animations are optional */
+    }
+
+    int anim_count = cJSON_GetArraySize(anims);
+    if (anim_count > FORGE_GLTF_MAX_ANIMATIONS) {
+        SDL_Log("forge_gltf: %d animations, capping at %d",
+                anim_count, FORGE_GLTF_MAX_ANIMATIONS);
+        anim_count = FORGE_GLTF_MAX_ANIMATIONS;
+    }
+
+    const cJSON *accessors = cJSON_GetObjectItemCaseSensitive(root, "accessors");
+    const cJSON *views = cJSON_GetObjectItemCaseSensitive(root, "bufferViews");
+    if (!cJSON_IsArray(accessors) || !cJSON_IsArray(views)) {
+        SDL_Log("forge_gltf: animations present but no accessors/bufferViews");
+        scene->animation_count = 0;
+        return true; /* non-fatal — skip animations */
+    }
+
+    int stored_anims = 0;
+    for (int ai = 0; ai < anim_count
+         && stored_anims < FORGE_GLTF_MAX_ANIMATIONS; ai++) {
+        const cJSON *anim_obj = cJSON_GetArrayItem(anims, ai);
+        ForgeGltfAnimation *anim = &scene->animations[stored_anims];
+        SDL_memset(anim, 0, sizeof(*anim));
+
+        copy_name(anim->name, sizeof(anim->name), anim_obj);
+        if (anim->name[0] == '\0') {
+            SDL_snprintf(anim->name, sizeof(anim->name), "Animation_%d", ai);
+        }
+
+        /* ── Parse samplers ────────────────────────────────────────── */
+        const cJSON *samp_arr = cJSON_GetObjectItemCaseSensitive(
+            anim_obj, "samplers");
+        if (!cJSON_IsArray(samp_arr)) continue;
+
+        int samp_count = cJSON_GetArraySize(samp_arr);
+        if (samp_count > FORGE_GLTF_MAX_ANIM_SAMPLERS) {
+            SDL_Log("forge_gltf: animation %d has %d samplers, capping at %d",
+                    ai, samp_count, FORGE_GLTF_MAX_ANIM_SAMPLERS);
+            samp_count = FORGE_GLTF_MAX_ANIM_SAMPLERS;
+        }
+
+        float max_time = 0.0f;
+        int si_out = 0; /* write index for compacted samplers */
+
+        /* Map JSON sampler index → compacted index (-1 if skipped).
+         * Channels reference samplers by JSON index, so we need this
+         * to remap channel.sampler_index after compaction. */
+        int sampler_remap[FORGE_GLTF_MAX_ANIM_SAMPLERS];
+        SDL_memset(sampler_remap, -1, sizeof(sampler_remap));
+
+        for (int si = 0; si < samp_count; si++) {
+            const cJSON *samp_obj = cJSON_GetArrayItem(samp_arr, si);
+            ForgeGltfAnimSampler temp_samp;
+            SDL_memset(&temp_samp, 0, sizeof(temp_samp));
+
+            /* Interpolation mode. */
+            const cJSON *interp_json = cJSON_GetObjectItemCaseSensitive(
+                samp_obj, "interpolation");
+            if (cJSON_IsString(interp_json)) {
+                if (SDL_strcmp(interp_json->valuestring, "STEP") == 0) {
+                    temp_samp.interpolation = FORGE_GLTF_INTERP_STEP;
+                } else if (SDL_strcmp(interp_json->valuestring,
+                                     "CUBICSPLINE") == 0) {
+                    /* CUBICSPLINE stores 3 values per keyframe (in-tangent,
+                     * value, out-tangent).  Falling back to LINEAR with
+                     * this layout would read in-tangents as values.
+                     * Skip the sampler entirely. */
+                    SDL_Log("forge_gltf: animation %d sampler %d uses "
+                            "CUBICSPLINE (not supported), skipping",
+                            ai, si);
+                    continue;
+                } else {
+                    temp_samp.interpolation = FORGE_GLTF_INTERP_LINEAR;
+                }
+            }
+
+            /* Resolve input accessor (timestamps). */
+            const cJSON *input_json = cJSON_GetObjectItemCaseSensitive(
+                samp_obj, "input");
+            if (!cJSON_IsNumber(input_json)) continue;
+
+            int in_count = 0;
+            int in_comp = 0;
+            const float *timestamps = (const float *)forge_gltf__get_accessor(
+                root, scene, input_json->valueint, &in_count, &in_comp, NULL);
+            if (!timestamps || in_comp != FORGE_GLTF_FLOAT || in_count <= 0) {
+                continue;
+            }
+
+            /* Resolve output accessor (values). */
+            const cJSON *output_json = cJSON_GetObjectItemCaseSensitive(
+                samp_obj, "output");
+            if (!cJSON_IsNumber(output_json)) continue;
+
+            int out_count = 0;
+            int out_comp = 0;
+            int out_num = 0;
+            const float *values = (const float *)forge_gltf__get_accessor(
+                root, scene, output_json->valueint,
+                &out_count, &out_comp, &out_num);
+            if (!values || out_comp != FORGE_GLTF_FLOAT
+                || out_count != in_count) {
+                continue;
+            }
+
+            temp_samp.timestamps      = timestamps;
+            temp_samp.values           = values;
+            temp_samp.keyframe_count   = in_count;
+            temp_samp.value_components = out_num;
+
+            /* Track max timestamp for clip duration. */
+            float last_t = timestamps[in_count - 1];
+            if (last_t > max_time) max_time = last_t;
+
+            /* Store compacted sampler and record remap. */
+            anim->samplers[si_out] = temp_samp;
+            sampler_remap[si] = si_out;
+            si_out++;
+        }
+        anim->sampler_count = si_out;
+        anim->duration = max_time;
+
+        /* ── Parse channels ────────────────────────────────────────── */
+        const cJSON *chan_arr = cJSON_GetObjectItemCaseSensitive(
+            anim_obj, "channels");
+        if (!cJSON_IsArray(chan_arr)) continue;
+
+        int chan_count = cJSON_GetArraySize(chan_arr);
+        int stored = 0;
+
+        for (int ci = 0; ci < chan_count
+             && stored < FORGE_GLTF_MAX_ANIM_CHANNELS; ci++) {
+            const cJSON *chan_obj = cJSON_GetArrayItem(chan_arr, ci);
+
+            const cJSON *target = cJSON_GetObjectItemCaseSensitive(
+                chan_obj, "target");
+            const cJSON *samp_idx = cJSON_GetObjectItemCaseSensitive(
+                chan_obj, "sampler");
+            if (!target || !cJSON_IsNumber(samp_idx)) continue;
+
+            const cJSON *node_json = cJSON_GetObjectItemCaseSensitive(
+                target, "node");
+            const cJSON *path_json = cJSON_GetObjectItemCaseSensitive(
+                target, "path");
+            if (!cJSON_IsNumber(node_json)
+                || !cJSON_IsString(path_json)) continue;
+
+            /* Map path string to enum. */
+            ForgeGltfAnimPath anim_path;
+            if (SDL_strcmp(path_json->valuestring, "translation") == 0) {
+                anim_path = FORGE_GLTF_ANIM_TRANSLATION;
+            } else if (SDL_strcmp(path_json->valuestring, "rotation") == 0) {
+                anim_path = FORGE_GLTF_ANIM_ROTATION;
+            } else if (SDL_strcmp(path_json->valuestring, "scale") == 0) {
+                anim_path = FORGE_GLTF_ANIM_SCALE;
+            } else {
+                /* Skip "weights" and unknown paths. */
+                continue;
+            }
+
+            int raw_si = samp_idx->valueint;
+            if (raw_si < 0 || raw_si >= samp_count) continue;
+
+            /* Remap JSON sampler index to compacted index. */
+            int si = sampler_remap[raw_si];
+            if (si < 0) continue; /* sampler was skipped */
+
+            /* Validate that the sampler has data and the component count
+             * matches the target path.  A rotation sampler must have 4
+             * components (VEC4); translation and scale must have 3 (VEC3).
+             * A mismatch would cause out-of-bounds reads in evaluation. */
+            const ForgeGltfAnimSampler *ref_samp = &anim->samplers[si];
+            if (!ref_samp->timestamps || !ref_samp->values) continue;
+            int expected_comp = (anim_path == FORGE_GLTF_ANIM_ROTATION)
+                              ? FORGE_GLTF_ANIM_QUAT_COMPONENTS
+                              : FORGE_GLTF_ANIM_VEC3_COMPONENTS;
+            if (ref_samp->value_components != expected_comp) {
+                SDL_Log("forge_gltf: animation %d channel %d: sampler has "
+                        "%d components, expected %d for '%s'",
+                        ai, ci, ref_samp->value_components,
+                        expected_comp, path_json->valuestring);
+                continue;
+            }
+
+            int ni = node_json->valueint;
+            if (ni < 0 || ni >= scene->node_count) {
+                SDL_Log("forge_gltf: animation %d channel %d targets "
+                        "node %d (out of range)", ai, ci, ni);
+                continue;
+            }
+
+            ForgeGltfAnimChannel *ch = &anim->channels[stored];
+            ch->target_node  = ni;
+            ch->target_path  = anim_path;
+            ch->sampler_index = si;
+            stored++;
+        }
+        anim->channel_count = stored;
+
+        /* Skip animations with no usable channels (e.g. all CUBICSPLINE
+         * samplers or all "weights" channels).  Without this check,
+         * animation_count would include empty placeholder clips. */
+        if (anim->channel_count <= 0) {
+            SDL_Log("forge_gltf: animation %d has no usable channels, "
+                    "skipping", ai);
+            continue;
+        }
+
+        SDL_Log("forge_gltf: animation %d '%s': %.3fs, %d samplers, "
+                "%d channels",
+                ai, anim->name, anim->duration,
+                anim->sampler_count, anim->channel_count);
+        stored_anims++;
+    }
+    scene->animation_count = stored_anims;
+    return true;
+}
+
 /* ── Main load function ──────────────────────────────────────────────────── */
 
 static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene)
@@ -1412,6 +1719,7 @@ static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene)
     if (ok) ok = forge_gltf__parse_meshes(root, scene);
     if (ok) ok = forge_gltf__parse_nodes(root, scene);
     if (ok) ok = forge_gltf__parse_skins(root, scene);
+    if (ok) ok = forge_gltf__parse_animations(root, scene);
 
     /* Validate node skin references now that skin_count is known. */
     if (ok) {
