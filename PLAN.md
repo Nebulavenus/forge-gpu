@@ -5,24 +5,16 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–38** — From Hello Window through Indirect Drawing
+- **GPU Lessons 01–39** — From Hello Window through Pipeline-Processed Assets
 - **Math Lessons 01–15** — From Vectors through Bezier Curves
 - **Engine Lessons 01–11** — From Intro to C through Git & Version Control
-- **UI Lessons 01–13** — From TTF Parsing through Theming and Color System
+- **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
 - **Asset Lessons 01–08** — From Pipeline Scaffold through Animations
 
 ## GPU Lessons — Remaining
 
 ### Advanced Rendering
-
-- [x] **Lesson 38 — Indirect Drawing** — GPU-driven draw calls with `SDL_DrawGPUIndexedPrimitivesIndirect`; compute shader frustum culling fills indirect argument buffers; dual-camera split-screen debug visualization; per-object storage buffer transforms via instance vertex buffer pattern
-
-### Asset Pipeline Integration
-
-- [x] **Lesson 39 — Pipeline-Processed Assets** — Loading BC7 (albedo) and BC5 (normal map) compressed textures from the asset pipeline; reconstructing normals from two-channel BC5 (`z = sqrt(1 - x² - y²)`); loading optimized `.fmesh` files with tangents and LODs; CMake `forge-assets` build dependency; comparing raw vs. processed asset quality and load times. From this lesson onward, all assets come through the pipeline. (depends on Asset Lesson 06)
-
-### Advanced Rendering (continued)
 
 - [ ] **Lesson 40 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
 - [ ] **Lesson 41 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
@@ -38,13 +30,6 @@ The following foundations, tooling, and lesson ranges are complete:
 - [ ] **Lesson 45 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
 - [ ] **Lesson 46 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 40)
 - [ ] **Lesson 47 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
-
-## UI Lessons — Remaining
-
-### Application Patterns
-
-- [x] **UI Lesson 14 — Game UI** — Health bars, inventories, HUD elements, menus; game-specific patterns using the immediate-mode controls from earlier lessons; fixed and proportional layout for different screen sizes
-- [x] **UI Lesson 15 — Dev UI** — Property editors, debug overlays, console, performance graphs; developer-facing tools for inspecting game state; collapsible sections and tree views
 
 ## Physics Lessons — New Track
 
@@ -94,7 +79,7 @@ streams as the backend.
 - [ ] **Audio Lesson 05 — Music and Streaming** — Streaming large audio files from disk (OGG/MP3 decoding); crossfading between tracks; looping with intro sections; adaptive music layers that respond to game state
 - [ ] **Audio Lesson 06 — DSP Effects** — Low-pass and high-pass filters; reverb (simple delay-line); echo and chorus; applying effects per-source and on the master bus; underwater/muffled presets
 
-## Asset Pipeline — New Track
+## Asset Pipeline — Remaining
 
 A hybrid Python + C track. The pipeline is a **reusable Python library** at
 `pipeline/` in the repo root (`pip install -e ".[dev]"`). Each lesson adds
@@ -102,13 +87,6 @@ real functionality to the shared package. Processing plugins that need
 high-performance C libraries (meshoptimizer, MikkTSpace) are compiled C tools
 invoked as subprocesses. Procedural geometry generation lives in a header-only
 C library (`common/shapes/forge_shapes.h`).
-
-### Core Pipeline
-
-- [x] **Asset Lesson 05 — Asset Bundles** — Packing multiple processed assets into bundle files; table of contents with offsets for random access; compression (zstd); dependency tracking between assets
-- [x] **Asset Lesson 06 — Loading Processed Assets in C** — Reading `.fmesh` binary format and BC7/BC5 compressed textures from `assets/processed/`; header-only C loader (`common/pipeline/forge_pipeline.h`); CMake `forge-assets` target as a build dependency for GPU lessons 09+; integration test rendering a pipeline-processed model with normal mapping
-- [x] **Asset Lesson 07 — Materials** — Full PBR material support: glTF parser extensions for materials, multi-primitive mesh processing, .fmesh v2 submesh table, .fmat material sidecars
-- [x] **Asset Lesson 08 — Animations** — glTF animation parsing in `forge_gltf.h` and runtime evaluation in `forge_gltf_anim.h`: channels, samplers, binary search keyframes, lerp/slerp interpolation, looping, TRS application to nodes
 
 ### Project Integration
 
@@ -120,7 +98,6 @@ full plan. Summary:
 - [ ] `.gitignore` — `.forge-cache/`, `assets/processed/`, `assets/bundles/`
 - [ ] Process all existing models and textures through the pipeline
 - [ ] GPU Lesson 08 README hint pointing to the asset pipeline track
-- [x] GPU Lesson 39 teaches loading pipeline-processed assets (BC7/BC5, .fmesh); pipeline mandate starts here
 - [ ] Update skills (dev-new-lesson, dev-physics-lesson, dev-final-pass, dev-publish-lesson) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 

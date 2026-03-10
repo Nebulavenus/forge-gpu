@@ -14,6 +14,7 @@ lives in its own subdirectory and has a detailed README with API reference.
 | `physics/`  | `forge_physics.h`          | Particle dynamics, rigid bodies, collisions |
 | `shapes/`   | `forge_shapes.h`           | Procedural geometry (sphere, torus, etc.)   |
 | `raster/`   | `forge_raster.h`           | CPU triangle rasterizer (edge functions)    |
+| `pipeline/` | `forge_pipeline.h`         | Loader for pipeline-processed assets        |
 | `capture/`  | `forge_capture.h`          | Screenshot and GIF capture utility          |
 
 ## Shared header

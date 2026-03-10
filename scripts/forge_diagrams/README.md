@@ -23,15 +23,15 @@ forge_diagrams/
 ├── __main__.py        CLI entry point, diagram registry (DIAGRAMS dict)
 ├── __init__.py        Package marker
 ├── _common.py         Shared theme (STYLE dict), helpers (setup_axes, save, etc.)
-├── gpu/               GPU lesson diagrams (26 lessons, 120 diagrams)
+├── gpu/               GPU lesson diagrams (lesson_03.py … lesson_39.py)
 │   ├── __init__.py    Re-exports all GPU diagram functions
 │   ├── lesson_03.py   Lesson 03 diagrams
 │   ├── lesson_04.py   Lesson 04 diagrams
 │   └── ...
-├── math/              Math lesson diagrams (13 lessons, 46 diagrams)
-├── ui/                UI lesson diagrams (13 lessons, 67 diagrams)
-├── engine/            Engine lesson diagrams (4 lessons, 17 diagrams)
-└── assets/            Asset pipeline lesson diagrams (5 lessons, 13 diagrams)
+├── math/              Math lesson diagrams (13 lessons)
+├── ui/                UI lesson diagrams (13 lessons)
+├── engine/            Engine lesson diagrams (4 lessons)
+└── assets/            Asset pipeline lesson diagrams (5 lessons)
 ```
 
 ## Adding a new diagram

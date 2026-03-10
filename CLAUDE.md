@@ -170,20 +170,22 @@ forge-gpu/
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
 │   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout, panels, windows)
 │   ├── physics/           # Physics library (particles, rigid bodies, collisions)
+│   ├── pipeline/          # Pipeline runtime library (.fmesh + texture loader)
 │   ├── shapes/            # Procedural geometry (sphere, torus, capsule, etc.)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics, shapes, pipeline)
+├── tests/                 # Tests per module (math, obj, gltf, raster, ui, shapes, pipeline)
 ├── scripts/
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
-│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_37.py)
+│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_39.py)
 │       ├── math/          # Math lesson diagrams
 │       ├── ui/            # UI lesson diagrams
 │       ├── engine/        # Engine lesson diagrams
 │       └── assets/        # Asset pipeline lesson diagrams
 ├── tools/
-│   └── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
+│   ├── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
+│   └── anim/              # C animation processing tool (glTF animation extraction)
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)
 ```

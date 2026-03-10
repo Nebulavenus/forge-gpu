@@ -162,7 +162,7 @@ sampled and storage textures.
   SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE` so a compute shader can write
   the buffer and the vertex shader can read it.
 
-- **Indirect drawing** (Lesson 34): Vertex pulling pairs naturally with
+- **Indirect drawing** (Lesson 38): Vertex pulling pairs naturally with
   indirect draws for fully GPU-driven rendering.
 
 - **Multiple vertex formats**: One pipeline can render meshes with different

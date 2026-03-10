@@ -59,6 +59,7 @@ The pipeline has four components:
 | Configuration | `pipeline.config` | Parse TOML, produce typed `PipelineConfig` dataclass |
 | Plugin system | `pipeline.plugin` | `AssetPlugin` base class, `PluginRegistry`, file-based discovery |
 | Scanner | `pipeline.scanner` | Walk directories, SHA-256 fingerprint, classify NEW/CHANGED/UNCHANGED |
+| Bundler | `pipeline.bundler` | Pack processed assets into compressed bundles with random-access TOC |
 | CLI | `pipeline.__main__` | `argparse` entry point tying everything together |
 
 ```text
@@ -68,11 +69,16 @@ pipeline.toml --> CLI (__main__.py)
                    |        register by name + extension
                    |
                    +---> Scanner (scanner.py)
-                            |
-                            +-- walk source directory
-                            +-- fingerprint (SHA-256)
-                            +-- compare against cache
-                            +-- classify: NEW / CHANGED / UNCHANGED
+                   |        |
+                   |        +-- walk source directory
+                   |        +-- fingerprint (SHA-256)
+                   |        +-- compare against cache
+                   |        +-- classify: NEW / CHANGED / UNCHANGED
+                   |
+                   +---> Bundler (bundler.py)
+                            +-- pack processed assets
+                            +-- compress with zstd
+                            +-- random-access TOC
 ```
 
 ## Writing plugins
@@ -108,9 +114,11 @@ The plugin is discovered automatically — no core code changes needed.
 |---|---|---|
 | `texture` | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp` | Resize, format convert, mipmaps, metadata |
 | `mesh` | `.obj`, `.gltf`, `.glb` | Scaffold (no-op) |
+| `animation` | `.gltf`, `.glb` | Animation extraction and keyframe processing |
 
 The texture plugin was built in Lesson 02.  Mesh optimization with
-meshoptimizer and MikkTSpace is added in Lesson 03.
+meshoptimizer and MikkTSpace is added in Lesson 03.  The animation plugin
+was added in Lesson 08.
 
 ## Why content hashes?
 
@@ -181,9 +189,12 @@ The pipeline is built incrementally across the
 |---|---|
 | [01 — Pipeline Scaffold](../lessons/assets/01-pipeline-scaffold/) | CLI, plugin discovery, scanning, fingerprinting, TOML config |
 | [02 — Texture Processing](../lessons/assets/02-texture-processing/) | Image resize, format conversion, mipmaps, metadata sidecars |
-| 03 — Mesh Processing | C tool for vertex/index optimization (meshoptimizer, MikkTSpace) |
-| 04 — Procedural Geometry | `common/shapes/forge_shapes.h` header-only library |
-| 05 — Asset Bundles | Packing, compression, random-access table of contents |
+| [03 — Mesh Processing](../lessons/assets/03-mesh-processing/) | C tool for vertex/index optimization (meshoptimizer, MikkTSpace) |
+| [04 — Procedural Geometry](../lessons/assets/04-procedural-geometry/) | `common/shapes/forge_shapes.h` header-only library |
+| [05 — Asset Bundles](../lessons/assets/05-asset-bundles/) | Packing, compression, random-access table of contents |
+| [06 — Loading Processed Assets](../lessons/assets/06-loading-processed-assets/) | Header-only C loader for .fmesh and pipeline-processed textures |
+| [07 — Materials](../lessons/assets/07-materials/) | PBR material support, .fmat sidecars, multi-primitive meshes |
+| [08 — Animations](../lessons/assets/08-animations/) | glTF animation parsing and runtime keyframe evaluation |
 
 ## License
 

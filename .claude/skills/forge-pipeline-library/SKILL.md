@@ -403,4 +403,4 @@ ruff format --check pipeline/ tests/pipeline/
 | [Asset 08 — Animations](../../../lessons/assets/08-animations/) | AnimationPlugin, .fanim binary format |
 | [GPU Lesson 05 — Mipmaps](../../../lessons/gpu/05-mipmaps/) | How GPU uses mip chains |
 | [GPU Lesson 17 — Normal Maps](../../../lessons/gpu/17-normal-maps/) | Tangent space in shaders |
-| [GPU Lesson 39 — Pipeline Assets](../../../lessons/gpu/39-pipeline-assets/) | Loading .fmesh in GPU code |
+| [GPU Lesson 39 — Pipeline Assets](../../../lessons/gpu/39-pipeline-processed-assets/) | Loading .fmesh in GPU code |
