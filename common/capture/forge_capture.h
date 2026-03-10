@@ -1,7 +1,7 @@
 /*
  * forge_capture.h — Frame capture utility for forge-gpu lessons
  *
- * Captures a rendered frame to a BMP file for screenshot generation.
+ * Captures rendered frames to BMP files for screenshot and GIF generation.
  * Header-only — #include behind an #ifdef FORGE_CAPTURE guard.
  *
  * How it works:
@@ -16,6 +16,7 @@
  *
  * Command-line flags (when compiled with FORGE_CAPTURE):
  *   --screenshot <file.bmp>          Capture one frame and save
+ *   --gif-frames <dir> <count>       Capture count consecutive frames as BMPs
  *   --capture-frame N                Frame to start capturing (default: 5)
  *
  * SPDX-License-Identifier: Zlib
@@ -41,9 +42,13 @@
 
 /* ── Capture mode ─────────────────────────────────────────────────────────── */
 
+/* Maximum number of GIF frames that can be captured in one run. */
+#define FORGE_CAPTURE_MAX_GIF_FRAMES  600
+
 typedef enum ForgeCaptureMode {
     FORGE_CAPTURE_NONE,        /* Normal operation — no capture            */
-    FORGE_CAPTURE_SCREENSHOT   /* Capture a single frame as one BMP file   */
+    FORGE_CAPTURE_SCREENSHOT,  /* Capture a single frame as one BMP file   */
+    FORGE_CAPTURE_GIF_FRAMES   /* Capture N consecutive frames as BMPs     */
 } ForgeCaptureMode;
 
 /* ── Capture state ────────────────────────────────────────────────────────── */
@@ -53,10 +58,13 @@ typedef struct ForgeCapture {
     ForgeCaptureMode mode;
     char             output_path[FORGE_CAPTURE_MAX_PATH];
     int              start_frame;
+    int              gif_total;     /* total GIF frames to capture (0=N/A) */
 
     /* Runtime counters */
     int              current_frame;
+    int              gif_saved;     /* number of GIF frames saved so far   */
     bool             saved;
+    bool             error;         /* true if a frame save failed         */
 
     /* GPU resources (created by forge_capture_init) */
     SDL_GPUDevice         *device;
@@ -100,6 +108,15 @@ static inline bool forge_capture_parse_args(
             SDL_strlcpy(cap->output_path, argv[i + 1],
                         FORGE_CAPTURE_MAX_PATH);
             i++;
+        } else if (SDL_strcmp(argv[i], "--gif-frames") == 0 && i + 2 < argc) {
+            cap->mode = FORGE_CAPTURE_GIF_FRAMES;
+            SDL_strlcpy(cap->output_path, argv[i + 1],
+                        FORGE_CAPTURE_MAX_PATH);
+            cap->gif_total = SDL_atoi(argv[i + 2]);
+            if (cap->gif_total < 1) cap->gif_total = 1;
+            if (cap->gif_total > FORGE_CAPTURE_MAX_GIF_FRAMES)
+                cap->gif_total = FORGE_CAPTURE_MAX_GIF_FRAMES;
+            i += 2;
         } else if (SDL_strcmp(argv[i], "--capture-frame") == 0 && i + 1 < argc) {
             cap->start_frame = SDL_atoi(argv[i + 1]);
             if (cap->start_frame < 0) cap->start_frame = 0;
@@ -222,8 +239,13 @@ static inline bool forge_capture_finish_frame(
         return false;
     }
 
-    /* Already captured the screenshot. */
-    if (cap->saved) {
+    /* Already captured all requested frames, or a save failed. */
+    if (cap->saved || cap->error) {
+        return false;
+    }
+    if (cap->mode == FORGE_CAPTURE_GIF_FRAMES &&
+        cap->gif_saved >= cap->gif_total) {
+        cap->saved = true;
         return false;
     }
 
@@ -237,6 +259,7 @@ static inline bool forge_capture_finish_frame(
     if (!copy) {
         SDL_Log("Capture: failed to begin copy pass (%ux%u): %s",
                 cap->width, cap->height, SDL_GetError());
+        cap->error = true;
         return false;  /* caller should still submit the command buffer */
     }
 
@@ -258,11 +281,13 @@ static inline bool forge_capture_finish_frame(
     SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     if (!fence) {
         SDL_Log("Capture: failed to submit with fence: %s", SDL_GetError());
+        cap->error = true;
         return true;  /* cmd was consumed even on failure */
     }
 
     if (!SDL_WaitForGPUFences(cap->device, true, &fence, 1)) {
         SDL_Log("Capture: failed to wait for fence: %s", SDL_GetError());
+        cap->error = true;
         SDL_ReleaseGPUFence(cap->device, fence);
         return true;  /* cmd was consumed — caller must not submit */
     }
@@ -270,12 +295,35 @@ static inline bool forge_capture_finish_frame(
     /* ── Map and save ─────────────────────────────────────────────────── */
     void *pixels = SDL_MapGPUTransferBuffer(cap->device, cap->buffer, false);
     if (pixels) {
-        if (forge_capture__save_bmp(cap, pixels, cap->output_path)) {
-            cap->saved = true;
+        if (cap->mode == FORGE_CAPTURE_GIF_FRAMES) {
+            /* Save numbered frame: <output_path>/frame_NNNN.bmp */
+            char frame_path[FORGE_CAPTURE_MAX_PATH];
+            SDL_snprintf(frame_path, sizeof(frame_path), "%s/frame_%04d.bmp",
+                         cap->output_path, cap->gif_saved);
+            if (forge_capture__save_bmp(cap, pixels, frame_path)) {
+                cap->gif_saved++;
+                if (cap->gif_saved >= cap->gif_total) {
+                    cap->saved = true;
+                    SDL_Log("Capture: all %d GIF frames captured",
+                            cap->gif_total);
+                }
+            } else {
+                SDL_Log("Capture: aborting — failed to save frame %d",
+                        cap->gif_saved);
+                cap->error = true;
+            }
+        } else {
+            if (forge_capture__save_bmp(cap, pixels, cap->output_path)) {
+                cap->saved = true;
+            } else {
+                SDL_Log("Capture: aborting — failed to save screenshot");
+                cap->error = true;
+            }
         }
         SDL_UnmapGPUTransferBuffer(cap->device, cap->buffer);
     } else {
         SDL_Log("Capture: failed to map transfer buffer: %s", SDL_GetError());
+        cap->error = true;
     }
 
     SDL_ReleaseGPUFence(cap->device, fence);
@@ -289,7 +337,7 @@ static inline bool forge_capture_finish_frame(
  */
 static inline bool forge_capture_should_quit(const ForgeCapture *cap)
 {
-    return cap->mode == FORGE_CAPTURE_SCREENSHOT && cap->saved;
+    return cap->mode != FORGE_CAPTURE_NONE && (cap->saved || cap->error);
 }
 
 /*

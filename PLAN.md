@@ -49,7 +49,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 ### Particle Dynamics
 
-- [ ] **Physics Lesson 01 — Point Particles** — Position, velocity, acceleration; symplectic Euler integration; gravity and drag forces; `forge_physics_` API scaffolding in `common/physics/forge_physics.h`
+- [x] **Physics Lesson 01 — Point Particles** — Position, velocity, acceleration; symplectic Euler integration; gravity and drag forces; `forge_physics_` API scaffolding in `common/physics/forge_physics.h`
 - [ ] **Physics Lesson 02 — Springs and Constraints** — Hooke's law spring forces; damped springs; distance constraints with projection; chain and cloth-like particle systems
 - [ ] **Physics Lesson 03 — Particle Collisions** — Sphere-sphere and sphere-plane collision detection; impulse-based response; coefficient of restitution; simple O(n²) all-pairs (broadphase deferred to Lesson 07)
 
@@ -57,7 +57,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 - [ ] **Physics Lesson 04 — Rigid Body State and Orientation** — Mass, center of mass, inertia tensor; quaternion orientation; linear and angular velocity; state representation and integration; inertia tensor rotation to world space
 - [ ] **Physics Lesson 05 — Forces and Torques** — Applying forces at arbitrary points; gravity, drag, and friction as force generators; torque and angular acceleration; force accumulator pattern; combining linear and angular effects; gyroscopic stability
-- [ ] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; static and dynamic friction (Coulomb model); resting contact resolution; stacking preview with simple shapes
+- [ ] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; static and dynamic friction (Coulomb model); resting contact resolution; stacking preview with simple shapes; **first lesson with forge UI overlay** — sliders for friction/restitution, contact normal visualization toggle, energy and contact count readouts
 
 ### Collision Detection
 

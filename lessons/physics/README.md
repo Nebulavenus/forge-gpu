@@ -39,7 +39,7 @@ capsules) so the simulation behavior is front and center.
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
-| | *Coming soon* | See [PLAN.md](../../PLAN.md) for the roadmap |
+| [01](01-point-particles/) | Point Particles | Symplectic Euler integration, gravity, drag, sphere-plane collision, fixed timestep |
 
 ## Shared library
 

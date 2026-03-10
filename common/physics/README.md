@@ -19,14 +19,22 @@ quaternion operations.
 
 ## API Reference
 
-*The physics library grows with each lesson. API documentation will be added
-as functions are implemented.*
+### Lesson 01 — Point Particles
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_particle_create()` | Create a particle with position, mass, damping, restitution, radius |
+| `forge_physics_apply_gravity()` | Add gravitational force to accumulator |
+| `forge_physics_apply_drag()` | Add linear drag force opposing velocity |
+| `forge_physics_apply_force()` | Add an arbitrary force to accumulator |
+| `forge_physics_integrate()` | Symplectic Euler integration (velocity-first) |
+| `forge_physics_collide_plane()` | Sphere-plane collision detection and response |
+| `forge_physics_clear_forces()` | Reset force accumulator to zero |
 
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 01 — Point Particles | `forge_physics_integrate()`, `forge_physics_apply_gravity()`, `forge_physics_apply_drag()` | Particle dynamics, symplectic Euler |
 | 02 — Springs | `forge_physics_spring_force()`, `forge_physics_constraint_distance()` | Hooke's law, distance constraints |
 | 03 — Particle Collisions | `forge_physics_collide_sphere_sphere()`, `forge_physics_collide_sphere_plane()` | Collision detection and impulse response |
 | 04 — Rigid Body State | `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()` | Rigid body state, inertia, orientation |
@@ -50,4 +58,4 @@ as functions are implemented.*
 
 | Lesson | What it uses |
 |---|---|
-| *Coming soon* | See [PLAN.md](../../PLAN.md) for the roadmap |
+| [Physics L01](../../lessons/physics/01-point-particles/) | `ForgePhysicsParticle`, integrate, gravity, drag, collide_plane |

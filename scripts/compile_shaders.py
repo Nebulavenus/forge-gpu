@@ -25,6 +25,9 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LESSONS_DIR = os.path.join(REPO_ROOT, "lessons", "gpu")
 
+# All lesson tracks that may contain shaders
+LESSON_TRACKS = ["gpu", "physics", "ui", "math", "engine", "assets"]
+
 # Shader stage to DXC target profile mapping
 STAGE_PROFILES = {
     ".vert.hlsl": "vs_6_0",
@@ -56,22 +59,41 @@ def find_dxc():
 
 
 def find_lesson_dirs(query=None):
-    """Find lesson directories, optionally filtered by query."""
-    if not os.path.isdir(LESSONS_DIR):
-        return []
+    """Find lesson directories across all tracks, optionally filtered by query.
+
+    Supports queries like:
+      - "16"                          -> lessons/gpu/16-blending
+      - "physics/01-point-particles"  -> lessons/physics/01-point-particles
+      - "point-particles"             -> lessons/physics/01-point-particles
+      - None                          -> all lessons in all tracks
+    """
+    # If query contains a slash, treat the prefix as a track filter
+    track_filter = None
+    lesson_query = query
+    if query and "/" in query:
+        parts = query.split("/", 1)
+        track_filter = parts[0].lower()
+        lesson_query = parts[1]
+
+    tracks = LESSON_TRACKS if track_filter is None else [track_filter]
 
     dirs = []
-    for entry in sorted(os.listdir(LESSONS_DIR)):
-        full = os.path.join(LESSONS_DIR, entry)
-        if not os.path.isdir(full) or not entry[0].isdigit():
+    for track in tracks:
+        track_dir = os.path.join(REPO_ROOT, "lessons", track)
+        if not os.path.isdir(track_dir):
             continue
-        if query is None:
-            dirs.append(full)
-        else:
-            q = query.lower()
-            num = entry.split("-", 1)[0]
-            if num == q.zfill(2) or q in entry.lower():
+
+        for entry in sorted(os.listdir(track_dir)):
+            full = os.path.join(track_dir, entry)
+            if not os.path.isdir(full) or not entry[0].isdigit():
+                continue
+            if lesson_query is None:
                 dirs.append(full)
+            else:
+                q = lesson_query.lower()
+                num = entry.split("-", 1)[0]
+                if num == q.zfill(2) or q in entry.lower():
+                    dirs.append(full)
     return dirs
 
 
@@ -238,7 +260,7 @@ def main():
         if args.lesson:
             print(f"No lesson matching '{args.lesson}' found.")
         else:
-            print("No GPU lessons found.")
+            print("No lessons found.")
         return 1
 
     # Compile shaders in each lesson

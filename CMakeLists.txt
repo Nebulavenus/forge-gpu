@@ -143,6 +143,11 @@ add_subdirectory(lessons/ui/13-theming-and-color-system)
 add_subdirectory(lessons/ui/14-game-ui)
 add_subdirectory(lessons/ui/15-dev-ui)
 
+# ── Physics Lessons ────────────────────────────────────────────────────────
+if(NOT FORGE_USE_SHIM)
+    add_subdirectory(lessons/physics/01-point-particles)
+endif()
+
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────
 # Reusable C tools for the asset pipeline (invoked as subprocesses by Python
 # plugins).  These live at the project level — not scoped to individual
@@ -157,6 +162,7 @@ add_subdirectory(tests/math)
 add_subdirectory(tests/ui)
 add_subdirectory(tests/raster)
 add_subdirectory(tests/shapes)
+add_subdirectory(tests/physics)
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(tests/obj)
     add_subdirectory(tests/gltf)

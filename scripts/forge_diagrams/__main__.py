@@ -222,6 +222,11 @@ from .math import (
     diagram_view_transform,
     diagram_white_noise_comparison,
 )
+from .physics import (
+    diagram_force_accumulator_pattern,
+    diagram_sphere_plane_collision,
+    diagram_symplectic_vs_explicit_euler,
+)
 from .ui import (
     diagram_adjacent_pair_matrix,
     diagram_antialiasing_comparison,
@@ -412,6 +417,11 @@ DIAGRAMS = {
         ("continuity.png", diagram_continuity),
         ("arc_length.png", diagram_arc_length),
         ("bernstein_basis.png", diagram_bernstein_basis),
+    ],
+    "physics/01": [
+        ("euler_comparison.png", diagram_symplectic_vs_explicit_euler),
+        ("sphere_plane_collision.png", diagram_sphere_plane_collision),
+        ("force_accumulator.png", diagram_force_accumulator_pattern),
     ],
     "gpu/03": [
         ("unit_circle.png", diagram_unit_circle),
@@ -703,6 +713,7 @@ LESSON_NAMES = {
     "math/13": "math/13-gradient-noise",
     "math/14": "math/14-blue-noise-sequences",
     "math/15": "math/15-bezier-curves",
+    "physics/01": "physics/01-point-particles",
     "gpu/03": "gpu/03-uniforms-and-motion",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",

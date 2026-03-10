@@ -8,7 +8,7 @@ diagrams that illustrate GPU pipelines, math concepts, UI layouts, and more.
 ```bash
 python scripts/forge_diagrams --lesson gpu/04     # generate diagrams for one lesson
 python scripts/forge_diagrams --lesson math/01    # math lesson
-python scripts/forge_diagrams --all               # regenerate all 263 diagrams
+python scripts/forge_diagrams --all               # regenerate all diagrams
 python scripts/forge_diagrams --list              # list all registered diagrams
 ```
 
@@ -28,10 +28,11 @@ forge_diagrams/
 │   ├── lesson_03.py   Lesson 03 diagrams
 │   ├── lesson_04.py   Lesson 04 diagrams
 │   └── ...
-├── math/              Math lesson diagrams (13 lessons)
-├── ui/                UI lesson diagrams (13 lessons)
-├── engine/            Engine lesson diagrams (4 lessons)
-└── assets/            Asset pipeline lesson diagrams (5 lessons)
+├── math/              Math lesson diagrams
+├── ui/                UI lesson diagrams
+├── engine/            Engine lesson diagrams
+├── assets/            Asset pipeline lesson diagrams
+└── physics/           Physics lesson diagrams
 ```
 
 ## Adding a new diagram
