@@ -26,6 +26,7 @@
 #define SDL_MAIN_USE_CALLBACKS 1
 
 #include "gltf/forge_gltf.h"
+#include "gltf/forge_gltf_anim.h"
 #include "math/forge_math.h"
 
 #include <SDL3/SDL.h>
@@ -139,9 +140,6 @@
 
 /* Animation. */
 #define ANIM_SPEED        1.0f
-#define KEYFRAME_EPSILON  1e-7f
-#define MAX_ANIM_CHANNELS 64
-#define ANIM_NAME_SIZE    64
 
 /* CesiumMan mesh-local coordinate system (from POSITION accessor bounds):
  *   +X = forward (face direction)   range [-0.13, 0.18]
@@ -227,25 +225,6 @@ typedef struct GridFragUniforms {
     float _pad;             /* 16-byte alignment padding                  */
 } GridFragUniforms;
 
-/* ── Animation data structures ──────────────────────────────────────── */
-
-/* A single animation channel targeting one property of one node. */
-typedef struct AnimChannel {
-    int         target_node;    /* index of the node this channel drives      */
-    int         target_path;    /* 0=translation, 1=rotation, 2=scale         */
-    int         keyframe_count; /* number of keyframes                        */
-    const float *timestamps;    /* pointer into glTF binary (not owned)       */
-    const float *values;        /* pointer into glTF binary (vec3 or quat)    */
-} AnimChannel;
-
-/* A clip is a named collection of channels with a shared duration. */
-typedef struct AnimClip {
-    char   name[ANIM_NAME_SIZE];             /* human-readable clip name from glTF   */
-    float  duration;                         /* total duration in seconds             */
-    int    channel_count;                    /* number of active channels (≤ max)     */
-    AnimChannel channels[MAX_ANIM_CHANNELS]; /* per-node-property animation channels  */
-} AnimClip;
-
 /* ── GPU-side model data ────────────────────────────────────────────── */
 
 typedef struct GpuPrimitive {
@@ -309,7 +288,6 @@ typedef struct app_state {
     float cam_pitch;                /* vertical rotation (radians, ±1.5)   */
 
     /* Animation. */
-    AnimClip anim_clip;             /* parsed animation channels           */
     float    anim_time;             /* current playback time (seconds)     */
     float    walk_angle;            /* angle around walk circle (radians)  */
 
@@ -654,369 +632,36 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
     return tex;
 }
 
-/* ── Animation: parse all channels from glTF JSON ───────────────────── */
-
-static bool parse_animation(AnimClip *clip, const char *gltf_path,
-                             const ForgeGltfScene *scene)
-{
-    /* Re-read the glTF JSON to access the "animations" array.
-     * The glTF parser does not expose animation data, so we parse it
-     * directly here.  The binary buffer is still loaded in scene->buffers. */
-    char *json_text = NULL;
-    {
-        SDL_IOStream *io = SDL_IOFromFile(gltf_path, "rb");
-        if (!io) {
-            SDL_Log("Failed to open '%s' for animation parsing: %s",
-                    gltf_path, SDL_GetError());
-            return false;
-        }
-        Sint64 size = SDL_GetIOSize(io);
-        if (size < 0) {
-            SDL_Log("Failed to get size of '%s': %s", gltf_path, SDL_GetError());
-            if (!SDL_CloseIO(io)) {
-                SDL_Log("SDL_CloseIO failed: %s", SDL_GetError());
-            }
-            return false;
-        }
-        json_text = (char *)SDL_calloc(1, (size_t)size + 1);
-        if (!json_text) {
-            if (!SDL_CloseIO(io)) {
-                SDL_Log("SDL_CloseIO failed: %s", SDL_GetError());
-            }
-            return false;
-        }
-        if (SDL_ReadIO(io, json_text, (size_t)size) != (size_t)size) {
-            SDL_free(json_text);
-            if (!SDL_CloseIO(io)) {
-                SDL_Log("SDL_CloseIO failed: %s", SDL_GetError());
-            }
-            return false;
-        }
-        if (!SDL_CloseIO(io)) {
-            SDL_Log("SDL_CloseIO failed: %s", SDL_GetError());
-            SDL_free(json_text);
-            return false;
-        }
-    }
-
-    cJSON *root = cJSON_Parse(json_text);
-    SDL_free(json_text);
-    if (!root) {
-        SDL_Log("JSON parse error for animations: %s", cJSON_GetErrorPtr());
-        return false;
-    }
-
-    const cJSON *anims = cJSON_GetObjectItemCaseSensitive(root, "animations");
-    if (!cJSON_IsArray(anims) || cJSON_GetArraySize(anims) < 1) {
-        SDL_Log("No animations found in glTF");
-        cJSON_Delete(root);
-        return false;
-    }
-
-    /* Parse the first animation clip. */
-    const cJSON *anim = cJSON_GetArrayItem(anims, 0);
-    SDL_memset(clip, 0, sizeof(*clip));
-
-    const cJSON *name_json = cJSON_GetObjectItemCaseSensitive(anim, "name");
-    if (cJSON_IsString(name_json) && name_json->valuestring) {
-        SDL_strlcpy(clip->name, name_json->valuestring, sizeof(clip->name));
-    } else {
-        SDL_strlcpy(clip->name, "Animation", sizeof(clip->name));
-    }
-
-    /* Parse accessors and bufferViews for data pointer resolution. */
-    const cJSON *accessors = cJSON_GetObjectItemCaseSensitive(root, "accessors");
-    const cJSON *views = cJSON_GetObjectItemCaseSensitive(root, "bufferViews");
-
-    const cJSON *samplers = cJSON_GetObjectItemCaseSensitive(anim, "samplers");
-    const cJSON *channels = cJSON_GetObjectItemCaseSensitive(anim, "channels");
-
-    if (!cJSON_IsArray(samplers) || !cJSON_IsArray(channels)) {
-        SDL_Log("Animation missing samplers or channels");
-        cJSON_Delete(root);
-        return false;
-    }
-
-    float max_time = 0.0f;
-    int ch_count = cJSON_GetArraySize(channels);
-
-    for (int i = 0; i < ch_count && clip->channel_count < MAX_ANIM_CHANNELS; i++) {
-        const cJSON *ch = cJSON_GetArrayItem(channels, i);
-        const cJSON *target = cJSON_GetObjectItemCaseSensitive(ch, "target");
-        const cJSON *sampler_idx = cJSON_GetObjectItemCaseSensitive(ch, "sampler");
-        if (!target || !cJSON_IsNumber(sampler_idx)) continue;
-
-        const cJSON *node_idx = cJSON_GetObjectItemCaseSensitive(target, "node");
-        const cJSON *path_str = cJSON_GetObjectItemCaseSensitive(target, "path");
-        if (!cJSON_IsNumber(node_idx) || !cJSON_IsString(path_str)) continue;
-
-        /* Determine target path type. */
-        int target_path = -1;
-        int value_components = 0;
-        if (SDL_strcmp(path_str->valuestring, "translation") == 0) {
-            target_path = 0;
-            value_components = 3;
-        } else if (SDL_strcmp(path_str->valuestring, "rotation") == 0) {
-            target_path = 1;
-            value_components = 4;
-        } else if (SDL_strcmp(path_str->valuestring, "scale") == 0) {
-            target_path = 2;
-            value_components = 3;
-        } else {
-            continue; /* skip weights or unknown paths */
-        }
-
-        /* Resolve sampler input (timestamps) and output (values). */
-        const cJSON *samp = cJSON_GetArrayItem(samplers, sampler_idx->valueint);
-        if (!samp) continue;
-
-        const cJSON *input_acc = cJSON_GetObjectItemCaseSensitive(samp, "input");
-        const cJSON *output_acc = cJSON_GetObjectItemCaseSensitive(samp, "output");
-        if (!cJSON_IsNumber(input_acc) || !cJSON_IsNumber(output_acc)) continue;
-
-        /* Resolve accessor -> bufferView -> buffer to get data pointer. */
-        const cJSON *in_accessor = cJSON_GetArrayItem(accessors, input_acc->valueint);
-        const cJSON *out_accessor = cJSON_GetArrayItem(accessors, output_acc->valueint);
-        if (!in_accessor || !out_accessor) continue;
-
-        /* Get timestamp data pointer. */
-        const cJSON *in_bv_idx = cJSON_GetObjectItemCaseSensitive(in_accessor, "bufferView");
-        const cJSON *in_count = cJSON_GetObjectItemCaseSensitive(in_accessor, "count");
-        if (!cJSON_IsNumber(in_bv_idx) || !cJSON_IsNumber(in_count)) continue;
-
-        const cJSON *in_bv = cJSON_GetArrayItem(views, in_bv_idx->valueint);
-        if (!in_bv) continue;
-
-        const cJSON *in_buf_idx = cJSON_GetObjectItemCaseSensitive(in_bv, "buffer");
-        const cJSON *in_bv_off = cJSON_GetObjectItemCaseSensitive(in_bv, "byteOffset");
-        if (!cJSON_IsNumber(in_buf_idx)) continue;
-
-        int in_bi = in_buf_idx->valueint;
-        Uint32 in_offset = cJSON_IsNumber(in_bv_off) ? (Uint32)in_bv_off->valueint : 0;
-        const cJSON *in_acc_off = cJSON_GetObjectItemCaseSensitive(in_accessor, "byteOffset");
-        if (cJSON_IsNumber(in_acc_off)) in_offset += (Uint32)in_acc_off->valueint;
-
-        if (in_bi < 0 || in_bi >= scene->buffer_count) continue;
-
-        /* Get value data pointer. */
-        const cJSON *out_bv_idx = cJSON_GetObjectItemCaseSensitive(out_accessor, "bufferView");
-        if (!cJSON_IsNumber(out_bv_idx)) continue;
-
-        const cJSON *out_bv = cJSON_GetArrayItem(views, out_bv_idx->valueint);
-        if (!out_bv) continue;
-
-        const cJSON *out_buf_idx = cJSON_GetObjectItemCaseSensitive(out_bv, "buffer");
-        const cJSON *out_bv_off = cJSON_GetObjectItemCaseSensitive(out_bv, "byteOffset");
-        if (!cJSON_IsNumber(out_buf_idx)) continue;
-
-        int out_bi = out_buf_idx->valueint;
-        Uint32 out_offset = cJSON_IsNumber(out_bv_off) ? (Uint32)out_bv_off->valueint : 0;
-        const cJSON *out_acc_off = cJSON_GetObjectItemCaseSensitive(out_accessor, "byteOffset");
-        if (cJSON_IsNumber(out_acc_off)) out_offset += (Uint32)out_acc_off->valueint;
-
-        if (out_bi < 0 || out_bi >= scene->buffer_count) continue;
-
-        int kf_count = in_count->valueint;
-        if (kf_count <= 0) continue;
-
-        /* Validate output accessor: count must match, componentType FLOAT,
-         * type must match the animation path (VEC3 or VEC4). */
-        const cJSON *out_count = cJSON_GetObjectItemCaseSensitive(
-            out_accessor, "count");
-        const cJSON *out_comp = cJSON_GetObjectItemCaseSensitive(
-            out_accessor, "componentType");
-        const cJSON *out_type = cJSON_GetObjectItemCaseSensitive(
-            out_accessor, "type");
-        if (!cJSON_IsNumber(out_count) || out_count->valueint != kf_count) continue;
-        if (!cJSON_IsNumber(out_comp) || out_comp->valueint != FORGE_GLTF_FLOAT) continue;
-        if (!cJSON_IsString(out_type)) continue;
-        if ((value_components == 3 && SDL_strcmp(out_type->valuestring, "VEC3") != 0)
-            || (value_components == 4 && SDL_strcmp(out_type->valuestring, "VEC4") != 0)) {
-            continue;
-        }
-
-        /* Validate buffer bounds for timestamps and values. */
-        size_t in_end = (size_t)in_offset + (size_t)kf_count * sizeof(float);
-        size_t out_end = (size_t)out_offset
-                       + (size_t)kf_count * (size_t)value_components * sizeof(float);
-        if (in_end > scene->buffers[in_bi].size
-            || out_end > scene->buffers[out_bi].size) {
-            SDL_Log("Animation channel %d: buffer overflow, skipping", i);
-            continue;
-        }
-
-        AnimChannel *ac = &clip->channels[clip->channel_count];
-        ac->target_node    = node_idx->valueint;
-        ac->target_path    = target_path;
-        ac->keyframe_count = kf_count;
-        ac->timestamps     = (const float *)(scene->buffers[in_bi].data + in_offset);
-        ac->values          = (const float *)(scene->buffers[out_bi].data + out_offset);
-        clip->channel_count++;
-
-        /* Track maximum timestamp for clip duration. */
-        if (kf_count > 0) {
-            float last_t = ac->timestamps[kf_count - 1];
-            if (last_t > max_time) max_time = last_t;
-        }
-
-    }
-
-    clip->duration = max_time;
-    cJSON_Delete(root);
-
-    SDL_Log("Parsed animation '%s': %.3fs, %d channels",
-            clip->name, clip->duration, clip->channel_count);
-    return true;
-}
-
-/* ── Animation: binary search for keyframe interval ─────────────────── */
-
-static int find_keyframe(const float *timestamps, int count, float t)
-{
-    /* Find the index lo such that timestamps[lo] <= t < timestamps[lo+1]. */
-    int lo = 0;
-    int hi = count - 1;
-    while (lo + 1 < hi) {
-        int mid = (lo + hi) / 2;
-        if (timestamps[mid] <= t) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
-
-/* ── Animation: evaluate a vec3 channel (translation or scale) ──────── */
-
-static vec3 evaluate_vec3_channel(const AnimChannel *ch, float t)
-{
-    if (t <= ch->timestamps[0]) {
-        const float *v = ch->values;
-        return vec3_create(v[0], v[1], v[2]);
-    }
-    if (t >= ch->timestamps[ch->keyframe_count - 1]) {
-        const float *v = ch->values + (ch->keyframe_count - 1) * 3;
-        return vec3_create(v[0], v[1], v[2]);
-    }
-
-    int lo = find_keyframe(ch->timestamps, ch->keyframe_count, t);
-    float t0 = ch->timestamps[lo];
-    float t1 = ch->timestamps[lo + 1];
-    float span = t1 - t0;
-    float alpha = (span > KEYFRAME_EPSILON) ? (t - t0) / span : 0.0f;
-
-    const float *a = ch->values + lo * 3;
-    const float *b = ch->values + (lo + 1) * 3;
-
-    return vec3_lerp(vec3_create(a[0], a[1], a[2]),
-                     vec3_create(b[0], b[1], b[2]), alpha);
-}
-
-/* ── Animation: evaluate a quaternion channel (rotation) ────────────── */
-
-static quat evaluate_quat_channel(const AnimChannel *ch, float t)
-{
-    if (t <= ch->timestamps[0]) {
-        const float *v = ch->values;
-        return quat_create(v[3], v[0], v[1], v[2]);
-    }
-    if (t >= ch->timestamps[ch->keyframe_count - 1]) {
-        const float *v = ch->values + (ch->keyframe_count - 1) * 4;
-        return quat_create(v[3], v[0], v[1], v[2]);
-    }
-
-    int lo = find_keyframe(ch->timestamps, ch->keyframe_count, t);
-    float t0 = ch->timestamps[lo];
-    float t1 = ch->timestamps[lo + 1];
-    float span = t1 - t0;
-    float alpha = (span > KEYFRAME_EPSILON) ? (t - t0) / span : 0.0f;
-
-    const float *a = ch->values + lo * 4;
-    const float *b = ch->values + (lo + 1) * 4;
-    /* glTF quaternion order: [x, y, z, w] → quat_create(w, x, y, z) */
-    quat qa = quat_create(a[3], a[0], a[1], a[2]);
-    quat qb = quat_create(b[3], b[0], b[1], b[2]);
-
-    return quat_slerp(qa, qb, alpha);
-}
-
-/* ── World transform: recursive parent-first resolution ────────────── */
-
-static void resolve_world_transform(ForgeGltfNode *nodes, int count,
-                                    bool *computed, int idx)
-{
-    if (idx < 0 || idx >= count || computed[idx]) return;
-
-    ForgeGltfNode *node = &nodes[idx];
-    if (node->parent >= 0 && node->parent < count) {
-        resolve_world_transform(nodes, count, computed, node->parent);
-        node->world_transform = mat4_multiply(
-            nodes[node->parent].world_transform,
-            node->local_transform);
-    } else {
-        node->world_transform = node->local_transform;
-    }
-    computed[idx] = true;
-}
-
 /* ── Animation: evaluate all channels and rebuild hierarchy ─────────── */
 
 static void evaluate_animation(app_state *state, float dt)
 {
-    AnimClip *clip = &state->anim_clip;
-    if (clip->channel_count == 0 || clip->duration <= 0.0f) return;
+    if (state->scene.animation_count == 0) return;
+    const ForgeGltfAnimation *anim = &state->scene.animations[0];
+    if (anim->channel_count == 0 || anim->duration <= 0.0f) return;
 
     /* Advance time and wrap at clip duration. */
     state->anim_time += dt * ANIM_SPEED;
-    while (state->anim_time >= clip->duration) {
-        state->anim_time -= clip->duration;
-    }
-    float t = state->anim_time;
-
-    /* Evaluate all channels — write results to node TRS fields. */
-    for (int i = 0; i < clip->channel_count; i++) {
-        const AnimChannel *ch = &clip->channels[i];
-        int node = ch->target_node;
-        if (node < 0 || node >= state->scene.node_count) continue;
-
-        ForgeGltfNode *gn = &state->scene.nodes[node];
-
-        switch (ch->target_path) {
-        case 0: /* translation */
-            gn->translation = evaluate_vec3_channel(ch, t);
-            gn->has_trs = true;
-            break;
-        case 1: /* rotation */
-            gn->rotation = evaluate_quat_channel(ch, t);
-            gn->has_trs = true;
-            break;
-        case 2: /* scale */
-            gn->scale_xyz = evaluate_vec3_channel(ch, t);
-            gn->has_trs = true;
-            break;
-        }
+    while (state->anim_time >= anim->duration) {
+        state->anim_time -= anim->duration;
     }
 
-    /* Rebuild local transforms from TRS. */
-    for (int i = 0; i < state->scene.node_count; i++) {
-        ForgeGltfNode *node = &state->scene.nodes[i];
-        if (!node->has_trs) continue;
-        mat4 T = mat4_translate(node->translation);
-        mat4 R = quat_to_mat4(node->rotation);
-        mat4 S = mat4_scale(node->scale_xyz);
-        node->local_transform = mat4_multiply(T, mat4_multiply(R, S));
-    }
+    /* Evaluate all animation channels — binary search + slerp/lerp for
+     * each channel, writing results to node TRS and rebuilding local
+     * transforms from the updated values. */
+    forge_gltf_anim_apply(anim,
+                          state->scene.nodes,
+                          state->scene.node_count,
+                          state->anim_time, true);
 
-    /* Rebuild world transforms — resolve parents before children regardless
-     * of array order.  Uses a computed[] flag to avoid redundant work. */
+    /* Rebuild world transforms: walk the node tree from roots to leaves,
+     * propagating world = parent_world * local for every node. */
     {
-        bool computed[FORGE_GLTF_MAX_NODES] = {false};
-        for (int i = 0; i < state->scene.node_count; i++) {
-            resolve_world_transform(state->scene.nodes,
-                                    state->scene.node_count,
-                                    computed, i);
-        }
+        mat4 identity = mat4_identity();
+        for (int i = 0; i < state->scene.root_node_count; i++)
+            forge_gltf_compute_world_transforms(
+                &state->scene,
+                state->scene.root_nodes[i], &identity);
     }
 
     /* Compute joint matrices per glTF spec:
@@ -1314,9 +959,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             goto init_fail;
         }
 
-        /* Parse animation channels from glTF JSON. */
-        if (!parse_animation(&state->anim_clip, path, &state->scene)) {
-            SDL_Log("Warning: no animation data loaded");
+        /* Animation data is already parsed by forge_gltf_load(). */
+        if (state->scene.animation_count > 0) {
+            SDL_Log("Loaded animation '%s': %.3fs, %d channels",
+                    state->scene.animations[0].name,
+                    state->scene.animations[0].duration,
+                    state->scene.animations[0].channel_count);
+        } else {
+            SDL_Log("Warning: no animation data in model");
         }
     }
 

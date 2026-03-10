@@ -168,20 +168,15 @@ This pattern — separate glTF accessors assembled into an interleaved
 vertex buffer — is common when loading glTF models for real-time
 rendering.
 
-## Dynamic animation parsing
+## Animation evaluation
 
-Unlike Lesson 31 which hardcoded 2 animation channels, this lesson
-parses all 57 channels from the glTF JSON dynamically:
-
-1. Re-read the glTF JSON after `forge_gltf_load()` to access the
-   `"animations"` array
-2. For each channel: resolve `target.node`, `target.path`, and the
-   sampler's input/output accessors
-3. Store `const float *` pointers into the loaded binary buffer
-4. Three evaluation functions handle the different target paths:
-   - `evaluate_vec3_channel()` — translation and scale (linear lerp)
-   - `evaluate_quat_channel()` — rotation (quaternion slerp)
-5. Binary search finds the keyframe interval, same as Lesson 31
+The glTF parser (`forge_gltf_load`) parses all 57 animation channels
+from the CesiumMan model into `scene.animations[0]`. At runtime,
+`forge_gltf_anim_apply()` from `forge_gltf_anim.h` evaluates every
+channel — binary search for the keyframe interval, `vec3_lerp` for
+translation/scale, `quat_slerp` for rotation — and writes results to
+each node's TRS fields. After that, `forge_gltf_compute_world_transforms()`
+propagates the updated local transforms through the hierarchy.
 
 ### glTF quaternion component order
 
