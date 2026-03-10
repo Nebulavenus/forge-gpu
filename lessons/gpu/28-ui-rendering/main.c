@@ -2,10 +2,13 @@
  * GPU Lesson 28 -- UI Rendering
  *
  * Renders the forge-gpu immediate-mode UI system (forge_ui_ctx.h,
- * forge_ui_window.h) using the SDL GPU API.  All widgets -- labels,
- * buttons, checkboxes, sliders, and a text input -- are batched into a
- * single vertex/index buffer and drawn with one DrawIndexedPrimitives
- * call through a font-atlas texture with alpha blending.
+ * forge_ui_window.h) using the SDL GPU API.  Demonstrates the full
+ * widget set: labels, buttons, checkboxes, sliders, text input,
+ * progress bars, separators, tree nodes, drag-float/int fields,
+ * listbox, dropdown, radio buttons, color picker, and sparkline
+ * graphs -- all batched into a single vertex/index buffer and drawn
+ * with one DrawIndexedPrimitives call through a font-atlas texture
+ * with alpha blending.
  *
  * Pipeline overview:
  *   1. The UI context generates ForgeUiVertex arrays + Uint32 index
@@ -83,18 +86,57 @@
  * color_rg(float2), color_ba(float2). */
 #define NUM_VERTEX_ATTRIBUTES  4
 
-/* Initial GPU buffer capacities.  Sized to handle a typical UI panel
- * (around 1000 quads = 4000 vertices + 6000 indices) without needing
- * a resize on the first frame. */
-#define INITIAL_VERTEX_CAPACITY 4096   /* vertices */
-#define INITIAL_INDEX_CAPACITY  6144   /* indices  */
+/* Initial GPU buffer capacities.  Sized to handle all three demo
+ * windows (around 3000 quads = 12000 vertices + 18000 indices)
+ * without needing a resize on the first frame. */
+#define INITIAL_VERTEX_CAPACITY 16384  /* vertices */
+#define INITIAL_INDEX_CAPACITY  24576  /* indices  */
 
-/* Demo window position and size. */
-#define DEMO_WIN_X       50.0f
-#define DEMO_WIN_Y       50.0f
-#define DEMO_WIN_W       320.0f
-#define DEMO_WIN_H       400.0f
-#define DEMO_WIN_Z_ORDER 0
+/* Demo window positions and sizes. */
+#define CONTROLS_WIN_X       20.0f
+#define CONTROLS_WIN_Y       20.0f
+#define CONTROLS_WIN_W       300.0f
+#define CONTROLS_WIN_H       680.0f
+
+#define INSPECTOR_WIN_X      340.0f
+#define INSPECTOR_WIN_Y       20.0f
+#define INSPECTOR_WIN_W      340.0f
+#define INSPECTOR_WIN_H      680.0f
+
+#define PERF_WIN_X           700.0f
+#define PERF_WIN_Y            20.0f
+#define PERF_WIN_W           280.0f
+#define PERF_WIN_H           420.0f
+
+#define GRAPH_WIN_X          700.0f
+#define GRAPH_WIN_Y          460.0f
+#define GRAPH_WIN_W          560.0f
+#define GRAPH_WIN_H          240.0f
+
+/* Big sparkline sample count — more samples = smoother graph. */
+#define BIG_SPARKLINE_SAMPLES 120
+#define BIG_SPARKLINE_HEIGHT  180.0f
+
+/* Signal generator coefficients for the big sparkline demo.  Each sine
+ * wave layer adds visual complexity at a different frequency; the
+ * amplitudes sum to ~0.78 so the waveform stays in roughly [0.1, 0.9]
+ * after the DC_OFFSET baseline shift. */
+#define SIGNAL_FREQ_1     1.0f    /* fundamental frequency               */
+#define SIGNAL_AMP_1      0.4f    /* seed: slow, dominant wave            */
+#define SIGNAL_FREQ_2     2.7f    /* second harmonic (seed)               */
+#define SIGNAL_AMP_2      0.2f
+#define SIGNAL_FREQ_3     5.3f    /* third harmonic (seed)                */
+#define SIGNAL_AMP_3      0.15f
+#define SIGNAL_ANIM_AMP_1 0.35f   /* animation: slightly smaller primary  */
+#define SIGNAL_ANIM_FREQ_2 2.3f   /* animation harmonics differ from seed */
+#define SIGNAL_ANIM_AMP_2  0.2f
+#define SIGNAL_ANIM_FREQ_3 5.7f
+#define SIGNAL_ANIM_AMP_3  0.15f
+#define SIGNAL_ANIM_FREQ_4 11.1f  /* high-frequency shimmer               */
+#define SIGNAL_ANIM_AMP_4  0.08f
+#define SIGNAL_DC_OFFSET   0.5f   /* baseline center value                */
+#define SIGNAL_PHASE_STEP  0.08f  /* phase increment per frame            */
+#define SIGNAL_SEED_STEP   0.15f  /* time step between seed samples       */
 
 /* Demo widget layout sizes (pixel heights passed to layout_next). */
 #define LABEL_HEIGHT        26.0f
@@ -102,6 +144,14 @@
 #define CHECKBOX_HEIGHT     30.0f
 #define SLIDER_HEIGHT       30.0f
 #define TEXT_INPUT_HEIGHT    32.0f
+#define SEPARATOR_HEIGHT    12.0f
+#define PROGRESS_HEIGHT     22.0f
+#define RADIO_HEIGHT        26.0f
+#define DRAG_HEIGHT         26.0f
+#define LISTBOX_HEIGHT     100.0f
+#define DROPDOWN_HEIGHT     26.0f
+#define SPARKLINE_HEIGHT    50.0f
+#define PICKER_HEIGHT      160.0f
 
 /* Demo slider range. */
 #define SLIDER_MIN 0.0f
@@ -119,6 +169,9 @@
 
 /* Label formatting buffer size. */
 #define LABEL_BUF_SIZE 64
+
+/* Sparkline sample count for the frame-time graph. */
+#define SPARKLINE_SAMPLES 60
 
 /* ── Uniform structure (matches ui.vert.hlsl cbuffer) ────────────────── */
 
@@ -152,12 +205,52 @@ typedef struct app_state {
     ForgeUiWindowContext ui_wctx;        /* draggable window context      */
 
     /* ---- Demo widget state (persists across frames) ------------------ */
-    ForgeUiWindowState   demo_window;    /* position, scroll, z-order     */
-    float                slider_value;   /* slider demo value [0..1]      */
-    bool                 checkbox_value; /* checkbox demo toggle           */
-    ForgeUiTextInputState text_input;    /* text input buffer + cursor    */
-    char                 text_buf[TEXT_INPUT_BUF_SIZE]; /* backing buffer */
-    int                  click_count;    /* button click counter          */
+
+    /* Controls window */
+    ForgeUiWindowState   controls_window;  /* position, scroll, z-order  */
+    float                slider_value;     /* slider demo value [0..1]   */
+    bool                 checkbox_value;   /* checkbox demo toggle        */
+    ForgeUiTextInputState text_input;      /* text input buffer + cursor */
+    char                 text_buf[TEXT_INPUT_BUF_SIZE]; /* backing buffer*/
+    int                  click_count;      /* button click counter       */
+    float                health;           /* progress bar demo value    */
+    float                mana;             /* progress bar demo value    */
+    int                  radio_value;      /* radio button selection     */
+    int                  listbox_sel;      /* listbox selection index    */
+    int                  dropdown_sel;     /* dropdown selection index   */
+    bool                 dropdown_open;    /* dropdown expanded state    */
+
+    /* Inspector window */
+    ForgeUiWindowState   inspector_window; /* position, scroll, z-order  */
+    bool                 transform_open;   /* tree node open state       */
+    bool                 material_open;    /* tree node open state       */
+    bool                 physics_open;     /* tree node open state       */
+    float                position[3];      /* drag-float 3-component     */
+    float                rotation[3];      /* drag-float 3-component     */
+    float                scale_val;        /* drag-float single          */
+    float                roughness;        /* drag-float single          */
+    int                  layer;            /* drag-int single            */
+    float                picker_h;         /* color picker hue           */
+    float                picker_s;         /* color picker saturation    */
+    float                picker_v;         /* color picker value         */
+
+    /* Performance window */
+    ForgeUiWindowState   perf_window;      /* position, scroll, z-order  */
+    float                frame_times[SPARKLINE_SAMPLES]; /* sparkline data */
+    int                  frame_time_index; /* ring buffer write position */
+    Uint64               last_tick;        /* for computing delta time   */
+
+    /* Graph window — big sparkline showcase */
+    ForgeUiWindowState   graph_window;     /* position, scroll, z-order  */
+    float                big_spark[BIG_SPARKLINE_SAMPLES]; /* noisy signal */
+    float                big_spark_phase;  /* animation phase             */
+
+    /* Cached totals from the previous frame — read after forge_ui_wctx_end()
+     * merges all per-window buffers into the main context.  Displayed in the
+     * Performance window on the next frame so the numbers reflect the full
+     * merged batch, not just one window's partial data. */
+    int                  cached_vertex_count;
+    int                  cached_index_count;
 
     /* ---- Per-frame keyboard state (consumed by ctx_set_keyboard) ----- */
     char        frame_text_buf[64];      /* stable buffer for text typed this frame */
@@ -682,18 +775,87 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         goto init_fail;
     }
 
-    /* Demo window: positioned at top-left with a comfortable size. */
-    state->demo_window.rect.x     = DEMO_WIN_X;
-    state->demo_window.rect.y     = DEMO_WIN_Y;
-    state->demo_window.rect.w     = DEMO_WIN_W;
-    state->demo_window.rect.h     = DEMO_WIN_H;
-    state->demo_window.scroll_y   = 0.0f;
-    state->demo_window.collapsed  = false;
-    state->demo_window.z_order    = DEMO_WIN_Z_ORDER;
+    /* Controls window: basic widgets on the left. */
+    state->controls_window.rect.x     = CONTROLS_WIN_X;
+    state->controls_window.rect.y     = CONTROLS_WIN_Y;
+    state->controls_window.rect.w     = CONTROLS_WIN_W;
+    state->controls_window.rect.h     = CONTROLS_WIN_H;
+    state->controls_window.scroll_y   = 0.0f;
+    state->controls_window.collapsed  = false;
+    state->controls_window.z_order    = 0;
 
+    /* Inspector window: tree nodes, drag fields, color picker. */
+    state->inspector_window.rect.x     = INSPECTOR_WIN_X;
+    state->inspector_window.rect.y     = INSPECTOR_WIN_Y;
+    state->inspector_window.rect.w     = INSPECTOR_WIN_W;
+    state->inspector_window.rect.h     = INSPECTOR_WIN_H;
+    state->inspector_window.scroll_y   = 0.0f;
+    state->inspector_window.collapsed  = false;
+    state->inspector_window.z_order    = 1;
+
+    /* Performance window: sparkline, progress bars, colored labels. */
+    state->perf_window.rect.x     = PERF_WIN_X;
+    state->perf_window.rect.y     = PERF_WIN_Y;
+    state->perf_window.rect.w     = PERF_WIN_W;
+    state->perf_window.rect.h     = PERF_WIN_H;
+    state->perf_window.scroll_y   = 0.0f;
+    state->perf_window.collapsed  = false;
+    state->perf_window.z_order    = 2;
+
+    /* Controls window widget state. */
     state->slider_value   = SLIDER_INITIAL_VALUE;
     state->checkbox_value = false;
     state->click_count    = CLICK_COUNT_INITIAL;
+    state->health         = 72.0f;
+    state->mana           = 45.0f;
+    state->radio_value    = 1;
+    state->listbox_sel    = 0;
+    state->dropdown_sel   = 0;
+    state->dropdown_open  = false;
+
+    /* Inspector window widget state. */
+    state->transform_open = true;
+    state->material_open  = true;
+    state->physics_open   = false;
+    state->position[0]    = 12.5f;
+    state->position[1]    = 0.0f;
+    state->position[2]    = -3.2f;
+    state->rotation[0]    = 0.0f;
+    state->rotation[1]    = 45.0f;
+    state->rotation[2]    = 0.0f;
+    state->scale_val      = 1.0f;
+    state->roughness      = 0.7f;
+    state->layer          = 0;
+    state->picker_h       = 0.6f;
+    state->picker_s       = 0.8f;
+    state->picker_v       = 0.9f;
+
+    /* Graph window: big sparkline showcase. */
+    state->graph_window.rect.x     = GRAPH_WIN_X;
+    state->graph_window.rect.y     = GRAPH_WIN_Y;
+    state->graph_window.rect.w     = GRAPH_WIN_W;
+    state->graph_window.rect.h     = GRAPH_WIN_H;
+    state->graph_window.scroll_y   = 0.0f;
+    state->graph_window.collapsed  = false;
+    state->graph_window.z_order    = 3;
+    state->big_spark_phase         = 0.0f;
+
+    /* Seed the big sparkline with an initial noisy signal. */
+    for (int i = 0; i < BIG_SPARKLINE_SAMPLES; i++) {
+        float t = (float)i * SIGNAL_SEED_STEP;
+        state->big_spark[i] =
+            SDL_sinf(t * SIGNAL_FREQ_1) * SIGNAL_AMP_1
+          + SDL_sinf(t * SIGNAL_FREQ_2) * SIGNAL_AMP_2
+          + SDL_sinf(t * SIGNAL_FREQ_3) * SIGNAL_AMP_3
+          + SIGNAL_DC_OFFSET;
+    }
+
+    /* Performance window: fill sparkline with plausible frame times. */
+    for (int i = 0; i < SPARKLINE_SAMPLES; i++) {
+        state->frame_times[i] = 16.0f;
+    }
+    state->frame_time_index = 0;
+    state->last_tick = SDL_GetTicks();
 
     /* Text input: backed by a fixed-size buffer, initially empty. */
     state->text_buf[0]       = '\0';
@@ -833,10 +995,34 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Begin window context (sorts and manages z-order). */
     forge_ui_wctx_begin(&state->ui_wctx);
 
-    /* ── Demo window with widgets ─────────────────────────────── */
+    /* ── Update sparkline with real frame time ────────────────── */
+    {
+        Uint64 now = SDL_GetTicks();
+        float dt_ms = (float)(now - state->last_tick);
+        state->last_tick = now;
+        state->frame_times[state->frame_time_index] = dt_ms;
+        state->frame_time_index =
+            (state->frame_time_index + 1) % SPARKLINE_SAMPLES;
+
+        /* Animate the big sparkline: shift samples left, push a new
+         * value computed from layered sine waves for visual interest. */
+        for (int i = 0; i < BIG_SPARKLINE_SAMPLES - 1; i++) {
+            state->big_spark[i] = state->big_spark[i + 1];
+        }
+        state->big_spark_phase += SIGNAL_PHASE_STEP;
+        float p = state->big_spark_phase;
+        float v = SDL_sinf(p) * SIGNAL_ANIM_AMP_1
+                + SDL_sinf(p * SIGNAL_ANIM_FREQ_2) * SIGNAL_ANIM_AMP_2
+                + SDL_sinf(p * SIGNAL_ANIM_FREQ_3) * SIGNAL_ANIM_AMP_3
+                + SDL_sinf(p * SIGNAL_ANIM_FREQ_4) * SIGNAL_ANIM_AMP_4
+                + SIGNAL_DC_OFFSET;
+        state->big_spark[BIG_SPARKLINE_SAMPLES - 1] = v;
+    }
+
+    /* ── Controls window (basic + selection widgets) ──────────── */
 
     if (forge_ui_wctx_window_begin(&state->ui_wctx,
-                                    "UI Demo", &state->demo_window)) {
+                                    "Controls", &state->controls_window)) {
 
         /* Title label (accent color from theme). */
         forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Hello, GPU UI!",
@@ -846,8 +1032,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                   state->ui_ctx.theme.accent.b,
                                   state->ui_ctx.theme.accent.a);
 
-        /* Click counter label -- shows how many times the button has
-         * been pressed, demonstrating persistent widget state. */
+        /* Button: increments click counter on each press. */
+        if (forge_ui_ctx_button_layout(&state->ui_ctx,
+                                       "Click me", BUTTON_HEIGHT)) {
+            state->click_count++;
+        }
+
+        /* Click counter label. */
         char click_label[LABEL_BUF_SIZE];
         SDL_snprintf(click_label, sizeof(click_label),
                      "Clicks: %d", state->click_count);
@@ -858,11 +1049,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                   state->ui_ctx.theme.text_dim.b,
                                   state->ui_ctx.theme.text_dim.a);
 
-        /* Button: increments click counter on each press. */
-        if (forge_ui_ctx_button_layout(&state->ui_ctx,
-                                       "Click me", BUTTON_HEIGHT)) {
-            state->click_count++;
-        }
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
 
         /* Checkbox: toggles a boolean option. */
         forge_ui_ctx_checkbox_layout(&state->ui_ctx,
@@ -870,13 +1057,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                      &state->checkbox_value,
                                      CHECKBOX_HEIGHT);
 
-        /* Slider: adjustable value between SLIDER_MIN and SLIDER_MAX. */
+        /* Slider with value label. */
         forge_ui_ctx_slider_layout(&state->ui_ctx, "##slider",
                                    &state->slider_value,
                                    SLIDER_MIN, SLIDER_MAX,
                                    SLIDER_HEIGHT);
 
-        /* Slider value label -- shows the current numeric value. */
         char slider_label[LABEL_BUF_SIZE];
         SDL_snprintf(slider_label, sizeof(slider_label),
                      "Value: %.2f", (double)state->slider_value);
@@ -887,19 +1073,283 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                   state->ui_ctx.theme.text_dim.b,
                                   state->ui_ctx.theme.text_dim.a);
 
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+        /* Progress bars: health and mana. */
+        ForgeUiColor health_color = { 0.2f, 0.8f, 0.3f, 1.0f };
+        ForgeUiColor mana_color   = { 0.3f, 0.4f, 0.9f, 1.0f };
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Health",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text.r,
+                                  state->ui_ctx.theme.text.g,
+                                  state->ui_ctx.theme.text.b,
+                                  state->ui_ctx.theme.text.a);
+        forge_ui_ctx_progress_bar_layout(&state->ui_ctx,
+                                         state->health, 100.0f,
+                                         health_color, PROGRESS_HEIGHT);
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Mana",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text.r,
+                                  state->ui_ctx.theme.text.g,
+                                  state->ui_ctx.theme.text.b,
+                                  state->ui_ctx.theme.text.a);
+        forge_ui_ctx_progress_bar_layout(&state->ui_ctx,
+                                         state->mana, 80.0f,
+                                         mana_color, PROGRESS_HEIGHT);
+
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
         /* Text input: editable single-line field with blinking cursor. */
         ForgeUiRect ti_rect = forge_ui_ctx_layout_next(&state->ui_ctx,
                                                         TEXT_INPUT_HEIGHT);
-
-        /* Blink the cursor every CURSOR_BLINK_INTERVAL_MS milliseconds
-         * using SDL_GetTicks to toggle visibility. */
         Uint64 ticks = SDL_GetTicks();
         bool cursor_visible =
             ((ticks / CURSOR_BLINK_INTERVAL_MS) % 2) == 0;
-
         forge_ui_ctx_text_input(&state->ui_ctx, "##text_input",
                                 &state->text_input, ti_rect,
                                 cursor_visible);
+
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+        /* Radio buttons: exclusive selection. */
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Quality:",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text.r,
+                                  state->ui_ctx.theme.text.g,
+                                  state->ui_ctx.theme.text.b,
+                                  state->ui_ctx.theme.text.a);
+        forge_ui_ctx_radio_layout(&state->ui_ctx, "Low",
+                                   &state->radio_value, 0, RADIO_HEIGHT);
+        forge_ui_ctx_radio_layout(&state->ui_ctx, "Medium",
+                                   &state->radio_value, 1, RADIO_HEIGHT);
+        forge_ui_ctx_radio_layout(&state->ui_ctx, "High",
+                                   &state->radio_value, 2, RADIO_HEIGHT);
+
+        forge_ui_wctx_window_end(&state->ui_wctx);
+    }
+
+    /* ── Inspector window (tree nodes, drag fields, picker) ──── */
+
+    if (forge_ui_wctx_window_begin(&state->ui_wctx,
+                                    "Inspector", &state->inspector_window)) {
+
+        /* Transform section with drag-float fields. */
+        if (forge_ui_ctx_tree_push_layout(&state->ui_ctx, "Transform",
+                                           &state->transform_open,
+                                           LABEL_HEIGHT)) {
+            forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Position",
+                                      LABEL_HEIGHT,
+                                      state->ui_ctx.theme.text_dim.r,
+                                      state->ui_ctx.theme.text_dim.g,
+                                      state->ui_ctx.theme.text_dim.b,
+                                      state->ui_ctx.theme.text_dim.a);
+            forge_ui_ctx_drag_float_n_layout(&state->ui_ctx, "##pos",
+                                             state->position, 3,
+                                             0.1f, -100.0f, 100.0f,
+                                             DRAG_HEIGHT);
+
+            forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Rotation",
+                                      LABEL_HEIGHT,
+                                      state->ui_ctx.theme.text_dim.r,
+                                      state->ui_ctx.theme.text_dim.g,
+                                      state->ui_ctx.theme.text_dim.b,
+                                      state->ui_ctx.theme.text_dim.a);
+            forge_ui_ctx_drag_float_n_layout(&state->ui_ctx, "##rot",
+                                             state->rotation, 3,
+                                             1.0f, -360.0f, 360.0f,
+                                             DRAG_HEIGHT);
+
+            forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Scale",
+                                      LABEL_HEIGHT,
+                                      state->ui_ctx.theme.text_dim.r,
+                                      state->ui_ctx.theme.text_dim.g,
+                                      state->ui_ctx.theme.text_dim.b,
+                                      state->ui_ctx.theme.text_dim.a);
+            forge_ui_ctx_drag_float_layout(&state->ui_ctx, "##scale",
+                                           &state->scale_val,
+                                           0.01f, 0.01f, 10.0f,
+                                           DRAG_HEIGHT);
+
+            forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+        }
+        forge_ui_ctx_tree_pop(&state->ui_ctx);
+
+        /* Material section with roughness slider and color picker. */
+        if (forge_ui_ctx_tree_push_layout(&state->ui_ctx, "Material",
+                                           &state->material_open,
+                                           LABEL_HEIGHT)) {
+            forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Roughness",
+                                      LABEL_HEIGHT,
+                                      state->ui_ctx.theme.text_dim.r,
+                                      state->ui_ctx.theme.text_dim.g,
+                                      state->ui_ctx.theme.text_dim.b,
+                                      state->ui_ctx.theme.text_dim.a);
+            forge_ui_ctx_drag_float_layout(&state->ui_ctx, "##rough",
+                                           &state->roughness,
+                                           0.01f, 0.0f, 1.0f,
+                                           DRAG_HEIGHT);
+
+            forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Layer",
+                                      LABEL_HEIGHT,
+                                      state->ui_ctx.theme.text_dim.r,
+                                      state->ui_ctx.theme.text_dim.g,
+                                      state->ui_ctx.theme.text_dim.b,
+                                      state->ui_ctx.theme.text_dim.a);
+            forge_ui_ctx_drag_int_layout(&state->ui_ctx, "##layer",
+                                         &state->layer,
+                                         1, 0, 31,
+                                         DRAG_HEIGHT);
+
+            forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+            forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Color",
+                                      LABEL_HEIGHT,
+                                      state->ui_ctx.theme.text.r,
+                                      state->ui_ctx.theme.text.g,
+                                      state->ui_ctx.theme.text.b,
+                                      state->ui_ctx.theme.text.a);
+            forge_ui_ctx_color_picker_layout(&state->ui_ctx, "##picker",
+                                             &state->picker_h,
+                                             &state->picker_s,
+                                             &state->picker_v,
+                                             PICKER_HEIGHT);
+
+            forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+        }
+        forge_ui_ctx_tree_pop(&state->ui_ctx);
+
+        /* Physics section (collapsed by default). */
+        forge_ui_ctx_tree_push_layout(&state->ui_ctx, "Physics",
+                                       &state->physics_open, LABEL_HEIGHT);
+        forge_ui_ctx_tree_pop(&state->ui_ctx);
+
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+        /* Dropdown and listbox for selection demos. */
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Render Mode:",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text.r,
+                                  state->ui_ctx.theme.text.g,
+                                  state->ui_ctx.theme.text.b,
+                                  state->ui_ctx.theme.text.a);
+
+        static const char *modes[] = {
+            "Shaded", "Wireframe", "Normals", "Depth"
+        };
+        forge_ui_ctx_dropdown_layout(&state->ui_ctx, "##mode",
+                                     &state->dropdown_sel,
+                                     &state->dropdown_open,
+                                     modes, 4, DROPDOWN_HEIGHT);
+
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Shader:",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text.r,
+                                  state->ui_ctx.theme.text.g,
+                                  state->ui_ctx.theme.text.b,
+                                  state->ui_ctx.theme.text.a);
+
+        static const char *shaders[] = {
+            "Blinn-Phong", "PBR", "Toon", "Unlit"
+        };
+        forge_ui_ctx_listbox_layout(&state->ui_ctx, "##shaders",
+                                    &state->listbox_sel,
+                                    shaders, 4, LISTBOX_HEIGHT);
+
+        forge_ui_wctx_window_end(&state->ui_wctx);
+    }
+
+    /* ── Performance window (sparkline, stats, colored labels) ── */
+
+    if (forge_ui_wctx_window_begin(&state->ui_wctx,
+                                    "Performance", &state->perf_window)) {
+
+        /* FPS label in accent color. */
+        float last_dt =
+            state->frame_times[(state->frame_time_index +
+                SPARKLINE_SAMPLES - 1) % SPARKLINE_SAMPLES];
+        float fps = (last_dt > 0.001f) ? 1000.0f / last_dt : 0.0f;
+        char fps_label[LABEL_BUF_SIZE];
+        SDL_snprintf(fps_label, sizeof(fps_label),
+                     "FPS: %.0f", (double)fps);
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, fps_label,
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.accent.r,
+                                  state->ui_ctx.theme.accent.g,
+                                  state->ui_ctx.theme.accent.b,
+                                  state->ui_ctx.theme.accent.a);
+
+        /* Frame time sparkline graph. */
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "Frame Time (ms)",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text_dim.r,
+                                  state->ui_ctx.theme.text_dim.g,
+                                  state->ui_ctx.theme.text_dim.b,
+                                  state->ui_ctx.theme.text_dim.a);
+
+        ForgeUiColor spark_color = { 0.3f, 0.8f, 0.5f, 1.0f };
+        forge_ui_ctx_sparkline_layout(&state->ui_ctx,
+                                       state->frame_times,
+                                       SPARKLINE_SAMPLES,
+                                       0.0f, 33.0f,
+                                       spark_color,
+                                       SPARKLINE_HEIGHT);
+
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+        /* Draw stats with colored severity labels. */
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx,
+                                  "Draw calls: 1",
+                                  LABEL_HEIGHT,
+                                  0.5f, 0.9f, 0.5f, 1.0f);
+
+        char tri_label[LABEL_BUF_SIZE];
+        SDL_snprintf(tri_label, sizeof(tri_label),
+                     "Triangles: %d",
+                     state->cached_index_count / 3);
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, tri_label,
+                                  LABEL_HEIGHT,
+                                  0.5f, 0.9f, 0.5f, 1.0f);
+
+        char vert_label[LABEL_BUF_SIZE];
+        SDL_snprintf(vert_label, sizeof(vert_label),
+                     "Vertices: %d",
+                     state->cached_vertex_count);
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, vert_label,
+                                  LABEL_HEIGHT,
+                                  0.5f, 0.9f, 0.5f, 1.0f);
+
+        forge_ui_ctx_separator_layout(&state->ui_ctx, SEPARATOR_HEIGHT);
+
+        /* Memory usage progress bar. */
+        forge_ui_ctx_label_colored_layout(&state->ui_ctx, "GPU Memory",
+                                  LABEL_HEIGHT,
+                                  state->ui_ctx.theme.text.r,
+                                  state->ui_ctx.theme.text.g,
+                                  state->ui_ctx.theme.text.b,
+                                  state->ui_ctx.theme.text.a);
+
+        ForgeUiColor mem_color = { 0.9f, 0.6f, 0.2f, 1.0f };
+        forge_ui_ctx_progress_bar_layout(&state->ui_ctx,
+                                         256.0f, 1024.0f,
+                                         mem_color, PROGRESS_HEIGHT);
+
+        forge_ui_wctx_window_end(&state->ui_wctx);
+    }
+
+    /* ── Graph window (big sparkline showcase) ────────────────── */
+
+    if (forge_ui_wctx_window_begin(&state->ui_wctx,
+                                    "Signal Monitor", &state->graph_window)) {
+
+        ForgeUiColor blue_line = { 0.3f, 0.55f, 1.0f, 1.0f };
+        forge_ui_ctx_sparkline_layout(&state->ui_ctx,
+                                       state->big_spark,
+                                       BIG_SPARKLINE_SAMPLES,
+                                       0.0f, 1.0f,
+                                       blue_line,
+                                       BIG_SPARKLINE_HEIGHT);
 
         forge_ui_wctx_window_end(&state->ui_wctx);
     }
@@ -908,6 +1358,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * per-window draw lists into the main context vertex/index buffers. */
     forge_ui_wctx_end(&state->ui_wctx);
     forge_ui_ctx_end(&state->ui_ctx);
+
+    /* Cache the merged totals so the Performance window can display them
+     * on the *next* frame.  Reading ui_ctx counts here (after wctx_end
+     * merged all per-window buffers) gives the true full-batch numbers. */
+    state->cached_vertex_count = (int)state->ui_ctx.vertex_count;
+    state->cached_index_count  = (int)state->ui_ctx.index_count;
 
     /* Reset per-frame keyboard state now that the UI has consumed it.
      * This prevents stale key presses from being processed twice. */
