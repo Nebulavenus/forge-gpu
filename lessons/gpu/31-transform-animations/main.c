@@ -36,6 +36,7 @@
 #define SDL_MAIN_USE_CALLBACKS 1
 
 #include "gltf/forge_gltf.h"
+#include "gltf/forge_gltf_anim.h"
 #include "math/forge_math.h"
 
 #include <SDL3/SDL.h>
@@ -161,29 +162,6 @@
 #define ANIM_SPEED         1.0f
 #define TRUCK_DRIVE_SPEED  8.0f   /* forward movement speed (units/sec)   */
 #define TRUCK_Y            0.0f
-#define KEYFRAME_EPSILON   1e-7f
-#define MAX_ANIM_CHANNELS  8
-#define ANIM_NAME_SIZE     64
-
-/* CesiumMilkTruck animation data layout (from the glTF JSON):
- * Accessor 16: timestamps  — bufferView 16, offset 144976, 31 floats (SCALAR)
- * Accessor 17: rotations 0 — bufferView 17, offset 145100, 31 vec4s (VEC4)
- * Accessor 18: rotations 1 — bufferView 18, offset 145596, 31 vec4s (VEC4)
- *
- * Both samplers share the same timestamp accessor (sampler input).
- * Channel 0 targets Node 0 "Wheels" rotation.
- * Channel 1 targets Node 2 "Wheels.001" rotation. */
-#define ANIM_TIMESTAMP_OFFSET  144976
-#define ANIM_TIMESTAMP_COUNT   31
-#define ANIM_ROTATION0_OFFSET  145100
-#define ANIM_ROTATION1_OFFSET  145596
-#define ANIM_KEYFRAME_COUNT    31
-#define ANIM_DURATION          1.25f
-
-/* CesiumMilkTruck node indices (from the glTF). */
-#define TRUCK_NODE_WHEELS_FRONT 0
-#define TRUCK_NODE_WHEELS_REAR  2
-#define TRUCK_NODE_COUNT        6
 
 /* Path waypoint count. */
 #define PATH_WAYPOINT_COUNT 14
@@ -220,35 +198,6 @@ typedef struct ShadowVertUniforms {
 typedef struct SkyboxVertUniforms {
     mat4 vp_no_translation; /* view (rotation only) * projection */
 } SkyboxVertUniforms;
-
-/* ── Animation data structures ──────────────────────────────────────── */
-
-/* A single animation channel targeting one property of one node. */
-typedef struct AnimChannel {
-    Uint32 target_node;     /* index of the node this channel drives      */
-    Uint32 target_path;     /* 0=translation, 1=rotation, 2=scale         */
-    Uint32 interpolation;   /* 0=STEP, 1=LINEAR                           */
-    Uint32 keyframe_count;  /* number of keyframes                        */
-    const float *timestamps;/* pointer into glTF binary (not owned)       */
-    const float *values;    /* pointer into glTF binary (vec3 or quat)    */
-} AnimChannel;
-
-/* A clip is a named collection of channels with a shared duration. */
-typedef struct AnimClip {
-    char   name[ANIM_NAME_SIZE];       /* human-readable clip name from glTF          */
-    float  duration;                   /* total clip length in seconds                */
-    Uint32 channel_count;              /* number of active channels in this clip      */
-    AnimChannel channels[MAX_ANIM_CHANNELS]; /* per-property keyframe channels        */
-} AnimClip;
-
-/* Runtime playback state for one clip instance. */
-typedef struct AnimState {
-    AnimClip *clip;         /* shared clip data (not owned)                */
-    float current_time;     /* current playback position in seconds       */
-    float speed;            /* playback rate multiplier (1.0 = normal)    */
-    bool  looping;          /* true = wrap time at clip duration           */
-    bool  playing;          /* true = advance time each frame              */
-} AnimState;
 
 /* A waypoint along the truck's driving path. */
 typedef struct PathWaypoint {
@@ -400,8 +349,7 @@ typedef struct app_state {
     float cam_pitch;    /* vertical rotation in radians (clamped ±1.5)    */
 
     /* Animation. */
-    AnimClip  wheel_clip;  /* parsed wheel rotation keyframes from glTF    */
-    AnimState wheel_state; /* playback state for the wheel animation       */
+    float     wheel_time;  /* current wheel animation playback time        */
     float     path_distance;  /* distance traveled along the path (wraps)  */
     float     total_path_len; /* total loop perimeter                      */
     float     seg_cumulative[PATH_WAYPOINT_COUNT]; /* cumulative dist per segment */
@@ -1199,143 +1147,6 @@ static bool setup_model(SDL_GPUDevice *device, ModelData *model, const char *pat
     return upload_model_to_gpu(device, model);
 }
 
-/* ── Animation: parse truck wheel animation from binary buffer ──────── */
-
-static void parse_truck_animation(AnimClip *clip, const ForgeGltfScene *scene)
-{
-    /* The CesiumMilkTruck has exactly 1 animation clip "Wheels" with
-     * 2 channels, both targeting rotation.  The keyframe data lives
-     * at known byte offsets in the binary buffer (accessor 16/17/18).
-     *
-     * We read pointers directly into the loaded binary blob rather than
-     * copying, because the scene data remains valid for the program's
-     * lifetime. */
-
-    const Uint8 *bin  = scene->buffers[0].data;
-    Uint32 bin_size   = scene->buffers[0].size;
-
-    /* Minimum buffer size: last offset + 31 quaternions (4 floats × 4 bytes). */
-    const Uint32 min_size = ANIM_ROTATION1_OFFSET
-                          + ANIM_KEYFRAME_COUNT * 4 * sizeof(float);
-
-    if (!bin || bin_size < min_size) {
-        SDL_Log("WARNING: truck binary buffer is %s (size=%u, need=%u), "
-                "animation will be empty",
-                bin ? "too small" : "NULL", bin_size, min_size);
-        SDL_memset(clip, 0, sizeof(*clip));
-        return;
-    }
-
-    SDL_strlcpy(clip->name, "Wheels", sizeof(clip->name));
-    clip->duration      = ANIM_DURATION;
-    clip->channel_count = 2;
-
-    /* Channel 0: Node 0 "Wheels" (front wheels) rotation. */
-    clip->channels[0].target_node    = TRUCK_NODE_WHEELS_FRONT;
-    clip->channels[0].target_path    = 1; /* rotation */
-    clip->channels[0].interpolation  = 1; /* LINEAR */
-    clip->channels[0].keyframe_count = ANIM_KEYFRAME_COUNT;
-    clip->channels[0].timestamps     = (const float *)(bin + ANIM_TIMESTAMP_OFFSET);
-    clip->channels[0].values         = (const float *)(bin + ANIM_ROTATION0_OFFSET);
-
-    /* Channel 1: Node 2 "Wheels.001" (rear wheels) rotation. */
-    clip->channels[1].target_node    = TRUCK_NODE_WHEELS_REAR;
-    clip->channels[1].target_path    = 1; /* rotation */
-    clip->channels[1].interpolation  = 1; /* LINEAR */
-    clip->channels[1].keyframe_count = ANIM_KEYFRAME_COUNT;
-    clip->channels[1].timestamps     = (const float *)(bin + ANIM_TIMESTAMP_OFFSET);
-    clip->channels[1].values         = (const float *)(bin + ANIM_ROTATION1_OFFSET);
-
-    SDL_Log("Parsed animation '%s': duration=%.3fs, %u channels, %u keyframes each",
-            clip->name, clip->duration,
-            clip->channel_count, ANIM_KEYFRAME_COUNT);
-}
-
-/* ── Animation: evaluate a rotation channel via binary search + slerp ── */
-
-static quat evaluate_rotation_channel(const AnimChannel *ch, float t)
-{
-    /* Clamp time to the clip's keyframe range. */
-    if (t <= ch->timestamps[0]) {
-        /* Before the first keyframe — return the first quaternion.
-         * glTF stores quaternions as [x, y, z, w]; quat_create expects (w, x, y, z). */
-        const float *v = ch->values;
-        return quat_create(v[3], v[0], v[1], v[2]);
-    }
-    if (t >= ch->timestamps[ch->keyframe_count - 1]) {
-        /* After the last keyframe — return the last quaternion. */
-        const float *v = ch->values + (ch->keyframe_count - 1) * 4;
-        return quat_create(v[3], v[0], v[1], v[2]);
-    }
-
-    /* Binary search for the interval [timestamps[lo], timestamps[lo+1]]
-     * that brackets the current time t.  This is O(log n) instead of the
-     * O(n) linear scan, which matters if keyframe counts grow large. */
-    Uint32 lo = 0;
-    Uint32 hi = ch->keyframe_count - 1;
-    while (lo + 1 < hi) {
-        Uint32 mid = (lo + hi) / 2;
-        if (ch->timestamps[mid] <= t) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-
-    /* Compute the interpolation factor alpha in [0, 1] between the two
-     * bracketing keyframes.  Guard against zero-length intervals. */
-    float t0 = ch->timestamps[lo];
-    float t1 = ch->timestamps[lo + 1];
-    float span = t1 - t0;
-    float alpha = (span > KEYFRAME_EPSILON) ? (t - t0) / span : 0.0f;
-
-    /* Read the two quaternion keyframes.  glTF stores [x, y, z, w],
-     * but our math library convention is quat_create(w, x, y, z). */
-    const float *a = ch->values + lo * 4;
-    const float *b = ch->values + (lo + 1) * 4;
-    quat qa = quat_create(a[3], a[0], a[1], a[2]);
-    quat qb = quat_create(b[3], b[0], b[1], b[2]);
-
-    /* Spherical linear interpolation gives constant angular velocity
-     * between the two orientations — essential for smooth wheel rotation. */
-    return quat_slerp(qa, qb, alpha);
-}
-
-/* ── Animation: rebuild node hierarchy transforms ───────────────────── */
-
-/* Walk the node tree and recompute world_transform = parent_world * local.
- * The local transform is rebuilt from the node's TRS components, which may
- * have been modified by the animation system (wheel rotation) or path
- * following (truck body position and yaw). */
-static void rebuild_node_transforms(ForgeGltfScene *scene)
-{
-    /* First pass: rebuild each node's local_transform from TRS. */
-    for (int i = 0; i < scene->node_count; i++) {
-        ForgeGltfNode *node = &scene->nodes[i];
-        if (!node->has_trs) continue;
-
-        /* local = T * R * S (standard glTF TRS decomposition) */
-        mat4 T = mat4_translate(node->translation);
-        mat4 R = quat_to_mat4(node->rotation);
-        mat4 S = mat4_scale(node->scale_xyz);
-        node->local_transform = mat4_multiply(T, mat4_multiply(R, S));
-    }
-
-    /* Second pass: accumulate world transforms from root to leaves.
-     * Nodes are stored in glTF order, which guarantees parents appear
-     * before children (depth-first pre-order). */
-    for (int i = 0; i < scene->node_count; i++) {
-        ForgeGltfNode *node = &scene->nodes[i];
-        if (node->parent >= 0 && node->parent < scene->node_count) {
-            node->world_transform = mat4_multiply(
-                scene->nodes[node->parent].world_transform,
-                node->local_transform);
-        } else {
-            /* Root node — world transform is just the local transform. */
-            node->world_transform = node->local_transform;
-        }
-    }
-}
 
 /* ── Animation: evaluate path position and yaw at a given fraction ──── */
 
@@ -1900,13 +1711,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             goto init_fail;
     }
 
-    /* ── Parse truck wheel animation from the loaded binary data ── */
-    parse_truck_animation(&state->wheel_clip, &state->truck.scene);
-    state->wheel_state.clip         = &state->wheel_clip;
-    state->wheel_state.current_time = 0.0f;
-    state->wheel_state.speed        = ANIM_SPEED;
-    state->wheel_state.looping      = true;
-    state->wheel_state.playing      = true;
+    /* ── Wheel animation — the glTF parser already loaded keyframes ── */
+    state->wheel_time = 0.0f;
+    if (state->truck.scene.animation_count > 0) {
+        SDL_Log("Loaded animation '%s': duration=%.3fs, %d channels",
+                state->truck.scene.animations[0].name,
+                state->truck.scene.animations[0].duration,
+                state->truck.scene.animations[0].channel_count);
+    }
     /* Precompute cumulative arc lengths for the waypoint loop so the
      * yaw schedule advances proportionally to distance traveled. */
     {
@@ -2354,33 +2166,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     }
 
     /* ── Animation: advance wheel rotation ─────────────────────────── */
-    /* The wheel animation clip loops every ANIM_DURATION seconds.
-     * We advance the playback timer and wrap it using fmodf. */
-    if (state->wheel_state.playing) {
-        state->wheel_state.current_time +=
-            dt * state->wheel_state.speed;
-        if (state->wheel_state.looping) {
-            state->wheel_state.current_time =
-                SDL_fmodf(state->wheel_state.current_time,
-                          state->wheel_clip.duration);
-        }
-    }
-
-    /* Evaluate each animation channel and write the resulting rotation
-     * back into the node's TRS decomposition.  This overwrites the
-     * rest-pose rotation stored during glTF loading. */
-    {
-        AnimClip *clip = &state->wheel_clip;
-        float t = state->wheel_state.current_time;
-        for (Uint32 ci = 0; ci < clip->channel_count; ci++) {
-            const AnimChannel *ch = &clip->channels[ci];
-            if (ch->target_path != 1) continue; /* only rotation channels */
-            if (ch->target_node >= (Uint32)state->truck.scene.node_count)
-                continue;
-
-            quat rot = evaluate_rotation_channel(ch, t);
-            state->truck.scene.nodes[ch->target_node].rotation = rot;
-        }
+    /* The glTF parser loaded the truck's "Wheels" animation clip into
+     * scene.animations[0].  forge_gltf_anim_apply() evaluates all
+     * channels (binary search + slerp) and writes results to node TRS. */
+    if (state->truck.scene.animation_count > 0) {
+        state->wheel_time += dt * ANIM_SPEED;
+        forge_gltf_anim_apply(&state->truck.scene.animations[0],
+                              state->truck.scene.nodes,
+                              state->truck.scene.node_count,
+                              state->wheel_time, true);
     }
 
     /* ── Animation: advance path following ─────────────────────────── */
@@ -2412,10 +2206,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         mat4_rotate_y(state->truck_yaw));
 
     /* ── Rebuild truck node hierarchy ──────────────────────────────── */
-    /* After writing animated rotations and computing the path placement,
-     * recompute every node's world_transform by walking the tree from
-     * root to leaves: world = parent_world * local. */
-    rebuild_node_transforms(&state->truck.scene);
+    /* Rebuild world transforms: walk the node tree from roots to leaves,
+     * propagating world = parent_world * local for every node. */
+    {
+        mat4 identity = mat4_identity();
+        for (int i = 0; i < state->truck.scene.root_node_count; i++)
+            forge_gltf_compute_world_transforms(
+                &state->truck.scene,
+                state->truck.scene.root_nodes[i], &identity);
+    }
 
     /* Track uses the custom layout — individual piece transforms are
      * in state->track_pieces[], set once during AppInit. */

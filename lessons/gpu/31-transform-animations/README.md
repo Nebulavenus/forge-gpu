@@ -5,8 +5,7 @@ orbiting cameras, walking characters, vehicles following paths. The core
 mechanism is simple — store a sequence of timestamped values, find the two
 keyframes bracketing the current time, and interpolate between them. What
 makes it interesting is the mathematics of interpolation (quaternion slerp
-for rotations), the data pipeline from glTF binary buffers into runtime
-structures, and the way a transform hierarchy composes independent
+for rotations) and the way a transform hierarchy composes independent
 animation sources into a single coherent result.
 
 This lesson loads the CesiumMilkTruck glTF model — which ships with a wheel
@@ -20,8 +19,9 @@ wheel rotation) compose automatically through the node hierarchy.
 - Binary search for efficient keyframe lookup in sorted timestamp arrays
 - Ken Shoemake's quaternion slerp (spherical linear interpolation) for
   smooth, constant-angular-velocity rotations
-- Loading animation data from glTF files — clips, channels, samplers,
-  and accessor indirection into binary buffers
+- Using `forge_gltf_anim.h` to evaluate glTF animation clips at runtime
+  — the library handles channel iteration, binary search, slerp, and
+  local transform rebuilds
 - Composing multiple animation layers through a transform hierarchy
   where each node carries a local TRS (translation, rotation, scale)
 - Path-following animation with position lerp and orientation slerp
@@ -252,151 +252,76 @@ physical position on the track.
 
 ## Animation data structures
 
-The lesson defines three structures for runtime animation:
+The glTF parser (`forge_gltf.h`) loads animation data into
+`ForgeGltfAnimation` structs stored in `scene.animations[]`. Each
+animation contains channels and samplers:
 
 ```c
-/* One channel targets one property of one node. */
-typedef struct ForgeAnimChannel {
-    int   node_index;    /* which node in the glTF scene      */
-    int   path;          /* 0=translation, 1=rotation, 2=scale */
-    int   key_count;     /* number of keyframes                */
-    float *timestamps;   /* sorted array of key_count floats   */
-    float *values;       /* key_count * stride floats (3 or 4) */
-} ForgeAnimChannel;
+/* From forge_gltf.h — populated automatically by forge_gltf_load(). */
+typedef struct ForgeGltfAnimSampler {
+    float *timestamps;     /* sorted keyframe times (points into binary buffer) */
+    float *values;         /* keyframe values: vec3 (T/S) or vec4 (R)           */
+    int    keyframe_count; /* number of keyframes                               */
+    int    interpolation;  /* FORGE_GLTF_INTERP_STEP or FORGE_GLTF_INTERP_LINEAR */
+} ForgeGltfAnimSampler;
 
-/* A clip is a collection of channels with a shared duration. */
-typedef struct ForgeAnimClip {
-    ForgeAnimChannel *channels;
-    int               channel_count;
-    float             duration;  /* max timestamp across all channels */
-} ForgeAnimClip;
+typedef struct ForgeGltfAnimChannel {
+    int sampler_index;  /* index into the animation's samplers array */
+    int target_node;    /* which node this channel drives            */
+    int target_path;    /* TRANSLATION, ROTATION, or SCALE           */
+} ForgeGltfAnimChannel;
 
-/* Per-instance playback state — multiple objects can share one clip. */
-typedef struct ForgeAnimState {
-    ForgeAnimClip *clip;
-    float          time;      /* current playback position     */
-    float          speed;     /* playback rate (1.0 = normal)  */
-    bool           looping;   /* wrap time at duration?         */
-} ForgeAnimState;
+typedef struct ForgeGltfAnimation {
+    char name[64];
+    float duration;
+    ForgeGltfAnimSampler  *samplers;
+    ForgeGltfAnimChannel  *channels;
+    int sampler_count, channel_count;
+} ForgeGltfAnimation;
 ```
 
-The separation between `ForgeAnimClip` (shared data) and `ForgeAnimState`
-(per-instance playback) is important. Two trucks can share the same wheel
-animation clip while each maintains its own playback time — one truck's
-wheels can spin at a different phase than the other's.
+The parser resolves the full glTF accessor indirection chain (channel →
+sampler → accessor → bufferView → binary buffer) during loading.
+Timestamp and value pointers reference the loaded binary data directly —
+no additional allocation or copying is needed at runtime.
 
-## Loading animation from glTF
+## Runtime evaluation with forge_gltf_anim.h
 
-The animation loading function follows the glTF accessor indirection
-chain to extract timestamp and value arrays from the binary buffer:
+The companion header `forge_gltf_anim.h` provides runtime evaluation of
+the parsed animation data. The main entry point is `forge_gltf_anim_apply`,
+which evaluates all channels of an animation at a given time:
 
 ```c
-static void load_animation_clip(ForgeAnimClip *clip,
-                                const ForgeGltfScene *scene,
-                                const Uint8 *bin_data,
-                                const cJSON *anim_json)
-{
-    /* Parse channels array from the animation JSON object. */
-    const cJSON *channels_json = cJSON_GetObjectItem(anim_json, "channels");
-    const cJSON *samplers_json = cJSON_GetObjectItem(anim_json, "samplers");
-    clip->channel_count = cJSON_GetArraySize(channels_json);
-
-    for (int i = 0; i < clip->channel_count; i++) {
-        /* channel -> sampler -> input/output accessors -> bufferView -> bin */
-        ForgeAnimChannel *ch = &clip->channels[i];
-
-        /* ... resolve accessor to get timestamps and values ... */
-        /* Timestamps: accessor component_type=FLOAT, type=SCALAR */
-        /* Values: accessor component_type=FLOAT, type=VEC4 (rotation) */
-
-        ch->timestamps = (float *)(bin_data + input_byte_offset);
-        ch->values     = (float *)(bin_data + output_byte_offset);
-    }
-
-    /* Duration is the maximum timestamp across all channels. */
-    clip->duration = 0.0f;
-    for (int i = 0; i < clip->channel_count; i++) {
-        float last = clip->channels[i].timestamps[clip->channels[i].key_count - 1];
-        if (last > clip->duration) clip->duration = last;
-    }
-}
+/* Evaluate all channels at time t, writing results to node TRS.
+ * If loop is true, wraps t to [0, duration).
+ * Rebuilds each modified node's local_transform from the updated TRS. */
+forge_gltf_anim_apply(&scene.animations[0],
+                       scene.nodes, scene.node_count,
+                       current_time, true);
 ```
 
-The timestamps and values point directly into the loaded binary buffer —
-no allocation or copying is needed. The binary buffer must remain valid
-for the lifetime of the clip.
+Internally, each channel evaluation uses **binary search** to find the
+two bracketing keyframes in O(log n), then interpolates:
 
-## Binary search keyframe evaluation
+- **Translation and scale** — `vec3_lerp` (standard linear interpolation)
+- **Rotation** — `quat_slerp` (spherical linear interpolation), with
+  automatic glTF [x,y,z,w] to forge_math [w,x,y,z] quaternion conversion
+- **Step interpolation** — holds the previous keyframe value (no blending)
 
-Given a sorted timestamp array and the current time, binary search finds
-the two bracketing keyframes in O(log n):
+After `forge_gltf_anim_apply` updates node TRS values and rebuilds local
+transforms, the caller propagates world transforms through the hierarchy:
 
 ```c
-static int find_keyframe(const float *timestamps, int count, float time)
-{
-    int lo = 0, hi = count - 1;
-    while (lo + 1 < hi) {
-        int mid = (lo + hi) / 2;
-        if (timestamps[mid] <= time)
-            lo = mid;
-        else
-            hi = mid;
-    }
-    return lo;  /* timestamps[lo] <= time < timestamps[lo+1] */
-}
+mat4 identity = mat4_identity();
+for (int i = 0; i < scene.root_node_count; i++)
+    forge_gltf_compute_world_transforms(&scene, scene.root_nodes[i],
+                                        &identity);
 ```
 
-The interpolation factor between keyframe `lo` and `lo + 1` is:
-
-```c
-float t0 = timestamps[lo];
-float t1 = timestamps[lo + 1];
-float t  = (time - t0) / (t1 - t0);  /* 0.0 to 1.0 */
-```
-
-For rotation channels, the value at this `t` is computed with `quat_slerp`.
-For translation and scale channels, standard `vec3_lerp` suffices.
-
-## Hierarchy rebuild
-
-After animation updates each node's local T/R/S, the hierarchy must be
-rebuilt to produce correct world transforms:
-
-```c
-static void rebuild_hierarchy(ForgeGltfNode *nodes, int node_count,
-                              const int *root_children, int root_child_count)
-{
-    /* Root nodes have identity parent transform. */
-    for (int i = 0; i < root_child_count; i++) {
-        rebuild_node(nodes, root_children[i], mat4_identity());
-    }
-}
-
-static void rebuild_node(ForgeGltfNode *nodes, int index, mat4 parent_world)
-{
-    ForgeGltfNode *n = &nodes[index];
-
-    /* Recompute local from current T/R/S. */
-    if (n->has_trs) {
-        mat4 T = mat4_translate(n->translation);
-        mat4 R = quat_to_mat4(n->rotation);
-        mat4 S = mat4_scale(n->scale_xyz);
-        n->local_transform = mat4_multiply(mat4_multiply(T, R), S);
-    }
-
-    /* World = parent * local. */
-    n->world_transform = mat4_multiply(parent_world, n->local_transform);
-
-    /* Recurse into children. */
-    for (int i = 0; i < n->child_count; i++) {
-        rebuild_node(nodes, n->children[i], n->world_transform);
-    }
-}
-```
-
-This top-down traversal visits each node exactly once — O(n) in the number
-of nodes. The traversal order guarantees that a parent's world transform is
-always computed before its children's.
+This top-down recursive traversal visits each node exactly once — O(n) in
+the number of nodes. Each node's world transform is computed as
+`parent_world × local_transform`, guaranteeing that a parent's result is
+always available before its children need it.
 
 ## Path evaluation
 
@@ -446,24 +371,15 @@ parameterization without per-frame recomputation.
 Each frame in `SDL_AppIterate` follows this sequence:
 
 ```c
-/* 1. Advance animation time. */
-anim_state.time += delta_time * anim_state.speed;
-if (anim_state.looping)
-    anim_state.time = fmodf(anim_state.time, anim_state.clip->duration);
+/* 1. Advance animation time and evaluate glTF keyframes.
+ *    forge_gltf_anim_apply handles time wrapping, channel iteration,
+ *    binary search, slerp, and local transform rebuilds. */
+wheel_time += delta_time * ANIM_SPEED;
+forge_gltf_anim_apply(&scene.animations[0],
+                       scene.nodes, scene.node_count,
+                       wheel_time, true);
 
-/* 2. Evaluate glTF keyframes — update node T/R/S. */
-for (int c = 0; c < clip->channel_count; c++) {
-    ForgeAnimChannel *ch = &clip->channels[c];
-    int key = find_keyframe(ch->timestamps, ch->key_count, anim_state.time);
-    float t = compute_interpolation_factor(ch, key, anim_state.time);
-
-    if (ch->path == 1)  /* rotation */
-        nodes[ch->node_index].rotation = quat_slerp(
-            quat_from_floats(&ch->values[key * 4]),
-            quat_from_floats(&ch->values[(key + 1) * 4]), t);
-}
-
-/* 3. Forward-driven path following. */
+/* 2. Forward-driven path following. */
 float step = TRUCK_DRIVE_SPEED * delta_time;
 path_distance += step;
 if (path_distance >= total_path_len)
@@ -473,20 +389,22 @@ truck_yaw = evaluate_path_yaw(path_distance, seg_cumulative);
 truck_pos.x += sinf(truck_yaw) * step;
 truck_pos.z += cosf(truck_yaw) * step;
 
-/* 4. Rebuild hierarchy — propagate all changes. */
-rebuild_hierarchy(scene.nodes, scene.node_count,
-                  scene.root_children, scene.root_child_count);
+/* 3. Rebuild hierarchy — propagate all changes. */
+mat4 identity = mat4_identity();
+for (int i = 0; i < scene.root_node_count; i++)
+    forge_gltf_compute_world_transforms(&scene, scene.root_nodes[i],
+                                        &identity);
 
-/* 5. Render each mesh using its node's world_transform as the model matrix. */
+/* 4. Render each mesh using its node's world_transform as the model matrix. */
 ```
 
-Steps 2 and 3 operate independently — the glTF keyframes modify wheel
+Steps 1 and 2 operate independently — the glTF keyframes modify wheel
 node rotations while the path animation modifies the truck body's
-placement. In step 3, `path_distance` tracks how far the truck has
+placement. In step 2, `path_distance` tracks how far the truck has
 traveled along the loop (in world units). The yaw is looked up via
 arc-length parameterization, and the truck advances in its heading
-direction. Step 4 composes all transforms through the hierarchy
-multiplication. Step 5 uses the resulting world transforms directly as
+direction. Step 3 composes all transforms through the hierarchy
+multiplication. Step 4 uses the resulting world transforms directly as
 model matrices for rendering.
 
 ## Math
@@ -667,17 +585,19 @@ a single unit. Extensions to explore:
 ## Exercises
 
 1. **Speed control.** Add keyboard controls (Up/Down arrows) to speed up
-   or slow down both the path animation and wheel animation. Scale the
-   `ForgeAnimState.speed` field and the path advancement rate by the same
-   factor. Notice how wheel rotation speed should be proportional to truck
-   speed — if the truck moves twice as fast, the wheels should spin twice
-   as fast to avoid the appearance of sliding.
+   or slow down both the path animation and wheel animation. Add a
+   `speed_multiplier` field to `app_state` and scale both the `wheel_time`
+   advancement and the path advancement rate by it. Notice how wheel
+   rotation speed should be proportional to truck speed — if the truck
+   moves twice as fast, the wheels should spin twice as fast to avoid the
+   appearance of sliding.
 
 2. **Reverse gear.** Press R to reverse the truck's path direction. Negate
    the path advancement delta so the path parameter decreases over time
-   (wrapping from 0 back to `duration`). The wheel animation speed should
-   also negate so the wheels spin backwards. Handle the wraparound
-   correctly — when time goes below 0, add `duration` to keep it in range.
+   (wrapping from 0 back to `total_path_len`). The wheel animation time
+   should also advance in reverse so the wheels spin backwards. Handle the
+   wraparound correctly — when time goes below 0, add the animation
+   duration to keep it in range.
 
 3. **Camera follow mode.** Press F to toggle a third-person camera that
    follows behind the truck, looking at it. Compute the camera position
@@ -687,11 +607,12 @@ a single unit. Extensions to explore:
    mode or when the truck turns sharply.
 
 4. **Second truck.** Add a second CesiumMilkTruck that drives the track
-   in the opposite direction, offset by half the path duration. Both trucks
-   share the same `ForgeAnimClip` but each has its own `ForgeAnimState`
-   with a different initial time. This demonstrates the clip/state
-   separation — the shared animation data is read-only, and each instance
-   maintains independent playback.
+   in the opposite direction, offset by half the path length. Both trucks
+   share the same `ForgeGltfAnimation` data but each has its own
+   `wheel_time` and `path_distance`. Call `forge_gltf_anim_apply` once
+   per truck with different time values. This demonstrates the separation
+   between shared animation data (read-only) and per-instance playback
+   state.
 
 5. **Bounce animation.** Add a procedural vertical bounce (sine wave) to
    the truck placement, simulating suspension movement over uneven ground.
