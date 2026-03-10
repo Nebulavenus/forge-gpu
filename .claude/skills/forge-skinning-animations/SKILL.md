@@ -19,11 +19,11 @@ for the full walkthrough.
 
 | Function | Purpose |
 |----------|---------|
-| `quat_slerp(a, b, t)` | Interpolate between keyframe rotations |
-| `quat_to_mat4(q)` | Convert quaternion rotation to 4x4 matrix |
-| `mat4_multiply(a, b)` | Compose joint matrix = world * inverseBindMatrix |
-| `vec3_lerp(a, b, t)` | Interpolate translation and scale keyframes |
 | `forge_gltf_load()` | Load glTF with skins, joints, and animation data |
+| `forge_gltf_anim_apply()` | Evaluate all animation channels at time t |
+| `forge_gltf_compute_world_transforms()` | Propagate local transforms through the node hierarchy |
+| `mat4_multiply(a, b)` | Compose joint matrix: `inverse(meshWorld) * jointWorld * inverseBindMatrix` |
+| `mat4_inverse(m)` | Compute inverse mesh world for joint matrix formula |
 
 ## Skinned vertex layout
 
@@ -85,14 +85,29 @@ float4 world = mul(skin_mat, float4(input.pos, 1.0));
 
 ## Animation evaluation
 
-Parse animation channels from glTF JSON and evaluate each frame:
+`forge_gltf_load()` parses all animation channels from the glTF file.
+At runtime, `forge_gltf_anim_apply()` handles channel evaluation, then
+`forge_gltf_compute_world_transforms()` propagates the hierarchy:
 
-1. Binary search for the keyframe interval bracketing current time
-2. Compute interpolation factor alpha in [0, 1]
-3. Translation/scale: `vec3_lerp(a, b, alpha)`
-4. Rotation: `quat_slerp(qa, qb, alpha)` (glTF stores [x,y,z,w])
-5. Rebuild hierarchy: `parent_world * T * R * S` for each node
-6. Compute joint matrices and push to GPU uniform slot 1
+```c
+#include "gltf/forge_gltf.h"
+#include "gltf/forge_gltf_anim.h"
+
+/* Each frame: evaluate channels, rebuild hierarchy, compute joints */
+anim_time += dt * ANIM_SPEED;
+if (scene.animation_count > 0) {
+    forge_gltf_anim_apply(&scene.animations[0],
+                          scene.nodes, scene.node_count,
+                          anim_time, true);
+}
+
+mat4 identity = mat4_identity();
+for (int i = 0; i < scene.root_node_count; i++)
+    forge_gltf_compute_world_transforms(&scene,
+                                        scene.root_nodes[i], &identity);
+
+/* Then compute joint matrices and push to GPU uniform slot 1 */
+```
 
 ## Pipeline setup
 
