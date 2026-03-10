@@ -189,85 +189,267 @@ gh api --paginate repos/{owner}/{repo}/pulls/{pr-number}/reviews \
 - But the duplicate section means there is still work to do — do NOT skip
   to the merge step just because all threads show as resolved
 
-### 3. Present feedback summary
+### 3. Present feedback summary and classify into themes
 
-**Sort comments by severity:** Major → Minor → Nitpick/Style, so critical issues (especially security) are addressed first.
+**Sort comments by severity:** Major → Minor → Nitpick/Style, so critical
+issues (especially security) are addressed first.
 
-Show the user:
+Show the user the raw feedback list, then **group comments into themes**.
+A theme is a class of issue that may have multiple instances across the
+codebase. Examples:
+
+| Raw comments | Theme |
+|---|---|
+| "Docs say circles but widget draws rectangles" × 3 files | Doc/code mismatch: shape description |
+| "No error check after fclose" in writer A | Unchecked I/O pattern |
+| "No error check after fclose" in writer B | (same theme) |
+| "Test only checks return value, not side effects" × 4 tests | Weak test assertions |
+| "Division by zero if rect width is 0" | Missing zero-guard pattern |
 
 ```text
 ## PR Review Feedback Summary
 
-### Pending conversations: X
+### Pending conversations: X (grouped into Y themes)
 
-**Major issues (🟠):**
-1. **[CodeRabbit]** file.c:123
-   > Security: Anyone can trigger this workflow
-   [View](https://github.com/...)
+**Theme 1: [description] (N comments, severity)**
+- file.c:123 — [specific instance]
+- file.c:456 — [specific instance]
+- README.md:78 — [specific instance]
 
-**Minor issues (🟡):**
-2. **[CodeRabbit]** README.md:45
-   > Style: Add language tag to code block
-   [View](https://github.com/...)
+**Theme 2: [description] (N comments, severity)**
+- ...
 
-**Nitpicks/Style:**
-3. **[Claude]** main.c:100
-   > Consider adding a comment here
-   [View](https://github.com/...)
-
-### Resolved conversations: Y
+### Resolved conversations: Z
 ```
 
 If no pending conversations, skip to step 6.
 
-### 4. Handle each piece of feedback
+### 4. Build a verification plan (CRITICAL — do not skip)
 
-For each pending conversation, ask the user:
+**This is the step that prevents 10+ round feedback loops.** Before touching
+any code, build a comprehensive plan for each theme. The goal: fix every
+instance in one pass so CodeRabbit sees zero duplicates on re-review.
+
+#### 4a. For each theme, run an impact analysis
+
+For each theme, **before writing any fix**, spawn an analysis agent
+(`subagent_type: "Explore"`) to answer:
+
+1. **Where else does this pattern appear?** Search all files changed in this
+   PR for the same class of issue — not just the line CodeRabbit flagged.
+   Use grep/glob to find every instance.
+
+   Examples of what "same pattern" means:
+   - CodeRabbit says "docs say circles" → grep for "circle" in all `.md`,
+     `.h`, and `.c` files touched by this PR
+   - CodeRabbit says "unchecked fclose" → grep for every `fclose` call in
+     the file and check if any are unchecked
+   - CodeRabbit says "test only checks return value" → check ALL similar
+     tests for the same weakness, not just the one cited
+   - CodeRabbit says "division by zero if width is 0" → find ALL divisions
+     by width, height, or any user-derived value in the function
+
+2. **What documentation describes this code?** Identify every README,
+   API doc, header comment, and inline comment that references the behavior
+   being changed. These MUST be updated when the code changes.
+
+3. **What tests cover this code?** Identify existing tests. If the fix
+   changes behavior, those tests must be updated. If no test exists, one
+   must be written.
+
+4. **Why did we get this wrong?** Understanding the root cause prevents
+   adjacent bugs:
+   - Copy-paste without adaptation → check all copies
+   - Misunderstanding an API → check all uses of that API
+   - Missing a case in a switch/if chain → check the full chain
+   - Generated code from a template → check all generated instances
+
+#### 4b. Write the verification plan
+
+For each theme, produce a checklist:
 
 ```text
-Feedback from [Reviewer] on file.c:123:
-> [feedback text]
+Theme: "Radio button shape — docs say circles, code draws rectangles"
+Root cause: Copy-pasted checkbox description without adapting for radio buttons
 
-How should I handle this?
-1. Implement the suggestion (I'll make the code changes)
-2. Respond and resolve (you explain why it's not applicable)
-3. Skip for now (handle later)
+Code fixes:
+  [ ] common/ui/forge_ui.h:234 — change "circle" to "rectangle" in header doc
+  [ ] common/ui/README.md:89 — update radio button description
+  [ ] lessons/ui/15-editable-controls/README.md:156 — fix shape description
+  [ ] OR: actually make radio buttons round in forge_ui_ctx_radio()
+
+Doc sync:
+  [ ] Verify all 3 doc locations match after fix
+  [ ] Check if any diagram shows radio buttons (update if so)
+
+Tests:
+  [ ] Add test asserting radio button geometry is rectangular (or round)
+  [ ] Verify existing radio button tests still pass
+
+Grep verification:
+  [ ] grep -r "circle" across all files in this PR — zero false matches remain
 ```
 
-Use AskUserQuestion with options:
+**Present the full plan to the user** before executing. The user may spot
+things the analysis missed or may prefer a different approach (e.g. "just
+make it round" vs "fix all the docs").
 
-- "Implement" - Make the code changes (do NOT commit/push yet — batch all changes)
-- "Respond and resolve" - Ask user for response text, post comment, resolve conversation
-- "Skip" - Move to next feedback
+#### 4c. Execute the plan with a team
 
-**Important: Batch all changes into a single commit+push.** Do NOT commit and
-push after each individual feedback item. Process ALL feedback first, make all
-code changes, then do one commit and one push at the end. Pushing multiple
-times in quick succession causes CodeRabbit to pause reviews, which creates
-a frustrating loop of re-triggering and waiting.
+For each theme that the user approves, spawn agents **in parallel** to
+handle the three concerns simultaneously:
 
-### 5. After implementing changes
+1. **Code agent** (`subagent_type: "coder"`, `run_in_background: true`) —
+   Fix the code issue across ALL instances found in the impact analysis.
+   Not just the line CodeRabbit pointed at — every instance of the pattern.
 
-After processing ALL feedback items, if any code changes were made:
+2. **Test agent** (`subagent_type: "tester"`, `run_in_background: true`) —
+   Write or update tests for the fix. For library changes in `common/`,
+   this is mandatory. The test should:
+   - Verify the fix works (positive case)
+   - Verify edge cases (zero values, NULL, overflow)
+   - Verify the old bug does not regress
 
-- Run `/dev-final-pass` on the fixed code to catch regressions
-- If the lesson has diagrams and any diagram code was changed, run
-  `/dev-review-diagrams` to verify correctness
-- Stage all changed files
-- Create a single commit: "Address PR feedback: [summary of all changes]"
-- Push once to the PR branch
-- Comment `@coderabbitai review` to trigger a fresh review (do NOT use
-  `@coderabbitai resume` — we want auto-pause to stay active)
-- Re-run checks with `gh pr checks` (don't wait, just show status)
-- Exit with: "Changes pushed. Run this skill again after checks complete."
+3. **Doc agent** (`subagent_type: "coder"`, `run_in_background: true`) —
+   Update ALL documentation that describes the changed behavior:
+   - README sections ("What you'll learn", "Key concepts", code examples)
+   - API reference docs in `common/*/README.md`
+   - Header comments and inline comments in `.h` files
+   - Diagram descriptions if applicable
+
+**All three agents work from the same verification plan.** Give each agent
+the full plan so they understand the scope, but assign them their specific
+section (code, tests, docs).
+
+**After all agents complete**, review their changes together. Check:
+
+- Do the doc changes match the code changes?
+- Do the tests actually test the fix?
+- Did any agent's changes conflict with another's?
+
+#### 4d. Cross-verify before committing
+
+After all theme fixes are applied, run a final verification:
+
+1. **Grep check**: For each theme, re-run the grep queries from the impact
+   analysis. Every instance should be resolved. If any remain, fix them
+   before proceeding.
+
+2. **Build check**: Build the project to catch compile errors.
+
+   ```bash
+   cmake --build build 2>&1 | tail -20
+   ```
+
+3. **Test check**: Run relevant tests to catch regressions.
+
+   ```bash
+   ctest --test-dir build -R <relevant-test>    # C tests
+   pytest tests/pipeline/ -v                     # Python tests (if applicable)
+   ```
+
+4. **Doc consistency check**: For each file pair (code + doc), verify the
+   doc accurately describes the current code behavior. Read both files and
+   confirm they agree.
+
+5. **Markdown lint**:
+
+   ```bash
+   npx markdownlint-cli2 "**/*.md"
+   ```
+
+6. **Python lint** (if Python files changed):
+
+   ```bash
+   ruff check && ruff format --check
+   ```
+
+If any check fails, fix the issue before proceeding. Do NOT push code that
+fails tests or lint.
+
+### 5. Commit, push, and request re-review
+
+After ALL themes are resolved and ALL checks pass:
+
+1. **Stage all changed files** by explicit name (never `git add -A`):
+
+   ```bash
+   git add <file1> <file2> ...
+   ```
+
+2. **Create a single commit** summarizing all fixes:
+
+   ```bash
+   git commit -m "$(cat <<'EOF'
+   Address PR feedback: [summary]
+
+   Themes addressed:
+   - [Theme 1]: [what was fixed, how many instances]
+   - [Theme 2]: [what was fixed, how many instances]
+
+   Verification:
+   - All instances found via grep — none remaining
+   - Tests added/updated for each fix
+   - Documentation synced with code changes
+   - Build and tests pass
+
+   Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+   EOF
+   )"
+   ```
+
+3. **Push once** to the PR branch:
+
+   ```bash
+   git push
+   ```
+
+4. **Request CodeRabbit re-review**:
+
+   ```bash
+   gh pr comment <pr-number> --body "@coderabbitai review"
+   ```
+
+   Do NOT use `@coderabbitai resume` — we want auto-pause to stay active.
+
+5. **Exit** with: "Changes pushed. Run this skill again after checks
+   complete."
 
 **On next run after CodeRabbit re-reviews:**
 
 - Check if comments are auto-resolved (CodeRabbit detects implemented fixes)
+- If duplicates appear AGAIN, the fix was still incomplete. Go back to step
+  4a and do a deeper analysis — do not just patch the specific line again.
 - If still unresolved after implementing the suggested fix:
-  - Mention CodeRabbit in a comment: "@coderabbitai I've implemented your suggestion in commit ABC123. Can you verify and resolve this conversation?"
-  - OR if CodeRabbit's check is complete (not currently running): "@coderabbitai Why hasn't this been auto-resolved? Is there an issue with my implementation?"
+  - Mention CodeRabbit in a comment: "@coderabbitai I've implemented your
+    suggestion in commit ABC123. Can you verify and resolve this
+    conversation?"
+  - OR if CodeRabbit's check is complete (not currently running):
+    "@coderabbitai Why hasn't this been auto-resolved? Is there an issue
+    with my implementation?"
   - If CodeRabbit is still checking: wait for it to finish before asking
+
+### 5.5. Escalation: 3+ review rounds on the same theme
+
+If the same theme has appeared as a duplicate comment in 3 or more review
+rounds, the point-fix approach has failed. Escalate:
+
+1. **Stop fixing symptoms.** Read the entire function or module that keeps
+   getting flagged. Understand the design, not just the flagged line.
+
+2. **Identify the root cause.** Common patterns:
+   - A wrapper function and its inner function disagree on semantics
+   - A layout/drawing split where both sides compute geometry independently
+   - Copy-pasted code that was adapted incompletely
+   - A variable declared with the wrong type, causing casts everywhere
+
+3. **Propose a design fix** to the user. This may be a small refactor —
+   extract a shared constant, change a type at its declaration, unify two
+   code paths. Present it as: "This has been flagged N times because [root
+   cause]. I recommend [design fix] instead of patching individual lines."
+
+4. **Implement the design fix** with full test coverage and doc updates.
+   This replaces the point-fix cycle with a single structural change.
 
 ### 6. Check if ready to merge
 
@@ -370,6 +552,24 @@ gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies \
 gh pr merge <pr-number> --squash --delete-branch
 ```
 
+## The anti-pattern this skill prevents
+
+**Fix-the-line-not-the-pattern** is the #1 cause of 10+ round review cycles.
+It looks like this:
+
+1. CodeRabbit says "docs say circles but code draws rectangles" on file A
+2. Agent fixes file A. Pushes.
+3. CodeRabbit says "docs say circles" on file B (same issue, different file)
+4. Agent fixes file B. Pushes.
+5. CodeRabbit says "docs say circles" on file C. Duplicate comment.
+6. Repeat for 14 rounds.
+
+The correct response to step 1 is: grep for "circle" across every file in
+the PR, fix all of them, update all docs, add a test, and push once.
+
+**Every piece of feedback is a signal about a class of issue, not just a
+single line.** Treat it that way.
+
 ## Implementation notes
 
 - **Never sleep or wait** — if actions are running, exit and tell user to re-run
@@ -384,6 +584,18 @@ gh pr merge <pr-number> --squash --delete-branch
 - **CodeRabbit duplicate comments:** When CodeRabbit re-reviews after a fix, it may move previously unresolved issues into a "Duplicate comments" section in the review body instead of creating new inline threads. These are NOT resolved — they indicate the fix was incomplete. Always check the latest review body for `♻️ Duplicate comments` and `🧹 Nitpick comments` sections and treat them as active feedback requiring action.
 - **Reply to comment threads:** Always use `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies` to reply to specific review comments. This keeps conversations threaded. Do NOT use `gh pr comment` for replies—it creates unthreaded general comments.
   - **Common mistake:** Forgetting to include the PR number in the path (e.g., `repos/{owner}/{repo}/pulls/comments/{id}/replies` won't work—must be `pulls/{pr-number}/comments/{id}/replies`)
+- **Team execution is mandatory for non-trivial feedback.** If a theme
+  touches both code and documentation, or if a theme involves library code
+  in `common/`, you MUST spawn separate agents for code, tests, and docs.
+  A single agent making all changes will miss the cross-cutting concerns
+  that cause duplicate comments.
+- **Impact analysis before code changes.** Never start editing code until
+  the grep/search phase is complete. The 30 seconds spent searching saves
+  hours of review round-trips.
+- **Tests catch what CodeRabbit cannot.** CodeRabbit does static analysis.
+  A test that exercises the actual code path will find runtime bugs (NULL
+  derefs, off-by-one, division by zero) that no review tool can see. For
+  library changes in `common/`, tests are non-negotiable.
 
 ## Error handling
 
@@ -395,48 +607,59 @@ gh pr merge <pr-number> --squash --delete-branch
 ## Example interaction
 
 ```text
-Running dev-review-pr for PR #1...
+Running dev-review-pr for PR #224...
 
 ✓ All GitHub Actions checks passed
-✓ Found 2 pending conversations
+✓ Found 6 pending conversations
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Feedback 1/2 - Code Rabbit on main.c:382
+Grouped into 3 themes:
 
-> Consider adding error handling after SDL_calloc.
-> If allocation fails, the function continues with a
-> NULL pointer.
+Theme 1: Doc/code mismatch — radio button shape (3 comments, Minor)
+  - common/ui/forge_ui.h:234 — header says "circle"
+  - common/ui/README.md:89 — API docs say "circular"
+  - lessons/ui/15-editable-controls/README.md:156 — lesson says "round"
 
-How should I handle this?
-[User selects: Implement]
+Theme 2: Unchecked division by zero (2 comments, Major)
+  - forge_ui.h:1200 — sv_rect.w can be 0
+  - forge_ui.h:1240 — hue_rect.w can be 0
 
-Making changes to main.c...
-✓ Added NULL check after SDL_calloc
-✓ Changes committed and pushed
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Feedback 2/2 - Claude on README.md:45
-
-> Consider mentioning that aspect ratio correction
-> prevents stretching on non-square windows.
-
-How should I handle this?
-[User selects: Respond and resolve]
-
-Response: "Good catch! This is already mentioned in
-the Key Concepts section at line 82. I'll resolve
-this as a duplicate."
-
-✓ Comment posted and conversation resolved
+Theme 3: Weak test assertions (1 comment, Minor)
+  - test_ui_controls.c:89 — only checks return, not side effects
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Changes pushed. Waiting for checks...
+Impact analysis for Theme 1:
+
+  grep found 5 additional instances of "circle/circular/round"
+  in radio button context across the PR files:
+    - forge_ui.h line 198 (function doc)
+    - forge_ui.h line 892 (inline comment)
+    - README.md line 34 (widget table)
+    - README.md line 201 (API section)
+    - SKILL.md line 45 (skill description)
+
+  Root cause: checkbox description was copy-pasted for radio
+  buttons without adapting the shape description.
+
+  Verification plan:
+    Code: fix all 8 instances (3 flagged + 5 found)
+    Docs: verify all docs agree after fix
+    Tests: add assertion for radio button draw data
+    Grep: re-run "circle" search — expect 0 matches
+
+[User approves plan]
+[Spawns code + test + doc agents in parallel]
+[All agents complete]
+[Cross-verification: grep confirms 0 remaining, tests pass]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+All 3 themes resolved. Building... ✓ Tests... ✓ Lint... ✓
+
+✓ Committed: "Address PR feedback: fix radio shape docs (8 instances),
+  add zero-guards to color picker (3 divisions), strengthen test assertions
+  (6 widget tests)"
+✓ Pushed (single push)
+✓ Requested CodeRabbit re-review
 
 Run this skill again after checks complete.
 ```
-
-## Future enhancements
-
-- Auto-detect if feedback is trivial (typos, formatting) and batch implement
-- Learn from resolved conversations to avoid similar issues in future lessons
-- Generate summary of what was changed for the PR merge commit message
