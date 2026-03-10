@@ -400,9 +400,13 @@ pytest tests/pipeline/test_bundler.py -v
 
 ## AI skill
 
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API, including the `BundleWriter` /
+`BundleReader` API, the `.forgepak` binary format, the `DependencyGraph` for
+tracking asset relationships, and the CLI bundling commands.
+
 The [forge-asset-pipeline](../../../.claude/skills/forge-asset-pipeline/SKILL.md)
-skill can scaffold an asset processing pipeline with bundling support. It
-includes the `BundleWriter` / `BundleReader` API and CLI bundling commands.
+skill scaffolds a new pipeline project with bundling support from scratch.
 
 ## Exercises
 

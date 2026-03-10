@@ -375,3 +375,11 @@ any C project that links SDL3 and cJSON:
    LOD index counts multiplied by `sizeof(uint32_t)`. Log a warning if the
    offsets are inconsistent — this catches corrupted or hand-edited `.fmesh`
    files early.
+
+## AI skill
+
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API that produces the `.fmesh` and
+`.meta.json` files loaded in this lesson. It covers the bundle format, plugin
+architecture, and CLI commands for processing and bundling assets before the C
+runtime consumes them.

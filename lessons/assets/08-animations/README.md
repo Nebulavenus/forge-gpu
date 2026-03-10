@@ -452,6 +452,15 @@ python -m pytest tests/pipeline/ -v             # pipeline plugin tests
    local `parse_animation()` function. The ~120 lines of JSON re-parsing
    become a single struct access.
 
+## AI skill
+
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API, including the `AnimationPlugin`
+that extracts glTF animation clips into `.fanim` binaries. It covers the
+plugin's subprocess integration with `forge-anim-tool`, the shared extension
+handling (`.gltf`/`.glb` files produce both mesh and animation outputs), and
+the CLI commands for processing animated assets.
+
 ## Further reading
 
 - [glTF 2.0 Specification — Animations](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations)

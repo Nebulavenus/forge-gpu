@@ -362,6 +362,14 @@ ctest --test-dir build -R pipeline -C Debug
    first, then alpha-mask, then alpha-blend (back-to-front). This is the
    standard approach for correct transparency rendering.
 
+## AI skill
+
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API, including the `MeshPlugin` that
+produces `.fmat` material sidecars alongside `.fmesh` files. It covers how
+per-plugin settings in `pipeline.toml` control material extraction and how the
+bundler tracks material dependencies.
+
 ## Further reading
 
 - [glTF 2.0 Specification — Materials](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#materials)

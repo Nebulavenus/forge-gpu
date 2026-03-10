@@ -574,6 +574,14 @@ pytest tests/pipeline/test_mesh.py -v
    produce one `.fmesh` per primitive (or a multi-primitive binary format
    with a primitive table in the header).
 
+## AI skill
+
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API, including the `MeshPlugin` that
+wraps `forge-mesh-tool` as a subprocess. It covers the plugin settings for
+deduplication, optimization, tangent generation, and LOD levels, as well as
+the `.fmesh` output format and `.meta.json` sidecars.
+
 ## Further reading
 
 - [meshoptimizer documentation](https://github.com/zeux/meshoptimizer) —

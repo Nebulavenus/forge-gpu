@@ -700,6 +700,14 @@ into a complete processing workflow.
    Try switching to `basisu_format = "etc1s"` and observe how file sizes and
    quality change.
 
+## AI skill
+
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API — configuration, plugin system,
+scanner, and bundler. The texture plugin demonstrated in this lesson is one of
+three built-in plugins covered by that skill, including the `TexturePlugin`
+settings table, mipmap generation, and GPU compression options.
+
 ## Further reading
 
 - [Pipeline API reference](../../../pipeline/README.md) — Full API docs and

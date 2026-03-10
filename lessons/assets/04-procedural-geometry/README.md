@@ -528,6 +528,10 @@ skill teaches Claude Code how to generate and render procedural geometry using
 this library — including GPU buffer upload, vertex attribute binding, and
 multi-shape scenes.
 
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package that processes and bundles the assets
+produced by this library.
+
 ## What's next
 
 [Asset Lesson 05 — Asset Bundles](../05-asset-bundles/) packs processed assets

@@ -363,10 +363,14 @@ developers override paths on the command line.
 
 ## AI skill
 
-The patterns from this lesson are available as a Claude Code skill:
-[`/forge-asset-pipeline`](../../../.claude/skills/forge-asset-pipeline/SKILL.md)
-— scaffold a plugin-based pipeline with CLI, fingerprinting, and TOML config
-in your own project.
+The [forge-pipeline-library](../../../.claude/skills/forge-pipeline-library/SKILL.md)
+skill documents the full pipeline package API — configuration, plugin system,
+scanner, bundler, and all built-in plugins. Use it when working with any
+`pipeline/` code or extending the CLI.
+
+The [forge-asset-pipeline](../../../.claude/skills/forge-asset-pipeline/SKILL.md)
+skill scaffolds a new pipeline project from scratch with CLI, fingerprinting,
+and TOML config.
 
 ## Where it connects
 
