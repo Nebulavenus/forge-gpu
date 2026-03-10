@@ -35,31 +35,34 @@ The following foundations, tooling, and lesson ranges are complete:
 
 A new header-only library (`common/physics/`) built lesson by lesson, covering
 particle dynamics, rigid body simulation, collision detection, and contact
-resolution.
+resolution. 14 lessons in five arcs — each lesson extends `forge_physics.h`
+with tested, documented functions.
 
 ### Particle Dynamics
 
 - [ ] **Physics Lesson 01 — Point Particles** — Position, velocity, acceleration; symplectic Euler integration; gravity and drag forces; `forge_physics_` API scaffolding in `common/physics/forge_physics.h`
 - [ ] **Physics Lesson 02 — Springs and Constraints** — Hooke's law spring forces; damped springs; distance constraints with projection; chain and cloth-like particle systems
-- [ ] **Physics Lesson 03 — Particle Collisions** — Sphere-sphere and sphere-plane collision detection; impulse-based response; coefficient of restitution; spatial partitioning for broadphase (uniform grid)
+- [ ] **Physics Lesson 03 — Particle Collisions** — Sphere-sphere and sphere-plane collision detection; impulse-based response; coefficient of restitution; simple O(n²) all-pairs (broadphase deferred to Lesson 07)
 
 ### Rigid Body Foundations
 
-- [ ] **Physics Lesson 04 — Rigid Body State** — Mass, center of mass, inertia tensor; linear and angular velocity; state representation and integration; torque and angular acceleration
-- [ ] **Physics Lesson 05 — Orientation and Angular Motion** — Quaternion representation for orientation; angular velocity integration; inertia tensor rotation to world space; gyroscopic stability
-- [ ] **Physics Lesson 06 — Forces and Torques** — Applying forces at arbitrary points; gravity, drag, and friction as force generators; force accumulator pattern; combining linear and angular effects
+- [ ] **Physics Lesson 04 — Rigid Body State and Orientation** — Mass, center of mass, inertia tensor; quaternion orientation; linear and angular velocity; state representation and integration; inertia tensor rotation to world space
+- [ ] **Physics Lesson 05 — Forces and Torques** — Applying forces at arbitrary points; gravity, drag, and friction as force generators; torque and angular acceleration; force accumulator pattern; combining linear and angular effects; gyroscopic stability
+- [ ] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; static and dynamic friction (Coulomb model); resting contact resolution; stacking preview with simple shapes
 
 ### Collision Detection
 
-- [ ] **Physics Lesson 07 — Collision Shapes** — Sphere, AABB, OBB, capsule, convex hull representations; support functions for each shape; broadphase with bounding volume hierarchy (BVH) or sweep-and-prune
-- [ ] **Physics Lesson 08 — Narrow Phase: GJK and EPA** — Gilbert-Johnson-Keerthi algorithm for intersection testing; Expanding Polytope Algorithm for penetration depth and contact normal; Minkowski difference intuition
-- [ ] **Physics Lesson 09 — Contact Manifold** — Generating contact points from GJK/EPA results; contact point reduction (clipping); manifold caching and warm-starting across frames; persistent contact IDs
+- [ ] **Physics Lesson 07 — Collision Shapes and Broadphase** — Sphere, AABB, OBB, capsule, convex hull representations; support functions for each shape; broadphase with sweep-and-prune or BVH; pairing broadphase with simple narrowphase from earlier lessons
+- [ ] **Physics Lesson 08 — GJK Intersection Testing** — Gilbert-Johnson-Keerthi algorithm for boolean intersection testing; Minkowski difference intuition; simplex evolution; support function interface for convex shapes
+- [ ] **Physics Lesson 09 — EPA Penetration Depth** — Expanding Polytope Algorithm for penetration depth and contact normal from a GJK simplex; polytope expansion and convergence; connecting EPA output to contact generation
+- [ ] **Physics Lesson 10 — Contact Manifold** — Generating contact points from GJK/EPA results; contact point reduction (Sutherland-Hodgman clipping); manifold caching and persistent contact IDs across frames
 
 ### Rigid Body Dynamics
 
-- [ ] **Physics Lesson 10 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses (Coulomb model); sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
-- [ ] **Physics Lesson 11 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
-- [ ] **Physics Lesson 12 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed time-step with interpolation; sleeping and island detection for performance
+- [ ] **Physics Lesson 11 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses; sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
+- [ ] **Physics Lesson 12 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
+- [ ] **Physics Lesson 13 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
+- [ ] **Physics Lesson 14 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance
 
 ## Audio Lessons — New Track
 

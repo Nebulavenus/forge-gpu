@@ -29,7 +29,9 @@ as functions are implemented.*
 | 01 — Point Particles | `forge_physics_integrate()`, `forge_physics_apply_gravity()`, `forge_physics_apply_drag()` | Particle dynamics, symplectic Euler |
 | 02 — Springs | `forge_physics_spring_force()`, `forge_physics_constraint_distance()` | Hooke's law, distance constraints |
 | 03 — Particle Collisions | `forge_physics_collide_sphere_sphere()`, `forge_physics_collide_sphere_plane()` | Collision detection and impulse response |
-| 04+ | *See [PLAN.md](../../PLAN.md)* | Rigid bodies, GJK/EPA, constraint solver |
+| 04 — Rigid Body State | `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()` | Rigid body state, inertia, orientation |
+| 05 — Forces and Torques | `forge_physics_apply_force_at_point()`, `forge_physics_apply_torque()` | Force application, angular dynamics |
+| 06–14 | *See [PLAN.md](../../PLAN.md)* | Contacts, GJK/EPA, constraints, solver |
 
 ## Design
 
