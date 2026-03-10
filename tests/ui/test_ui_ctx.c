@@ -150,6 +150,75 @@ static int fail_count = 0;
 #define TEST_FAKE_ASCENDER      800
 #define TEST_FAKE_UPM_REAL     2048
 
+/* ── Drag float test constants ──────────────────────────────────────────── */
+#define TEST_DF_X          10.0f
+#define TEST_DF_Y          10.0f
+#define TEST_DF_W         120.0f
+#define TEST_DF_H          30.0f
+#define TEST_DF_CENTER_X   (TEST_DF_X + TEST_DF_W * 0.5f)
+#define TEST_DF_CENTER_Y   (TEST_DF_Y + TEST_DF_H * 0.5f)
+#define TEST_DF_SPEED      0.1f
+#define TEST_DF_MIN       -100.0f
+#define TEST_DF_MAX        100.0f
+#define TEST_DF_INIT       5.0f
+#define TEST_DF_DRAG_DX   20.0f
+#define TEST_DFN_W        360.0f   /* wider rect for multi-component drag */
+
+/* ── Drag int test constants ───────────────────────────────────────────── */
+#define TEST_DI_X          10.0f
+#define TEST_DI_Y          10.0f
+#define TEST_DI_W         120.0f
+#define TEST_DI_H          30.0f
+#define TEST_DI_CENTER_X   (TEST_DI_X + TEST_DI_W * 0.5f)
+#define TEST_DI_CENTER_Y   (TEST_DI_Y + TEST_DI_H * 0.5f)
+#define TEST_DI_SPEED      1.0f
+#define TEST_DI_MIN       -50
+#define TEST_DI_MAX        50
+#define TEST_DI_INIT       10
+
+/* ── Listbox test constants ────────────────────────────────────────────── */
+#define TEST_LB_X          10.0f
+#define TEST_LB_Y          10.0f
+#define TEST_LB_W         150.0f
+#define TEST_LB_H         120.0f
+#define TEST_LB_ITEM_COUNT 4
+
+/* ── Dropdown test constants ───────────────────────────────────────────── */
+#define TEST_DD_X          10.0f
+#define TEST_DD_Y          10.0f
+#define TEST_DD_W         150.0f
+#define TEST_DD_H         200.0f
+#define TEST_DD_ITEM_COUNT 3
+
+/* ── Radio button test constants ───────────────────────────────────────── */
+#define TEST_RAD_X         10.0f
+#define TEST_RAD_Y         10.0f
+#define TEST_RAD_W        150.0f
+#define TEST_RAD_H         30.0f
+#define TEST_RAD_CENTER_X  (TEST_RAD_X + TEST_RAD_W * 0.5f)
+#define TEST_RAD_CENTER_Y  (TEST_RAD_Y + TEST_RAD_H * 0.5f)
+#define TEST_RAD_B_Y       60.0f   /* second radio group Y position */
+
+/* ── Color picker test constants ───────────────────────────────────────── */
+#define TEST_CP_X          10.0f
+#define TEST_CP_Y          10.0f
+#define TEST_CP_W         200.0f
+#define TEST_CP_H         250.0f
+#define TEST_CP_SHORT_H    30.0f   /* short rect for overflow test */
+#define TEST_CP_TEXT_SLOP  16.0f   /* tolerance for text glyph descenders past container */
+
+/* ── HSV/RGB conversion test constants ─────────────────────────────────── */
+#define TEST_HSV_RED_H     0.0f
+#define TEST_HSV_RED_S     1.0f
+#define TEST_HSV_RED_V     1.0f
+#define TEST_HSV_GREEN_H   120.0f
+#define TEST_HSV_GREEN_S   1.0f
+#define TEST_HSV_GREEN_V   1.0f
+#define TEST_HSV_BLUE_H    240.0f
+#define TEST_HSV_BLUE_S    1.0f
+#define TEST_HSV_BLUE_V    1.0f
+#define TEST_HSV_EPS       0.01f
+
 static ForgeUiFont     test_font;
 static ForgeUiFontAtlas test_atlas;
 static bool font_loaded  = false;
@@ -7894,6 +7963,1664 @@ static void test_sparkline_layout_invalid_no_cursor_advance(void)
     forge_ui_ctx_free(&ctx);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * HSV/RGB conversion tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_hsv_to_rgb_red(void)
+{
+    TEST("hsv_to_rgb: pure red (0, 1, 1) -> (1, 0, 0)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, TEST_HSV_RED_S, TEST_HSV_RED_V,
+                         &r, &g, &b);
+    ASSERT_NEAR(r, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_green(void)
+{
+    TEST("hsv_to_rgb: pure green (120, 1, 1) -> (0, 1, 0)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_GREEN_H, TEST_HSV_GREEN_S, TEST_HSV_GREEN_V,
+                         &r, &g, &b);
+    ASSERT_NEAR(r, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_blue(void)
+{
+    TEST("hsv_to_rgb: pure blue (240, 1, 1) -> (0, 0, 1)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_BLUE_H, TEST_HSV_BLUE_S, TEST_HSV_BLUE_V,
+                         &r, &g, &b);
+    ASSERT_NEAR(r, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 1.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_null_output(void)
+{
+    TEST("hsv_to_rgb: NULL output pointers do not crash");
+    forge_ui_hsv_to_rgb(0.0f, 1.0f, 1.0f, NULL, NULL, NULL);
+    ASSERT_TRUE(1);  /* survived without crash */
+}
+
+static void test_hsv_to_rgb_nan_hue(void)
+{
+    TEST("hsv_to_rgb: NaN hue treated as 0");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(NAN, TEST_HSV_RED_S, TEST_HSV_RED_V, &r, &g, &b);
+    /* NaN hue -> 0 -> red */
+    ASSERT_NEAR(r, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_negative_hue(void)
+{
+    TEST("hsv_to_rgb: negative hue wraps to [0, 360)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(-120.0f, 1.0f, 1.0f, &r, &g, &b);
+    /* -120 + 360 = 240 -> blue */
+    ASSERT_NEAR(r, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 1.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_nan_saturation(void)
+{
+    TEST("hsv_to_rgb: NaN saturation treated as 0 (grayscale)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, NAN, TEST_HSV_RED_V, &r, &g, &b);
+    /* NaN s -> 0 -> grayscale: r=g=b=v=1.0 */
+    ASSERT_NEAR(r, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 1.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_inf_saturation(void)
+{
+    TEST("hsv_to_rgb: +Inf saturation treated as 0 (grayscale)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, INFINITY, TEST_HSV_RED_V, &r, &g, &b);
+    /* +Inf s -> isfinite false -> 0 -> grayscale: r=g=b=v=1.0 */
+    ASSERT_NEAR(r, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 1.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_nan_value(void)
+{
+    TEST("hsv_to_rgb: NaN value treated as 0 (black)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, TEST_HSV_RED_S, NAN, &r, &g, &b);
+    /* NaN v -> 0 -> black */
+    ASSERT_NEAR(r, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_inf_value(void)
+{
+    TEST("hsv_to_rgb: +Inf value treated as 0 (black)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, TEST_HSV_RED_S, INFINITY, &r, &g, &b);
+    /* +Inf v -> isfinite false -> 0 -> black */
+    ASSERT_NEAR(r, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_neg_inf_saturation(void)
+{
+    TEST("hsv_to_rgb: -Inf saturation treated as 0 (grayscale)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, -INFINITY, TEST_HSV_RED_V, &r, &g, &b);
+    /* -Inf s -> 0 -> grayscale: r=g=b=v=1.0 */
+    ASSERT_NEAR(r, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 1.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_to_rgb_neg_inf_value(void)
+{
+    TEST("hsv_to_rgb: -Inf value treated as 0 (black)");
+    float r, g, b;
+    forge_ui_hsv_to_rgb(TEST_HSV_RED_H, TEST_HSV_RED_S, -INFINITY, &r, &g, &b);
+    /* -Inf v -> 0 -> black */
+    ASSERT_NEAR(r, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(b, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_rgb_to_hsv_red(void)
+{
+    TEST("rgb_to_hsv: pure red (1, 0, 0) -> (0, 1, 1)");
+    float h, s, v;
+    forge_ui_rgb_to_hsv(1.0f, 0.0f, 0.0f, &h, &s, &v);
+    ASSERT_NEAR(h, TEST_HSV_RED_H, TEST_HSV_EPS);
+    ASSERT_NEAR(s, TEST_HSV_RED_S, TEST_HSV_EPS);
+    ASSERT_NEAR(v, TEST_HSV_RED_V, TEST_HSV_EPS);
+}
+
+static void test_rgb_to_hsv_green(void)
+{
+    TEST("rgb_to_hsv: pure green (0, 1, 0) -> (120, 1, 1)");
+    float h, s, v;
+    forge_ui_rgb_to_hsv(0.0f, 1.0f, 0.0f, &h, &s, &v);
+    ASSERT_NEAR(h, TEST_HSV_GREEN_H, TEST_HSV_EPS);
+    ASSERT_NEAR(s, TEST_HSV_GREEN_S, TEST_HSV_EPS);
+    ASSERT_NEAR(v, TEST_HSV_GREEN_V, TEST_HSV_EPS);
+}
+
+static void test_rgb_to_hsv_blue(void)
+{
+    TEST("rgb_to_hsv: pure blue (0, 0, 1) -> (240, 1, 1)");
+    float h, s, v;
+    forge_ui_rgb_to_hsv(0.0f, 0.0f, 1.0f, &h, &s, &v);
+    ASSERT_NEAR(h, TEST_HSV_BLUE_H, TEST_HSV_EPS);
+    ASSERT_NEAR(s, TEST_HSV_BLUE_S, TEST_HSV_EPS);
+    ASSERT_NEAR(v, TEST_HSV_BLUE_V, TEST_HSV_EPS);
+}
+
+static void test_rgb_to_hsv_null_output(void)
+{
+    TEST("rgb_to_hsv: NULL output pointers do not crash");
+    forge_ui_rgb_to_hsv(1.0f, 0.0f, 0.0f, NULL, NULL, NULL);
+    ASSERT_TRUE(1);
+}
+
+static void test_rgb_to_hsv_nan_input(void)
+{
+    TEST("rgb_to_hsv: NaN input treated as 0");
+    float h, s, v;
+    forge_ui_rgb_to_hsv(NAN, 0.0f, 0.0f, &h, &s, &v);
+    /* NaN->0, so (0,0,0) = black: h=0, s=0, v=0 */
+    ASSERT_NEAR(h, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(s, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(v, 0.0f, TEST_HSV_EPS);
+}
+
+static void test_hsv_rgb_roundtrip(void)
+{
+    TEST("hsv->rgb->hsv roundtrip preserves values");
+    float h = 195.0f, s = 0.75f, v = 0.85f;
+    float r, g, b;
+    forge_ui_hsv_to_rgb(h, s, v, &r, &g, &b);
+    float h2, s2, v2;
+    forge_ui_rgb_to_hsv(r, g, b, &h2, &s2, &v2);
+    ASSERT_NEAR(h2, h, TEST_HSV_EPS);
+    ASSERT_NEAR(s2, s, TEST_HSV_EPS);
+    ASSERT_NEAR(v2, v, TEST_HSV_EPS);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Drag float tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_drag_float_emits_draw_data(void)
+{
+    TEST("drag_float: emits vertices and indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float value = TEST_DF_INIT;
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Return value is 'changed' (false when not dragging), not success */
+    forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                             TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_null_ctx(void)
+{
+    TEST("drag_float: NULL ctx returns false");
+    float value = TEST_DF_INIT;
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+    ASSERT_TRUE(!forge_ui_ctx_drag_float(NULL, "test##df", &value,
+                TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect));
+}
+
+static void test_drag_float_null_value(void)
+{
+    TEST("drag_float: NULL value returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_float(&ctx, "test##df", NULL,
+                TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_nan_rect_rejected(void)
+{
+    TEST("drag_float: NaN rect rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float value = TEST_DF_INIT;
+    ForgeUiRect rect = { NAN, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_inverted_range_rejected(void)
+{
+    TEST("drag_float: inverted range (min > max) rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float value = TEST_DF_INIT;
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* min=100, max=-100 -> inverted */
+    ASSERT_TRUE(!forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                TEST_DF_SPEED, TEST_DF_MAX, TEST_DF_MIN, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_zero_speed_rejected(void)
+{
+    TEST("drag_float: zero speed rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float value = TEST_DF_INIT;
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                0.0f, TEST_DF_MIN, TEST_DF_MAX, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_nan_value_sanitized(void)
+{
+    TEST("drag_float: NaN *value sanitized to min");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float value = NAN;
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Return value is 'changed', not success — NaN was sanitized on entry */
+    forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                             TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_NEAR(value, TEST_DF_MIN, TEST_HSV_EPS);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_drag_changes_value(void)
+{
+    TEST("drag_float: drag motion changes value");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float value = 0.0f;
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    /* Frame 1: mouse down on widget — activation frame should NOT change value */
+    forge_ui_ctx_begin(&ctx, TEST_DF_CENTER_X, TEST_DF_CENTER_Y, true);
+    forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                             TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_NEAR(value, 0.0f, TEST_HSV_EPS);
+
+    /* Frame 2: drag right by TEST_DF_DRAG_DX pixels */
+    forge_ui_ctx_begin(&ctx, TEST_DF_CENTER_X + TEST_DF_DRAG_DX,
+                        TEST_DF_CENTER_Y, true);
+    bool changed = forge_ui_ctx_drag_float(&ctx, "test##df", &value,
+                                            TEST_DF_SPEED, TEST_DF_MIN,
+                                            TEST_DF_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(changed);
+    ASSERT_TRUE(value > 0.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Drag float N tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_drag_float_n_emits_draw_data(void)
+{
+    TEST("drag_float_n: 3-component emits draw data");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float values[3] = { 1.0f, 2.0f, 3.0f };
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DFN_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Return value is 'any_changed', not success */
+    forge_ui_ctx_drag_float_n(&ctx, "vec3##dfn", values, 3,
+                               TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_n_count_zero_rejected(void)
+{
+    TEST("drag_float_n: count 0 rejected — no mutation, no draw data");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float values[1] = { 42.0f };
+    float backup[1] = { 42.0f };
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_float_n(&ctx, "test##dfn", values, 0,
+                TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect));
+    /* Values must be unchanged */
+    ASSERT_NEAR(values[0], backup[0], 1e-6f);
+    /* No draw data emitted */
+    ASSERT_TRUE(ctx.vertex_count == 0);
+    ASSERT_TRUE(ctx.index_count == 0);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_n_count_five_rejected(void)
+{
+    TEST("drag_float_n: count 5 rejected — no mutation, no draw data");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float values[5] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f };
+    float backup[5] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f };
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_float_n(&ctx, "test##dfn", values, 5,
+                TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect));
+    /* Values must be unchanged */
+    for (int i = 0; i < 5; i++) {
+        ASSERT_NEAR(values[i], backup[i], 1e-6f);
+    }
+    /* No draw data emitted */
+    ASSERT_TRUE(ctx.vertex_count == 0);
+    ASSERT_TRUE(ctx.index_count == 0);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_n_invalid_speed_rejected(void)
+{
+    TEST("drag_float_n: invalid speed rejected — no draw data");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float values[2] = { 1.0f, 2.0f };
+    float backup[2] = { 1.0f, 2.0f };
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, TEST_DF_W * 2.0f, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Zero speed should be rejected before any drawing */
+    ASSERT_TRUE(!forge_ui_ctx_drag_float_n(&ctx, "test##fn", values, 2,
+                0.0f, TEST_DF_MIN, TEST_DF_MAX, rect));
+    ASSERT_NEAR(values[0], backup[0], 1e-6f);
+    ASSERT_NEAR(values[1], backup[1], 1e-6f);
+    ASSERT_TRUE(ctx.vertex_count == 0);
+    ASSERT_TRUE(ctx.index_count == 0);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_n_narrow_rect_no_crash(void)
+{
+    TEST("drag_float_n: very narrow rect skips components gracefully");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float values[4] = { 1.0f, 2.0f, 3.0f, 4.0f };
+    /* Width of 10px split among 4 components — each gets 2.5px, too
+     * narrow for label + field */
+    ForgeUiRect rect = { TEST_DF_X, TEST_DF_Y, 10.0f, TEST_DF_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Should not crash or produce inverted geometry */
+    forge_ui_ctx_drag_float_n(&ctx, "test##narrow", values, 4,
+                               TEST_DF_SPEED, TEST_DF_MIN, TEST_DF_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* All values should be finite */
+    for (int i = 0; i < 4; i++) {
+        ASSERT_TRUE(isfinite(values[i]));
+    }
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_hue_drag_no_360(void)
+{
+    TEST("color_picker: hue drag at far right stays < 360");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 0.0f, s = 1.0f, v = 1.0f;
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_H };
+
+    /* Compute hue bar position matching the widget's layout:
+     * sv_size = min(rect.h - hue_bar_h - preview_h - 2*gap, rect.w)
+     * hue_rect.y = rect.y + sv_size + gap */
+    float gap = FORGE_UI_CP_GAP;
+    float hue_bar_h = FORGE_UI_CP_HUE_BAR_H;
+    float preview_h = FORGE_UI_CP_PREVIEW_H;
+    float avail = TEST_CP_H - hue_bar_h - preview_h - 2.0f * gap;
+    if (avail < 0.0f) avail = 0.0f;
+    float sv_size = avail < TEST_CP_W ? avail : TEST_CP_W;
+    float hue_y = TEST_CP_Y + sv_size + gap + hue_bar_h * 0.5f;
+    float hue_mid_x = TEST_CP_X + TEST_CP_W * 0.5f;
+    float hue_right_x = TEST_CP_X + TEST_CP_W;
+
+    /* Frame 1: hover over the hue bar center to make it hot */
+    forge_ui_ctx_begin(&ctx, hue_mid_x, hue_y, false);
+    forge_ui_ctx_color_picker(&ctx, "cp##hue360", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 2: press at center to activate the hue widget */
+    forge_ui_ctx_begin(&ctx, hue_mid_x, hue_y, true);
+    forge_ui_ctx_color_picker(&ctx, "cp##hue360", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Verify the hue actually changed from the initial 0 */
+    ASSERT_TRUE(h > 0.0f);
+
+    /* Frame 3: drag to the far right edge while still holding */
+    forge_ui_ctx_begin(&ctx, hue_right_x, hue_y, true);
+    forge_ui_ctx_color_picker(&ctx, "cp##hue360", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Hue should be near 360 but strictly < 360 */
+    ASSERT_TRUE(h < 360.0f);
+    ASSERT_TRUE(h >= 0.0f);
+    /* Should be close to 360 (the nextafterf value) */
+    ASSERT_TRUE(h > 350.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_narrow_no_label_overflow(void)
+{
+    TEST("color_picker: narrow rect does not overflow swatch/label");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 120.0f, s = 1.0f, v = 1.0f;
+    /* Very narrow rect — swatch_w should be clamped */
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, 20.0f, TEST_CP_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_color_picker(&ctx, "cp##narrow", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* All vertices should be within rect bounds (with text slop) */
+    float right = rect.x + rect.w + TEST_CP_TEXT_SLOP;
+    for (Uint32 i = 0; i < ctx.vertex_count; i++) {
+        ASSERT_TRUE(ctx.vertices[i].pos_x <= right);
+    }
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Drag int tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_drag_int_emits_draw_data(void)
+{
+    TEST("drag_int: emits vertices and indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int value = TEST_DI_INIT;
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Return value is 'changed', not success */
+    forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                           TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_null_value(void)
+{
+    TEST("drag_int: NULL value returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_int(&ctx, "test##di", NULL,
+                TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_inverted_range_rejected(void)
+{
+    TEST("drag_int: inverted range rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int value = TEST_DI_INIT;
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                TEST_DI_SPEED, TEST_DI_MAX, TEST_DI_MIN, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_nan_speed_rejected(void)
+{
+    TEST("drag_int: NaN speed rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int value = TEST_DI_INIT;
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                NAN, TEST_DI_MIN, TEST_DI_MAX, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_no_jump_on_activation(void)
+{
+    TEST("drag_int: no value change on activation frame");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int value = TEST_DI_INIT;
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W, TEST_DI_H };
+
+    /* Frame 1: mouse down — activation frame should not change value */
+    float cx = TEST_DI_X + TEST_DI_W * 0.5f;
+    float cy = TEST_DI_Y + TEST_DI_H * 0.5f;
+    Uint32 expected_id = forge_ui_hash_id(&ctx, "test##di");
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                           TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+    /* Verify the widget became active and stays active after end() */
+    ASSERT_EQ_U32(ctx.active, expected_id);
+    ASSERT_EQ_INT(value, TEST_DI_INIT);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_n_emits_draw_data(void)
+{
+    TEST("drag_int_n: emits vertices and indices for 2 components");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int values[2] = { TEST_DI_INIT, TEST_DI_INIT };
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W * 2.0f, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_drag_int_n(&ctx, "test##din", values, 2,
+                             TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_n_rejects_count_0(void)
+{
+    TEST("drag_int_n: count 0 rejected — no mutation, no draw data");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int values[1] = { 42 };
+    int backup[1] = { 42 };
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W * 2.0f, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_int_n(&ctx, "test##din", values, 0,
+                TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect));
+    /* Values must be unchanged */
+    ASSERT_TRUE(values[0] == backup[0]);
+    /* No draw data emitted */
+    ASSERT_TRUE(ctx.vertex_count == 0);
+    ASSERT_TRUE(ctx.index_count == 0);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_n_rejects_count_5(void)
+{
+    TEST("drag_int_n: count 5 rejected — no mutation, no draw data");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int values[5] = { 1, 2, 3, 4, 5 };
+    int backup[5] = { 1, 2, 3, 4, 5 };
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W * 2.0f, TEST_DI_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_drag_int_n(&ctx, "test##din", values, 5,
+                TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect));
+    /* Values must be unchanged */
+    for (int i = 0; i < 5; i++) {
+        ASSERT_TRUE(values[i] == backup[i]);
+    }
+    /* No draw data emitted */
+    ASSERT_TRUE(ctx.vertex_count == 0);
+    ASSERT_TRUE(ctx.index_count == 0);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+#define TEST_DI_CLAMP_DRAG_PX 200.0f  /* large drag to overshoot bounds */
+
+static void test_drag_int_clamp_unstick(void)
+{
+    TEST("drag_int: value unsticks when dragging back from clamp");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int value = TEST_DI_MAX - 1;  /* start near max */
+    ForgeUiRect rect = { TEST_DI_X, TEST_DI_Y, TEST_DI_W, TEST_DI_H };
+    float cx = TEST_DI_CENTER_X;
+    float cy = TEST_DI_CENTER_Y;
+
+    /* Frame 1: activate by pressing inside widget */
+    forge_ui_ctx_begin(&ctx, cx, cy, true);
+    forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                           TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(value, TEST_DI_MAX - 1);
+
+    /* Frame 2: drag far right to hit max clamp */
+    forge_ui_ctx_begin(&ctx, cx + TEST_DI_CLAMP_DRAG_PX, cy, true);
+    forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                           TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_EQ_INT(value, TEST_DI_MAX);
+
+    /* Frame 3: drag back left — value must decrease (not stay stuck) */
+    float drag_back = cx + TEST_DI_CLAMP_DRAG_PX - 5.0f;
+    forge_ui_ctx_begin(&ctx, drag_back, cy, true);
+    forge_ui_ctx_drag_int(&ctx, "test##di", &value,
+                           TEST_DI_SPEED, TEST_DI_MIN, TEST_DI_MAX, rect);
+    forge_ui_ctx_end(&ctx);
+    ASSERT_TRUE(value < TEST_DI_MAX);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Listbox tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_listbox_emits_draw_data(void)
+{
+    TEST("listbox: emits vertices and indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Alpha", "Beta", "Gamma", "Delta" };
+    int selected = 0;
+    ForgeUiRect rect = { TEST_LB_X, TEST_LB_Y, TEST_LB_W, TEST_LB_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_listbox(&ctx, "test##lb", &selected, items,
+                          TEST_LB_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_listbox_null_items(void)
+{
+    TEST("listbox: NULL items returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int selected = 0;
+    ForgeUiRect rect = { TEST_LB_X, TEST_LB_Y, TEST_LB_W, TEST_LB_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_listbox(&ctx, "test##lb", &selected, NULL,
+                                        TEST_LB_ITEM_COUNT, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_listbox_zero_count_rejected(void)
+{
+    TEST("listbox: zero item_count rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Alpha" };
+    int selected = 0;
+    ForgeUiRect rect = { TEST_LB_X, TEST_LB_Y, TEST_LB_W, TEST_LB_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_listbox(&ctx, "test##lb", &selected, items,
+                                        0, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_listbox_clamps_selected(void)
+{
+    TEST("listbox: out-of-range *selected clamped to valid range");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Alpha", "Beta", "Gamma", "Delta" };
+    int selected = 99;  /* out of range */
+    ForgeUiRect rect = { TEST_LB_X, TEST_LB_Y, TEST_LB_W, TEST_LB_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_listbox(&ctx, "test##lb", &selected, items,
+                          TEST_LB_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(selected >= 0 && selected < TEST_LB_ITEM_COUNT);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_listbox_negative_selected_preserved(void)
+{
+    TEST("listbox: negative *selected preserved (no selection)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Alpha", "Beta", "Gamma", "Delta" };
+    int selected = -1;
+    ForgeUiRect rect = { TEST_LB_X, TEST_LB_Y, TEST_LB_W, TEST_LB_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_listbox(&ctx, "test##lb", &selected, items,
+                          TEST_LB_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* -1 means "no selection" and should not be clamped */
+    ASSERT_EQ_INT(selected, -1);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_listbox_nan_rect_rejected(void)
+{
+    TEST("listbox: NaN rect rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Alpha", "Beta" };
+    int selected = 0;
+    ForgeUiRect rect = { NAN, TEST_LB_Y, TEST_LB_W, TEST_LB_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_listbox(&ctx, "test##lb", &selected, items,
+                                        2, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_listbox_layout_zero_count_no_layout_gap(void)
+{
+    TEST("listbox_layout: zero count does not consume layout space");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Alpha" };
+    int selected = 0;
+    ForgeUiRect lr = { 10.0f, 10.0f, 200.0f, 400.0f };
+
+    /* Baseline: record where the first layout_next lands */
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL, 4.0f, 0.0f);
+    ForgeUiRect baseline = forge_ui_ctx_layout_next(&ctx, 24.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    /* With a rejected listbox_layout (count=0) before the layout_next */
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL, 4.0f, 0.0f);
+    ASSERT_TRUE(!forge_ui_ctx_listbox_layout(&ctx, "test##lb0", &selected,
+                                              items, 0, 80.0f));
+    ForgeUiRect after = forge_ui_ctx_layout_next(&ctx, 24.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    /* Rejected call should not have shifted the cursor */
+    ASSERT_NEAR(baseline.y, after.y, 1.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Dropdown tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_dropdown_emits_draw_data(void)
+{
+    TEST("dropdown: emits vertices and indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Low", "Medium", "High" };
+    int selected = 0;
+    bool open = false;
+    ForgeUiRect rect = { TEST_DD_X, TEST_DD_Y, TEST_DD_W, TEST_DD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_dropdown(&ctx, "test##dd", &selected, &open, items,
+                            TEST_DD_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_dropdown_null_open(void)
+{
+    TEST("dropdown: NULL open returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Low", "Medium", "High" };
+    int selected = 0;
+    ForgeUiRect rect = { TEST_DD_X, TEST_DD_Y, TEST_DD_W, TEST_DD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_dropdown(&ctx, "test##dd", &selected, NULL,
+                                         items, TEST_DD_ITEM_COUNT, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_dropdown_clamps_selected(void)
+{
+    TEST("dropdown: out-of-range *selected clamped");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Low", "Medium", "High" };
+    int selected = 50;
+    bool open = false;
+    ForgeUiRect rect = { TEST_DD_X, TEST_DD_Y, TEST_DD_W, TEST_DD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_dropdown(&ctx, "test##dd", &selected, &open, items,
+                            TEST_DD_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(selected >= 0 && selected < TEST_DD_ITEM_COUNT);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_dropdown_nan_rect_rejected(void)
+{
+    TEST("dropdown: NaN rect rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Low", "Medium", "High" };
+    int selected = 0;
+    bool open = false;
+    ForgeUiRect rect = { TEST_DD_X, NAN, TEST_DD_W, TEST_DD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_dropdown(&ctx, "test##dd", &selected, &open,
+                                         items, TEST_DD_ITEM_COUNT, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_dropdown_open_emits_more_draw_data(void)
+{
+    TEST("dropdown: open state emits more vertices than closed");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "Low", "Medium", "High" };
+    int selected = 0;
+    bool open_closed = false;
+    ForgeUiRect rect = { TEST_DD_X, TEST_DD_Y, TEST_DD_W, TEST_DD_H };
+
+    /* Render closed */
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_dropdown(&ctx, "test##dd", &selected, &open_closed, items,
+                            TEST_DD_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+    Uint32 closed_verts = ctx.vertex_count;
+
+    /* Render open */
+    bool open_true = true;
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_dropdown(&ctx, "test##dd", &selected, &open_true, items,
+                            TEST_DD_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+    Uint32 open_verts = ctx.vertex_count;
+
+    /* Open state draws item rows — must have more vertices */
+    ASSERT_TRUE(open_verts > closed_verts);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_dropdown_layout_reserves_for_effective_open(void)
+{
+    TEST("dropdown_layout: reserves space matching post-toggle open state");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "A", "B", "C" };
+    int selected = 0;
+    bool open = false;
+    float layout_w = 200.0f, layout_h = 600.0f;
+    float spacing = 0.0f, padding = 0.0f;
+
+    /* Render with open=false: the layout should reserve only header height */
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ForgeUiRect lr = { 10.0f, 10.0f, layout_w, layout_h };
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL,
+                             spacing, padding);
+    forge_ui_ctx_dropdown_layout(&ctx, "test##dd", &selected, &open,
+                                  items, 3, 30.0f);
+    /* Place a second widget and record its y position */
+    ForgeUiRect next_closed = forge_ui_ctx_layout_next(&ctx, 20.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    float closed_next_y = next_closed.y;
+
+    /* Render with open=true: the layout should reserve header + items */
+    open = true;
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL,
+                             spacing, padding);
+    forge_ui_ctx_dropdown_layout(&ctx, "test##dd", &selected, &open,
+                                  items, 3, 30.0f);
+    ForgeUiRect next_open = forge_ui_ctx_layout_next(&ctx, 20.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+    float open_next_y = next_open.y;
+
+    /* When open, the next widget should be placed further down */
+    ASSERT_TRUE(open_next_y > closed_next_y);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_dropdown_honors_rect_height(void)
+{
+    TEST("dropdown: rect.h sets header height when non-zero");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    const char *items[] = { "A", "B", "C" };
+    int selected = 0;
+    bool open = false;
+    float custom_h = 40.0f;
+    ForgeUiRect rect = { TEST_DD_X, TEST_DD_Y, TEST_DD_W, custom_h };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_dropdown(&ctx, "test##ddh", &selected, &open,
+                           items, TEST_DD_ITEM_COUNT, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* All header vertices should be within the custom height */
+    float max_y = 0.0f;
+    for (Uint32 i = 0; i < ctx.vertex_count; i++) {
+        ASSERT_TRUE(ctx.vertices[i].pos_y <= TEST_DD_Y + custom_h + 1.0f);
+        if (ctx.vertices[i].pos_y > max_y) max_y = ctx.vertices[i].pos_y;
+    }
+    /* The header should actually reach the requested height */
+    ASSERT_TRUE(max_y >= TEST_DD_Y + custom_h - 1.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_float_n_layout_rejects_bad_count(void)
+{
+    TEST("drag_float_n_layout: bad count does not consume layout space");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float values[1] = { 1.0f };
+    ForgeUiRect lr = { 10.0f, 10.0f, 200.0f, 400.0f };
+
+    /* Baseline: measure where the first layout_next lands with no
+     * preceding widgets, then compare to the same after a rejected call */
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL, 4.0f, 0.0f);
+    ForgeUiRect baseline = forge_ui_ctx_layout_next(&ctx, 24.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    /* Now try with a rejected drag_float_n_layout before the layout_next */
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL, 4.0f, 0.0f);
+    ASSERT_TRUE(!forge_ui_ctx_drag_float_n_layout(&ctx, "test##fn0",
+                values, 0, 1.0f, 0.0f, 100.0f, 24.0f));
+    ForgeUiRect after = forge_ui_ctx_layout_next(&ctx, 24.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    /* The rejected call should not have shifted the cursor */
+    ASSERT_NEAR(baseline.y, after.y, 1.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_drag_int_n_layout_rejects_bad_count(void)
+{
+    TEST("drag_int_n_layout: bad count does not consume layout space");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int values[1] = { 1 };
+    ForgeUiRect lr = { 10.0f, 10.0f, 200.0f, 400.0f };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL, 4.0f, 0.0f);
+    ForgeUiRect baseline = forge_ui_ctx_layout_next(&ctx, 24.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_layout_push(&ctx, lr, FORGE_UI_LAYOUT_VERTICAL, 4.0f, 0.0f);
+    ASSERT_TRUE(!forge_ui_ctx_drag_int_n_layout(&ctx, "test##in0",
+                values, 0, 1.0f, 0, 100, 24.0f));
+    ForgeUiRect after = forge_ui_ctx_layout_next(&ctx, 24.0f);
+    forge_ui_ctx_layout_pop(&ctx);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_NEAR(baseline.y, after.y, 1.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Radio button tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_radio_emits_draw_data(void)
+{
+    TEST("radio: emits vertices and indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int selected = 0;
+    ForgeUiRect rect = { TEST_RAD_X, TEST_RAD_Y, TEST_RAD_W, TEST_RAD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Return value is 'changed', not success */
+    forge_ui_ctx_radio(&ctx, "opt_a##rad", &selected, 0, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(ctx.vertex_count > 0);
+    ASSERT_TRUE(ctx.index_count > 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_radio_null_selected(void)
+{
+    TEST("radio: NULL selected returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect rect = { TEST_RAD_X, TEST_RAD_Y, TEST_RAD_W, TEST_RAD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_radio(&ctx, "opt_a##rad", NULL, 0, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_radio_click_changes_selection(void)
+{
+    TEST("radio: click changes *selected to option_value");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int selected = 0;
+    ForgeUiRect rect = { TEST_RAD_X, TEST_RAD_Y, TEST_RAD_W, TEST_RAD_H };
+
+    /* Frame 1: press */
+    forge_ui_ctx_begin(&ctx, TEST_RAD_CENTER_X, TEST_RAD_CENTER_Y, true);
+    forge_ui_ctx_radio(&ctx, "opt_b##rad", &selected, 1, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 2: release */
+    forge_ui_ctx_begin(&ctx, TEST_RAD_CENTER_X, TEST_RAD_CENTER_Y, false);
+    bool changed = forge_ui_ctx_radio(&ctx, "opt_b##rad", &selected, 1, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(changed);
+    ASSERT_EQ_INT(selected, 1);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_radio_nan_rect_rejected(void)
+{
+    TEST("radio: NaN rect rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int selected = 0;
+    ForgeUiRect rect = { TEST_RAD_X, TEST_RAD_Y, NAN, TEST_RAD_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_radio(&ctx, "opt_a##rad", &selected, 0, rect));
+    forge_ui_ctx_end(&ctx);
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_radio_independent_groups(void)
+{
+    TEST("radio: separate groups do not interfere");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    int group_a = 0;
+    int group_b = 2;
+    ForgeUiRect rect_a = { TEST_RAD_X, TEST_RAD_Y, TEST_RAD_W, TEST_RAD_H };
+    ForgeUiRect rect_b = { TEST_RAD_X, TEST_RAD_B_Y, TEST_RAD_W, TEST_RAD_H };
+
+    /* Click on group_a option 1 — IDs must be distinct across groups */
+    forge_ui_ctx_begin(&ctx, TEST_RAD_CENTER_X, TEST_RAD_CENTER_Y, true);
+    forge_ui_ctx_radio(&ctx, "a_opt1##rad_a1", &group_a, 1, rect_a);
+    forge_ui_ctx_radio(&ctx, "b_opt0##rad_b0", &group_b, 0, rect_b);
+    forge_ui_ctx_end(&ctx);
+
+    forge_ui_ctx_begin(&ctx, TEST_RAD_CENTER_X, TEST_RAD_CENTER_Y, false);
+    forge_ui_ctx_radio(&ctx, "a_opt1##rad_a1", &group_a, 1, rect_a);
+    forge_ui_ctx_radio(&ctx, "b_opt0##rad_b0", &group_b, 0, rect_b);
+    forge_ui_ctx_end(&ctx);
+
+    /* group_a changed to 1, group_b unchanged at 2 */
+    ASSERT_EQ_INT(group_a, 1);
+    ASSERT_EQ_INT(group_b, 2);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Color picker tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_color_picker_emits_draw_data(void)
+{
+    TEST("color_picker: emits vertices and indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 180.0f, s = 0.5f, v = 0.8f;
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    /* Return value is 'changed', not success */
+    forge_ui_ctx_color_picker(&ctx, "cp##test", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Color picker emits SV grid + hue bar + preview: many vertices */
+    ASSERT_TRUE(ctx.vertex_count > 100);
+    ASSERT_TRUE(ctx.index_count > 100);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_null_hsv(void)
+{
+    TEST("color_picker: NULL h/s/v returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 0.0f, s = 1.0f;
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_color_picker(&ctx, "cp##test", &h, &s, NULL, rect));
+    ASSERT_TRUE(!forge_ui_ctx_color_picker(&ctx, "cp##test", &h, NULL, &s, rect));
+    ASSERT_TRUE(!forge_ui_ctx_color_picker(&ctx, "cp##test", NULL, &s, &h, rect));
+    forge_ui_ctx_end(&ctx);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_nan_rect_rejected(void)
+{
+    TEST("color_picker: NaN rect rejected");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 0.0f, s = 1.0f, v = 1.0f;
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, NAN };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    ASSERT_TRUE(!forge_ui_ctx_color_picker(&ctx, "cp##test", &h, &s, &v, rect));
+    forge_ui_ctx_end(&ctx);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+#define TEST_CP_SV_CLICK_OFFSET 0.25f  /* fraction into SV area for click */
+
+static void test_color_picker_sv_click_updates_sv(void)
+{
+    TEST("color_picker: clicking SV area updates s and v");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 120.0f, s = 0.0f, v = 0.0f;
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_H };
+
+    /* SV area occupies rect.y .. rect.y + sv_size.  With default scale=1
+     * the constants come from forge_ui_ctx.h; sv_size = H - hue - preview - 2*gap.
+     * Click at 25% into the SV area from top-left */
+    float sv_size = TEST_CP_H - FORGE_UI_CP_HUE_BAR_H
+                    - FORGE_UI_CP_PREVIEW_H - 2.0f * FORGE_UI_CP_GAP;
+    float click_x = TEST_CP_X + sv_size * TEST_CP_SV_CLICK_OFFSET;
+    float click_y = TEST_CP_Y + sv_size * TEST_CP_SV_CLICK_OFFSET;
+
+    /* Frame 1: press inside SV area */
+    forge_ui_ctx_begin(&ctx, click_x, click_y, true);
+    bool changed = forge_ui_ctx_color_picker(&ctx, "cp##test",
+                                               &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(changed);
+    /* s = click fraction along SV width ≈ TEST_CP_SV_CLICK_OFFSET
+     * v = 1 - click fraction along SV height ≈ 1 - TEST_CP_SV_CLICK_OFFSET */
+    float expected_s = TEST_CP_SV_CLICK_OFFSET;
+    float expected_v = 1.0f - TEST_CP_SV_CLICK_OFFSET;
+    float tol = 0.05f;
+    ASSERT_TRUE(fabsf(s - expected_s) < tol);
+    ASSERT_TRUE(fabsf(v - expected_v) < tol);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_hue_360_clamped(void)
+{
+    TEST("color_picker: h=360 is clamped to < 360 (no cursor snap)");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    /* fmodf(360, 360) = 0 — hue 360 and hue 0 are identical.
+     * The key invariant is that *h is always strictly < 360.0f after
+     * normalization, preventing cursor-position discontinuities. */
+    float h = 360.0f, s = 1.0f, v = 1.0f;
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_color_picker(&ctx, "cp##test", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(h >= 0.0f);
+    ASSERT_TRUE(h < 360.0f);
+
+    /* Also test a value just below 360 that fmodf preserves — the
+     * nextafterf guard should keep it strictly below 360. */
+    h = nextafterf(360.0f, 0.0f);
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_color_picker(&ctx, "cp##test", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_TRUE(h >= 0.0f);
+    ASSERT_TRUE(h < 360.0f);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_short_rect_no_overflow(void)
+{
+    TEST("color_picker: short rect does not overflow bounds");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 0.0f, s = 1.0f, v = 1.0f;
+    /* Very short rect — should not overflow */
+    ForgeUiRect rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_SHORT_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    forge_ui_ctx_color_picker(&ctx, "cp##test", &h, &s, &v, rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* The widget should still emit geometry */
+    ASSERT_TRUE(ctx.vertex_count > 0);
+
+    /* Verify no vertex is placed far below rect bottom.  Allow a small
+     * tolerance for text glyph descenders which naturally extend past
+     * the container rect.  The original bug (hard 20px sv_size minimum)
+     * would overshoot by ~56px — this catches that while allowing text. */
+    float bottom = rect.y + rect.h;
+    for (Uint32 i = 0; i < ctx.vertex_count; i++) {
+        ASSERT_TRUE(ctx.vertices[i].pos_y <= bottom + TEST_CP_TEXT_SLOP);
+    }
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_color_picker_zero_width_no_crash(void)
+{
+    TEST("color_picker: zero-width rect does not divide by zero");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    float h = 180.0f, s = 0.5f, v = 0.5f;
+    ForgeUiRect normal_rect = { TEST_CP_X, TEST_CP_Y, TEST_CP_W, TEST_CP_H };
+
+    /* Frame 1: press inside the SV area to make the widget active */
+    float sv_mx = TEST_CP_X + TEST_CP_W * 0.5f;
+    float sv_my = TEST_CP_Y + 10.0f;
+    forge_ui_ctx_begin(&ctx, sv_mx, sv_my, false);
+    forge_ui_ctx_color_picker(&ctx, "cp##zero", &h, &s, &v, normal_rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Frame 2: mouse down (press) to activate the SV widget */
+    forge_ui_ctx_begin(&ctx, sv_mx, sv_my, true);
+    forge_ui_ctx_color_picker(&ctx, "cp##zero", &h, &s, &v, normal_rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* Verify the widget became active (if activation regresses, the
+     * zero-width frame below would not exercise the guarded path) */
+    ASSERT_TRUE(ctx.active != FORGE_UI_ID_NONE);
+
+    /* Frame 3: keep mouse down but switch to zero-width rect —
+     * this exercises the guarded divide-by-zero path while active */
+    ForgeUiRect zero_rect = { TEST_CP_X, TEST_CP_Y, 0.0f, TEST_CP_H };
+    forge_ui_ctx_begin(&ctx, sv_mx, sv_my, true);
+    forge_ui_ctx_color_picker(&ctx, "cp##zero", &h, &s, &v, zero_rect);
+    forge_ui_ctx_end(&ctx);
+
+    /* HSV values should not become NaN or Inf */
+    ASSERT_TRUE(isfinite(h));
+    ASSERT_TRUE(isfinite(s));
+    ASSERT_TRUE(isfinite(v));
+
+    forge_ui_ctx_free(&ctx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Gradient rect tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_gradient_rect_emits_4_verts(void)
+{
+    TEST("emit_gradient_rect: emits 4 vertices and 6 indices");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect rect = { TEST_EMIT_X, TEST_EMIT_Y, TEST_EMIT_W, TEST_EMIT_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+    int v_before = ctx.vertex_count;
+    int i_before = ctx.index_count;
+    forge_ui__emit_gradient_rect(&ctx, rect,
+                                  1.0f, 0.0f, 0.0f,  /* TL red */
+                                  0.0f, 1.0f, 0.0f,  /* TR green */
+                                  0.0f, 0.0f, 1.0f,  /* BR blue */
+                                  1.0f, 1.0f, 0.0f);  /* BL yellow */
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_EQ_INT(ctx.vertex_count - v_before, 4);
+    ASSERT_EQ_INT(ctx.index_count - i_before, 6);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_gradient_rect_null_ctx(void)
+{
+    TEST("emit_gradient_rect: NULL ctx does not crash");
+    ForgeUiRect rect = { TEST_EMIT_X, TEST_EMIT_Y, TEST_EMIT_W, TEST_EMIT_H };
+    forge_ui__emit_gradient_rect(NULL, rect,
+                                  1.0f, 0.0f, 0.0f,
+                                  0.0f, 1.0f, 0.0f,
+                                  0.0f, 0.0f, 1.0f,
+                                  1.0f, 1.0f, 0.0f);
+    ASSERT_TRUE(1);
+}
+
+#define TEST_GRAD_CLIP_X    50.0f
+#define TEST_GRAD_CLIP_Y    50.0f
+#define TEST_GRAD_CLIP_W    100.0f
+#define TEST_GRAD_CLIP_H    100.0f
+
+static void test_gradient_rect_clipped(void)
+{
+    TEST("emit_gradient_rect: clipping trims rect and interpolates colors");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect full_rect = { TEST_GRAD_CLIP_X, TEST_GRAD_CLIP_Y,
+                               TEST_GRAD_CLIP_W, TEST_GRAD_CLIP_H };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+
+    /* Set clip rect after begin (begin resets has_clip) */
+    ctx.has_clip = true;
+    ctx.clip_rect = (ForgeUiRect){
+        TEST_GRAD_CLIP_X, TEST_GRAD_CLIP_Y,
+        TEST_GRAD_CLIP_W * 0.5f, TEST_GRAD_CLIP_H * 0.5f
+    };
+    forge_ui__emit_gradient_rect(&ctx, full_rect,
+                                  1.0f, 0.0f, 0.0f,   /* TL red */
+                                  0.0f, 1.0f, 0.0f,   /* TR green */
+                                  0.0f, 0.0f, 1.0f,   /* BR blue */
+                                  1.0f, 1.0f, 0.0f);  /* BL yellow */
+    forge_ui_ctx_end(&ctx);
+
+    /* Should still emit 4 vertices and 6 indices (clipped quad) */
+    ASSERT_EQ_INT(ctx.vertex_count, 4);
+    ASSERT_EQ_INT(ctx.index_count, 6);
+
+    /* All vertex positions must lie within the clip rect */
+    float cx1 = TEST_GRAD_CLIP_X + TEST_GRAD_CLIP_W * 0.5f;
+    float cy1 = TEST_GRAD_CLIP_Y + TEST_GRAD_CLIP_H * 0.5f;
+    for (int i = 0; i < ctx.vertex_count; i++) {
+        ASSERT_TRUE(ctx.vertices[i].pos_x >= TEST_GRAD_CLIP_X - TEST_HSV_EPS);
+        ASSERT_TRUE(ctx.vertices[i].pos_x <= cx1 + TEST_HSV_EPS);
+        ASSERT_TRUE(ctx.vertices[i].pos_y >= TEST_GRAD_CLIP_Y - TEST_HSV_EPS);
+        ASSERT_TRUE(ctx.vertices[i].pos_y <= cy1 + TEST_HSV_EPS);
+    }
+
+    /* Top-left corner should still be red (unchanged by clip) */
+    ASSERT_NEAR(ctx.vertices[0].r, 1.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(ctx.vertices[0].g, 0.0f, TEST_HSV_EPS);
+    ASSERT_NEAR(ctx.vertices[0].b, 0.0f, TEST_HSV_EPS);
+
+    /* Top-right corner should be midpoint of red and green (0.5, 0.5, 0) */
+    ASSERT_NEAR(ctx.vertices[1].r, 0.5f, TEST_HSV_EPS);
+    ASSERT_NEAR(ctx.vertices[1].g, 0.5f, TEST_HSV_EPS);
+    ASSERT_NEAR(ctx.vertices[1].b, 0.0f, TEST_HSV_EPS);
+
+    forge_ui_ctx_free(&ctx);
+}
+
+static void test_gradient_rect_fully_clipped(void)
+{
+    TEST("emit_gradient_rect: fully outside clip emits nothing");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+
+    ForgeUiRect full_rect = { 200.0f, 200.0f, 100.0f, 100.0f };
+
+    forge_ui_ctx_begin(&ctx, TEST_MOUSE_FAR, TEST_MOUSE_FAR, false);
+
+    /* Set clip rect after begin (begin resets has_clip) */
+    ctx.has_clip = true;
+    ctx.clip_rect = (ForgeUiRect){ 0.0f, 0.0f, 50.0f, 50.0f };
+    forge_ui__emit_gradient_rect(&ctx, full_rect,
+                                  1.0f, 0.0f, 0.0f,
+                                  0.0f, 1.0f, 0.0f,
+                                  0.0f, 0.0f, 1.0f,
+                                  1.0f, 1.0f, 0.0f);
+    forge_ui_ctx_end(&ctx);
+
+    ASSERT_EQ_INT(ctx.vertex_count, 0);
+    ASSERT_EQ_INT(ctx.index_count, 0);
+
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -8405,6 +10132,98 @@ int main(int argc, char *argv[])
     test_sparkline_out_of_range_color_clamped();
     test_sparkline_layout_no_layout();
     test_sparkline_layout_invalid_no_cursor_advance();
+
+    /* HSV/RGB conversion */
+    test_hsv_to_rgb_red();
+    test_hsv_to_rgb_green();
+    test_hsv_to_rgb_blue();
+    test_hsv_to_rgb_null_output();
+    test_hsv_to_rgb_nan_hue();
+    test_hsv_to_rgb_negative_hue();
+    test_hsv_to_rgb_nan_saturation();
+    test_hsv_to_rgb_inf_saturation();
+    test_hsv_to_rgb_nan_value();
+    test_hsv_to_rgb_inf_value();
+    test_hsv_to_rgb_neg_inf_saturation();
+    test_hsv_to_rgb_neg_inf_value();
+    test_rgb_to_hsv_red();
+    test_rgb_to_hsv_green();
+    test_rgb_to_hsv_blue();
+    test_rgb_to_hsv_null_output();
+    test_rgb_to_hsv_nan_input();
+    test_hsv_rgb_roundtrip();
+
+    /* Drag float */
+    test_drag_float_emits_draw_data();
+    test_drag_float_null_ctx();
+    test_drag_float_null_value();
+    test_drag_float_nan_rect_rejected();
+    test_drag_float_inverted_range_rejected();
+    test_drag_float_zero_speed_rejected();
+    test_drag_float_nan_value_sanitized();
+    test_drag_float_drag_changes_value();
+
+    /* Drag float N */
+    test_drag_float_n_emits_draw_data();
+    test_drag_float_n_count_zero_rejected();
+    test_drag_float_n_count_five_rejected();
+    test_drag_float_n_invalid_speed_rejected();
+    test_drag_float_n_narrow_rect_no_crash();
+
+    /* Drag int */
+    test_drag_int_emits_draw_data();
+    test_drag_int_null_value();
+    test_drag_int_inverted_range_rejected();
+    test_drag_int_nan_speed_rejected();
+    test_drag_int_no_jump_on_activation();
+    test_drag_int_n_emits_draw_data();
+    test_drag_int_n_rejects_count_0();
+    test_drag_int_n_rejects_count_5();
+    test_drag_int_clamp_unstick();
+
+    /* Listbox */
+    test_listbox_emits_draw_data();
+    test_listbox_null_items();
+    test_listbox_zero_count_rejected();
+    test_listbox_layout_zero_count_no_layout_gap();
+    test_listbox_clamps_selected();
+    test_listbox_negative_selected_preserved();
+    test_listbox_nan_rect_rejected();
+
+    /* Dropdown */
+    test_dropdown_emits_draw_data();
+    test_dropdown_null_open();
+    test_dropdown_clamps_selected();
+    test_dropdown_nan_rect_rejected();
+    test_dropdown_open_emits_more_draw_data();
+    test_dropdown_layout_reserves_for_effective_open();
+    test_dropdown_honors_rect_height();
+    test_drag_float_n_layout_rejects_bad_count();
+    test_drag_int_n_layout_rejects_bad_count();
+
+    /* Radio */
+    test_radio_emits_draw_data();
+    test_radio_null_selected();
+    test_radio_click_changes_selection();
+    test_radio_nan_rect_rejected();
+    test_radio_independent_groups();
+
+    /* Color picker */
+    test_color_picker_emits_draw_data();
+    test_color_picker_null_hsv();
+    test_color_picker_nan_rect_rejected();
+    test_color_picker_sv_click_updates_sv();
+    test_color_picker_hue_360_clamped();
+    test_color_picker_short_rect_no_overflow();
+    test_color_picker_zero_width_no_crash();
+    test_color_picker_hue_drag_no_360();
+    test_color_picker_narrow_no_label_overflow();
+
+    /* Gradient rect */
+    test_gradient_rect_emits_4_verts();
+    test_gradient_rect_null_ctx();
+    test_gradient_rect_clipped();
+    test_gradient_rect_fully_clipped();
 
     SDL_Log("=== Results: %d tests, %d passed, %d failed ===",
             test_count, pass_count, fail_count);

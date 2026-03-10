@@ -141,6 +141,50 @@
 #define FORGE_UI_SPARKLINE_LINE_WIDTH  2.0f   /* sparkline line thickness (unscaled px) */
 #define FORGE_UI_SPARKLINE_COL_CAP   200      /* max column quads per segment (safety cap) */
 
+/* ── Drag float/int style ──────────────────────────────────────────────── */
+
+#define FORGE_UI_DRAG_LABEL_GAP        6.0f   /* gap between component label and value field (unscaled px) */
+
+/* Component labels and per-axis colors for drag_float_n / drag_int_n */
+#define FORGE_UI_DRAG_COMP_COLOR_R_R   0.85f  /* X-axis red component */
+#define FORGE_UI_DRAG_COMP_COLOR_R_G   0.25f
+#define FORGE_UI_DRAG_COMP_COLOR_R_B   0.25f
+#define FORGE_UI_DRAG_COMP_COLOR_G_R   0.25f  /* Y-axis green component */
+#define FORGE_UI_DRAG_COMP_COLOR_G_G   0.75f
+#define FORGE_UI_DRAG_COMP_COLOR_G_B   0.25f
+#define FORGE_UI_DRAG_COMP_COLOR_B_R   0.30f  /* Z-axis blue component */
+#define FORGE_UI_DRAG_COMP_COLOR_B_G   0.45f
+#define FORGE_UI_DRAG_COMP_COLOR_B_B   0.90f
+#define FORGE_UI_DRAG_COMP_COLOR_W_R   0.85f  /* W-axis yellow component */
+#define FORGE_UI_DRAG_COMP_COLOR_W_G   0.80f
+#define FORGE_UI_DRAG_COMP_COLOR_W_B   0.20f
+
+/* ── Listbox style ─────────────────────────────────────────────────────── */
+
+#define FORGE_UI_LB_ITEM_HEIGHT       24.0f   /* height per list item (unscaled px) */
+
+/* ── Dropdown style ────────────────────────────────────────────────────── */
+
+#define FORGE_UI_DD_HEADER_HEIGHT     28.0f   /* dropdown header button height (unscaled px) */
+#define FORGE_UI_DD_ARROW_PAD          8.0f   /* right-side padding for the arrow indicator (unscaled px) */
+
+/* ── Radio button style ────────────────────────────────────────────────── */
+
+#define FORGE_UI_RADIO_SIZE           16.0f   /* outer box side length (unscaled px) */
+#define FORGE_UI_RADIO_INNER_PAD       4.0f   /* padding between outer box and inner fill (unscaled px) */
+#define FORGE_UI_RADIO_LABEL_GAP       8.0f   /* gap between indicator box and label text (unscaled px) */
+
+/* ── Color picker style ────────────────────────────────────────────────── */
+
+#define FORGE_UI_CP_HUE_BAR_H        20.0f   /* hue bar height (unscaled px) */
+#define FORGE_UI_CP_GAP                6.0f   /* gap between SV area, hue bar, preview (unscaled px) */
+#define FORGE_UI_CP_PREVIEW_H         24.0f   /* color preview swatch height (unscaled px) */
+#define FORGE_UI_CP_SV_GRID           16      /* grid resolution for SV area (NxN quads) */
+#define FORGE_UI_CP_HUE_SEGMENTS       6      /* number of hue gradient segments */
+#define FORGE_UI_CP_CURSOR_SIZE        8.0f   /* SV cursor crosshair size (unscaled px) */
+#define FORGE_UI_CP_BAR_THICK          2.0f   /* SV crosshair bar thickness (unscaled px) */
+#define FORGE_UI_CP_HUE_CURSOR_W       3.0f   /* hue indicator line width (unscaled px) */
+
 /* ── Scaling and spacing ───────────────────────────────────────────────── */
 
 /* Multiply a base spacing value by the context's global scale factor.
@@ -282,12 +326,19 @@ typedef struct ForgeUiContext {
     /* Per-frame input state (set by forge_ui_ctx_begin) */
     float mouse_x;        /* cursor x in screen pixels */
     float mouse_y;        /* cursor y in screen pixels */
+    float mouse_x_prev;   /* mouse_x from the previous frame (for drag delta) */
+    float mouse_y_prev;   /* mouse_y from the previous frame (for drag delta) */
     bool  mouse_down;     /* true while the primary button is held */
     bool  mouse_down_prev; /* mouse_down from the previous frame (for edge detection) */
 
     /* Persistent widget state (survives across frames) */
     Uint32 hot;           /* widget under the cursor (or FORGE_UI_ID_NONE) */
     Uint32 active;        /* widget being pressed (or FORGE_UI_ID_NONE) */
+
+    /* Drag-int accumulator — fractional drag distance that has not yet
+     * produced a full integer change.  Reset to 0 when the active widget
+     * changes; accumulates dx * speed each frame while dragging. */
+    float  drag_int_accum;
 
     /* Hot candidate for this frame.  Widgets write to next_hot during
      * processing (last writer wins = topmost in draw order).  In ctx_end,
@@ -762,6 +813,194 @@ static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
                                                   ForgeUiColor line_color,
                                                   float size);
 
+/* ── Drag float ────────────────────────────────────────────────────────── */
+
+/* Draw a numeric field that changes value when click-dragged horizontally.
+ * The widget shows the current value as text on a colored background.
+ * Dragging left decreases the value; dragging right increases it.
+ *
+ * label:   widget label used as ID (supports "##" separator)
+ * value:   pointer to the float value (updated during drag)
+ * speed:   value change per pixel of mouse movement (must be > 0)
+ * min_val: minimum allowed value
+ * max_val: maximum allowed value (must be > min_val)
+ * rect:    bounding rectangle in screen pixels
+ *
+ * Returns true on frames where the value changes. */
+static inline bool forge_ui_ctx_drag_float(ForgeUiContext *ctx,
+                                            const char *label,
+                                            float *value, float speed,
+                                            float min_val, float max_val,
+                                            ForgeUiRect rect);
+
+/* Drag float placed by the current layout. */
+static inline bool forge_ui_ctx_drag_float_layout(ForgeUiContext *ctx,
+                                                    const char *label,
+                                                    float *value, float speed,
+                                                    float min_val, float max_val,
+                                                    float size);
+
+/* Draw N drag-float fields side by side in a horizontal row.
+ * Each component gets a colored label (X=red, Y=green, Z=blue, W=yellow)
+ * followed by a drag field.  Returns true if any component changed.
+ *
+ * count: number of components (1..4) */
+static inline bool forge_ui_ctx_drag_float_n(ForgeUiContext *ctx,
+                                              const char *label,
+                                              float *values, int count,
+                                              float speed,
+                                              float min_val, float max_val,
+                                              ForgeUiRect rect);
+
+/* Multi-component drag float placed by the current layout. */
+static inline bool forge_ui_ctx_drag_float_n_layout(ForgeUiContext *ctx,
+                                                      const char *label,
+                                                      float *values, int count,
+                                                      float speed,
+                                                      float min_val, float max_val,
+                                                      float size);
+
+/* ── Drag int ──────────────────────────────────────────────────────────── */
+
+/* Same as drag_float but for integer values.  The speed parameter is
+ * value-change per pixel of drag (e.g. speed = 0.5 changes the value
+ * by 0.5 for every pixel of horizontal mouse movement). */
+static inline bool forge_ui_ctx_drag_int(ForgeUiContext *ctx,
+                                          const char *label,
+                                          int *value, float speed,
+                                          int min_val, int max_val,
+                                          ForgeUiRect rect);
+
+static inline bool forge_ui_ctx_drag_int_layout(ForgeUiContext *ctx,
+                                                  const char *label,
+                                                  int *value, float speed,
+                                                  int min_val, int max_val,
+                                                  float size);
+
+/* Multi-component drag int (1..4 components in a row). */
+static inline bool forge_ui_ctx_drag_int_n(ForgeUiContext *ctx,
+                                            const char *label,
+                                            int *values, int count,
+                                            float speed,
+                                            int min_val, int max_val,
+                                            ForgeUiRect rect);
+
+static inline bool forge_ui_ctx_drag_int_n_layout(ForgeUiContext *ctx,
+                                                    const char *label,
+                                                    int *values, int count,
+                                                    float speed,
+                                                    int min_val, int max_val,
+                                                    float size);
+
+/* ── Listbox ───────────────────────────────────────────────────────────── */
+
+/* Draw a clipped list of selectable items.  Clicking an item sets
+ * *selected to that item's index.  Returns true when selection changes.
+ *
+ * Items that overflow rect.h are clipped and unreachable.  Callers
+ * should size rect.h to fit item_count * FORGE_UI_LB_ITEM_HEIGHT, or
+ * limit item_count to the visible range.
+ *
+ * selected:   pointer to the selected index (-1 for no selection)
+ * items:      array of null-terminated strings (item labels)
+ * item_count: number of items in the array */
+static inline bool forge_ui_ctx_listbox(ForgeUiContext *ctx,
+                                         const char *label,
+                                         int *selected,
+                                         const char *const *items,
+                                         int item_count,
+                                         ForgeUiRect rect);
+
+static inline bool forge_ui_ctx_listbox_layout(ForgeUiContext *ctx,
+                                                const char *label,
+                                                int *selected,
+                                                const char *const *items,
+                                                int item_count,
+                                                float size);
+
+/* ── Dropdown ──────────────────────────────────────────────────────────── */
+
+/* Draw a combo box: a header button showing the current selection, and
+ * when *open is true, a list of items below it.  Clicking the header
+ * toggles *open.  Clicking an item selects it and closes the dropdown.
+ *
+ * selected:   pointer to the selected index (0-based)
+ * open:       pointer to the open/closed state (toggled by header click)
+ * items:      array of null-terminated strings (item labels)
+ * item_count: number of items
+ *
+ * Returns true when selection changes.
+ *
+ * NOTE: When open, the dropdown items extend BELOW the allocated rect.
+ * The caller must ensure sufficient space below the widget. */
+static inline bool forge_ui_ctx_dropdown(ForgeUiContext *ctx,
+                                          const char *label,
+                                          int *selected, bool *open,
+                                          const char *const *items,
+                                          int item_count,
+                                          ForgeUiRect rect);
+
+static inline bool forge_ui_ctx_dropdown_layout(ForgeUiContext *ctx,
+                                                  const char *label,
+                                                  int *selected, bool *open,
+                                                  const char *const *items,
+                                                  int item_count,
+                                                  float size);
+
+/* ── Radio button ──────────────────────────────────────────────────────── */
+
+/* Draw a radio button: an outer box with an inner filled square when
+ * selected, plus a label.  Multiple radio buttons sharing the same
+ * *selected pointer form a group — clicking one deselects the others.
+ * Each radio button has a unique option_value; clicking it sets
+ * *selected = option_value.
+ *
+ * Returns true when selection changes. */
+static inline bool forge_ui_ctx_radio(ForgeUiContext *ctx,
+                                       const char *label,
+                                       int *selected, int option_value,
+                                       ForgeUiRect rect);
+
+static inline bool forge_ui_ctx_radio_layout(ForgeUiContext *ctx,
+                                               const char *label,
+                                               int *selected,
+                                               int option_value,
+                                               float size);
+
+/* ── Color picker ──────────────────────────────────────────────────────── */
+
+/* Draw an HSV color picker with a saturation-value area, a hue slider
+ * bar, and a color preview swatch.  The widget uses HSV coordinates
+ * internally: h in [0, 360], s in [0, 1], v in [0, 1].
+ *
+ * h: pointer to hue (degrees, 0..360)
+ * s: pointer to saturation (0..1)
+ * v: pointer to value/brightness (0..1)
+ *
+ * Returns true when the color changes. */
+static inline bool forge_ui_ctx_color_picker(ForgeUiContext *ctx,
+                                              const char *label,
+                                              float *h, float *s, float *v,
+                                              ForgeUiRect rect);
+
+static inline bool forge_ui_ctx_color_picker_layout(ForgeUiContext *ctx,
+                                                      const char *label,
+                                                      float *h, float *s,
+                                                      float *v,
+                                                      float size);
+
+/* ── HSV/RGB conversion helpers ────────────────────────────────────────── */
+
+/* Convert HSV to RGB.  h is in degrees [0, 360), s and v in [0, 1].
+ * Out-of-range h is wrapped; s and v are clamped. */
+static inline void forge_ui_hsv_to_rgb(float h, float s, float v,
+                                        float *r, float *g, float *b);
+
+/* Convert RGB to HSV.  r, g, b in [0, 1].
+ * h is in degrees [0, 360), s and v in [0, 1]. */
+static inline void forge_ui_rgb_to_hsv(float r, float g, float b,
+                                        float *h, float *s, float *v);
+
 /* ── Panel API ─────────────────────────────────────────────────────────── */
 
 /* Begin a panel: draw background and title bar, set the clip rect, and
@@ -933,6 +1172,21 @@ static inline void forge_ui_pop_id(ForgeUiContext *ctx)
         return;
     }
     ctx->id_stack_depth--;
+}
+
+/* Pop the ID scope only if push_id succeeded.  Useful for
+ * peek-ahead patterns where push_id may or may not succeed:
+ *     bool pushed = forge_ui_push_id(ctx, label);
+ *     Uint32 id = forge_ui_hash_id(ctx, "##sub");
+ *     forge_ui_pop_id_if(ctx, pushed);
+ *
+ * For compound widgets, prefer the early-abort pattern instead:
+ *     if (!forge_ui_push_id(ctx, label)) return false;
+ *     ... child widgets ...
+ *     forge_ui_pop_id(ctx);                                      */
+static inline void forge_ui_pop_id_if(ForgeUiContext *ctx, bool pushed)
+{
+    if (pushed) forge_ui_pop_id(ctx);
 }
 
 /* Ensure vertex buffer has room for `count` more vertices. */
@@ -1322,6 +1576,12 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
 
     /* Track the previous frame's mouse state for edge detection */
     ctx->mouse_down_prev = ctx->mouse_down;
+
+    /* Save previous mouse position for drag delta computation.
+     * Drag widgets (drag_float, color_picker) use the difference
+     * (mouse_x - mouse_x_prev) to determine value changes. */
+    ctx->mouse_x_prev = ctx->mouse_x;
+    ctx->mouse_y_prev = ctx->mouse_y;
 
     /* Snapshot the mouse state for this frame.  All widget calls see the
      * same position and button state, ensuring consistent hit-testing even
@@ -2991,6 +3251,1118 @@ static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
         !isfinite(line_color.b) || !isfinite(line_color.a)) return;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     forge_ui_ctx_sparkline(ctx, values, count, min_val, max_val, line_color, rect);
+}
+
+/* ── HSV/RGB conversion ────────────────────────────────────────────────── */
+
+static inline void forge_ui_hsv_to_rgb(float h, float s, float v,
+                                        float *r, float *g, float *b)
+{
+    if (!r || !g || !b) return;
+    /* Replace non-finite inputs with zero before clamping */
+    if (!isfinite(h)) h = 0.0f;
+    if (!isfinite(s)) s = 0.0f;
+    if (!isfinite(v)) v = 0.0f;
+    /* Clamp s and v to [0, 1] */
+    if (s < 0.0f) s = 0.0f; else if (s > 1.0f) s = 1.0f;
+    if (v < 0.0f) v = 0.0f; else if (v > 1.0f) v = 1.0f;
+    /* Wrap hue to [0, 360) */
+    h = fmodf(h, 360.0f);
+    if (h < 0.0f) h += 360.0f;
+
+    float c = v * s;
+    float x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
+    float m = v - c;
+    float r1 = 0.0f, g1 = 0.0f, b1 = 0.0f;
+
+    if      (h < 60.0f)  { r1 = c; g1 = x; b1 = 0; }
+    else if (h < 120.0f) { r1 = x; g1 = c; b1 = 0; }
+    else if (h < 180.0f) { r1 = 0; g1 = c; b1 = x; }
+    else if (h < 240.0f) { r1 = 0; g1 = x; b1 = c; }
+    else if (h < 300.0f) { r1 = x; g1 = 0; b1 = c; }
+    else                 { r1 = c; g1 = 0; b1 = x; }
+
+    *r = r1 + m;
+    *g = g1 + m;
+    *b = b1 + m;
+}
+
+static inline void forge_ui_rgb_to_hsv(float r, float g, float b,
+                                        float *h, float *s, float *v)
+{
+    if (!h || !s || !v) return;
+    if (!isfinite(r)) r = 0.0f;
+    if (!isfinite(g)) g = 0.0f;
+    if (!isfinite(b)) b = 0.0f;
+    if (r < 0.0f) r = 0.0f; else if (r > 1.0f) r = 1.0f;
+    if (g < 0.0f) g = 0.0f; else if (g > 1.0f) g = 1.0f;
+    if (b < 0.0f) b = 0.0f; else if (b > 1.0f) b = 1.0f;
+
+    float cmax = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    float cmin = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    float delta = cmax - cmin;
+
+    *v = cmax;
+    *s = (cmax > 0.0f) ? delta / cmax : 0.0f;
+
+    if (delta < 1e-6f) {
+        *h = 0.0f;
+    } else if (cmax == r) {
+        *h = 60.0f * fmodf((g - b) / delta, 6.0f);
+    } else if (cmax == g) {
+        *h = 60.0f * ((b - r) / delta + 2.0f);
+    } else {
+        *h = 60.0f * ((r - g) / delta + 4.0f);
+    }
+    if (*h < 0.0f) *h += 360.0f;
+}
+
+/* ── Drag float implementation ─────────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_drag_float(ForgeUiContext *ctx,
+                                            const char *label,
+                                            float *value, float speed,
+                                            float min_val, float max_val,
+                                            ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!(max_val > min_val)) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!isfinite(*value)) *value = min_val;
+    Uint32 id = forge_ui_hash_id(ctx, label);
+
+    bool changed = false;
+
+    /* ── Hit testing ─────────────────────────────────────────────────── */
+    bool mouse_over = forge_ui__widget_mouse_over(ctx, rect);
+    if (mouse_over) ctx->next_hot = id;
+
+    /* ── State transitions ───────────────────────────────────────────── */
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    bool just_activated = false;
+    if (mouse_pressed && ctx->next_hot == id) {
+        ctx->active = id;
+        just_activated = true;
+    }
+
+    /* ── Value update while dragging ─────────────────────────────────── */
+    /* Skip delta on the activation frame — the cursor may have traveled
+     * a large distance to reach the widget, producing a visible jump. */
+    if (ctx->active == id && ctx->mouse_down && !just_activated) {
+        float dx = ctx->mouse_x - ctx->mouse_x_prev;
+        float new_val = *value + dx * speed;
+        if (new_val < min_val) new_val = min_val;
+        if (new_val > max_val) new_val = max_val;
+        if (new_val != *value) {
+            *value = new_val;
+            changed = true;
+        }
+    }
+
+    /* ── Release ─────────────────────────────────────────────────────── */
+    if (ctx->active == id && !ctx->mouse_down) ctx->active = FORGE_UI_ID_NONE;
+
+    /* ── Draw background ─────────────────────────────────────────────── */
+    ForgeUiColor bg = forge_ui__surface_color(ctx, id);
+    forge_ui__emit_rect(ctx, rect, bg.r, bg.g, bg.b, bg.a);
+
+    /* ── Draw value text (centered) ──────────────────────────────────── */
+    char val_buf[32];
+    SDL_snprintf(val_buf, sizeof(val_buf), "%.2f", (double)*value);
+    ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, val_buf, NULL);
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+    float tx = rect.x + (rect.w - m.width) * 0.5f;
+    float ty = rect.y + (rect.h - m.height) * 0.5f + ascender_px;
+    forge_ui_ctx_label(ctx, val_buf, tx, ty);
+
+    return changed;
+}
+
+static inline bool forge_ui_ctx_drag_float_layout(ForgeUiContext *ctx,
+                                                    const char *label,
+                                                    float *value, float speed,
+                                                    float min_val, float max_val,
+                                                    float size)
+{
+    if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
+    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!(max_val > min_val)) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_drag_float(ctx, label, value, speed, min_val, max_val, rect);
+}
+
+/* ── Drag float N (multi-component) ────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_drag_float_n(ForgeUiContext *ctx,
+                                              const char *label,
+                                              float *values, int count,
+                                              float speed,
+                                              float min_val, float max_val,
+                                              ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
+    if (count < 1 || count > 4) return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!(max_val > min_val)) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+
+    /* Component labels and colors (X=red, Y=green, Z=blue, W=yellow) */
+    static const char *comp_labels[] = { "X", "Y", "Z", "W" };
+    static const float comp_colors[][3] = {
+        { FORGE_UI_DRAG_COMP_COLOR_R_R, FORGE_UI_DRAG_COMP_COLOR_R_G, FORGE_UI_DRAG_COMP_COLOR_R_B },
+        { FORGE_UI_DRAG_COMP_COLOR_G_R, FORGE_UI_DRAG_COMP_COLOR_G_G, FORGE_UI_DRAG_COMP_COLOR_G_B },
+        { FORGE_UI_DRAG_COMP_COLOR_B_R, FORGE_UI_DRAG_COMP_COLOR_B_G, FORGE_UI_DRAG_COMP_COLOR_B_B },
+        { FORGE_UI_DRAG_COMP_COLOR_W_R, FORGE_UI_DRAG_COMP_COLOR_W_G, FORGE_UI_DRAG_COMP_COLOR_W_B },
+    };
+
+    float gap = FORGE_UI_SCALED(ctx, FORGE_UI_DRAG_LABEL_GAP);
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+
+    /* Measure the widest component label so proportional fonts
+     * (where "W" is wider than "X") don't overlap the drag field. */
+    float max_label_w = 0.0f;
+    float max_label_h = 0.0f;
+    for (int i = 0; i < count; i++) {
+        ForgeUiTextMetrics m =
+            forge_ui_text_measure(ctx->atlas, comp_labels[i], NULL);
+        if (m.width  > max_label_w) max_label_w = m.width;
+        if (m.height > max_label_h) max_label_h = m.height;
+    }
+    float label_w = max_label_w + gap;
+
+    /* Each component gets an equal share of the total width */
+    float comp_w = rect.w / (float)count;
+    bool any_changed = false;
+
+    if (!forge_ui_push_id(ctx, label)) return false;
+
+    for (int i = 0; i < count; i++) {
+        float cx = rect.x + comp_w * (float)i;
+
+        /* Skip if component slot is too narrow for label + field */
+        float field_w = comp_w - label_w - gap * 0.5f;
+        if (field_w < 1e-3f) continue;
+
+        /* Draw colored component label (X/Y/Z/W) */
+        ForgeUiRect label_rect = { cx, rect.y, label_w, rect.h };
+        forge_ui__emit_rect(ctx, label_rect,
+                            comp_colors[i][0] * 0.6f,
+                            comp_colors[i][1] * 0.6f,
+                            comp_colors[i][2] * 0.6f, 1.0f);
+        float ly = rect.y + (rect.h - max_label_h) * 0.5f + ascender_px;
+        forge_ui_ctx_label_colored(ctx, comp_labels[i],
+                                    cx + gap * 0.5f, ly,
+                                    1.0f, 1.0f, 1.0f, 1.0f);
+
+        /* Drag field for this component */
+        ForgeUiRect field_rect = {
+            cx + label_w, rect.y, field_w, rect.h
+        };
+        char comp_id[16];
+        SDL_snprintf(comp_id, sizeof(comp_id), "##c%d", i);
+        if (forge_ui_ctx_drag_float(ctx, comp_id, &values[i],
+                                     speed, min_val, max_val, field_rect)) {
+            any_changed = true;
+        }
+    }
+
+    forge_ui_pop_id(ctx);
+    return any_changed;
+}
+
+static inline bool forge_ui_ctx_drag_float_n_layout(ForgeUiContext *ctx,
+                                                      const char *label,
+                                                      float *values, int count,
+                                                      float speed,
+                                                      float min_val, float max_val,
+                                                      float size)
+{
+    if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
+    if (count < 1 || count > 4) return false;
+    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!(max_val > min_val)) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_drag_float_n(ctx, label, values, count,
+                                      speed, min_val, max_val, rect);
+}
+
+/* ── Drag int implementation ───────────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_drag_int(ForgeUiContext *ctx,
+                                          const char *label,
+                                          int *value, float speed,
+                                          int min_val, int max_val,
+                                          ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (max_val <= min_val) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    Uint32 id = forge_ui_hash_id(ctx, label);
+
+    bool changed = false;
+
+    /* ── Hit testing ─────────────────────────────────────────────────── */
+    bool mouse_over = forge_ui__widget_mouse_over(ctx, rect);
+    if (mouse_over) ctx->next_hot = id;
+
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    bool just_activated = false;
+    if (mouse_pressed && ctx->next_hot == id) {
+        ctx->active = id;
+        ctx->drag_int_accum = 0.0f;
+        just_activated = true;
+    }
+
+    /* ── Value update while dragging ─────────────────────────────────── */
+    /* Accumulate fractional drag distance so sub-unit movement is not
+     * lost between frames.  Only quantize to int when the accumulated
+     * value crosses a threshold. */
+    if (ctx->active == id && ctx->mouse_down && !just_activated) {
+        float dx = ctx->mouse_x - ctx->mouse_x_prev;
+        ctx->drag_int_accum += dx * speed;
+        float fval = (float)*value + ctx->drag_int_accum;
+        /* Clamp to int-safe range before cast to avoid UB */
+        if (fval < (float)min_val) fval = (float)min_val;
+        if (fval > (float)max_val) fval = (float)max_val;
+        int new_val = (int)(fval + (fval >= 0.0f ? 0.5f : -0.5f));
+        if (new_val < min_val) new_val = min_val;
+        if (new_val > max_val) new_val = max_val;
+        /* Keep only the fractional remainder so overshoot at min/max
+         * boundaries does not accumulate and "stick" the control. */
+        ctx->drag_int_accum = fval - (float)new_val;
+        if (new_val != *value) {
+            *value = new_val;
+            changed = true;
+        }
+    }
+
+    if (ctx->active == id && !ctx->mouse_down) ctx->active = FORGE_UI_ID_NONE;
+
+    /* ── Draw background ─────────────────────────────────────────────── */
+    ForgeUiColor bg = forge_ui__surface_color(ctx, id);
+    forge_ui__emit_rect(ctx, rect, bg.r, bg.g, bg.b, bg.a);
+
+    /* ── Draw value text (centered) ──────────────────────────────────── */
+    char val_buf[32];
+    SDL_snprintf(val_buf, sizeof(val_buf), "%d", *value);
+    ForgeUiTextMetrics m = forge_ui_text_measure(ctx->atlas, val_buf, NULL);
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+    float tx = rect.x + (rect.w - m.width) * 0.5f;
+    float ty = rect.y + (rect.h - m.height) * 0.5f + ascender_px;
+    forge_ui_ctx_label(ctx, val_buf, tx, ty);
+
+    return changed;
+}
+
+static inline bool forge_ui_ctx_drag_int_layout(ForgeUiContext *ctx,
+                                                  const char *label,
+                                                  int *value, float speed,
+                                                  int min_val, int max_val,
+                                                  float size)
+{
+    if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
+    if (max_val <= min_val) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_drag_int(ctx, label, value, speed, min_val, max_val, rect);
+}
+
+/* ── Drag int N (multi-component) ──────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_drag_int_n(ForgeUiContext *ctx,
+                                            const char *label,
+                                            int *values, int count,
+                                            float speed,
+                                            int min_val, int max_val,
+                                            ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
+    if (count < 1 || count > 4) return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (max_val <= min_val) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+
+    /* Component labels and colors (X=red, Y=green, Z=blue, W=yellow) */
+    static const char *comp_labels[] = { "X", "Y", "Z", "W" };
+    static const float comp_colors[][3] = {
+        { FORGE_UI_DRAG_COMP_COLOR_R_R, FORGE_UI_DRAG_COMP_COLOR_R_G, FORGE_UI_DRAG_COMP_COLOR_R_B },
+        { FORGE_UI_DRAG_COMP_COLOR_G_R, FORGE_UI_DRAG_COMP_COLOR_G_G, FORGE_UI_DRAG_COMP_COLOR_G_B },
+        { FORGE_UI_DRAG_COMP_COLOR_B_R, FORGE_UI_DRAG_COMP_COLOR_B_G, FORGE_UI_DRAG_COMP_COLOR_B_B },
+        { FORGE_UI_DRAG_COMP_COLOR_W_R, FORGE_UI_DRAG_COMP_COLOR_W_G, FORGE_UI_DRAG_COMP_COLOR_W_B },
+    };
+
+    float gap = FORGE_UI_SCALED(ctx, FORGE_UI_DRAG_LABEL_GAP);
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+
+    /* Measure the widest component label so proportional fonts
+     * (where "W" is wider than "X") don't overlap the drag field. */
+    float max_label_w = 0.0f;
+    float max_label_h = 0.0f;
+    for (int i = 0; i < count; i++) {
+        ForgeUiTextMetrics m =
+            forge_ui_text_measure(ctx->atlas, comp_labels[i], NULL);
+        if (m.width  > max_label_w) max_label_w = m.width;
+        if (m.height > max_label_h) max_label_h = m.height;
+    }
+    float label_w = max_label_w + gap;
+    float comp_w = rect.w / (float)count;
+    bool any_changed = false;
+
+    if (!forge_ui_push_id(ctx, label)) return false;
+
+    for (int i = 0; i < count; i++) {
+        float cx = rect.x + comp_w * (float)i;
+
+        /* Skip if component slot is too narrow for label + field */
+        float field_w = comp_w - label_w - gap * 0.5f;
+        if (field_w < 1e-3f) continue;
+
+        ForgeUiRect lr = { cx, rect.y, label_w, rect.h };
+        forge_ui__emit_rect(ctx, lr,
+                            comp_colors[i][0] * 0.6f,
+                            comp_colors[i][1] * 0.6f,
+                            comp_colors[i][2] * 0.6f, 1.0f);
+        float ly = rect.y + (rect.h - max_label_h) * 0.5f + ascender_px;
+        forge_ui_ctx_label_colored(ctx, comp_labels[i],
+                                    cx + gap * 0.5f, ly,
+                                    1.0f, 1.0f, 1.0f, 1.0f);
+
+        ForgeUiRect field_rect = {
+            cx + label_w, rect.y, field_w, rect.h
+        };
+        char comp_id[16];
+        SDL_snprintf(comp_id, sizeof(comp_id), "##c%d", i);
+        if (forge_ui_ctx_drag_int(ctx, comp_id, &values[i],
+                                   speed, min_val, max_val, field_rect)) {
+            any_changed = true;
+        }
+    }
+
+    forge_ui_pop_id(ctx);
+    return any_changed;
+}
+
+static inline bool forge_ui_ctx_drag_int_n_layout(ForgeUiContext *ctx,
+                                                    const char *label,
+                                                    int *values, int count,
+                                                    float speed,
+                                                    int min_val, int max_val,
+                                                    float size)
+{
+    if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
+    if (count < 1 || count > 4) return false;
+    if (max_val <= min_val) return false;
+    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_drag_int_n(ctx, label, values, count,
+                                    speed, min_val, max_val, rect);
+}
+
+/* ── Listbox implementation ────────────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_listbox(ForgeUiContext *ctx,
+                                         const char *label,
+                                         int *selected,
+                                         const char *const *items,
+                                         int item_count,
+                                         ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !label || !selected || !items) return false;
+    if (item_count <= 0 || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+
+    /* Allow -1 as "no selection"; clamp only upper bound */
+    if (*selected >= item_count) *selected = item_count - 1;
+
+    bool changed = false;
+    float item_h = FORGE_UI_SCALED(ctx, FORGE_UI_LB_ITEM_HEIGHT);
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+    float pad = FORGE_UI_SCALED(ctx, ctx->spacing.text_input_padding);
+
+    /* Draw list background */
+    forge_ui__emit_rect(ctx, rect,
+                        ctx->theme.surface.r, ctx->theme.surface.g,
+                        ctx->theme.surface.b, ctx->theme.surface.a);
+
+    if (!forge_ui_push_id(ctx, label)) return false;
+
+    /* Save and set clip rect for the list area */
+    bool had_clip = ctx->has_clip;
+    ForgeUiRect prev_clip = ctx->clip_rect;
+    if (had_clip) {
+        /* Intersect with existing clip rect */
+        float cx0 = ctx->clip_rect.x;
+        float cy0 = ctx->clip_rect.y;
+        float cx1 = cx0 + ctx->clip_rect.w;
+        float cy1 = cy0 + ctx->clip_rect.h;
+        float rx0 = rect.x > cx0 ? rect.x : cx0;
+        float ry0 = rect.y > cy0 ? rect.y : cy0;
+        float rx1 = (rect.x + rect.w) < cx1 ? (rect.x + rect.w) : cx1;
+        float ry1 = (rect.y + rect.h) < cy1 ? (rect.y + rect.h) : cy1;
+        ctx->clip_rect = (ForgeUiRect){ rx0, ry0, rx1 - rx0, ry1 - ry0 };
+    } else {
+        ctx->clip_rect = rect;
+    }
+    ctx->has_clip = true;
+
+    for (int i = 0; i < item_count; i++) {
+        float iy = rect.y + item_h * (float)i;
+        if (iy + item_h < rect.y || iy > rect.y + rect.h) continue;
+
+        ForgeUiRect item_rect = { rect.x, iy, rect.w, item_h };
+        char item_id[32];
+        SDL_snprintf(item_id, sizeof(item_id), "##item%d", i);
+        Uint32 id = forge_ui_hash_id(ctx, item_id);
+
+        bool mouse_over = forge_ui__widget_mouse_over(ctx, item_rect);
+        if (mouse_over) ctx->next_hot = id;
+
+        bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+        if (mouse_pressed && ctx->next_hot == id) ctx->active = id;
+
+        if (ctx->active == id && !ctx->mouse_down) {
+            if (mouse_over && *selected != i) {
+                *selected = i;
+                changed = true;
+            }
+            ctx->active = FORGE_UI_ID_NONE;
+        }
+
+        /* Draw item background — selected items get accent color */
+        if (*selected == i) {
+            forge_ui__emit_rect(ctx, item_rect,
+                                ctx->theme.accent.r * 0.4f,
+                                ctx->theme.accent.g * 0.4f,
+                                ctx->theme.accent.b * 0.4f, 1.0f);
+        } else if (ctx->hot == id) {
+            forge_ui__emit_rect(ctx, item_rect,
+                                ctx->theme.surface_hot.r,
+                                ctx->theme.surface_hot.g,
+                                ctx->theme.surface_hot.b,
+                                ctx->theme.surface_hot.a);
+        }
+
+        /* Draw item text */
+        if (items[i]) {
+            float ty = iy + (item_h - ctx->atlas->pixel_height) * 0.5f
+                      + ascender_px;
+            forge_ui_ctx_label(ctx, items[i], rect.x + pad, ty);
+        }
+    }
+
+    /* Restore clip state */
+    ctx->has_clip = had_clip;
+    ctx->clip_rect = prev_clip;
+
+    forge_ui_pop_id(ctx);
+    return changed;
+}
+
+static inline bool forge_ui_ctx_listbox_layout(ForgeUiContext *ctx,
+                                                const char *label,
+                                                int *selected,
+                                                const char *const *items,
+                                                int item_count,
+                                                float size)
+{
+    if (!ctx || !ctx->atlas || !label || !selected || !items) return false;
+    if (item_count <= 0 || label[0] == '\0') return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_listbox(ctx, label, selected, items, item_count, rect);
+}
+
+/* ── Dropdown implementation ───────────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_dropdown(ForgeUiContext *ctx,
+                                          const char *label,
+                                          int *selected, bool *open,
+                                          const char *const *items,
+                                          int item_count,
+                                          ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !label || !selected || !open || !items) return false;
+    if (item_count <= 0 || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+
+    /* Clamp *selected into valid range */
+    if (*selected < 0) *selected = 0;
+    if (*selected >= item_count) *selected = item_count - 1;
+
+    bool changed = false;
+    float default_h = FORGE_UI_SCALED(ctx, FORGE_UI_DD_HEADER_HEIGHT);
+    float header_h = (rect.h > 0.0f) ? rect.h : default_h;
+    float arrow_pad = FORGE_UI_SCALED(ctx, FORGE_UI_DD_ARROW_PAD);
+    float pad = FORGE_UI_SCALED(ctx, ctx->spacing.text_input_padding);
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+
+    if (!forge_ui_push_id(ctx, label)) return false;
+
+    /* ── Header button ───────────────────────────────────────────────── */
+    ForgeUiRect header_rect = { rect.x, rect.y, rect.w, header_h };
+    {
+        Uint32 hdr_id = forge_ui_hash_id(ctx, "##hdr");
+        bool mouse_over = forge_ui__widget_mouse_over(ctx, header_rect);
+        if (mouse_over) ctx->next_hot = hdr_id;
+
+        bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+        if (mouse_pressed && ctx->next_hot == hdr_id) ctx->active = hdr_id;
+
+        if (ctx->active == hdr_id && !ctx->mouse_down) {
+            if (mouse_over) *open = !(*open);
+            ctx->active = FORGE_UI_ID_NONE;
+        }
+
+        ForgeUiColor bg = forge_ui__surface_color(ctx, hdr_id);
+        forge_ui__emit_rect(ctx, header_rect, bg.r, bg.g, bg.b, bg.a);
+
+        /* Draw current selection text */
+        const char *sel_text = (*selected >= 0 && *selected < item_count)
+                                ? items[*selected] : "---";
+        float ty = rect.y + (header_h - ctx->atlas->pixel_height) * 0.5f
+                  + ascender_px;
+        forge_ui_ctx_label(ctx, sel_text, rect.x + pad, ty);
+
+        /* Draw arrow indicator */
+        const char *arrow = *open ? "-" : "+";
+        ForgeUiTextMetrics am = forge_ui_text_measure(ctx->atlas, arrow, NULL);
+        forge_ui_ctx_label(ctx, arrow,
+                           rect.x + rect.w - am.width - arrow_pad, ty);
+    }
+
+    /* ── Expanded item list (drawn below header when open) ───────────── */
+    if (*open) {
+        float item_h = FORGE_UI_SCALED(ctx, FORGE_UI_LB_ITEM_HEIGHT);
+
+        for (int i = 0; i < item_count; i++) {
+            float iy = rect.y + header_h + item_h * (float)i;
+            ForgeUiRect item_rect = { rect.x, iy, rect.w, item_h };
+
+            char item_id[32];
+            SDL_snprintf(item_id, sizeof(item_id), "##dd%d", i);
+            Uint32 id = forge_ui_hash_id(ctx, item_id);
+
+            bool mouse_over = forge_ui__widget_mouse_over(ctx, item_rect);
+            if (mouse_over) ctx->next_hot = id;
+
+            bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+            if (mouse_pressed && ctx->next_hot == id) ctx->active = id;
+
+            if (ctx->active == id && !ctx->mouse_down) {
+                if (mouse_over) {
+                    if (*selected != i) {
+                        *selected = i;
+                        changed = true;
+                    }
+                    *open = false;
+                }
+                ctx->active = FORGE_UI_ID_NONE;
+            }
+
+            /* Item background */
+            if (*selected == i) {
+                forge_ui__emit_rect(ctx, item_rect,
+                                    ctx->theme.accent.r * 0.4f,
+                                    ctx->theme.accent.g * 0.4f,
+                                    ctx->theme.accent.b * 0.4f, 1.0f);
+            } else if (ctx->hot == id) {
+                forge_ui__emit_rect(ctx, item_rect,
+                                    ctx->theme.surface_hot.r,
+                                    ctx->theme.surface_hot.g,
+                                    ctx->theme.surface_hot.b,
+                                    ctx->theme.surface_hot.a);
+            } else {
+                forge_ui__emit_rect(ctx, item_rect,
+                                    ctx->theme.surface.r,
+                                    ctx->theme.surface.g,
+                                    ctx->theme.surface.b,
+                                    ctx->theme.surface.a);
+            }
+
+            /* Item text */
+            if (items[i]) {
+                float ty = iy + (item_h - ctx->atlas->pixel_height) * 0.5f
+                          + ascender_px;
+                forge_ui_ctx_label(ctx, items[i], rect.x + pad, ty);
+            }
+        }
+    }
+
+    forge_ui_pop_id(ctx);
+    return changed;
+}
+
+static inline bool forge_ui_ctx_dropdown_layout(ForgeUiContext *ctx,
+                                                  const char *label,
+                                                  int *selected, bool *open,
+                                                  const char *const *items,
+                                                  int item_count,
+                                                  float size)
+{
+    if (!ctx || !ctx->atlas || !label || !selected || !open || !items) return false;
+    if (ctx->layout_depth <= 0) return false;
+    if (item_count <= 0) return false;
+    /* In vertical layouts the caller's size controls the header height;
+     * fall back to the default when size is zero or non-finite. */
+    float default_h = FORGE_UI_SCALED(ctx, FORGE_UI_DD_HEADER_HEIGHT);
+    ForgeUiLayoutDirection dir =
+        ctx->layout_stack[ctx->layout_depth - 1].direction;
+    float header_h = (dir == FORGE_UI_LAYOUT_VERTICAL && isfinite(size) && size > 0.0f)
+        ? size : default_h;
+    /* Reserve extra height for the open menu so subsequent widgets
+     * do not overlap the dropdown items.  We predict the post-toggle
+     * state of *open so the reserved space matches what
+     * forge_ui_ctx_dropdown() will actually draw this frame.
+     *
+     * In a vertical layout, size = height, so we reserve header + items.
+     * In a horizontal layout, size = width, so we reserve the caller's
+     * requested width (size parameter); the expanded items drop below
+     * the header and do not affect horizontal advancement. */
+
+    /* Compute effective_open: the state *open will have after the
+     * header mouse-up toggle inside forge_ui_ctx_dropdown().  This
+     * replicates the toggle logic (push_id → hash "##hdr" → check
+     * active/mouse/hover) without advancing the layout cursor. */
+    bool effective_open = *open;
+    if (dir == FORGE_UI_LAYOUT_VERTICAL) {
+        ForgeUiLayout *layout = &ctx->layout_stack[ctx->layout_depth - 1];
+        float peek_y = layout->cursor_y;
+        if (layout->item_count > 0) peek_y += layout->spacing;
+        ForgeUiRect peek_hdr = { layout->cursor_x, peek_y,
+                                 layout->remaining_w, header_h };
+        if (ctx->_panel_active && ctx->_panel.scroll_y)
+            peek_hdr.y -= *ctx->_panel.scroll_y;
+
+        bool pushed_peek = forge_ui_push_id(ctx, label);
+        Uint32 hdr_id = forge_ui_hash_id(ctx, "##hdr");
+        forge_ui_pop_id_if(ctx, pushed_peek);
+
+        if (ctx->active == hdr_id && !ctx->mouse_down) {
+            if (forge_ui__widget_mouse_over(ctx, peek_hdr))
+                effective_open = !effective_open;
+        }
+    }
+
+    float reserve;
+    if (dir == FORGE_UI_LAYOUT_VERTICAL) {
+        reserve = header_h;
+        if (effective_open) {
+            reserve += FORGE_UI_SCALED(ctx, FORGE_UI_LB_ITEM_HEIGHT)
+                       * (float)item_count;
+        }
+    } else {
+        reserve = size;
+    }
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, reserve);
+    rect.h = header_h;  /* dropdown itself only uses the header height */
+    return forge_ui_ctx_dropdown(ctx, label, selected, open,
+                                  items, item_count, rect);
+}
+
+/* ── Radio button implementation ───────────────────────────────────────── */
+
+static inline bool forge_ui_ctx_radio(ForgeUiContext *ctx,
+                                       const char *label,
+                                       int *selected, int option_value,
+                                       ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !label || !selected || label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    Uint32 id = forge_ui_hash_id(ctx, label);
+
+    bool changed = false;
+
+    /* ── Hit testing ─────────────────────────────────────────────────── */
+    bool mouse_over = forge_ui__widget_mouse_over(ctx, rect);
+    if (mouse_over) ctx->next_hot = id;
+
+    bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+    if (mouse_pressed && ctx->next_hot == id) ctx->active = id;
+
+    if (ctx->active == id && !ctx->mouse_down) {
+        if (mouse_over && *selected != option_value) {
+            *selected = option_value;
+            changed = true;
+        }
+        ctx->active = FORGE_UI_ID_NONE;
+    }
+
+    /* ── Draw radio circle (approximated as a box — the atlas has no
+     *    circle glyph, so we use a small square like checkbox) ───────── */
+    float radio_size = FORGE_UI_SCALED(ctx, FORGE_UI_RADIO_SIZE);
+    float inner_pad = FORGE_UI_SCALED(ctx, FORGE_UI_RADIO_INNER_PAD);
+
+    float box_x = rect.x;
+    float box_y = rect.y + (rect.h - radio_size) * 0.5f;
+    ForgeUiRect outer = { box_x, box_y, radio_size, radio_size };
+
+    ForgeUiColor box_c = forge_ui__surface_color(ctx, id);
+    forge_ui__emit_rect(ctx, outer, box_c.r, box_c.g, box_c.b, box_c.a);
+
+    /* Inner fill when selected */
+    if (*selected == option_value) {
+        ForgeUiRect inner = {
+            box_x + inner_pad, box_y + inner_pad,
+            radio_size - 2.0f * inner_pad,
+            radio_size - 2.0f * inner_pad
+        };
+        forge_ui__emit_rect(ctx, inner,
+                            ctx->theme.accent.r, ctx->theme.accent.g,
+                            ctx->theme.accent.b, ctx->theme.accent.a);
+    }
+
+    /* ── Label text ──────────────────────────────────────────────────── */
+    const char *disp_end = forge_ui__display_end(label);
+    int disp_len = (int)(disp_end - label);
+    char disp_buf[256];
+    if (disp_len >= (int)sizeof(disp_buf))
+        disp_len = (int)sizeof(disp_buf) - 1;
+    SDL_memcpy(disp_buf, label, (size_t)disp_len);
+    disp_buf[disp_len] = '\0';
+
+    float ascender_px = forge_ui__ascender_px(ctx->atlas);
+    float label_x = box_x + radio_size
+                  + FORGE_UI_SCALED(ctx, FORGE_UI_RADIO_LABEL_GAP);
+    float label_y = rect.y + (rect.h - ctx->atlas->pixel_height) * 0.5f
+                  + ascender_px;
+    forge_ui_ctx_label(ctx, disp_buf, label_x, label_y);
+
+    return changed;
+}
+
+static inline bool forge_ui_ctx_radio_layout(ForgeUiContext *ctx,
+                                               const char *label,
+                                               int *selected,
+                                               int option_value,
+                                               float size)
+{
+    if (!ctx || !ctx->atlas || !label || !selected || label[0] == '\0') return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_radio(ctx, label, selected, option_value, rect);
+}
+
+/* ── Color picker implementation ───────────────────────────────────────── */
+
+/* Internal: emit a quad with per-vertex colors (for gradients).
+ * Vertices are ordered: top-left, top-right, bottom-right, bottom-left.
+ * Each corner has its own RGB color. */
+static inline void forge_ui__emit_gradient_rect(ForgeUiContext *ctx,
+                                                  ForgeUiRect rect,
+                                                  float tl_r, float tl_g, float tl_b,
+                                                  float tr_r, float tr_g, float tr_b,
+                                                  float br_r, float br_g, float br_b,
+                                                  float bl_r, float bl_g, float bl_b)
+{
+    if (!ctx || !ctx->atlas) return;
+
+    /* ── Clip against clip_rect if active, interpolating corner colors ── */
+    if (ctx->has_clip) {
+        float cx0 = ctx->clip_rect.x;
+        float cy0 = ctx->clip_rect.y;
+        float cx1 = cx0 + ctx->clip_rect.w;
+        float cy1 = cy0 + ctx->clip_rect.h;
+
+        float rx0 = rect.x;
+        float ry0 = rect.y;
+        float rx1 = rect.x + rect.w;
+        float ry1 = rect.y + rect.h;
+
+        /* Fully outside — discard */
+        if (rx1 <= cx0 || rx0 >= cx1 || ry1 <= cy0 || ry0 >= cy1) return;
+
+        /* Compute fractional clip bounds for color interpolation */
+        float orig_w = rect.w > 0.0f ? rect.w : 1.0f;
+        float orig_h = rect.h > 0.0f ? rect.h : 1.0f;
+
+        float new_x0 = rx0 < cx0 ? cx0 : rx0;
+        float new_y0 = ry0 < cy0 ? cy0 : ry0;
+        float new_x1 = rx1 > cx1 ? cx1 : rx1;
+        float new_y1 = ry1 > cy1 ? cy1 : ry1;
+
+        if (new_x1 - new_x0 <= 0.0f || new_y1 - new_y0 <= 0.0f) return;
+
+        /* Interpolation fractions within the original rect */
+        float fl = (new_x0 - rx0) / orig_w;  /* left   fraction */
+        float fr = (new_x1 - rx0) / orig_w;  /* right  fraction */
+        float ft = (new_y0 - ry0) / orig_h;  /* top    fraction */
+        float fb = (new_y1 - ry0) / orig_h;  /* bottom fraction */
+
+        /* Bilinear interpolation of corner colors for clipped corners */
+#define LERP2(a, b, t) ((a) + ((b) - (a)) * (t))
+#define BILERP(tl, tr, bl, br, fx, fy) \
+    LERP2(LERP2((tl), (tr), (fx)), LERP2((bl), (br), (fx)), (fy))
+
+        float c_tl_r = BILERP(tl_r, tr_r, bl_r, br_r, fl, ft);
+        float c_tl_g = BILERP(tl_g, tr_g, bl_g, br_g, fl, ft);
+        float c_tl_b = BILERP(tl_b, tr_b, bl_b, br_b, fl, ft);
+
+        float c_tr_r = BILERP(tl_r, tr_r, bl_r, br_r, fr, ft);
+        float c_tr_g = BILERP(tl_g, tr_g, bl_g, br_g, fr, ft);
+        float c_tr_b = BILERP(tl_b, tr_b, bl_b, br_b, fr, ft);
+
+        float c_br_r = BILERP(tl_r, tr_r, bl_r, br_r, fr, fb);
+        float c_br_g = BILERP(tl_g, tr_g, bl_g, br_g, fr, fb);
+        float c_br_b = BILERP(tl_b, tr_b, bl_b, br_b, fr, fb);
+
+        float c_bl_r = BILERP(tl_r, tr_r, bl_r, br_r, fl, fb);
+        float c_bl_g = BILERP(tl_g, tr_g, bl_g, br_g, fl, fb);
+        float c_bl_b = BILERP(tl_b, tr_b, bl_b, br_b, fl, fb);
+
+#undef BILERP
+#undef LERP2
+
+        rect.x = new_x0;
+        rect.y = new_y0;
+        rect.w = new_x1 - new_x0;
+        rect.h = new_y1 - new_y0;
+        tl_r = c_tl_r; tl_g = c_tl_g; tl_b = c_tl_b;
+        tr_r = c_tr_r; tr_g = c_tr_g; tr_b = c_tr_b;
+        br_r = c_br_r; br_g = c_br_g; br_b = c_br_b;
+        bl_r = c_bl_r; bl_g = c_bl_g; bl_b = c_bl_b;
+    }
+
+    if (!forge_ui__grow_vertices(ctx, 4)) return;
+    if (!forge_ui__grow_indices(ctx, 6)) return;
+
+    const ForgeUiUVRect *wuv = &ctx->atlas->white_uv;
+    float u = (wuv->u0 + wuv->u1) * 0.5f;
+    float v = (wuv->v0 + wuv->v1) * 0.5f;
+
+    Uint32 base = (Uint32)ctx->vertex_count;
+    ForgeUiVertex *verts = &ctx->vertices[ctx->vertex_count];
+    verts[0] = (ForgeUiVertex){ rect.x,          rect.y,          u, v, tl_r, tl_g, tl_b, 1.0f };
+    verts[1] = (ForgeUiVertex){ rect.x + rect.w, rect.y,          u, v, tr_r, tr_g, tr_b, 1.0f };
+    verts[2] = (ForgeUiVertex){ rect.x + rect.w, rect.y + rect.h, u, v, br_r, br_g, br_b, 1.0f };
+    verts[3] = (ForgeUiVertex){ rect.x,          rect.y + rect.h, u, v, bl_r, bl_g, bl_b, 1.0f };
+    ctx->vertex_count += 4;
+
+    Uint32 *idx = &ctx->indices[ctx->index_count];
+    idx[0] = base + 0; idx[1] = base + 1; idx[2] = base + 2;
+    idx[3] = base + 0; idx[4] = base + 2; idx[5] = base + 3;
+    ctx->index_count += 6;
+}
+
+static inline bool forge_ui_ctx_color_picker(ForgeUiContext *ctx,
+                                              const char *label,
+                                              float *h, float *s, float *v,
+                                              ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas || !label || !h || !s || !v) return false;
+    if (label[0] == '\0') return false;
+    if (!isfinite(rect.x) || !isfinite(rect.y) ||
+        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+
+    /* Clamp inputs */
+    if (!isfinite(*h)) *h = 0.0f;
+    if (!isfinite(*s)) *s = 1.0f;
+    if (!isfinite(*v)) *v = 1.0f;
+    *h = fmodf(*h, 360.0f);
+    if (*h < 0.0f) *h += 360.0f;
+    if (*h >= 360.0f) *h = nextafterf(360.0f, 0.0f);
+    if (*s < 0.0f) *s = 0.0f; else if (*s > 1.0f) *s = 1.0f;
+    if (*v < 0.0f) *v = 0.0f; else if (*v > 1.0f) *v = 1.0f;
+
+    bool changed = false;
+    float gap = FORGE_UI_SCALED(ctx, FORGE_UI_CP_GAP);
+    float hue_bar_h = FORGE_UI_SCALED(ctx, FORGE_UI_CP_HUE_BAR_H);
+    float preview_h = FORGE_UI_SCALED(ctx, FORGE_UI_CP_PREVIEW_H);
+
+    /* ── Compute sub-areas ───────────────────────────────────────────── */
+    /* Fit all sub-rects inside the supplied rect.  When rect.h is too
+     * small the areas shrink proportionally instead of overflowing. */
+    float available_h = rect.h - hue_bar_h - preview_h - 2.0f * gap;
+    if (available_h < 0.0f) available_h = 0.0f;
+    float sv_size = available_h;
+    if (sv_size > rect.w) sv_size = rect.w;
+
+    /* Clamp hue bar and preview into the remaining space */
+    float remaining = rect.h - sv_size - 2.0f * gap;
+    if (remaining < 0.0f) remaining = 0.0f;
+    if (hue_bar_h + preview_h > remaining) {
+        float ratio = remaining / (hue_bar_h + preview_h);
+        hue_bar_h *= ratio;
+        preview_h *= ratio;
+    }
+
+    ForgeUiRect sv_rect = { rect.x, rect.y, sv_size, sv_size };
+    ForgeUiRect hue_rect = { rect.x, rect.y + sv_size + gap,
+                              rect.w, hue_bar_h };
+    ForgeUiRect preview_rect = { rect.x, rect.y + sv_size + gap + hue_bar_h + gap,
+                                  rect.w, preview_h };
+
+    if (!forge_ui_push_id(ctx, label)) return false;
+
+    /* ── SV area — grid of colored quads ─────────────────────────────── */
+    {
+        Uint32 sv_id = forge_ui_hash_id(ctx, "##sv");
+        bool mouse_over = forge_ui__widget_mouse_over(ctx, sv_rect);
+        if (mouse_over) ctx->next_hot = sv_id;
+
+        bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+        if (mouse_pressed && ctx->next_hot == sv_id) ctx->active = sv_id;
+
+        /* Update S and V while dragging */
+        if (ctx->active == sv_id && ctx->mouse_down) {
+            if (sv_rect.w > 0.0f && sv_rect.h > 0.0f) {
+                float new_s = (ctx->mouse_x - sv_rect.x) / sv_rect.w;
+                float new_v = 1.0f - (ctx->mouse_y - sv_rect.y) / sv_rect.h;
+                if (new_s < 0.0f) new_s = 0.0f; else if (new_s > 1.0f) new_s = 1.0f;
+                if (new_v < 0.0f) new_v = 0.0f; else if (new_v > 1.0f) new_v = 1.0f;
+                if (new_s != *s || new_v != *v) {
+                    *s = new_s;
+                    *v = new_v;
+                    changed = true;
+                }
+            }
+        }
+        if (ctx->active == sv_id && !ctx->mouse_down) ctx->active = FORGE_UI_ID_NONE;
+
+        /* Draw SV grid — each cell corner gets exact HSV→RGB color */
+        int grid = FORGE_UI_CP_SV_GRID;
+        float cell_w = sv_rect.w / (float)grid;
+        float cell_h = sv_rect.h / (float)grid;
+
+        for (int gy = 0; gy < grid; gy++) {
+            for (int gx = 0; gx < grid; gx++) {
+                float s0 = (float)gx / (float)grid;
+                float s1 = (float)(gx + 1) / (float)grid;
+                float v0 = 1.0f - (float)gy / (float)grid;
+                float v1 = 1.0f - (float)(gy + 1) / (float)grid;
+
+                float tl_r, tl_g, tl_b, tr_r, tr_g, tr_b;
+                float bl_r, bl_g, bl_b, br_r, br_g, br_b;
+                forge_ui_hsv_to_rgb(*h, s0, v0, &tl_r, &tl_g, &tl_b);
+                forge_ui_hsv_to_rgb(*h, s1, v0, &tr_r, &tr_g, &tr_b);
+                forge_ui_hsv_to_rgb(*h, s0, v1, &bl_r, &bl_g, &bl_b);
+                forge_ui_hsv_to_rgb(*h, s1, v1, &br_r, &br_g, &br_b);
+
+                ForgeUiRect cell = {
+                    sv_rect.x + cell_w * (float)gx,
+                    sv_rect.y + cell_h * (float)gy,
+                    cell_w, cell_h
+                };
+                forge_ui__emit_gradient_rect(ctx, cell,
+                    tl_r, tl_g, tl_b, tr_r, tr_g, tr_b,
+                    br_r, br_g, br_b, bl_r, bl_g, bl_b);
+            }
+        }
+
+        /* Draw crosshair cursor at current S, V position */
+        float cx = sv_rect.x + (*s) * sv_rect.w;
+        float cy = sv_rect.y + (1.0f - *v) * sv_rect.h;
+        float cs = FORGE_UI_SCALED(ctx, FORGE_UI_CP_CURSOR_SIZE) * 0.5f;
+        float bt = FORGE_UI_SCALED(ctx, FORGE_UI_CP_BAR_THICK);
+        float bh = bt * 0.5f; /* half-thickness for centering */
+        /* Horizontal bar */
+        ForgeUiRect ch = { cx - cs, cy - bh, cs * 2.0f, bt };
+        forge_ui__emit_rect(ctx, ch, 1.0f, 1.0f, 1.0f, 1.0f);
+        /* Vertical bar */
+        ForgeUiRect cv = { cx - bh, cy - cs, bt, cs * 2.0f };
+        forge_ui__emit_rect(ctx, cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    /* ── Hue bar — horizontal rainbow gradient ───────────────────────── */
+    {
+        Uint32 hue_id = forge_ui_hash_id(ctx, "##hue");
+        bool mouse_over = forge_ui__widget_mouse_over(ctx, hue_rect);
+        if (mouse_over) ctx->next_hot = hue_id;
+
+        bool mouse_pressed = ctx->mouse_down && !ctx->mouse_down_prev;
+        if (mouse_pressed && ctx->next_hot == hue_id) ctx->active = hue_id;
+
+        if (ctx->active == hue_id && ctx->mouse_down && hue_rect.w > 0.0f) {
+            float t = (ctx->mouse_x - hue_rect.x) / hue_rect.w;
+            if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+            float new_h = t * 360.0f;
+            if (new_h >= 360.0f) new_h = nextafterf(360.0f, 0.0f);
+            if (new_h != *h) { *h = new_h; changed = true; }
+        }
+        if (ctx->active == hue_id && !ctx->mouse_down) ctx->active = FORGE_UI_ID_NONE;
+
+        /* Draw hue segments */
+        int segs = FORGE_UI_CP_HUE_SEGMENTS;
+        float seg_w = hue_rect.w / (float)segs;
+        for (int i = 0; i < segs; i++) {
+            float h0 = 360.0f * (float)i / (float)segs;
+            float h1 = 360.0f * (float)(i + 1) / (float)segs;
+            float r0, g0, b0, r1, g1, b1;
+            forge_ui_hsv_to_rgb(h0, 1.0f, 1.0f, &r0, &g0, &b0);
+            forge_ui_hsv_to_rgb(h1, 1.0f, 1.0f, &r1, &g1, &b1);
+            ForgeUiRect seg = {
+                hue_rect.x + seg_w * (float)i, hue_rect.y,
+                seg_w, hue_rect.h
+            };
+            forge_ui__emit_gradient_rect(ctx, seg,
+                r0, g0, b0, r1, g1, b1,
+                r1, g1, b1, r0, g0, b0);
+        }
+
+        /* Hue cursor — vertical line at current hue position */
+        float hcw = FORGE_UI_SCALED(ctx, FORGE_UI_CP_HUE_CURSOR_W);
+        float hx = hue_rect.x + (*h / 360.0f) * hue_rect.w;
+        ForgeUiRect hcur = { hx - hcw * 0.5f, hue_rect.y, hcw, hue_rect.h };
+        forge_ui__emit_rect(ctx, hcur, 1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    /* ── Preview swatch + RGB text ───────────────────────────────────── */
+    {
+        float pr, pg, pb;
+        forge_ui_hsv_to_rgb(*h, *s, *v, &pr, &pg, &pb);
+
+        /* Color swatch — clamp to available width */
+        float available_w = preview_rect.w;
+        float swatch_w = preview_h * 2.0f;
+        if (swatch_w > available_w) swatch_w = available_w;
+        ForgeUiRect swatch = { preview_rect.x, preview_rect.y,
+                                swatch_w, preview_h };
+        forge_ui__emit_rect(ctx, swatch, pr, pg, pb, 1.0f);
+
+        /* RGB text to the right of the swatch — only if it fits */
+        float ascender_px = forge_ui__ascender_px(ctx->atlas);
+        float ty = preview_rect.y + (preview_h - ctx->atlas->pixel_height) * 0.5f
+                  + ascender_px;
+        char rgb_buf[64];
+        SDL_snprintf(rgb_buf, sizeof(rgb_buf), "R:%.0f G:%.0f B:%.0f",
+                     (double)(pr * 255.0f), (double)(pg * 255.0f),
+                     (double)(pb * 255.0f));
+        float remaining_w = available_w - swatch_w - gap;
+        if (remaining_w > 0.0f) {
+            forge_ui_ctx_label(ctx, rgb_buf, preview_rect.x + swatch_w + gap, ty);
+        }
+    }
+
+    forge_ui_pop_id(ctx);
+    return changed;
+}
+
+static inline bool forge_ui_ctx_color_picker_layout(ForgeUiContext *ctx,
+                                                      const char *label,
+                                                      float *h, float *s,
+                                                      float *v,
+                                                      float size)
+{
+    if (!ctx || !ctx->atlas || !label || !h || !s || !v) return false;
+    if (ctx->layout_depth <= 0) return false;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    return forge_ui_ctx_color_picker(ctx, label, h, s, v, rect);
 }
 
 /* ── Theme setter (declared in forge_ui_theme.h) ───────────────────────── */

@@ -151,6 +151,9 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   Returns `true` on success, `false` if the stack is full (max 8 levels).
   Subsequent `hash_id` calls use the new scope as their seed
 - **`forge_ui_pop_id(ctx)`** -- Pop the current scope from the ID stack
+- **`forge_ui_pop_id_if(ctx, pushed)`** -- Pop the ID scope only if
+  `pushed` is `true`. Pairs with `forge_ui_push_id()` to prevent
+  underflow when the stack is full
 - **`forge_ui_ctx_button(ctx, text, rect)`** -- Draw a button. Returns
   `true` on click. The `text` label doubles as the widget ID (hashed
   automatically). Use `"Label##suffix"` to disambiguate
@@ -204,6 +207,66 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
   position; consecutive samples are connected by thin quads
 - **`forge_ui_ctx_sparkline_layout(ctx, values, count, min, max, color,
   size)`** -- Sparkline placed by the current layout
+- **`forge_ui_ctx_drag_float(ctx, label, value, speed, min, max, rect)`** --
+  Draw a drag-float field. Click-drag horizontally to change `*value` by
+  mouse delta times `speed`, clamped to `[min, max]`. Returns `true` when
+  the value changes
+- **`forge_ui_ctx_drag_float_layout(ctx, label, value, speed, min, max,
+  size)`** -- Drag-float placed by the current layout
+- **`forge_ui_ctx_drag_float_n(ctx, label, values, count, speed, min, max,
+  rect)`** -- Draw 1..4 drag-float fields side by side, dividing the rect
+  width evenly. Returns `false` for counts outside `1..4`
+- **`forge_ui_ctx_drag_float_n_layout(ctx, label, values, count, speed, min,
+  max, size)`** -- Multi-component drag-float placed by the current layout.
+  `count` must be in `1..4`; returns `false` otherwise
+- **`forge_ui_ctx_drag_int(ctx, label, value, speed, min, max, rect)`** --
+  Draw a drag-int field. Same interaction as drag-float but for integer
+  values. Returns `true` when the value changes
+- **`forge_ui_ctx_drag_int_layout(ctx, label, value, speed, min, max,
+  size)`** -- Drag-int placed by the current layout
+- **`forge_ui_ctx_drag_int_n(ctx, label, values, count, speed, min, max,
+  rect)`** -- Draw 1..4 drag-int fields side by side. Returns `false` for
+  counts outside `1..4`; otherwise returns `true` when any value changes
+- **`forge_ui_ctx_drag_int_n_layout(ctx, label, values, count, speed, min,
+  max, size)`** -- Multi-component drag-int placed by the current layout.
+  `count` must be in `1..4`; returns `false` otherwise
+- **`forge_ui_ctx_listbox(ctx, label, selected, items, item_count, rect)`** --
+  Draw a clipped list of items. Click to select; `*selected` is updated to
+  the clicked index (-1 means no selection). Returns `true` when the
+  selection changes. The widget does not manage scrolling or a per-widget
+  scroll offset — overflow rows are clipped and not reachable unless the
+  caller places the listbox inside a scrolling container (e.g., a panel).
+  Selection changes do not auto-scroll the item into view; callers must
+  handle scrolling externally
+- **`forge_ui_ctx_listbox_layout(ctx, label, selected, items, item_count,
+  size)`** -- Listbox placed by the current layout
+- **`forge_ui_ctx_dropdown(ctx, label, selected, open, items, item_count,
+  rect)`** -- Draw a dropdown combo box. Click the header to toggle `*open`;
+  when expanded, click an item to select it. `rect` bounds the header only;
+  the open menu renders below `rect` and is not clipped to it. Returns
+  `true` when the selection changes
+- **`forge_ui_ctx_dropdown_layout(ctx, label, selected, open, items,
+  item_count, size)`** -- Dropdown placed by the current layout. The layout
+  reserves space for both the header and the open menu (in vertical layouts)
+- **`forge_ui_ctx_radio(ctx, label, selected, option_value, rect)`** -- Draw
+  a radio button. If `*selected == option_value`, shows a filled rectangular
+  indicator; clicking sets `*selected = option_value`. Returns `true` when
+  the selection actually changes (i.e., `*selected` is set to
+  `option_value`); clicking an already-selected option returns `false`
+- **`forge_ui_ctx_radio_layout(ctx, label, selected, option_value, size)`** --
+  Radio button placed by the current layout
+- **`forge_ui_ctx_color_picker(ctx, label, h, s, v, rect)`** -- Draw an HSV
+  color picker with saturation-value gradient, hue bar, and preview swatch.
+  `*h` is hue in degrees (0-360), `*s` and `*v` are 0-1. Returns `true`
+  when any value changes
+- **`forge_ui_ctx_color_picker_layout(ctx, label, h, s, v, size)`** -- Color
+  picker placed by the current layout
+- **`forge_ui_hsv_to_rgb(h, s, v, out_r, out_g, out_b)`** -- Convert HSV
+  to RGB (all outputs 0-1). Wraps hue into [0, 360) via `fmodf` and clamps
+  saturation and value to [0, 1]; non-finite inputs are replaced with 0
+- **`forge_ui_rgb_to_hsv(r, g, b, out_h, out_s, out_v)`** -- Convert RGB
+  (0-1) to HSV. Replaces non-finite inputs with 0, then clamps each RGB
+  channel to [0, 1] before conversion
 - **`forge_ui_ctx_panel_begin(ctx, title, rect, scroll_y)`** -- Begin a
   panel: draw background and title bar, set clip rect, push layout for
   child widgets. Returns `true` on success
@@ -289,6 +352,9 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 - Draggable windows with title bar drag, z-ordering, and collapse toggle
 - Deferred draw ordering: per-window draw lists assembled back-to-front
 - Z-aware input routing: only the topmost window receives mouse interaction
+- Drag-value fields for float and int editing (single and multi-component)
+- Listbox, dropdown, and radio button selection controls
+- HSV color picker with gradient rendering and color space conversion
 - Dynamic vertex/index buffer accumulation per frame
 
 ## Limitations
@@ -340,8 +406,9 @@ These are intentional simplifications for a learning library:
 - [`lessons/ui/14-game-ui/`](../../lessons/ui/14-game-ui/) -- Game UI patterns:
   progress bars, inventory grids, HUD anchoring, action bars, pause menus
 - [`lessons/ui/15-dev-ui/`](../../lessons/ui/15-dev-ui/) -- Dev UI patterns:
-  collapsible tree nodes, property editors, console logs, sparkline graphs,
-  scene tree views
+  collapsible tree nodes, property inspectors, editable property editors with
+  drag-float/drag-int fields, console logs, sparkline graphs, scene tree views,
+  listbox/dropdown/radio selection controls, HSV color picker
 - [`tests/ui/`](../../tests/ui/) -- Unit tests for the UI library
 
 ## Design Philosophy

@@ -398,9 +398,10 @@ in the working directory.
 ## What's next
 
 [UI Lesson 15 — Dev UI](../15-dev-ui/) builds developer-facing tools:
-collapsible tree nodes for scene hierarchies, property editors with inline
-controls, scrollable console logs with colored severity levels, and sparkline
-graphs for performance overlays.
+collapsible tree nodes for scene hierarchies, property inspectors and editable
+property editors with drag-float/drag-int fields, scrollable console logs with
+colored severity levels, sparkline graphs for performance overlays, selection
+controls (listbox, dropdown, radio buttons), and an HSV color picker.
 
 ## Further reading
 

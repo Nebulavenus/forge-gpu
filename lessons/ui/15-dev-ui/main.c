@@ -2,11 +2,12 @@
  * UI Lesson 15 — Dev UI
  *
  * Demonstrates developer-facing UI patterns composed from the immediate-mode
- * controls: property editors with collapsible sections, a scrollable console
- * log, performance overlays with sparkline graphs, and a hierarchical scene
- * tree.
+ * controls: a read-only property inspector, an editable property editor with
+ * drag-float and drag-int fields, a scrollable console log, performance
+ * overlays with sparkline graphs, a hierarchical scene tree, selection
+ * controls (listbox, dropdown, radio buttons), and an HSV color picker.
  *
- * Output: four BMP images showing each pattern.
+ * Output: seven BMP images showing each pattern.
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -118,9 +119,9 @@ static bool rasterize_to_bmp(ForgeUiContext *ctx,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Image 1: Property Editor
+ * Image 1: Property Inspector (read-only)
  *
- * A panel titled "Inspector" containing collapsible sections for editing
+ * A panel titled "Inspector" containing collapsible sections showing
  * entity properties.  Each section uses tree_push/tree_pop for expand/
  * collapse.  Within each expanded section, sliders, checkboxes, and
  * labeled values show the entity's transform, material, and physics
@@ -151,7 +152,7 @@ static void prop_value(ForgeUiContext *ctx, const char *text,
     forge_ui_ctx_label(ctx, text, row.x + x_offset, baseline_y);
 }
 
-static bool render_property_editor(const ForgeUiFont *font)
+static bool render_property_inspector(const ForgeUiFont *font)
 {
     ForgeUiFontAtlas atlas;
     ForgeUiContext ctx;
@@ -283,13 +284,181 @@ static bool render_property_editor(const ForgeUiFont *font)
     forge_ui_ctx_end(&ctx);
 
     bool ok = rasterize_to_bmp(&ctx, &atlas, FB_WIDTH, FB_HEIGHT,
+                               "property_inspector.bmp");
+    forge_ui_ctx_free(&ctx);
+    forge_ui_atlas_free(&atlas);
+    return ok;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Image 2: Property Editor (editable)
+ *
+ * A panel titled "Editor" with editable property fields: drag_float for
+ * position/rotation/scale, drag_int for layer/priority, checkboxes, and
+ * sliders.  Demonstrates the new drag-value widgets that let users modify
+ * values by click-dragging horizontally.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define EDITOR_W     400.0f   /* editor panel width */
+#define EDITOR_H     520.0f   /* editor panel height */
+
+static bool render_property_editor(const ForgeUiFont *font)
+{
+    ForgeUiFontAtlas atlas;
+    ForgeUiContext ctx;
+    if (!create_ui(font, &atlas, &ctx, 1.0f)) return false;
+
+    forge_ui_ctx_begin(&ctx, -1.0f, -1.0f, false);
+
+    float panel_x = ((float)FB_WIDTH - EDITOR_W) * 0.5f;
+    float panel_y = ((float)FB_HEIGHT - EDITOR_H) * 0.5f;
+
+    float scroll_y = 0.0f;
+    ForgeUiRect panel_rect = { panel_x, panel_y, EDITOR_W, EDITOR_H };
+
+    if (forge_ui_ctx_panel_begin(&ctx, "Editor", panel_rect, &scroll_y)) {
+
+        /* ── Entity name ───────────────────────────────────────────────── */
+        forge_ui_ctx_label_layout(&ctx, "Stone Pillar", ROW_HEIGHT);
+
+        /* ── Transform section ─────────────────────────────────────────── */
+        bool transform_open = true;
+        if (forge_ui_ctx_tree_push_layout(&ctx, "Transform",
+                                           &transform_open, ROW_HEIGHT)) {
+            /* Position — 3-component drag float */
+            ForgeUiRect row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Position", row, INDENT);
+            float pos[3] = { 12.5f, 0.0f, -3.2f };
+            ForgeUiRect field = {
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "xform_pos");
+            forge_ui_ctx_drag_float_n(&ctx, "##pos", pos, 3,
+                                       0.1f, -100.0f, 100.0f, field);
+            forge_ui_pop_id(&ctx);
+
+            /* Rotation — 3-component drag float (degrees) */
+            row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Rotation", row, INDENT);
+            float rot[3] = { 0.0f, 45.0f, 0.0f };
+            field = (ForgeUiRect){
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "xform_rot");
+            forge_ui_ctx_drag_float_n(&ctx, "##rot", rot, 3,
+                                       1.0f, -360.0f, 360.0f, field);
+            forge_ui_pop_id(&ctx);
+
+            /* Scale — single drag float */
+            row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Scale", row, INDENT);
+            float scale_val = 1.0f;
+            field = (ForgeUiRect){
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "xform_scale");
+            forge_ui_ctx_drag_float(&ctx, "##scale", &scale_val,
+                                     0.01f, 0.01f, 100.0f, field);
+            forge_ui_pop_id(&ctx);
+
+            forge_ui_ctx_separator_layout(&ctx, ROW_HEIGHT * 0.5f);
+        }
+        forge_ui_ctx_tree_pop(&ctx);
+
+        /* ── Material section ──────────────────────────────────────────── */
+        bool material_open = true;
+        if (forge_ui_ctx_tree_push_layout(&ctx, "Material",
+                                           &material_open, ROW_HEIGHT)) {
+            /* Roughness — drag float 0..1 */
+            ForgeUiRect row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Roughness", row, INDENT);
+            float roughness = 0.7f;
+            ForgeUiRect field = {
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "mat_rough");
+            forge_ui_ctx_drag_float(&ctx, "##rough", &roughness,
+                                     0.01f, 0.0f, 1.0f, field);
+            forge_ui_pop_id(&ctx);
+
+            /* Metallic — checkbox */
+            row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            bool metallic = false;
+            ForgeUiRect cb_rect = { row.x + INDENT, row.y,
+                                     row.w - INDENT, row.h };
+            forge_ui_push_id(&ctx, "mat_metal");
+            forge_ui_ctx_checkbox(&ctx, "Metallic", &metallic, cb_rect);
+            forge_ui_pop_id(&ctx);
+
+            forge_ui_ctx_separator_layout(&ctx, ROW_HEIGHT * 0.5f);
+        }
+        forge_ui_ctx_tree_pop(&ctx);
+
+        /* ── Rendering section ─────────────────────────────────────────── */
+        bool render_open = true;
+        if (forge_ui_ctx_tree_push_layout(&ctx, "Rendering",
+                                           &render_open, ROW_HEIGHT)) {
+            /* Layer — drag int */
+            ForgeUiRect row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Layer", row, INDENT);
+            int layer = 3;
+            ForgeUiRect field = {
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "rend_layer");
+            forge_ui_ctx_drag_int(&ctx, "##layer", &layer,
+                                   0.2f, 0, 31, field);
+            forge_ui_pop_id(&ctx);
+
+            /* Priority — drag int */
+            row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Priority", row, INDENT);
+            int priority = 100;
+            field = (ForgeUiRect){
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "rend_prio");
+            forge_ui_ctx_drag_int(&ctx, "##prio", &priority,
+                                   1.0f, 0, 9999, field);
+            forge_ui_pop_id(&ctx);
+
+            /* Resolution — 2-component drag int */
+            row = forge_ui_ctx_layout_next(&ctx, ROW_HEIGHT);
+            prop_label(&ctx, "Resolution", row, INDENT);
+            int resolution[2] = { 1920, 1080 };
+            field = (ForgeUiRect){
+                row.x + INDENT + PROP_LABEL_W, row.y,
+                row.w - INDENT - PROP_LABEL_W, row.h
+            };
+            forge_ui_push_id(&ctx, "rend_res");
+            forge_ui_ctx_drag_int_n(&ctx, "##res", resolution, 2,
+                                     1.0f, 1, 8192, field);
+            forge_ui_pop_id(&ctx);
+
+            forge_ui_ctx_separator_layout(&ctx, ROW_HEIGHT * 0.5f);
+        }
+        forge_ui_ctx_tree_pop(&ctx);
+
+        forge_ui_ctx_panel_end(&ctx);
+    }
+
+    forge_ui_ctx_end(&ctx);
+
+    bool ok = rasterize_to_bmp(&ctx, &atlas, FB_WIDTH, FB_HEIGHT,
                                "property_editor.bmp");
     forge_ui_ctx_free(&ctx);
     forge_ui_atlas_free(&atlas);
     return ok;
 }
+
 /* ═══════════════════════════════════════════════════════════════════════════
- * Image 2: Console / Log Viewer
+ * Image 3: Console / Log Viewer
  *
  * A scrollable panel showing color-coded log entries — the kind of output
  * console every game engine needs for debugging.  Each entry has a
@@ -412,7 +581,7 @@ static bool render_console(const ForgeUiFont *font)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Image 3: Performance Overlay
+ * Image 4: Performance Overlay
  *
  * A compact panel anchored to the top-right corner showing the metrics a
  * developer watches during optimization: FPS, frame time with a sparkline
@@ -538,7 +707,7 @@ static bool render_perf_overlay(const ForgeUiFont *font)
     return ok;
 }
 /* ═══════════════════════════════════════════════════════════════════════════
- * Image 4: Scene Tree
+ * Image 5: Scene Tree
  *
  * A hierarchical tree view of game objects in a scrollable panel.
  * Demonstrates the tree_push / tree_pop pattern at multiple nesting
@@ -691,7 +860,138 @@ static bool render_scene_tree(const ForgeUiFont *font)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * main — Load font, generate all four dev-UI demo images, report results.
+ * Image 6: Controls — Listbox, Dropdown, and Radio Buttons
+ *
+ * Demonstrates the selection-type controls: a listbox with clickable items,
+ * a dropdown combo box (shown in its expanded state), and a group of radio
+ * buttons sharing a single selection state.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define CONTROLS_W    400.0f   /* controls panel width */
+#define CONTROLS_H    680.0f   /* controls panel height */
+#define CONTROLS_FB_H 750      /* taller framebuffer to fit all controls */
+
+static bool render_controls(const ForgeUiFont *font)
+{
+    ForgeUiFontAtlas atlas;
+    ForgeUiContext ctx;
+    if (!create_ui(font, &atlas, &ctx, 1.0f)) return false;
+
+    forge_ui_ctx_begin(&ctx, -1.0f, -1.0f, false);
+
+    float panel_x = ((float)FB_WIDTH - CONTROLS_W) * 0.5f;
+    float panel_y = ((float)CONTROLS_FB_H - CONTROLS_H) * 0.5f;
+
+    float scroll_y = 0.0f;
+    ForgeUiRect panel_rect = { panel_x, panel_y, CONTROLS_W, CONTROLS_H };
+
+    if (forge_ui_ctx_panel_begin(&ctx, "Controls", panel_rect, &scroll_y)) {
+
+        /* ── Listbox ───────────────────────────────────────────────────── */
+        forge_ui_ctx_label_layout(&ctx, "Shader List", ROW_HEIGHT);
+
+        static const char *const shaders[] = {
+            "Blinn-Phong", "PBR Metallic", "Toon / Cel",
+            "Wireframe", "Normal Debug", "Depth Only"
+        };
+        int shader_sel = 1;  /* PBR Metallic selected by default */
+        float list_h = FORGE_UI_LB_ITEM_HEIGHT * 6.0f;
+        forge_ui_ctx_listbox_layout(&ctx, "##shaders", &shader_sel,
+                                     shaders, 6, list_h);
+
+        forge_ui_ctx_separator_layout(&ctx, ROW_HEIGHT * 0.5f);
+
+        /* ── Dropdown (shown expanded) ─────────────────────────────────── */
+        forge_ui_ctx_label_layout(&ctx, "Render Mode", ROW_HEIGHT);
+
+        static const char *const modes[] = {
+            "Forward", "Deferred", "Forward+", "Raytraced"
+        };
+        int mode_sel = 0;
+        bool dropdown_open = true;  /* show expanded for the demo */
+        forge_ui_ctx_dropdown_layout(&ctx, "##mode", &mode_sel,
+                                      &dropdown_open, modes, 4,
+                                      FORGE_UI_DD_HEADER_HEIGHT);
+
+        /* Skip extra space to account for the expanded dropdown items
+         * that extend below the header (4 items * item height). */
+        float dropdown_extra = FORGE_UI_LB_ITEM_HEIGHT * 4.0f;
+        forge_ui_ctx_layout_next(&ctx, dropdown_extra);
+
+        forge_ui_ctx_separator_layout(&ctx, ROW_HEIGHT * 0.5f);
+
+        /* ── Radio buttons ─────────────────────────────────────────────── */
+        forge_ui_ctx_label_layout(&ctx, "Shadow Quality", ROW_HEIGHT);
+
+        int shadow_quality = 2;  /* High selected */
+        forge_ui_push_id(&ctx, "shadow_q");
+        forge_ui_ctx_radio_layout(&ctx, "Off",    &shadow_quality, 0, ROW_HEIGHT);
+        forge_ui_ctx_radio_layout(&ctx, "Low",    &shadow_quality, 1, ROW_HEIGHT);
+        forge_ui_ctx_radio_layout(&ctx, "High",   &shadow_quality, 2, ROW_HEIGHT);
+        forge_ui_ctx_radio_layout(&ctx, "Ultra",  &shadow_quality, 3, ROW_HEIGHT);
+        forge_ui_pop_id(&ctx);
+
+        forge_ui_ctx_panel_end(&ctx);
+    }
+
+    forge_ui_ctx_end(&ctx);
+
+    bool ok = rasterize_to_bmp(&ctx, &atlas, FB_WIDTH, CONTROLS_FB_H,
+                               "controls.bmp");
+    forge_ui_ctx_free(&ctx);
+    forge_ui_atlas_free(&atlas);
+    return ok;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Image 7: Color Picker
+ *
+ * An HSV color picker with a saturation-value gradient area, a horizontal
+ * hue slider bar, and a color preview swatch with RGB readout.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define PICKER_W     350.0f   /* color picker panel width */
+#define PICKER_H     400.0f   /* color picker panel height */
+
+static bool render_color_picker(const ForgeUiFont *font)
+{
+    ForgeUiFontAtlas atlas;
+    ForgeUiContext ctx;
+    if (!create_ui(font, &atlas, &ctx, 1.0f)) return false;
+
+    forge_ui_ctx_begin(&ctx, -1.0f, -1.0f, false);
+
+    float panel_x = ((float)FB_WIDTH - PICKER_W) * 0.5f;
+    float panel_y = ((float)FB_HEIGHT - PICKER_H) * 0.5f;
+
+    float scroll_y = 0.0f;
+    ForgeUiRect panel_rect = { panel_x, panel_y, PICKER_W, PICKER_H };
+
+    if (forge_ui_ctx_panel_begin(&ctx, "Color Picker", panel_rect, &scroll_y)) {
+
+        /* Start with a cyan-ish color */
+        float h = 195.0f, s = 0.75f, v = 0.85f;
+
+        /* The color picker uses the remaining panel height */
+        float picker_h = PICKER_H - FORGE_UI_PANEL_TITLE_HEIGHT
+                        - 2.0f * FORGE_UI_PANEL_PADDING;
+        forge_ui_ctx_color_picker_layout(&ctx, "##picker",
+                                          &h, &s, &v, picker_h);
+
+        forge_ui_ctx_panel_end(&ctx);
+    }
+
+    forge_ui_ctx_end(&ctx);
+
+    bool ok = rasterize_to_bmp(&ctx, &atlas, FB_WIDTH, FB_HEIGHT,
+                               "color_picker.bmp");
+    forge_ui_ctx_free(&ctx);
+    forge_ui_atlas_free(&atlas);
+    return ok;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * main — Load font, generate all seven dev-UI demo images, report results.
  *
  * Each render function creates its own atlas and context, draws one image,
  * rasterizes to BMP, and frees all resources before returning.  This keeps
@@ -713,7 +1013,7 @@ int main(int argc, char *argv[])
     /* Build the ASCII codepoint table used by every font atlas */
     init_codepoints();
 
-    /* Load the TTF font file — all four images share this font data,
+    /* Load the TTF font file — all seven images share this font data,
      * but each builds its own atlas at the size it needs. */
     ForgeUiFont font;
     if (!forge_ui_ttf_load(FONT_PATH, &font)) {
@@ -728,8 +1028,18 @@ int main(int argc, char *argv[])
     int pass = 0;
     int fail = 0;
 
-    /* Image 1: Property Editor — collapsible sections with sliders,
-     * checkboxes, and labels arranged in a panel layout. */
+    /* Image 1: Property Inspector — read-only collapsible sections with
+     * sliders, checkboxes, and labels arranged in a panel layout. */
+    if (render_property_inspector(&font)) {
+        SDL_Log("[OK] property_inspector.bmp");
+        pass++;
+    } else {
+        SDL_Log("[FAIL] property_inspector.bmp");
+        fail++;
+    }
+
+    /* Image 2: Property Editor — editable values with drag_float,
+     * drag_int, and multi-component drag fields. */
     if (render_property_editor(&font)) {
         SDL_Log("[OK] property_editor.bmp");
         pass++;
@@ -738,7 +1048,7 @@ int main(int argc, char *argv[])
         fail++;
     }
 
-    /* Image 2: Console — scrollable log output with colored severity
+    /* Image 3: Console — scrollable log output with colored severity
      * tags, mimicking an in-game developer console. */
     if (render_console(&font)) {
         SDL_Log("[OK] console.bmp");
@@ -748,7 +1058,7 @@ int main(int argc, char *argv[])
         fail++;
     }
 
-    /* Image 3: Performance Overlay — real-time stats display with
+    /* Image 4: Performance Overlay — real-time stats display with
      * sparkline graphs, frame time counters, and GPU memory readouts. */
     if (render_perf_overlay(&font)) {
         SDL_Log("[OK] perf_overlay.bmp");
@@ -758,13 +1068,33 @@ int main(int argc, char *argv[])
         fail++;
     }
 
-    /* Image 4: Scene Tree — hierarchical tree view of game objects
+    /* Image 5: Scene Tree — hierarchical tree view of game objects
      * demonstrating nested tree_push / tree_pop at multiple depths. */
     if (render_scene_tree(&font)) {
         SDL_Log("[OK] scene_tree.bmp");
         pass++;
     } else {
         SDL_Log("[FAIL] scene_tree.bmp");
+        fail++;
+    }
+
+    /* Image 6: Controls — listbox, dropdown, and radio buttons
+     * demonstrating selection-type input controls. */
+    if (render_controls(&font)) {
+        SDL_Log("[OK] controls.bmp");
+        pass++;
+    } else {
+        SDL_Log("[FAIL] controls.bmp");
+        fail++;
+    }
+
+    /* Image 7: Color Picker — HSV color picker with saturation-value
+     * gradient, hue bar, and color preview swatch. */
+    if (render_color_picker(&font)) {
+        SDL_Log("[OK] color_picker.bmp");
+        pass++;
+    } else {
+        SDL_Log("[FAIL] color_picker.bmp");
         fail++;
     }
 
