@@ -21,6 +21,8 @@ learner sees objects moving, colliding, and reacting under physical forces.
 - Physics lessons are visual — every concept must be observable in the running program
 - Focus on *why* the math works, not just the code — connect equations to behavior
 - Use simple geometric shapes (cubes, spheres, capsules) — the physics is the star
+- All scene geometry comes from `common/shapes/forge_shapes.h` — never write
+  inline geometry generation functions
 - Cross-reference math lessons (vectors, matrices, quaternions) and GPU lessons
   where relevant
 
@@ -40,6 +42,9 @@ If any are missing, infer from context or ask.
 
 - **Check existing physics lessons**: Is there already a lesson for this topic?
 - **Check `common/physics/`**: Does relevant library code already exist?
+- **Check `common/shapes/forge_shapes.h`**: Does the shapes library already
+  provide every shape the lesson needs? If a required shape is missing, plan
+  to add it to forge_shapes.h (not inline in the lesson).
 - **Identify the scope**: What specific physics concepts does this lesson cover?
 - **Find cross-references**: Which math/GPU lessons relate?
 - **Check PLAN.md**: Where does this lesson fit in the physics track?
@@ -170,30 +175,46 @@ with full rendering — not console programs.
 - **Slow motion** — Press T to toggle half-speed simulation for observing
   fast phenomena.
 
-**Rendering simple shapes:**
+**Scene geometry via `forge_shapes.h` (MANDATORY):**
 
-Physics lessons use procedural geometry — no model loading required. Generate
-vertices at init time:
+All scene geometry **must** come from `common/shapes/forge_shapes.h`. Never
+write inline geometry generation functions — use the shared library so every
+lesson benefits from the same tested, documented shapes.
 
-- **Sphere**: UV sphere or icosphere with normals (for particles, balls)
-- **Box/Cube**: 24 vertices with face normals (for rigid bodies, walls)
-- **Capsule**: Cylinder + hemisphere caps (for collision shapes)
-- **Ground plane**: Large quad (handled by the shader grid)
+- **Sphere**: `forge_shapes_sphere(32, 16)` or `forge_shapes_icosphere(1)`
+- **Box/Cube**: `forge_shapes_cube(1, 1)` — use `forge_shapes_compute_flat_normals()` for face normals
+- **Capsule**: `forge_shapes_capsule(32, 8, 8, 1.0f)`
+- **Cylinder**: `forge_shapes_cylinder(32, 1)`
+- **Torus**: `forge_shapes_torus(32, 16, major, tube)`
+- **Ground plane**: Handled by the shader grid (no geometry needed)
+
+If the lesson requires a shape that `forge_shapes.h` does not yet provide,
+**add it to the library first** — following the existing API conventions
+(unit-scale, centred at origin, CCW winding, struct-of-arrays layout). Update
+`common/shapes/README.md` and add tests under `tests/shapes/`.
 
 ```c
-/* Example: generate a UV sphere */
-#define SPHERE_RINGS   16
-#define SPHERE_SECTORS 32
+#include "shapes/forge_shapes.h"
 
-typedef struct SceneVertex {
-    vec3 position;
-    vec3 normal;
-} SceneVertex;
+/* Generate shapes at init time, upload to GPU, then free CPU copies.
+ * Always check vertex_count — generators return an empty shape
+ * (all pointers NULL, counts 0) if allocation fails. */
+ForgeShape sphere = forge_shapes_sphere(32, 16);
+if (sphere.vertex_count == 0) {
+    SDL_Log("Failed to generate sphere");
+    return SDL_APP_FAILURE;
+}
+/* ... upload sphere.positions, sphere.normals, sphere.indices to GPU ... */
+forge_shapes_free(&sphere);
 
-/* Generate sphere vertices with normals — the normal at each point on a
- * unit sphere equals the position vector itself (points radially outward) */
-static int generate_sphere(SceneVertex *verts, Uint16 *indices,
-                           float radius, int rings, int sectors);
+ForgeShape box = forge_shapes_cube(1, 1);
+if (box.vertex_count == 0) {
+    SDL_Log("Failed to generate box");
+    return SDL_APP_FAILURE;
+}
+forge_shapes_compute_flat_normals(&box);  /* face normals for rigid bodies */
+/* ... upload ... */
+forge_shapes_free(&box);
 ```
 
 **Template structure:**
@@ -222,6 +243,7 @@ static int generate_sphere(SceneVertex *verts, Uint16 *indices,
 
 #include "math/forge_math.h"
 #include "physics/forge_physics.h"
+#include "shapes/forge_shapes.h"
 
 /* Capture infrastructure (compiled only with -DFORGE_CAPTURE=ON) */
 #ifdef FORGE_CAPTURE
@@ -646,6 +668,7 @@ consistent visual quality across the track:
 | Camera controls | WASD + mouse look with delta time | `forge-camera-and-input` |
 | Depth buffer | D16_UNORM or D32_FLOAT with depth testing | `forge-depth-and-3d` |
 | sRGB swapchain | SDR_LINEAR for correct gamma | `forge-sdl-gpu-setup` |
+| Procedural geometry | All shapes from `forge_shapes.h` — no inline generation | `forge-procedural-geometry` |
 | Capture support | Screenshot + GIF via forge_capture.h | `dev-add-screenshot` |
 
 ### Simulation controls
@@ -679,18 +702,30 @@ float alpha = state->accumulator / PHYSICS_DT;
 Without fixed timestep, physics behaves differently at different frame rates —
 objects fall faster on slow machines and slower on fast ones.
 
-### Simple geometry
+### Simple geometry via `forge_shapes.h`
 
-Physics lessons use procedural geometry generated at init time. No model
-loading (no glTF, no OBJ). This keeps the focus on physics and avoids
-asset dependencies.
+Physics lessons use procedural geometry from `common/shapes/forge_shapes.h`,
+generated at init time. No model loading (no glTF, no OBJ), and **no inline
+geometry generation functions** — all shapes come from the shared library.
 
-| Shape | Use case | Vertex count | Notes |
-|---|---|---|---|
-| Sphere | Particles, balls | ~1000 (16 rings x 32 sectors) | Normal = normalized position |
-| Box | Rigid bodies, walls | 24 (4 per face, flat normals) | 6 faces x 4 verts |
-| Capsule | Collision shapes | ~800 | Cylinder + 2 hemisphere caps |
-| Cylinder | Axles, rods | ~500 | Open or capped |
+If a lesson needs a shape that `forge_shapes.h` does not provide, add it to
+the library first (following the existing conventions: unit-scale, origin-
+centred, CCW winding, struct-of-arrays layout), update
+`common/shapes/README.md`, and add tests under `tests/shapes/`. Then use it
+from the lesson like any other shape.
+
+| Shape | `forge_shapes.h` call | Use case |
+|---|---|---|
+| Sphere | `forge_shapes_sphere(32, 16)` | Particles, balls |
+| Icosphere | `forge_shapes_icosphere(1)` | Low-poly particles |
+| Box/Cube | `forge_shapes_cube(1, 1)` + `forge_shapes_compute_flat_normals()` | Rigid bodies, walls |
+| Capsule | `forge_shapes_capsule(32, 8, 8, 1.0f)` | Collision shapes |
+| Cylinder | `forge_shapes_cylinder(32, 1)` | Axles, rods |
+| Torus | `forge_shapes_torus(32, 16, major, tube)` | Ring shapes |
+| Cone | `forge_shapes_cone(32, 1)` | Force direction indicators |
+
+See `common/shapes/README.md` for the full API and
+[Asset Lesson 04](../../assets/04-procedural-geometry/) for a walkthrough.
 
 ### Visual identity for physics objects
 
