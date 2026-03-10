@@ -14,22 +14,26 @@ The following foundations, tooling, and lesson ranges are complete:
 
 ## GPU Lessons — Remaining
 
+### Reusable Scene Infrastructure
+
+- [ ] **Lesson 40 — Scene Renderer** — A reusable `common/scene/forge_scene.h` header-only library that packages the rendering stack lessons 01–39 built piece by piece: SDL GPU device/window/swapchain setup, depth texture management with auto-resize, directional shadow map with PCF sampling, Blinn-Phong lighting uniforms, procedural grid floor, quaternion FPS camera with mouse/keyboard input, shader creation from SPIRV/DXIL bytecode, GPU buffer upload helpers, and forge UI initialization with font atlas + rendering pipeline. One `forge_scene_init()` call replaces 500–600 lines of boilerplate per lesson. The lesson itself demonstrates the library by rendering a lit scene with shadows, grid, UI panel, and camera controls in under 200 lines of application code. This is the foundation that physics, audio, and all future GPU lessons build on — agents writing those lessons include one header and focus entirely on the lesson's subject matter, not rendering plumbing.
+
 ### Advanced Rendering
 
-- [ ] **Lesson 40 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
-- [ ] **Lesson 41 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
+- [ ] **Lesson 41 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
+- [ ] **Lesson 42 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 
 ### Advanced Materials & Effects
 
-- [ ] **Lesson 42 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
-- [ ] **Lesson 43 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
-- [ ] **Lesson 44 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
+- [ ] **Lesson 43 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
+- [ ] **Lesson 44 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
+- [ ] **Lesson 45 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
 
 ### Volumetric & Terrain
 
-- [ ] **Lesson 45 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
-- [ ] **Lesson 46 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 40)
-- [ ] **Lesson 47 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
+- [ ] **Lesson 46 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
+- [ ] **Lesson 47 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 42)
+- [ ] **Lesson 48 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
 ## Physics Lessons — New Track
 
@@ -37,6 +41,11 @@ A new header-only library (`common/physics/`) built lesson by lesson, covering
 particle dynamics, rigid body simulation, collision detection, and contact
 resolution. 14 lessons in five arcs — each lesson extends `forge_physics.h`
 with tested, documented functions.
+
+All physics lessons use `forge_scene.h` (GPU Lesson 40) for rendering — the
+scene renderer provides Blinn-Phong lighting, shadow maps, grid floor, camera
+controls, and UI panels out of the box. Physics lessons focus entirely on
+simulation code; rendering is a single `#include` and a few function calls.
 
 ### Particle Dynamics
 
@@ -71,11 +80,13 @@ sound playback, mixing, spatial audio, and music systems. Uses SDL3 audio
 streams as the backend. Same quality bar as `forge_physics.h` — every function
 documented, tested, numerically safe.
 
-Every lesson renders an SDL GPU scene with Blinn-Phong lighting, a grid floor,
-shadow mapping, and camera controls. Audio parameters are controlled through
-forge UI panels (`common/ui/`). If a lesson needs a UI widget that does not
-exist (waveform display, VU meter, frequency plot), the widget is added to
-`common/ui/` as part of that lesson.
+All audio lessons use `forge_scene.h` (GPU Lesson 40) for rendering and UI —
+the scene renderer provides the full 3D scene (lighting, shadows, grid, camera)
+and initializes the forge UI system (font atlas, rendering pipeline, panel
+layout). Audio lessons focus entirely on audio code; the UI panel and 3D scene
+come free. If a lesson needs a UI widget that does not exist (waveform display,
+VU meter, frequency plot), the widget is added to `common/ui/` as part of that
+lesson.
 
 ### Fundamentals
 
