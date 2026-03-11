@@ -247,6 +247,7 @@ typedef struct app_state {
 
     /* Suzanne geometry (from glTF) */
     ForgeGltfScene  gltf_scene;           /* parsed glTF scene (CPU-side, freed in quit) */
+    ForgeArena      gltf_arena;           /* arena backing glTF allocations */
     SDL_GPUBuffer  *suzanne_vb;           /* vertex buffer (ForgeGltfVertex, 32 bytes/vert) */
     SDL_GPUBuffer  *suzanne_ib;           /* index buffer (16-bit or 32-bit indices) */
     Uint32          suzanne_index_count;  /* total index count for draw calls */
@@ -860,8 +861,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* ── 2. Load Suzanne via glTF ────────────────────────────────────── */
 
-    if (!forge_gltf_load("assets/models/Suzanne/Suzanne.gltf", &state->gltf_scene)) {
+    state->gltf_arena = forge_arena_create(0);
+    if (!state->gltf_arena.first) {
+        SDL_Log("ERROR: Out of memory creating arena for Suzanne glTF");
+        return SDL_APP_FAILURE;
+    }
+    if (!forge_gltf_load("assets/models/Suzanne/Suzanne.gltf", &state->gltf_scene, &state->gltf_arena)) {
         SDL_Log("ERROR: Failed to load Suzanne glTF");
+        forge_arena_destroy(&state->gltf_arena);
         return SDL_APP_FAILURE;
     }
 
@@ -1947,7 +1954,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     if (state->scene_normal) SDL_ReleaseGPUTexture(state->device, state->scene_normal);
 
     /* Free glTF scene */
-    forge_gltf_free(&state->gltf_scene);
+    forge_arena_destroy(&state->gltf_arena);
 
     /* Release window from GPU device before destroying */
     SDL_ReleaseWindowFromGPUDevice(state->device, state->window);

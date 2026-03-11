@@ -266,10 +266,12 @@ typedef struct app_state {
 
     /* Truck model (CesiumMilkTruck). */
     ForgeGltfScene truck_scene;     /* parsed glTF data                    */
+    ForgeArena     truck_arena;     /* arena backing truck glTF allocs     */
     SceneObject    truck;           /* GPU data + world transform          */
 
     /* Box model (BoxTextured) — 1 loaded model, instanced as BOX_COUNT. */
     ForgeGltfScene box_scene;       /* parsed glTF data                    */
+    ForgeArena     box_arena;       /* arena backing box glTF allocs       */
     SceneObject    boxes[BOX_COUNT]; /* each box has its own transform     */
 
     /* Grid floor geometry. */
@@ -1019,8 +1021,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         char path[PATH_BUFFER_SIZE];
         SDL_snprintf(path, sizeof(path), "%s%s", base, TRUCK_MODEL_PATH);
 
-        if (!forge_gltf_load(path, &state->truck_scene)) {
+        state->truck_arena = forge_arena_create(0);
+        if (!state->truck_arena.first) {
+            SDL_Log("Out of memory creating arena for CesiumMilkTruck");
+            goto init_fail;
+        }
+        if (!forge_gltf_load(path, &state->truck_scene, &state->truck_arena)) {
             SDL_Log("Failed to load CesiumMilkTruck: %s", path);
+            forge_arena_destroy(&state->truck_arena);
             goto init_fail;
         }
 
@@ -1044,8 +1052,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         char path[PATH_BUFFER_SIZE];
         SDL_snprintf(path, sizeof(path), "%s%s", base, BOX_MODEL_PATH);
 
-        if (!forge_gltf_load(path, &state->box_scene)) {
+        state->box_arena = forge_arena_create(0);
+        if (!state->box_arena.first) {
+            SDL_Log("Out of memory creating arena for BoxTextured");
+            goto init_fail;
+        }
+        if (!forge_gltf_load(path, &state->box_scene, &state->box_arena)) {
             SDL_Log("Failed to load BoxTextured: %s", path);
+            forge_arena_destroy(&state->box_arena);
             goto init_fail;
         }
 
@@ -1699,8 +1713,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         forge_capture_destroy(&state->capture, device);
 #endif
 
-        forge_gltf_free(&state->truck_scene);
-        forge_gltf_free(&state->box_scene);
+        forge_arena_destroy(&state->truck_arena);
+        forge_arena_destroy(&state->box_arena);
 
         SDL_DestroyWindow(state->window);
         SDL_DestroyGPUDevice(device);

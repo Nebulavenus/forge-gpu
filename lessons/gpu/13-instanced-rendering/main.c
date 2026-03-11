@@ -292,6 +292,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
     ForgeGltfScene  scene;
+    ForgeArena      gltf_arena;
     GpuPrimitive   *primitives;
     int             primitive_count;
     GpuMaterial    *materials;
@@ -979,8 +980,14 @@ static bool setup_model(SDL_GPUDevice *device, ModelData *model,
 {
     SDL_Log("Loading %s from '%s'...", name, gltf_path);
 
-    if (!forge_gltf_load(gltf_path, &model->scene)) {
+    model->gltf_arena = forge_arena_create(0);
+    if (!model->gltf_arena.first) {
+        SDL_Log("Failed to create glTF arena");
+        return false;
+    }
+    if (!forge_gltf_load(gltf_path, &model->scene, &model->gltf_arena)) {
         SDL_Log("Failed to load %s from '%s'", name, gltf_path);
+        forge_arena_destroy(&model->gltf_arena);
         return false;
     }
 
@@ -991,7 +998,7 @@ static bool setup_model(SDL_GPUDevice *device, ModelData *model,
 
     if (!upload_model_to_gpu(device, model, white_texture)) {
         SDL_Log("Failed to upload %s to GPU", name);
-        forge_gltf_free(&model->scene);
+        forge_arena_destroy(&model->gltf_arena);
         return false;
     }
 
@@ -1032,7 +1039,7 @@ static bool setup_model(SDL_GPUDevice *device, ModelData *model,
     if (!model->instance_buffer) {
         SDL_Log("Failed to upload %s instance buffer", name);
         free_model_gpu(device, model);
-        forge_gltf_free(&model->scene);
+        forge_arena_destroy(&model->gltf_arena);
         return false;
     }
     model->instance_count = instance_count;
@@ -1337,7 +1344,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (!setup_model(device, &state->duck, duck_path, "Duck",
                      white_texture, generate_duck_instances)) {
         free_model_gpu(device, &state->box);
-        forge_gltf_free(&state->box.scene);
+        forge_arena_destroy(&state->box.gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1352,9 +1359,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (!upload_grid_geometry(device, state)) {
         SDL_Log("Failed to upload grid geometry");
         free_model_gpu(device, &state->duck);
-        forge_gltf_free(&state->duck.scene);
+        forge_arena_destroy(&state->duck.gltf_arena);
         free_model_gpu(device, &state->box);
-        forge_gltf_free(&state->box.scene);
+        forge_arena_destroy(&state->box.gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1634,15 +1641,16 @@ fail_cleanup:
     SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
     SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
     free_model_gpu(device, &state->duck);
-    forge_gltf_free(&state->duck.scene);
+    forge_arena_destroy(&state->duck.gltf_arena);
     free_model_gpu(device, &state->box);
-    forge_gltf_free(&state->box.scene);
+    forge_arena_destroy(&state->box.gltf_arena);
     SDL_ReleaseGPUSampler(device, sampler);
     SDL_ReleaseGPUTexture(device, white_texture);
     SDL_ReleaseGPUTexture(device, depth_texture);
     SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
     SDL_DestroyGPUDevice(device);
+    *appstate = NULL;   /* prevent SDL_AppQuit from double-freeing */
     SDL_free(state);
     return SDL_APP_FAILURE;
 }
@@ -1917,9 +1925,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         forge_capture_destroy(&state->capture, state->device);
 #endif
         free_model_gpu(state->device, &state->duck);
-        forge_gltf_free(&state->duck.scene);
+        forge_arena_destroy(&state->duck.gltf_arena);
         free_model_gpu(state->device, &state->box);
-        forge_gltf_free(&state->box.scene);
+        forge_arena_destroy(&state->box.gltf_arena);
         SDL_ReleaseGPUBuffer(state->device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(state->device, state->grid_vertex_buffer);
         SDL_ReleaseGPUSampler(state->device, state->sampler);

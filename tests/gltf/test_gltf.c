@@ -41,6 +41,12 @@ static bool vec3_eq(vec3 a, vec3 b)
     return float_eq(a.x, b.x) && float_eq(a.y, b.y) && float_eq(a.z, b.z);
 }
 
+static bool vec4_eq(vec4 a, vec4 b)
+{
+    return float_eq(a.x, b.x) && float_eq(a.y, b.y)
+        && float_eq(a.z, b.z) && float_eq(a.w, b.w);
+}
+
 static bool quat_eq(quat a, quat b)
 {
     /* q and -q represent the same rotation — check both signs. */
@@ -101,6 +107,64 @@ static bool quat_eq(quat a, quat b)
 
 #define END_TEST() do { SDL_Log("    PASS"); test_passed++; } while (0)
 
+/* Cleanup-aware variants for tests that own an arena + scene.
+ * On failure they jump to a 'cleanup' label instead of returning,
+ * so destroy_test_scene() always runs. */
+#define ASSERT_TRUE_C(cond) \
+    do { if (!(cond)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: %s (line %d)", #cond, __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
+#define ASSERT_FALSE_C(cond) ASSERT_TRUE_C(!(cond))
+
+#define ASSERT_INT_EQ_C(a, b) \
+    do { if ((a) != (b)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: %d != %d (line %d)", \
+                     (int)(a), (int)(b), __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
+#define ASSERT_UINT_EQ_C(a, b) \
+    do { if ((a) != (b)) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: %u != %u (line %d)", \
+                     (unsigned)(a), (unsigned)(b), __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
+#define ASSERT_FLOAT_EQ_C(a, b) \
+    do { if (!float_eq((a), (b))) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, "    FAIL: %.6f != %.6f (line %d)", \
+                     (double)(a), (double)(b), __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
+#define ASSERT_VEC2_EQ_C(a, b) \
+    do { if (!vec2_eq((a), (b))) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+            "    FAIL: (%.3f,%.3f) != (%.3f,%.3f) (line %d)", \
+            (double)(a).x, (double)(a).y, (double)(b).x, (double)(b).y, __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
+#define ASSERT_VEC3_EQ_C(a, b) \
+    do { if (!vec3_eq((a), (b))) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+            "    FAIL: (%.3f,%.3f,%.3f) != (%.3f,%.3f,%.3f) (line %d)", \
+            (double)(a).x, (double)(a).y, (double)(a).z, \
+            (double)(b).x, (double)(b).y, (double)(b).z, __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
+#define ASSERT_VEC4_EQ_C(a, b) \
+    do { if (!vec4_eq((a), (b))) { \
+        SDL_LogError(SDL_LOG_CATEGORY_TEST, \
+            "    FAIL: (%.3f,%.3f,%.3f,%.3f) != (%.3f,%.3f,%.3f,%.3f) (line %d)", \
+            (double)(a).x, (double)(a).y, (double)(a).z, (double)(a).w, \
+            (double)(b).x, (double)(b).y, (double)(b).z, (double)(b).w, __LINE__); \
+        test_failed++; goto cleanup; \
+    } } while (0)
+
 /* ── Helper: write temp files for glTF tests ─────────────────────────────── */
 
 typedef struct TempGltf {
@@ -108,22 +172,47 @@ typedef struct TempGltf {
     char bin_path[FORGE_GLTF_PATH_SIZE];
 } TempGltf;
 
-/* Write a .gltf JSON file and .bin binary file next to the executable. */
+/* Cached writable path — prefer SDL_GetPrefPath (always writable) over
+ * SDL_GetBasePath (may be read-only in CI or app-bundle layouts). */
+static char *g_temp_path;
+static bool  g_temp_path_owned;  /* true if g_temp_path needs SDL_free */
+
+static void init_temp_path(void)
+{
+    if (g_temp_path) return;
+    g_temp_path = SDL_GetPrefPath("forge-gpu", "test_gltf");
+    if (g_temp_path) {
+        g_temp_path_owned = true;
+    } else {
+        g_temp_path = (char *)SDL_GetBasePath();
+        g_temp_path_owned = false;
+    }
+}
+
+static void cleanup_temp_path(void)
+{
+    if (g_temp_path_owned) {
+        SDL_free(g_temp_path);
+    }
+    g_temp_path = NULL;
+    g_temp_path_owned = false;
+}
+
+/* Write a .gltf JSON file and .bin binary file to a writable temp directory. */
 static bool write_temp_gltf(const char *json_text,
                              const void *bin_data, size_t bin_size,
                              const char *name, TempGltf *out)
 {
-    const char *base;
     SDL_IOStream *io;
     size_t json_len;
 
-    base = SDL_GetBasePath();
-    if (!base) return false;
+    init_temp_path();
+    if (!g_temp_path) return false;
 
     SDL_snprintf(out->gltf_path, sizeof(out->gltf_path),
-                 "%s%s.gltf", base, name);
+                 "%s%s.gltf", g_temp_path, name);
     SDL_snprintf(out->bin_path, sizeof(out->bin_path),
-                 "%s%s.bin", base, name);
+                 "%s%s.bin", g_temp_path, name);
 
     /* Write JSON (.gltf). */
     io = SDL_IOFromFile(out->gltf_path, "w");
@@ -189,6 +278,33 @@ static bool remove_temp_gltf(TempGltf *tg)
     return ok;
 }
 
+/* ── Test helpers: arena + scene lifecycle ────────────────────────────────── */
+
+/* Allocate a scene and initialise an arena for glTF loading.  Returns NULL
+ * (and logs an error) if the allocation fails. */
+static ForgeGltfScene *create_test_scene(ForgeArena *arena)
+{
+    *arena = forge_arena_create(0);
+    if (!arena->first) {
+        SDL_Log("  FAIL: forge_arena_create failed");
+        return NULL;
+    }
+    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
+    if (!scene) {
+        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
+        forge_arena_destroy(arena);
+        return NULL;
+    }
+    return scene;
+}
+
+/* Release the arena and free the scene — safe to call on any path. */
+static void destroy_test_scene(ForgeGltfScene *scene, ForgeArena *arena)
+{
+    forge_arena_destroy(arena);
+    SDL_free(scene);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Test Cases
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -197,71 +313,81 @@ static bool remove_temp_gltf(TempGltf *tg)
 
 static void test_nonexistent_file(void)
 {
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
-    bool ok;
-
     TEST("nonexistent file returns false");
 
-    ok = forge_gltf_load("this_file_does_not_exist_12345.gltf", scene);
-    ASSERT_FALSE(ok);
+    ForgeArena gltf_arena;
+    ForgeGltfScene *scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+    bool ok;
 
-    SDL_free(scene);
+    ok = forge_gltf_load("this_file_does_not_exist_12345.gltf", scene, &gltf_arena);
+    ASSERT_FALSE_C(ok);
+
     END_TEST();
+cleanup:
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Invalid JSON ─────────────────────────────────────────────────────────── */
 
 static void test_invalid_json(void)
 {
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
 
     TEST("invalid JSON returns false");
 
+    ForgeGltfScene *scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
     wrote = write_temp_gltf("{ this is not valid json !!!",
                              NULL, 0, "test_invalid", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_FALSE(ok);
-    SDL_free(scene);
+    ASSERT_FALSE_C(ok);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
-/* ── forge_gltf_free on zeroed scene ──────────────────────────────────────── */
+/* ── forge_arena_destroy on zeroed (never-created) arena is safe ──────────── */
 
-static void test_free_zeroed_scene(void)
+static void test_destroy_zeroed_arena(void)
 {
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
+    TEST("forge_arena_destroy on zeroed arena is safe");
+
+    /* A zeroed arena (never initialized with forge_arena_create) should
+     * be safe to destroy — forge_arena_destroy checks for NULL pointers. */
+    ForgeArena arena;
+    SDL_memset(&arena, 0, sizeof(arena));
+    forge_arena_destroy(&arena);
+
+    /* Also verify a calloc'd scene is zeroed as expected. */
+    {
+        ForgeGltfScene *zeroed = SDL_calloc(1, sizeof(*zeroed));
+        if (!zeroed) {
+            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                         "    FAIL: SDL_calloc returned NULL (line %d)",
+                         __LINE__);
+            test_failed++;
+            return;
+        }
+        if (zeroed->primitive_count != 0 || zeroed->node_count != 0) {
+            SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                         "    FAIL: calloc'd scene not zeroed (line %d)",
+                         __LINE__);
+            test_failed++;
+            SDL_free(zeroed);
+            return;
+        }
+        SDL_free(zeroed);
     }
 
-    TEST("forge_gltf_free on zeroed scene is safe");
-
-    SDL_memset(scene, 0, sizeof(*scene));
-    forge_gltf_free(scene);
-
-    ASSERT_INT_EQ(scene->primitive_count, 0);
-    ASSERT_INT_EQ(scene->node_count, 0);
-
-    SDL_free(scene);
     END_TEST();
 }
 
@@ -275,17 +401,16 @@ static void test_invalid_component_type(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("invalid componentType (9999) rejects accessor");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -321,18 +446,17 @@ static void test_invalid_component_type(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_badcomp", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    /* Scene loads but primitive is skipped due to bad componentType. */
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->primitive_count, 0);
+    /* Load must fail — the POSITION accessor is invalid. */
+    ASSERT_FALSE_C(ok);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Misaligned float accessor is rejected ────────────────────────────────── */
@@ -345,17 +469,16 @@ static void test_accessor_misaligned(void)
      * then 3 uint16 indices at offset 13.  Total = 19 bytes. */
     Uint8 bin_data[19];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("float accessor at misaligned offset is rejected");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     SDL_memset(bin_data, 0, sizeof(bin_data));
 
@@ -387,19 +510,17 @@ static void test_accessor_misaligned(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_misalign", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    /* Scene loads but the misaligned POSITION accessor is rejected,
-     * so no primitive is created. */
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->primitive_count, 0);
+    /* Load must fail — POSITION accessor has misaligned data. */
+    ASSERT_FALSE_C(ok);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Accessor exceeds bufferView bounds ───────────────────────────────────── */
@@ -412,17 +533,16 @@ static void test_accessor_exceeds_buffer_view(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("accessor exceeding bufferView.byteLength is rejected");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -458,18 +578,17 @@ static void test_accessor_exceeds_buffer_view(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_bvsmall", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    /* Scene loads but primitive is skipped — accessor overflows bufferView. */
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->primitive_count, 0);
+    /* Load must fail — POSITION accessor overflows bufferView. */
+    ASSERT_FALSE_C(ok);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── bufferView exceeds buffer bounds ─────────────────────────────────────── */
@@ -482,17 +601,16 @@ static void test_buffer_view_exceeds_buffer(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("bufferView exceeding buffer size is rejected");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -528,18 +646,17 @@ static void test_buffer_view_exceeds_buffer(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_bvover", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    /* Primitive skipped — bufferView overflows the binary buffer. */
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->primitive_count, 0);
+    /* Load must fail — bufferView overflows the binary buffer. */
+    ASSERT_FALSE_C(ok);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Missing bufferView.byteLength ────────────────────────────────────────── */
@@ -552,17 +669,16 @@ static void test_missing_buffer_view_byte_length(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("missing bufferView.byteLength rejects accessor");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -598,18 +714,17 @@ static void test_missing_buffer_view_byte_length(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_nobvlen", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    /* Primitive skipped — bufferView has no byteLength. */
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->primitive_count, 0);
+    /* Load must fail — bufferView has no byteLength. */
+    ASSERT_FALSE_C(ok);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Minimal triangle (positions + indices) ───────────────────────────────── */
@@ -620,18 +735,17 @@ static void test_minimal_triangle(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
     const Uint16 *idx;
+    ForgeGltfScene *scene;
 
     TEST("minimal triangle (positions + uint16 indices)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     /* 3 positions (float3) + 3 indices (uint16) = 42 bytes. */
     positions[0] = 0.0f; positions[1] = 0.0f; positions[2] = 0.0f;
@@ -666,43 +780,43 @@ static void test_minimal_triangle(void)
         "}";
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data), "test_tri", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->primitive_count, 1);
-    ASSERT_INT_EQ(scene->node_count, 1);
-    ASSERT_INT_EQ(scene->mesh_count, 1);
-    ASSERT_UINT_EQ(scene->primitives[0].vertex_count, 3);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->primitive_count, 1);
+    ASSERT_INT_EQ_C(scene->node_count, 1);
+    ASSERT_INT_EQ_C(scene->mesh_count, 1);
+    ASSERT_UINT_EQ_C(scene->primitives[0].vertex_count, 3);
 
     /* Check positions. */
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[0].position,
-                   vec3_create(0.0f, 0.0f, 0.0f));
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[1].position,
-                   vec3_create(1.0f, 0.0f, 0.0f));
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[2].position,
-                   vec3_create(0.0f, 1.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[0].position,
+                     vec3_create(0.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[1].position,
+                     vec3_create(1.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[2].position,
+                     vec3_create(0.0f, 1.0f, 0.0f));
 
     /* Check indices (uint16). */
-    ASSERT_UINT_EQ(scene->primitives[0].index_count, 3);
-    ASSERT_UINT_EQ(scene->primitives[0].index_stride, 2);
+    ASSERT_UINT_EQ_C(scene->primitives[0].index_count, 3);
+    ASSERT_UINT_EQ_C(scene->primitives[0].index_stride, 2);
     idx = (const Uint16 *)scene->primitives[0].indices;
-    ASSERT_TRUE(idx != NULL);
-    ASSERT_UINT_EQ(idx[0], 0);
-    ASSERT_UINT_EQ(idx[1], 1);
-    ASSERT_UINT_EQ(idx[2], 2);
+    ASSERT_TRUE_C(idx != NULL);
+    ASSERT_UINT_EQ_C(idx[0], 0);
+    ASSERT_UINT_EQ_C(idx[1], 1);
+    ASSERT_UINT_EQ_C(idx[2], 2);
 
     /* Normals/UVs should be zero (not in file). */
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[0].normal,
-                   vec3_create(0.0f, 0.0f, 0.0f));
-    ASSERT_VEC2_EQ(scene->primitives[0].vertices[0].uv,
-                   vec2_create(0.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[0].normal,
+                     vec3_create(0.0f, 0.0f, 0.0f));
+    ASSERT_VEC2_EQ_C(scene->primitives[0].vertices[0].uv,
+                     vec2_create(0.0f, 0.0f));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Triangle with normals and UVs ────────────────────────────────────────── */
@@ -715,17 +829,16 @@ static void test_normals_and_uvs(void)
     Uint16 indices[3];
     Uint8 bin_data[102];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("triangle with normals and UVs");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     /* Binary: positions(36) + normals(36) + UVs(24) + indices(6) = 102 */
     positions[0] = 0.0f; positions[1] = 0.0f; positions[2] = 0.0f;
@@ -779,29 +892,126 @@ static void test_normals_and_uvs(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_nrmuv", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_UINT_EQ(scene->primitives[0].vertex_count, 3);
+    ASSERT_TRUE_C(ok);
+    ASSERT_TRUE_C(scene->primitive_count > 0);
+    ASSERT_TRUE_C(scene->primitives != NULL);
+    ASSERT_UINT_EQ_C(scene->primitives[0].vertex_count, 3);
 
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[0].normal,
-                   vec3_create(0.0f, 0.0f, 1.0f));
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[1].normal,
-                   vec3_create(0.0f, 0.0f, 1.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[0].normal,
+                     vec3_create(0.0f, 0.0f, 1.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[1].normal,
+                     vec3_create(0.0f, 0.0f, 1.0f));
 
-    ASSERT_VEC2_EQ(scene->primitives[0].vertices[0].uv,
-                   vec2_create(0.0f, 0.0f));
-    ASSERT_VEC2_EQ(scene->primitives[0].vertices[1].uv,
-                   vec2_create(1.0f, 0.0f));
-    ASSERT_VEC2_EQ(scene->primitives[0].vertices[2].uv,
-                   vec2_create(0.0f, 1.0f));
+    ASSERT_VEC2_EQ_C(scene->primitives[0].vertices[0].uv,
+                     vec2_create(0.0f, 0.0f));
+    ASSERT_VEC2_EQ_C(scene->primitives[0].vertices[1].uv,
+                     vec2_create(1.0f, 0.0f));
+    ASSERT_VEC2_EQ_C(scene->primitives[0].vertices[2].uv,
+                     vec2_create(0.0f, 1.0f));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
+}
+
+/* ── Tangent vectors loaded correctly ──────────────────────────────────────── */
+
+static void test_tangent_vectors(void)
+{
+    /* Binary layout:
+     * positions(36) + normals(36) + tangents(48) + indices(6) = 126 bytes */
+    float positions[9];
+    float normals[9];
+    float tangents[12]; /* 3 vertices * VEC4 */
+    Uint16 indices[3];
+    Uint8 bin_data[126];
+    const char *json;
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
+    bool wrote;
+    bool ok;
+
+    TEST("triangle with tangent vectors");
+
+    ForgeGltfScene *scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
+    positions[0] = 0.0f; positions[1] = 0.0f; positions[2] = 0.0f;
+    positions[3] = 1.0f; positions[4] = 0.0f; positions[5] = 0.0f;
+    positions[6] = 0.0f; positions[7] = 1.0f; positions[8] = 0.0f;
+
+    normals[0] = 0.0f; normals[1] = 0.0f; normals[2] = 1.0f;
+    normals[3] = 0.0f; normals[4] = 0.0f; normals[5] = 1.0f;
+    normals[6] = 0.0f; normals[7] = 0.0f; normals[8] = 1.0f;
+
+    /* Tangent = +X direction, handedness = +1 */
+    tangents[0]  = 1.0f; tangents[1]  = 0.0f; tangents[2]  = 0.0f; tangents[3]  = 1.0f;
+    tangents[4]  = 1.0f; tangents[5]  = 0.0f; tangents[6]  = 0.0f; tangents[7]  = 1.0f;
+    tangents[8]  = 1.0f; tangents[9]  = 0.0f; tangents[10] = 0.0f; tangents[11] = 1.0f;
+
+    indices[0] = 0; indices[1] = 1; indices[2] = 2;
+
+    SDL_memcpy(bin_data,       positions,  36);
+    SDL_memcpy(bin_data + 36,  normals,    36);
+    SDL_memcpy(bin_data + 72,  tangents,   48);
+    SDL_memcpy(bin_data + 120, indices,     6);
+
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {"
+        "      \"POSITION\": 0, \"NORMAL\": 1, \"TANGENT\": 2"
+        "    }, \"indices\": 3"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 2, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC4\"},"
+        "    {\"bufferView\": 3, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,   \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 72,  \"byteLength\": 48},"
+        "    {\"buffer\": 0, \"byteOffset\": 120, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_tang.bin\", \"byteLength\": 126}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
+                             "test_tang", &tg);
+    ASSERT_TRUE_C(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+
+    ASSERT_TRUE_C(ok);
+    ASSERT_TRUE_C(scene->primitives[0].has_tangents);
+    ASSERT_TRUE_C(scene->primitives[0].tangents != NULL);
+
+    {
+        vec4 expected = {1.0f, 0.0f, 0.0f, 1.0f};
+        ASSERT_VEC4_EQ_C(scene->primitives[0].tangents[0], expected);
+        ASSERT_VEC4_EQ_C(scene->primitives[0].tangents[1], expected);
+        ASSERT_VEC4_EQ_C(scene->primitives[0].tangents[2], expected);
+    }
+
+    END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Normal count mismatch → normals treated as missing ───────────────────── */
@@ -813,17 +1023,16 @@ static void test_normal_count_mismatch(void)
     Uint16 indices[3];
     Uint8 bin_data[66]; /* 36 + 24 + 6 */
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("NORMAL accessor count != POSITION count → normals ignored");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -867,23 +1076,23 @@ static void test_normal_count_mismatch(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_normmis", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_UINT_EQ(scene->primitives[0].vertex_count, 3);
+    ASSERT_TRUE_C(ok);
+    ASSERT_UINT_EQ_C(scene->primitives[0].vertex_count, 3);
 
     /* Normals should be zero — treated as missing due to count mismatch. */
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[0].normal,
-                   vec3_create(0.0f, 0.0f, 0.0f));
-    ASSERT_VEC3_EQ(scene->primitives[0].vertices[2].normal,
-                   vec3_create(0.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[0].normal,
+                     vec3_create(0.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[0].vertices[2].normal,
+                     vec3_create(0.0f, 0.0f, 0.0f));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── UV wrong componentType → UVs treated as missing ─────────────────────── */
@@ -895,17 +1104,16 @@ static void test_uv_wrong_component_type(void)
     Uint16 indices[3];
     Uint8 bin_data[54]; /* 36 + 12 + 6 */
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("TEXCOORD_0 with wrong componentType (USHORT) → UVs ignored");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -950,22 +1158,22 @@ static void test_uv_wrong_component_type(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_uvbad", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_UINT_EQ(scene->primitives[0].vertex_count, 3);
+    ASSERT_TRUE_C(ok);
+    ASSERT_UINT_EQ_C(scene->primitives[0].vertex_count, 3);
 
     /* UVs should be zero — wrong componentType means they're skipped. */
-    ASSERT_FALSE(scene->primitives[0].has_uvs);
-    ASSERT_VEC2_EQ(scene->primitives[0].vertices[0].uv,
-                   vec2_create(0.0f, 0.0f));
+    ASSERT_FALSE_C(scene->primitives[0].has_uvs);
+    ASSERT_VEC2_EQ_C(scene->primitives[0].vertices[0].uv,
+                     vec2_create(0.0f, 0.0f));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: base color factor ──────────────────────────────────────────── */
@@ -976,17 +1184,16 @@ static void test_material_base_color(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material with base color factor");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1026,24 +1233,25 @@ static void test_material_base_color(void)
         "}";
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data), "test_mat", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[0], 0.8f);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[1], 0.2f);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[2], 0.1f);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[3], 1.0f);
-    ASSERT_FALSE(scene->materials[0].has_texture);
-    ASSERT_TRUE(SDL_strcmp(scene->materials[0].name, "RedMat") == 0);
-    ASSERT_INT_EQ(scene->primitives[0].material_index, 0);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[0], 0.8f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[1], 0.2f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[2], 0.1f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[3], 1.0f);
+    ASSERT_FALSE_C(scene->materials[0].has_texture);
+    ASSERT_TRUE_C(SDL_strcmp(scene->materials[0].name, "RedMat") == 0);
+    ASSERT_INT_EQ_C(scene->primitives[0].material_index, 0);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: texture path resolution ────────────────────────────────────── */
@@ -1054,19 +1262,18 @@ static void test_material_texture_path(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
     const char *path;
     size_t len;
+    ForgeGltfScene *scene;
 
     TEST("material texture path resolution");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1109,24 +1316,26 @@ static void test_material_texture_path(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_texpath", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
-    ASSERT_TRUE(scene->materials[0].has_texture);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
+    ASSERT_TRUE_C(scene->materials[0].has_texture);
+    ASSERT_TRUE_C(scene->materials[0].texture_path != NULL);
 
     /* texture_path should end with "diffuse.png". */
     path = scene->materials[0].texture_path;
     len = SDL_strlen(path);
-    ASSERT_TRUE(len >= 11);
-    ASSERT_TRUE(SDL_strcmp(path + len - 11, "diffuse.png") == 0);
+    ASSERT_TRUE_C(len >= 11);
+    ASSERT_TRUE_C(SDL_strcmp(path + len - 11, "diffuse.png") == 0);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: PBR metallic-roughness fields ──────────────────────────────── */
@@ -1137,17 +1346,16 @@ static void test_material_pbr_fields(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material PBR metallic-roughness fields");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1187,19 +1395,20 @@ static void test_material_pbr_fields(void)
         "}";
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data), "test_pbr", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
-    ASSERT_FLOAT_EQ(scene->materials[0].metallic_factor, 0.3f);
-    ASSERT_FLOAT_EQ(scene->materials[0].roughness_factor, 0.7f);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].metallic_factor, 0.3f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].roughness_factor, 0.7f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: normal scale, occlusion, emissive ──────────────────────────── */
@@ -1210,17 +1419,16 @@ static void test_material_extended_fields(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material normal scale, occlusion strength, emissive factor");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1267,31 +1475,32 @@ static void test_material_extended_fields(void)
         "}";
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data), "test_ext", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* Normal scale */
-    ASSERT_TRUE(scene->materials[0].has_normal_map);
-    ASSERT_FLOAT_EQ(scene->materials[0].normal_scale, 0.5f);
+    ASSERT_TRUE_C(scene->materials[0].has_normal_map);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].normal_scale, 0.5f);
 
     /* Occlusion */
-    ASSERT_TRUE(scene->materials[0].has_occlusion);
-    ASSERT_FLOAT_EQ(scene->materials[0].occlusion_strength, 0.8f);
+    ASSERT_TRUE_C(scene->materials[0].has_occlusion);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].occlusion_strength, 0.8f);
 
     /* Emissive */
-    ASSERT_TRUE(scene->materials[0].has_emissive);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[0], 1.0f);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[1], 0.5f);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[2], 0.2f);
+    ASSERT_TRUE_C(scene->materials[0].has_emissive);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[0], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[1], 0.5f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[2], 0.2f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: defaults when no PBR block ─────────────────────────────────── */
@@ -1302,17 +1511,16 @@ static void test_material_defaults(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material defaults (no pbrMetallicRoughness block)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1356,36 +1564,37 @@ static void test_material_defaults(void)
         "}";
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data), "test_def", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* PBR defaults (no pbrMetallicRoughness block) */
-    ASSERT_FLOAT_EQ(scene->materials[0].metallic_factor, 1.0f);
-    ASSERT_FLOAT_EQ(scene->materials[0].roughness_factor, 1.0f);
-    ASSERT_FALSE(scene->materials[0].has_texture);
-    ASSERT_FALSE(scene->materials[0].has_metallic_roughness);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].metallic_factor, 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].roughness_factor, 1.0f);
+    ASSERT_FALSE_C(scene->materials[0].has_texture);
+    ASSERT_FALSE_C(scene->materials[0].has_metallic_roughness);
 
     /* normalTexture should still be parsed even without PBR block */
-    ASSERT_TRUE(scene->materials[0].has_normal_map);
-    ASSERT_FLOAT_EQ(scene->materials[0].normal_scale, 2.0f);
+    ASSERT_TRUE_C(scene->materials[0].has_normal_map);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].normal_scale, 2.0f);
 
     /* emissiveFactor should still be parsed */
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[0], 0.5f);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[1], 0.5f);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[2], 0.5f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[0], 0.5f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[1], 0.5f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[2], 0.5f);
 
     /* Occlusion defaults */
-    ASSERT_FALSE(scene->materials[0].has_occlusion);
-    ASSERT_FLOAT_EQ(scene->materials[0].occlusion_strength, 1.0f);
+    ASSERT_FALSE_C(scene->materials[0].has_occlusion);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].occlusion_strength, 1.0f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: metallic-roughness texture resolution ──────────────────────── */
@@ -1396,19 +1605,18 @@ static void test_material_mr_texture(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
     const char *path;
     size_t len;
+    ForgeGltfScene *scene;
 
     TEST("material metallic-roughness texture path resolution");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1449,23 +1657,25 @@ static void test_material_mr_texture(void)
         "}";
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data), "test_mr", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
-    ASSERT_TRUE(scene->materials[0].has_metallic_roughness);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
+    ASSERT_TRUE_C(scene->materials[0].has_metallic_roughness);
+    ASSERT_TRUE_C(scene->materials[0].metallic_roughness_path != NULL);
 
     path = scene->materials[0].metallic_roughness_path;
     len = SDL_strlen(path);
-    ASSERT_TRUE(len >= 15);
-    ASSERT_TRUE(SDL_strcmp(path + len - 15, "metal_rough.png") == 0);
+    ASSERT_TRUE_C(len >= 15);
+    ASSERT_TRUE_C(SDL_strcmp(path + len - 15, "metal_rough.png") == 0);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Node hierarchy: accumulated translation ──────────────────────────────── */
@@ -1476,17 +1686,16 @@ static void test_node_hierarchy(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("node hierarchy (parent + child translations accumulate)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1525,44 +1734,45 @@ static void test_node_hierarchy(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_hier", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->node_count, 2);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->node_count, 2);
+    ASSERT_TRUE_C(scene->nodes != NULL);
 
     /* Node 0 world translation = (1,0,0). */
-    ASSERT_FLOAT_EQ(scene->nodes[0].world_transform.m[12], 1.0f);
-    ASSERT_FLOAT_EQ(scene->nodes[0].world_transform.m[13], 0.0f);
-    ASSERT_FLOAT_EQ(scene->nodes[0].world_transform.m[14], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[12], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[13], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[14], 0.0f);
 
     /* Node 1 world translation = parent(1,0,0) + child(0,2,0) = (1,2,0). */
-    ASSERT_FLOAT_EQ(scene->nodes[1].world_transform.m[12], 1.0f);
-    ASSERT_FLOAT_EQ(scene->nodes[1].world_transform.m[13], 2.0f);
-    ASSERT_FLOAT_EQ(scene->nodes[1].world_transform.m[14], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[1].world_transform.m[12], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[1].world_transform.m[13], 2.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[1].world_transform.m[14], 0.0f);
 
     /* Decomposed TRS fields — both nodes use TRS (translation only). */
-    ASSERT_TRUE(scene->nodes[0].has_trs);
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].translation,
-                        vec3_create(1.0f, 0.0f, 0.0f)));
-    ASSERT_TRUE(quat_eq(scene->nodes[0].rotation, quat_identity()));
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].scale_xyz,
-                        vec3_create(1.0f, 1.0f, 1.0f)));
+    ASSERT_TRUE_C(scene->nodes[0].has_trs);
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].translation,
+                          vec3_create(1.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE_C(quat_eq(scene->nodes[0].rotation, quat_identity()));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].scale_xyz,
+                          vec3_create(1.0f, 1.0f, 1.0f)));
 
-    ASSERT_TRUE(scene->nodes[1].has_trs);
-    ASSERT_TRUE(vec3_eq(scene->nodes[1].translation,
-                        vec3_create(0.0f, 2.0f, 0.0f)));
+    ASSERT_TRUE_C(scene->nodes[1].has_trs);
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[1].translation,
+                          vec3_create(0.0f, 2.0f, 0.0f)));
 
     /* Parent reference. */
-    ASSERT_INT_EQ(scene->nodes[1].parent, 0);
-    ASSERT_INT_EQ(scene->root_node_count, 1);
-    ASSERT_INT_EQ(scene->root_nodes[0], 0);
+    ASSERT_INT_EQ_C(scene->nodes[1].parent, 0);
+    ASSERT_INT_EQ_C(scene->root_node_count, 1);
+    ASSERT_INT_EQ_C(scene->root_nodes[0], 0);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Quaternion rotation (glTF [x,y,z,w] order) ──────────────────────────── */
@@ -1573,18 +1783,17 @@ static void test_quaternion_rotation(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
     const mat4 *m;
+    ForgeGltfScene *scene;
 
     TEST("quaternion rotation (90 deg Y, glTF [x,y,z,w] order)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1621,35 +1830,36 @@ static void test_quaternion_rotation(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_quat", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->node_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->node_count, 1);
+    ASSERT_TRUE_C(scene->nodes != NULL);
 
     /* 90 deg Y rotation (column-major):
      *   col0=(0,0,-1,0)  col1=(0,1,0,0)  col2=(1,0,0,0) */
     m = &scene->nodes[0].world_transform;
-    ASSERT_FLOAT_EQ(m->m[0],   0.0f);   /* col0.x */
-    ASSERT_FLOAT_EQ(m->m[2],  -1.0f);   /* col0.z */
-    ASSERT_FLOAT_EQ(m->m[5],   1.0f);   /* col1.y */
-    ASSERT_FLOAT_EQ(m->m[8],   1.0f);   /* col2.x */
-    ASSERT_FLOAT_EQ(m->m[10],  0.0f);   /* col2.z */
+    ASSERT_FLOAT_EQ_C(m->m[0],   0.0f);   /* col0.x */
+    ASSERT_FLOAT_EQ_C(m->m[2],  -1.0f);   /* col0.z */
+    ASSERT_FLOAT_EQ_C(m->m[5],   1.0f);   /* col1.y */
+    ASSERT_FLOAT_EQ_C(m->m[8],   1.0f);   /* col2.x */
+    ASSERT_FLOAT_EQ_C(m->m[10],  0.0f);   /* col2.z */
 
     /* Decomposed TRS — rotation stored as quaternion (w,x,y,z). */
-    ASSERT_TRUE(scene->nodes[0].has_trs);
-    ASSERT_TRUE(quat_eq(scene->nodes[0].rotation,
-                        quat_create(0.7071068f, 0.0f, 0.7071068f, 0.0f)));
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].translation,
-                        vec3_create(0.0f, 0.0f, 0.0f)));
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].scale_xyz,
-                        vec3_create(1.0f, 1.0f, 1.0f)));
+    ASSERT_TRUE_C(scene->nodes[0].has_trs);
+    ASSERT_TRUE_C(quat_eq(scene->nodes[0].rotation,
+                          quat_create(0.7071068f, 0.0f, 0.7071068f, 0.0f)));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].translation,
+                          vec3_create(0.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].scale_xyz,
+                          vec3_create(1.0f, 1.0f, 1.0f)));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Scale transform ──────────────────────────────────────────────────────── */
@@ -1660,17 +1870,16 @@ static void test_scale_transform(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("scale transform (2x uniform)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1705,29 +1914,30 @@ static void test_scale_transform(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_scale", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
+    ASSERT_TRUE_C(ok);
+    ASSERT_TRUE_C(scene->nodes != NULL);
 
     /* Diagonal should be 2.0 (uniform scale). */
-    ASSERT_FLOAT_EQ(scene->nodes[0].world_transform.m[0],  2.0f);
-    ASSERT_FLOAT_EQ(scene->nodes[0].world_transform.m[5],  2.0f);
-    ASSERT_FLOAT_EQ(scene->nodes[0].world_transform.m[10], 2.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[0],  2.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[5],  2.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[10], 2.0f);
 
     /* Decomposed TRS — scale stored as vec3. */
-    ASSERT_TRUE(scene->nodes[0].has_trs);
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].scale_xyz,
-                        vec3_create(2.0f, 2.0f, 2.0f)));
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].translation,
-                        vec3_create(0.0f, 0.0f, 0.0f)));
-    ASSERT_TRUE(quat_eq(scene->nodes[0].rotation, quat_identity()));
+    ASSERT_TRUE_C(scene->nodes[0].has_trs);
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].scale_xyz,
+                          vec3_create(2.0f, 2.0f, 2.0f)));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].translation,
+                          vec3_create(0.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE_C(quat_eq(scene->nodes[0].rotation, quat_identity()));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Explicit matrix transform ─────────────────────────────────────────────── */
@@ -1738,18 +1948,17 @@ static void test_node_explicit_matrix(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
     const mat4 *m;
+    ForgeGltfScene *scene;
 
     TEST("node with explicit 4x4 matrix transform");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1791,38 +2000,39 @@ static void test_node_explicit_matrix(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_matrix", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->node_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->node_count, 1);
+    ASSERT_TRUE_C(scene->nodes != NULL);
 
     m = &scene->nodes[0].world_transform;
     /* Scale: X=2, Y=3, Z=1 */
-    ASSERT_FLOAT_EQ(m->m[0],  2.0f);   /* col0.x */
-    ASSERT_FLOAT_EQ(m->m[5],  3.0f);   /* col1.y */
-    ASSERT_FLOAT_EQ(m->m[10], 1.0f);   /* col2.z */
+    ASSERT_FLOAT_EQ_C(m->m[0],  2.0f);   /* col0.x */
+    ASSERT_FLOAT_EQ_C(m->m[5],  3.0f);   /* col1.y */
+    ASSERT_FLOAT_EQ_C(m->m[10], 1.0f);   /* col2.z */
     /* Translation: (4, 5, 6) */
-    ASSERT_FLOAT_EQ(m->m[12], 4.0f);
-    ASSERT_FLOAT_EQ(m->m[13], 5.0f);
-    ASSERT_FLOAT_EQ(m->m[14], 6.0f);
+    ASSERT_FLOAT_EQ_C(m->m[12], 4.0f);
+    ASSERT_FLOAT_EQ_C(m->m[13], 5.0f);
+    ASSERT_FLOAT_EQ_C(m->m[14], 6.0f);
     /* Homogeneous w=1 */
-    ASSERT_FLOAT_EQ(m->m[15], 1.0f);
+    ASSERT_FLOAT_EQ_C(m->m[15], 1.0f);
 
     /* Explicit matrix nodes do NOT have decomposed TRS. */
-    ASSERT_FALSE(scene->nodes[0].has_trs);
+    ASSERT_FALSE_C(scene->nodes[0].has_trs);
     /* Defaults should be preserved for non-TRS nodes. */
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].translation,
-                        vec3_create(0.0f, 0.0f, 0.0f)));
-    ASSERT_TRUE(quat_eq(scene->nodes[0].rotation, quat_identity()));
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].scale_xyz,
-                        vec3_create(1.0f, 1.0f, 1.0f)));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].translation,
+                          vec3_create(0.0f, 0.0f, 0.0f)));
+    ASSERT_TRUE_C(quat_eq(scene->nodes[0].rotation, quat_identity()));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].scale_xyz,
+                          vec3_create(1.0f, 1.0f, 1.0f)));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Combined TRS (translation + rotation + scale) ────────────────────────── */
@@ -1833,18 +2043,17 @@ static void test_combined_trs(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
     const mat4 *m;
+    ForgeGltfScene *scene;
 
     TEST("combined TRS (translation + 90-deg-Y rotation + non-uniform scale)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -1885,22 +2094,22 @@ static void test_combined_trs(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_trs", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->node_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->node_count, 1);
+    ASSERT_TRUE_C(scene->nodes != NULL);
 
     /* Verify decomposed TRS fields are stored correctly. */
-    ASSERT_TRUE(scene->nodes[0].has_trs);
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].translation,
-                        vec3_create(3.0f, 4.0f, 5.0f)));
-    ASSERT_TRUE(quat_eq(scene->nodes[0].rotation,
-                        quat_create(0.7071068f, 0.0f, 0.7071068f, 0.0f)));
-    ASSERT_TRUE(vec3_eq(scene->nodes[0].scale_xyz,
-                        vec3_create(2.0f, 1.0f, 3.0f)));
+    ASSERT_TRUE_C(scene->nodes[0].has_trs);
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].translation,
+                          vec3_create(3.0f, 4.0f, 5.0f)));
+    ASSERT_TRUE_C(quat_eq(scene->nodes[0].rotation,
+                          quat_create(0.7071068f, 0.0f, 0.7071068f, 0.0f)));
+    ASSERT_TRUE_C(vec3_eq(scene->nodes[0].scale_xyz,
+                          vec3_create(2.0f, 1.0f, 3.0f)));
 
     /* Verify local_transform = T * R * S matches the decomposed fields.
      * 90-deg-Y rotation: R swaps X↔Z with sign flip.
@@ -1909,19 +2118,20 @@ static void test_combined_trs(void)
      *   col2 = R * scale_z = (3,0, 0,0)
      *   col3 = translation = (3,4, 5,1) */
     m = &scene->nodes[0].world_transform;
-    ASSERT_FLOAT_EQ(m->m[0],   0.0f);   /* col0.x */
-    ASSERT_FLOAT_EQ(m->m[1],   0.0f);   /* col0.y */
-    ASSERT_FLOAT_EQ(m->m[2],  -2.0f);   /* col0.z */
-    ASSERT_FLOAT_EQ(m->m[5],   1.0f);   /* col1.y */
-    ASSERT_FLOAT_EQ(m->m[8],   3.0f);   /* col2.x */
-    ASSERT_FLOAT_EQ(m->m[10],  0.0f);   /* col2.z */
-    ASSERT_FLOAT_EQ(m->m[12],  3.0f);   /* translate x */
-    ASSERT_FLOAT_EQ(m->m[13],  4.0f);   /* translate y */
-    ASSERT_FLOAT_EQ(m->m[14],  5.0f);   /* translate z */
+    ASSERT_FLOAT_EQ_C(m->m[0],   0.0f);   /* col0.x */
+    ASSERT_FLOAT_EQ_C(m->m[1],   0.0f);   /* col0.y */
+    ASSERT_FLOAT_EQ_C(m->m[2],  -2.0f);   /* col0.z */
+    ASSERT_FLOAT_EQ_C(m->m[5],   1.0f);   /* col1.y */
+    ASSERT_FLOAT_EQ_C(m->m[8],   3.0f);   /* col2.x */
+    ASSERT_FLOAT_EQ_C(m->m[10],  0.0f);   /* col2.z */
+    ASSERT_FLOAT_EQ_C(m->m[12],  3.0f);   /* translate x */
+    ASSERT_FLOAT_EQ_C(m->m[13],  4.0f);   /* translate y */
+    ASSERT_FLOAT_EQ_C(m->m[14],  5.0f);   /* translate z */
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Multiple primitives per mesh ─────────────────────────────────────────── */
@@ -1934,17 +2144,16 @@ static void test_multiple_primitives(void)
     Uint16 idx2[3];
     Uint8 bin_data[84];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("mesh with two primitives (multi-material)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     pos1[0] = 0; pos1[1] = 0; pos1[2] = 0;
     pos1[3] = 1; pos1[4] = 0; pos1[5] = 0;
@@ -2001,33 +2210,34 @@ static void test_multiple_primitives(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_multi", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->mesh_count, 1);
-    ASSERT_INT_EQ(scene->primitive_count, 2);
-    ASSERT_INT_EQ(scene->material_count, 2);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->mesh_count, 1);
+    ASSERT_INT_EQ_C(scene->primitive_count, 2);
+    ASSERT_INT_EQ_C(scene->material_count, 2);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* First primitive = material 0 (red). */
-    ASSERT_INT_EQ(scene->primitives[0].material_index, 0);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[0], 1.0f);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[2], 0.0f);
+    ASSERT_INT_EQ_C(scene->primitives[0].material_index, 0);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[0], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[2], 0.0f);
 
     /* Second primitive = material 1 (blue). */
-    ASSERT_INT_EQ(scene->primitives[1].material_index, 1);
-    ASSERT_FLOAT_EQ(scene->materials[1].base_color[0], 0.0f);
-    ASSERT_FLOAT_EQ(scene->materials[1].base_color[2], 1.0f);
+    ASSERT_INT_EQ_C(scene->primitives[1].material_index, 1);
+    ASSERT_FLOAT_EQ_C(scene->materials[1].base_color[0], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[1].base_color[2], 1.0f);
 
     /* Second primitive positions differ from first. */
-    ASSERT_VEC3_EQ(scene->primitives[1].vertices[0].position,
-                   vec3_create(2.0f, 0.0f, 0.0f));
+    ASSERT_VEC3_EQ_C(scene->primitives[1].vertices[0].position,
+                     vec3_create(2.0f, 0.0f, 0.0f));
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: factor clamping ─────────────────────────────────────────────── */
@@ -2038,17 +2248,16 @@ static void test_material_factor_clamping(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material factor clamping (out-of-range values)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -2098,30 +2307,31 @@ static void test_material_factor_clamping(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_clamp", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* metallicFactor 5.0 → clamped to 1.0 */
-    ASSERT_FLOAT_EQ(scene->materials[0].metallic_factor, 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].metallic_factor, 1.0f);
     /* roughnessFactor -2.0 → clamped to 0.0 */
-    ASSERT_FLOAT_EQ(scene->materials[0].roughness_factor, 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].roughness_factor, 0.0f);
     /* occlusion_strength 99.0 → clamped to 1.0 */
-    ASSERT_FLOAT_EQ(scene->materials[0].occlusion_strength, 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].occlusion_strength, 1.0f);
     /* alphaCutoff -1.0 → clamped to 0.0 */
-    ASSERT_FLOAT_EQ(scene->materials[0].alpha_cutoff, 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].alpha_cutoff, 0.0f);
     /* emissiveFactor[0] -0.5 → clamped to 0.0 */
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[0], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[0], 0.0f);
     /* emissiveFactor[1] 1.0 → unchanged */
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[1], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[1], 1.0f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: negative texture index ─────────────────────────────────────── */
@@ -2132,17 +2342,16 @@ static void test_material_negative_texture_index(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material with negative texture index (should not crash)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -2188,23 +2397,24 @@ static void test_material_negative_texture_index(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_negidx", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* Negative indices should result in has_* = false (no crash) */
-    ASSERT_FALSE(scene->materials[0].has_texture);
-    ASSERT_FALSE(scene->materials[0].has_normal_map);
-    ASSERT_FALSE(scene->materials[0].has_occlusion);
-    ASSERT_FALSE(scene->materials[0].has_emissive);
+    ASSERT_FALSE_C(scene->materials[0].has_texture);
+    ASSERT_FALSE_C(scene->materials[0].has_normal_map);
+    ASSERT_FALSE_C(scene->materials[0].has_occlusion);
+    ASSERT_FALSE_C(scene->materials[0].has_emissive);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: negative texture source index ──────────────────────────────── */
@@ -2215,17 +2425,16 @@ static void test_material_negative_source_index(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("texture with negative source index (should not crash)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -2268,20 +2477,21 @@ static void test_material_negative_source_index(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_negsrc", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* Negative source index → has_texture = false */
-    ASSERT_FALSE(scene->materials[0].has_texture);
+    ASSERT_FALSE_C(scene->materials[0].has_texture);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Material: emissiveFactor with wrong element count ────────────────────── */
@@ -2292,17 +2502,16 @@ static void test_material_emissive_wrong_count(void)
     Uint16 indices[3];
     Uint8 bin_data[42];
     const char *json;
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     bool wrote;
     bool ok;
+    ForgeGltfScene *scene;
 
     TEST("material emissiveFactor with wrong element count");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     positions[0] = 0; positions[1] = 0; positions[2] = 0;
     positions[3] = 1; positions[4] = 0; positions[5] = 0;
@@ -2345,27 +2554,28 @@ static void test_material_emissive_wrong_count(void)
 
     wrote = write_temp_gltf(json, bin_data, sizeof(bin_data),
                              "test_emcnt", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
 
-    ASSERT_TRUE(ok);
-    ASSERT_INT_EQ(scene->material_count, 1);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->material_count, 1);
+    ASSERT_TRUE_C(scene->materials != NULL);
 
     /* Wrong-sized arrays should be ignored; defaults preserved.
      * baseColorFactor[2] → not 4 elements, so default white (1,1,1,1) */
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[0], 1.0f);
-    ASSERT_FLOAT_EQ(scene->materials[0].base_color[3], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[0], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].base_color[3], 1.0f);
 
     /* emissiveFactor[2] → not 3 elements, so default black (0,0,0) */
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[0], 0.0f);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[1], 0.0f);
-    ASSERT_FLOAT_EQ(scene->materials[0].emissive_factor[2], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[0], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[1], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->materials[0].emissive_factor[2], 0.0f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── CesiumMilkTruck (real-world model) ───────────────────────────────────── */
@@ -2375,6 +2585,7 @@ static void test_cesium_milk_truck(void)
     const char *base;
     char path[512];
     ForgeGltfScene *scene;
+    ForgeArena gltf_arena;
     bool ok;
     bool found_texture;
     int i;
@@ -2391,32 +2602,29 @@ static void test_cesium_milk_truck(void)
     SDL_snprintf(path, sizeof(path),
                  "%sassets/CesiumMilkTruck/CesiumMilkTruck.gltf", base);
 
-    scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
-    ok = forge_gltf_load(path, scene);
+    ok = forge_gltf_load(path, scene, &gltf_arena);
     if (!ok) {
         SDL_Log("    SKIP (model not found at %s)", path);
-        SDL_free(scene);
+        destroy_test_scene(scene, &gltf_arena);
         test_passed++;
         return;
     }
 
-    ASSERT_INT_EQ(scene->node_count, 6);
-    ASSERT_INT_EQ(scene->mesh_count, 2);
-    ASSERT_INT_EQ(scene->material_count, 4);
-    ASSERT_TRUE(scene->primitive_count >= 4);
+    ASSERT_INT_EQ_C(scene->node_count, 6);
+    ASSERT_INT_EQ_C(scene->mesh_count, 2);
+    ASSERT_INT_EQ_C(scene->material_count, 4);
+    ASSERT_TRUE_C(scene->materials != NULL);
+    ASSERT_TRUE_C(scene->primitive_count >= 4);
 
     /* All primitives should have vertex + index data. */
     for (i = 0; i < scene->primitive_count; i++) {
-        ASSERT_TRUE(scene->primitives[i].vertices != NULL);
-        ASSERT_TRUE(scene->primitives[i].vertex_count > 0);
-        ASSERT_TRUE(scene->primitives[i].indices != NULL);
-        ASSERT_TRUE(scene->primitives[i].index_count > 0);
+        ASSERT_TRUE_C(scene->primitives[i].vertices != NULL);
+        ASSERT_TRUE_C(scene->primitives[i].vertex_count > 0);
+        ASSERT_TRUE_C(scene->primitives[i].indices != NULL);
+        ASSERT_TRUE_C(scene->primitives[i].index_count > 0);
     }
 
     /* At least one material should have a texture. */
@@ -2427,11 +2635,11 @@ static void test_cesium_milk_truck(void)
             break;
         }
     }
-    ASSERT_TRUE(found_texture);
+    ASSERT_TRUE_C(found_texture);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── CesiumMan: skin parsing ───────────────────────────────────────────────── */
@@ -2441,6 +2649,7 @@ static void test_cesiumman_skin(void)
     const char *base;
     char path[FORGE_GLTF_PATH_SIZE];
     ForgeGltfScene *scene;
+    ForgeArena gltf_arena;
     bool ok;
     mat4 identity;
 
@@ -2456,52 +2665,52 @@ static void test_cesiumman_skin(void)
     SDL_snprintf(path, sizeof(path),
                  "%sassets/CesiumMan/CesiumMan.gltf", base);
 
-    scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
-    ok = forge_gltf_load(path, scene);
+    ok = forge_gltf_load(path, scene, &gltf_arena);
     if (!ok) {
         SDL_Log("    SKIP (model not found at %s)", path);
-        SDL_free(scene);
+        destroy_test_scene(scene, &gltf_arena);
         test_passed++;
         return;
     }
 
     /* Skin count and joint count. */
-    ASSERT_INT_EQ(scene->skin_count, 1);
-    ASSERT_INT_EQ(scene->skins[0].joint_count, 19);
+    ASSERT_INT_EQ_C(scene->skin_count, 1);
+    ASSERT_TRUE_C(scene->skins != NULL);
+    ASSERT_INT_EQ_C(scene->skins[0].joint_count, 19);
 
     /* First joint is node 3 (Skeleton_torso_joint_1). */
-    ASSERT_INT_EQ(scene->skins[0].joints[0], 3);
+    ASSERT_TRUE_C(scene->skins[0].joints != NULL);
+    ASSERT_INT_EQ_C(scene->skins[0].joints[0], 3);
 
     /* Skeleton root is node 3. */
-    ASSERT_INT_EQ(scene->skins[0].skeleton, 3);
+    ASSERT_INT_EQ_C(scene->skins[0].skeleton, 3);
 
     /* Inverse bind matrices should be loaded (first matrix != identity). */
+    ASSERT_TRUE_C(scene->skins[0].inverse_bind_matrices != NULL);
     identity = mat4_identity();
-    ASSERT_FALSE(SDL_memcmp(scene->skins[0].inverse_bind_matrices[0].m,
-                            identity.m, sizeof(identity.m)) == 0);
+    ASSERT_FALSE_C(SDL_memcmp(scene->skins[0].inverse_bind_matrices[0].m,
+                              identity.m, sizeof(identity.m)) == 0);
 
     /* Node 2 ("Cesium_Man") has skin_index == 0. */
-    ASSERT_TRUE(scene->node_count > 2);
-    ASSERT_INT_EQ(scene->nodes[2].skin_index, 0);
+    ASSERT_TRUE_C(scene->node_count > 2);
+    ASSERT_TRUE_C(scene->nodes != NULL);
+    ASSERT_INT_EQ_C(scene->nodes[2].skin_index, 0);
 
     /* The mesh primitive should have skin data. */
-    ASSERT_TRUE(scene->primitive_count >= 1);
-    ASSERT_TRUE(scene->primitives[0].has_skin_data);
-    ASSERT_TRUE(scene->primitives[0].joint_indices != NULL);
-    ASSERT_TRUE(scene->primitives[0].weights != NULL);
+    ASSERT_TRUE_C(scene->primitive_count >= 1);
+    ASSERT_TRUE_C(scene->primitives[0].has_skin_data);
+    ASSERT_TRUE_C(scene->primitives[0].joint_indices != NULL);
+    ASSERT_TRUE_C(scene->primitives[0].weights != NULL);
 
     /* CesiumMan has 3273 skinned vertices. */
-    ASSERT_INT_EQ((int)scene->primitives[0].vertex_count, 3273);
+    ASSERT_INT_EQ_C((int)scene->primitives[0].vertex_count, 3273);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2576,48 +2785,50 @@ static void test_anim_parse_synthetic(void)
         "  }]"
         "}";
 
-    TempGltf tg;
-    ForgeGltfScene *scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
+    ForgeGltfScene *scene;
 
     TEST("synthetic animation: parse count and metadata");
 
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
     bool wrote = write_temp_gltf(json, bin, sizeof(bin), "test_anim", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    bool ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
-    ASSERT_TRUE(ok);
+    bool ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+    ASSERT_TRUE_C(ok);
 
-    ASSERT_INT_EQ(scene->animation_count, 1);
-    ASSERT_TRUE(SDL_strcmp(scene->animations[0].name, "Move") == 0);
-    ASSERT_INT_EQ(scene->animations[0].sampler_count, 1);
-    ASSERT_INT_EQ(scene->animations[0].channel_count, 1);
-    ASSERT_INT_EQ(scene->animations[0].samplers[0].keyframe_count, 3);
-    ASSERT_INT_EQ(scene->animations[0].samplers[0].value_components, 3);
-    ASSERT_INT_EQ((int)scene->animations[0].samplers[0].interpolation,
-                  (int)FORGE_GLTF_INTERP_LINEAR);
-    ASSERT_INT_EQ(scene->animations[0].channels[0].target_node, 0);
-    ASSERT_INT_EQ((int)scene->animations[0].channels[0].target_path,
-                  (int)FORGE_GLTF_ANIM_TRANSLATION);
-    ASSERT_FLOAT_EQ(scene->animations[0].duration, 1.0f);
+    ASSERT_INT_EQ_C(scene->animation_count, 1);
+    ASSERT_TRUE_C(scene->animations != NULL);
+    ASSERT_TRUE_C(SDL_strcmp(scene->animations[0].name, "Move") == 0);
+    ASSERT_INT_EQ_C(scene->animations[0].sampler_count, 1);
+    ASSERT_INT_EQ_C(scene->animations[0].channel_count, 1);
+    ASSERT_TRUE_C(scene->animations[0].samplers != NULL);
+    ASSERT_TRUE_C(scene->animations[0].channels != NULL);
+    ASSERT_INT_EQ_C(scene->animations[0].samplers[0].keyframe_count, 3);
+    ASSERT_INT_EQ_C(scene->animations[0].samplers[0].value_components, 3);
+    ASSERT_INT_EQ_C((int)scene->animations[0].samplers[0].interpolation,
+                    (int)FORGE_GLTF_INTERP_LINEAR);
+    ASSERT_INT_EQ_C(scene->animations[0].channels[0].target_node, 0);
+    ASSERT_INT_EQ_C((int)scene->animations[0].channels[0].target_path,
+                    (int)FORGE_GLTF_ANIM_TRANSLATION);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].duration, 1.0f);
 
     /* Verify data pointers reference the correct values. */
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].timestamps[0], 0.0f);
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].timestamps[1], 0.5f);
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].timestamps[2], 1.0f);
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[0], 0.0f);
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[3], 1.0f);
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[4], 2.0f);
-    ASSERT_FLOAT_EQ(scene->animations[0].samplers[0].values[5], 3.0f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].timestamps[0], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].timestamps[1], 0.5f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].timestamps[2], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].values[0], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].values[3], 1.0f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].values[4], 2.0f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].samplers[0].values[5], 3.0f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── CesiumMilkTruck animation parsing ───────────────────────────────────── */
@@ -2627,6 +2838,7 @@ static void test_truck_animation(void)
     const char *base;
     char path[FORGE_GLTF_PATH_SIZE];
     ForgeGltfScene *scene;
+    ForgeArena gltf_arena;
     bool ok;
 
     TEST("CesiumMilkTruck animation (2 rotation channels, 31 keyframes)");
@@ -2641,44 +2853,43 @@ static void test_truck_animation(void)
     SDL_snprintf(path, sizeof(path),
                  "%sassets/CesiumMilkTruck/CesiumMilkTruck.gltf", base);
 
-    scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
-    ok = forge_gltf_load(path, scene);
+    ok = forge_gltf_load(path, scene, &gltf_arena);
     if (!ok) {
         SDL_Log("    SKIP (model not found at %s)", path);
-        SDL_free(scene);
+        destroy_test_scene(scene, &gltf_arena);
         test_passed++;
         return;
     }
 
-    ASSERT_INT_EQ(scene->animation_count, 1);
-    ASSERT_TRUE(SDL_strcmp(scene->animations[0].name, "Wheels") == 0);
-    ASSERT_INT_EQ(scene->animations[0].channel_count, 2);
+    ASSERT_INT_EQ_C(scene->animation_count, 1);
+    ASSERT_TRUE_C(scene->animations != NULL);
+    ASSERT_TRUE_C(SDL_strcmp(scene->animations[0].name, "Wheels") == 0);
+    ASSERT_INT_EQ_C(scene->animations[0].channel_count, 2);
+    ASSERT_TRUE_C(scene->animations[0].samplers != NULL);
+    ASSERT_TRUE_C(scene->animations[0].channels != NULL);
 
     /* Both channels target rotation. */
-    ASSERT_INT_EQ((int)scene->animations[0].channels[0].target_path,
-                  (int)FORGE_GLTF_ANIM_ROTATION);
-    ASSERT_INT_EQ((int)scene->animations[0].channels[1].target_path,
-                  (int)FORGE_GLTF_ANIM_ROTATION);
+    ASSERT_INT_EQ_C((int)scene->animations[0].channels[0].target_path,
+                    (int)FORGE_GLTF_ANIM_ROTATION);
+    ASSERT_INT_EQ_C((int)scene->animations[0].channels[1].target_path,
+                    (int)FORGE_GLTF_ANIM_ROTATION);
 
     /* Both samplers should have 31 keyframes. */
     int si0 = scene->animations[0].channels[0].sampler_index;
     int si1 = scene->animations[0].channels[1].sampler_index;
-    ASSERT_INT_EQ(scene->animations[0].samplers[si0].keyframe_count, 31);
-    ASSERT_INT_EQ(scene->animations[0].samplers[si1].keyframe_count, 31);
+    ASSERT_INT_EQ_C(scene->animations[0].samplers[si0].keyframe_count, 31);
+    ASSERT_INT_EQ_C(scene->animations[0].samplers[si1].keyframe_count, 31);
 
     /* Wheel animation duration is 1.25 seconds (the 3.708s in L31 is the
      * path-following duration, not the glTF animation clip duration). */
-    ASSERT_FLOAT_EQ(scene->animations[0].duration, 1.25f);
+    ASSERT_FLOAT_EQ_C(scene->animations[0].duration, 1.25f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── CesiumMan animation parsing ─────────────────────────────────────────── */
@@ -2688,6 +2899,7 @@ static void test_cesiumman_animation(void)
     const char *base;
     char path[FORGE_GLTF_PATH_SIZE];
     ForgeGltfScene *scene;
+    ForgeArena gltf_arena;
     bool ok;
 
     TEST("CesiumMan animation (57 channels)");
@@ -2702,28 +2914,25 @@ static void test_cesiumman_animation(void)
     SDL_snprintf(path, sizeof(path),
                  "%sassets/CesiumMan/CesiumMan.gltf", base);
 
-    scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
-    ok = forge_gltf_load(path, scene);
+    ok = forge_gltf_load(path, scene, &gltf_arena);
     if (!ok) {
         SDL_Log("    SKIP (model not found at %s)", path);
-        SDL_free(scene);
+        destroy_test_scene(scene, &gltf_arena);
         test_passed++;
         return;
     }
 
-    ASSERT_INT_EQ(scene->animation_count, 1);
-    ASSERT_INT_EQ(scene->animations[0].channel_count, 57);
-    ASSERT_TRUE(scene->animations[0].duration > 0.0f);
+    ASSERT_INT_EQ_C(scene->animation_count, 1);
+    ASSERT_TRUE_C(scene->animations != NULL);
+    ASSERT_INT_EQ_C(scene->animations[0].channel_count, 57);
+    ASSERT_TRUE_C(scene->animations[0].duration > 0.0f);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ── Evaluation: vec3 linear interpolation ───────────────────────────────── */
@@ -2878,12 +3087,19 @@ static void test_apply_translation(void)
     float ts[2]  = {0.0f, 1.0f};
     float vals[6] = {0,0,0, 3,6,9};
     ForgeGltfAnimation anim;
+    ForgeGltfAnimSampler local_samp[1];
+    ForgeGltfAnimChannel local_chan[1];
     ForgeGltfNode nodes[1];
 
     TEST("apply animation: translation channel updates node TRS");
 
     SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(local_samp, 0, sizeof(local_samp));
+    SDL_memset(local_chan, 0, sizeof(local_chan));
     SDL_memset(nodes, 0, sizeof(nodes));
+
+    anim.samplers = local_samp;
+    anim.channels = local_chan;
 
     /* Set up node with identity TRS. */
     nodes[0].translation = vec3_create(0, 0, 0);
@@ -2921,12 +3137,19 @@ static void test_apply_loop(void)
     float ts[2]  = {0.0f, 1.0f};
     float vals[6] = {0,0,0, 10,0,0};
     ForgeGltfAnimation anim;
+    ForgeGltfAnimSampler local_samp[1];
+    ForgeGltfAnimChannel local_chan[1];
     ForgeGltfNode nodes[1];
 
     TEST("apply animation: loop wraps time past duration");
 
     SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(local_samp, 0, sizeof(local_samp));
+    SDL_memset(local_chan, 0, sizeof(local_chan));
     SDL_memset(nodes, 0, sizeof(nodes));
+
+    anim.samplers = local_samp;
+    anim.channels = local_chan;
 
     nodes[0].translation = vec3_create(0, 0, 0);
     nodes[0].rotation    = quat_create(1, 0, 0, 0);
@@ -2962,12 +3185,19 @@ static void test_apply_clamp(void)
     float ts[2]  = {0.0f, 1.0f};
     float vals[6] = {0,0,0, 10,0,0};
     ForgeGltfAnimation anim;
+    ForgeGltfAnimSampler local_samp[1];
+    ForgeGltfAnimChannel local_chan[1];
     ForgeGltfNode nodes[1];
 
     TEST("apply animation: clamp holds last value past duration");
 
     SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(local_samp, 0, sizeof(local_samp));
+    SDL_memset(local_chan, 0, sizeof(local_chan));
     SDL_memset(nodes, 0, sizeof(nodes));
+
+    anim.samplers = local_samp;
+    anim.channels = local_chan;
 
     nodes[0].translation = vec3_create(0, 0, 0);
     nodes[0].rotation    = quat_create(1, 0, 0, 0);
@@ -3039,12 +3269,19 @@ static void test_apply_rotation(void)
     float cos45 = 0.70710678f;
     float vals[4] = {0.0f, sin45, 0.0f, cos45};
     ForgeGltfAnimation anim;
+    ForgeGltfAnimSampler local_samp[1];
+    ForgeGltfAnimChannel local_chan[1];
     ForgeGltfNode nodes[1];
 
     TEST("apply animation: rotation channel updates node quaternion");
 
     SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(local_samp, 0, sizeof(local_samp));
+    SDL_memset(local_chan, 0, sizeof(local_chan));
     SDL_memset(nodes, 0, sizeof(nodes));
+
+    anim.samplers = local_samp;
+    anim.channels = local_chan;
 
     nodes[0].translation = vec3_create(0, 0, 0);
     nodes[0].rotation    = quat_create(1, 0, 0, 0);
@@ -3081,12 +3318,19 @@ static void test_apply_scale(void)
     float ts[2]  = {0.0f, 1.0f};
     float vals[6] = {1,1,1, 2,3,4};
     ForgeGltfAnimation anim;
+    ForgeGltfAnimSampler local_samp[1];
+    ForgeGltfAnimChannel local_chan[1];
     ForgeGltfNode nodes[1];
 
     TEST("apply animation: scale channel updates node scale_xyz");
 
     SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(local_samp, 0, sizeof(local_samp));
+    SDL_memset(local_chan, 0, sizeof(local_chan));
     SDL_memset(nodes, 0, sizeof(nodes));
+
+    anim.samplers = local_samp;
+    anim.channels = local_chan;
 
     nodes[0].translation = vec3_create(0, 0, 0);
     nodes[0].rotation    = quat_create(1, 0, 0, 0);
@@ -3122,12 +3366,19 @@ static void test_apply_bad_target(void)
     float ts[1]  = {0.0f};
     float vals[3] = {5, 5, 5};
     ForgeGltfAnimation anim;
+    ForgeGltfAnimSampler local_samp[1];
+    ForgeGltfAnimChannel local_chan[1];
     ForgeGltfNode nodes[1];
 
     TEST("apply animation: out-of-range target_node is skipped");
 
     SDL_memset(&anim, 0, sizeof(anim));
+    SDL_memset(local_samp, 0, sizeof(local_samp));
+    SDL_memset(local_chan, 0, sizeof(local_chan));
     SDL_memset(nodes, 0, sizeof(nodes));
+
+    anim.samplers = local_samp;
+    anim.channels = local_chan;
 
     nodes[0].translation = vec3_create(0, 0, 0);
     nodes[0].rotation    = quat_create(1, 0, 0, 0);
@@ -3165,7 +3416,8 @@ static void test_no_animations(void)
     Uint16 indices[3]  = {0, 1, 2};
     Uint8 bin[42];
     const char *json;
-    TempGltf tg;
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
     ForgeGltfScene *scene;
     bool wrote;
     bool ok;
@@ -3198,25 +3450,342 @@ static void test_no_animations(void)
         "  \"buffers\": [{\"uri\": \"test_noanim.bin\", \"byteLength\": 42}]"
         "}";
 
-    scene = SDL_calloc(1, sizeof(*scene));
-    if (!scene) {
-        SDL_Log("  FAIL: SDL_calloc failed for ForgeGltfScene");
-        test_failed++;
-        return;
-    }
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
 
     wrote = write_temp_gltf(json, bin, sizeof(bin), "test_noanim", &tg);
-    ASSERT_TRUE(wrote);
+    ASSERT_TRUE_C(wrote);
 
-    ok = forge_gltf_load(tg.gltf_path, scene);
-    remove_temp_gltf(&tg);
-    ASSERT_TRUE(ok);
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+    ASSERT_TRUE_C(ok);
 
-    ASSERT_INT_EQ(scene->animation_count, 0);
+    ASSERT_INT_EQ_C(scene->animation_count, 0);
 
-    forge_gltf_free(scene);
-    SDL_free(scene);
     END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
+}
+
+
+/* ── forge_gltf_free is a no-op ───────────────────────────────────────── */
+
+/* forge_gltf_free() must not modify the scene struct — it is retained
+ * only for backward compatibility.  All memory is owned by the arena. */
+
+static void test_gltf_free_is_noop(void)
+{
+    float positions[9] = {0,0,0, 1,0,0, 0,1,0};
+    Uint16 indices[3]  = {0, 1, 2};
+    Uint8 bin[42];
+    const char *json;
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
+    ForgeGltfScene *scene;
+    bool wrote, ok;
+
+    TEST("forge_gltf_free does not modify scene (no-op)");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
+    SDL_memcpy(bin, positions, 36);
+    SDL_memcpy(bin + 36, indices, 6);
+
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_freenoop.bin\", \"byteLength\": 42}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin, sizeof(bin), "test_freenoop", &tg);
+    ASSERT_TRUE_C(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+    ASSERT_TRUE_C(ok);
+
+    /* Snapshot key fields before calling forge_gltf_free. */
+    int prim_count = scene->primitive_count;
+    int node_count = scene->node_count;
+    int mat_count  = scene->material_count;
+    const ForgeGltfPrimitive *prims = scene->primitives;
+    const ForgeGltfNode      *nodes = scene->nodes;
+
+    ASSERT_TRUE_C(prim_count > 0);
+    ASSERT_TRUE_C(node_count > 0);
+
+    /* Call the legacy free — should be a no-op. */
+    forge_gltf_free(scene);
+
+    /* All fields must be unchanged. */
+    ASSERT_INT_EQ_C(scene->primitive_count, prim_count);
+    ASSERT_INT_EQ_C(scene->node_count, node_count);
+    ASSERT_INT_EQ_C(scene->material_count, mat_count);
+    ASSERT_TRUE_C(scene->primitives == prims);
+    ASSERT_TRUE_C(scene->nodes == nodes);
+
+    END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
+}
+
+/* forge_gltf_free must not crash on NULL. */
+
+static void test_gltf_free_null_safe(void)
+{
+    TEST("forge_gltf_free(NULL) does not crash");
+
+    forge_gltf_free(NULL);
+
+    END_TEST();
+}
+
+/* ── forge_gltf_compute_world_transforms (3-arg API) ─────────────────── */
+
+/* The public API takes 3 arguments (scene, node_idx, parent_world).
+ * The depth parameter is handled internally.  Verify it computes
+ * correct world transforms through a parent-child chain. */
+
+static void test_compute_world_transforms_3arg(void)
+{
+    float positions[9] = {0,0,0, 1,0,0, 0,1,0};
+    Uint16 indices[3]  = {0, 1, 2};
+    Uint8 bin[42];
+    const char *json;
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
+    ForgeGltfScene *scene;
+    bool wrote, ok;
+
+    TEST("compute_world_transforms 3-arg API propagates hierarchy");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
+    SDL_memcpy(bin, positions, 36);
+    SDL_memcpy(bin + 36, indices, 6);
+
+    /* Parent at (5,0,0), child at local (0,3,0).
+     * Child world = parent * child = (5,3,0). */
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": ["
+        "    {\"mesh\": 0, \"translation\": [5.0, 0.0, 0.0],"
+        "     \"children\": [1]},"
+        "    {\"mesh\": 0, \"translation\": [0.0, 3.0, 0.0]}"
+        "  ],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_wt3.bin\", \"byteLength\": 42}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin, sizeof(bin), "test_wt3", &tg);
+    ASSERT_TRUE_C(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->node_count, 2);
+    ASSERT_TRUE_C(scene->nodes != NULL);
+
+    /* forge_gltf_load already calls compute_world_transforms internally.
+     * Zero out world transforms and recompute manually to test the
+     * public 3-arg API independently. */
+    SDL_memset(&scene->nodes[0].world_transform, 0, sizeof(mat4));
+    SDL_memset(&scene->nodes[1].world_transform, 0, sizeof(mat4));
+
+    {
+        mat4 identity = mat4_identity();
+        bool wt_ok = forge_gltf_compute_world_transforms(
+            scene, scene->root_nodes[0], &identity);
+        ASSERT_TRUE_C(wt_ok);
+    }
+
+    /* Parent world = (5,0,0). */
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[12], 5.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[13], 0.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[0].world_transform.m[14], 0.0f);
+
+    /* Child world = (5,3,0). */
+    ASSERT_FLOAT_EQ_C(scene->nodes[1].world_transform.m[12], 5.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[1].world_transform.m[13], 3.0f);
+    ASSERT_FLOAT_EQ_C(scene->nodes[1].world_transform.m[14], 0.0f);
+
+    END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
+}
+
+/* ── forge_gltf_compute_world_transforms input validation ────────────── */
+
+/* NULL scene must return false without crashing. */
+static void test_compute_world_transforms_null_scene(void)
+{
+    mat4 identity;
+
+    TEST("compute_world_transforms rejects NULL scene");
+
+    identity = mat4_identity();
+    ASSERT_FALSE(forge_gltf_compute_world_transforms(NULL, 0, &identity));
+
+    END_TEST();
+}
+
+/* NULL parent_world must return false without crashing. */
+static void test_compute_world_transforms_null_parent(void)
+{
+    float positions[9] = {0,0,0, 1,0,0, 0,1,0};
+    Uint16 indices[3]  = {0, 1, 2};
+    Uint8 bin[42];
+    const char *json;
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
+    ForgeGltfScene *scene;
+    bool wrote, ok;
+
+    TEST("compute_world_transforms rejects NULL parent_world");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
+    SDL_memcpy(bin, positions, 36);
+    SDL_memcpy(bin + 36, indices, 6);
+
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_wt_np.bin\", \"byteLength\": 42}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin, sizeof(bin), "test_wt_np", &tg);
+    ASSERT_TRUE_C(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+    ASSERT_TRUE_C(ok);
+
+    ASSERT_FALSE_C(forge_gltf_compute_world_transforms(scene, 0, NULL));
+
+    END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
+}
+
+/* Out-of-range node_idx must return false. */
+static void test_compute_world_transforms_bad_index(void)
+{
+    float positions[9] = {0,0,0, 1,0,0, 0,1,0};
+    Uint16 indices[3]  = {0, 1, 2};
+    Uint8 bin[42];
+    const char *json;
+    TempGltf tg = {0};
+    ForgeArena gltf_arena;
+    ForgeGltfScene *scene;
+    bool wrote, ok;
+    mat4 identity;
+
+    TEST("compute_world_transforms rejects out-of-range node_idx");
+
+    scene = create_test_scene(&gltf_arena);
+    if (!scene) { test_failed++; return; }
+
+    SDL_memcpy(bin, positions, 36);
+    SDL_memcpy(bin + 36, indices, 6);
+
+    json =
+        "{"
+        "  \"asset\": {\"version\": \"2.0\"},"
+        "  \"scene\": 0,"
+        "  \"scenes\": [{\"nodes\": [0]}],"
+        "  \"nodes\": [{\"mesh\": 0}],"
+        "  \"meshes\": [{\"primitives\": [{"
+        "    \"attributes\": {\"POSITION\": 0},"
+        "    \"indices\": 1"
+        "  }]}],"
+        "  \"accessors\": ["
+        "    {\"bufferView\": 0, \"componentType\": 5126,"
+        "     \"count\": 3, \"type\": \"VEC3\"},"
+        "    {\"bufferView\": 1, \"componentType\": 5123,"
+        "     \"count\": 3, \"type\": \"SCALAR\"}"
+        "  ],"
+        "  \"bufferViews\": ["
+        "    {\"buffer\": 0, \"byteOffset\": 0,  \"byteLength\": 36},"
+        "    {\"buffer\": 0, \"byteOffset\": 36, \"byteLength\": 6}"
+        "  ],"
+        "  \"buffers\": [{\"uri\": \"test_wt_bi.bin\", \"byteLength\": 42}]"
+        "}";
+
+    wrote = write_temp_gltf(json, bin, sizeof(bin), "test_wt_bi", &tg);
+    ASSERT_TRUE_C(wrote);
+
+    ok = forge_gltf_load(tg.gltf_path, scene, &gltf_arena);
+    ASSERT_TRUE_C(ok);
+    ASSERT_INT_EQ_C(scene->node_count, 1);
+
+    identity = mat4_identity();
+
+    /* Positive out-of-range */
+    ASSERT_FALSE_C(forge_gltf_compute_world_transforms(
+        scene, 99, &identity));
+
+    /* Negative index */
+    ASSERT_FALSE_C(forge_gltf_compute_world_transforms(
+        scene, -1, &identity));
+
+    END_TEST();
+cleanup:
+    remove_temp_gltf(&tg);
+    destroy_test_scene(scene, &gltf_arena);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3238,7 +3807,7 @@ int main(int argc, char *argv[])
     /* Error handling */
     test_nonexistent_file();
     test_invalid_json();
-    test_free_zeroed_scene();
+    test_destroy_zeroed_arena();
 
     /* Accessor validation */
     test_invalid_component_type();
@@ -3250,6 +3819,7 @@ int main(int argc, char *argv[])
     /* Basic parsing */
     test_minimal_triangle();
     test_normals_and_uvs();
+    test_tangent_vectors();
 
     /* Accessor validation (normals/UVs) */
     test_normal_count_mismatch();
@@ -3304,11 +3874,25 @@ int main(int argc, char *argv[])
     test_apply_clamp();
     test_apply_bad_target();
 
+    /* forge_gltf_free (no-op) */
+    test_gltf_free_is_noop();
+    test_gltf_free_null_safe();
+
+    /* compute_world_transforms (3-arg API) */
+    test_compute_world_transforms_3arg();
+
+    /* compute_world_transforms input validation */
+    test_compute_world_transforms_null_scene();
+    test_compute_world_transforms_null_parent();
+    test_compute_world_transforms_bad_index();
+
     /* Summary */
     SDL_Log("\n=== Test Summary ===");
     SDL_Log("Total:  %d", test_count);
     SDL_Log("Passed: %d", test_passed);
     SDL_Log("Failed: %d", test_failed);
+
+    cleanup_temp_path();
 
     if (test_failed > 0) {
         SDL_LogError(SDL_LOG_CATEGORY_TEST, "\nSome tests FAILED!");

@@ -341,6 +341,7 @@ typedef struct PipelineModel {
 /* Raw-loaded model: glTF mesh with GPU buffers and textures. */
 typedef struct RawModel {
     ForgeGltfScene  scene;             /* CPU-side glTF scene data */
+    ForgeArena      gltf_arena;        /* arena backing glTF allocations */
     SDL_GPUBuffer  *vertex_buffer;     /* GPU vertex buffer (32-byte stride) */
     SDL_GPUBuffer  *index_buffer;      /* GPU index buffer */
     SDL_GPUTexture *diffuse_tex;       /* base color texture */
@@ -1680,7 +1681,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_snprintf(gltf_path, sizeof(gltf_path),
                      "%sassets/WaterBottle/WaterBottle.gltf", base_path);
 
-        if (!forge_gltf_load(gltf_path, &state->raw_water.scene)) {
+        state->raw_water.gltf_arena = forge_arena_create(0);
+        if (!state->raw_water.gltf_arena.first) {
+            SDL_Log("ERROR: Out of memory creating arena for raw WaterBottle");
+            goto fail_cleanup;
+        }
+        if (!forge_gltf_load(gltf_path, &state->raw_water.scene, &state->raw_water.gltf_arena)) {
             SDL_Log("Failed to load raw WaterBottle glTF");
             goto fail_cleanup;
         }
@@ -1732,7 +1738,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_snprintf(gltf_path, sizeof(gltf_path),
                      "%sassets/models/BoxTextured/BoxTextured.gltf", base_path);
 
-        if (!forge_gltf_load(gltf_path, &state->raw_box.scene)) {
+        state->raw_box.gltf_arena = forge_arena_create(0);
+        if (!state->raw_box.gltf_arena.first) {
+            SDL_Log("ERROR: Out of memory creating arena for raw BoxTextured");
+            goto fail_cleanup;
+        }
+        if (!forge_gltf_load(gltf_path, &state->raw_box.scene, &state->raw_box.gltf_arena)) {
             SDL_Log("Failed to load raw BoxTextured glTF");
             goto fail_cleanup;
         }
@@ -1809,11 +1820,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     if (state->capture.mode != FORGE_CAPTURE_NONE) {
         if (!forge_capture_init(&state->capture, device, window)) {
             SDL_Log("Failed to initialise capture");
-            SDL_ReleaseWindowFromGPUDevice(device, window);
-            SDL_DestroyWindow(window);
-            SDL_DestroyGPUDevice(device);
-            SDL_free(state);
-            return SDL_APP_FAILURE;
+            goto fail_cleanup;
         }
     }
 #else
@@ -1846,13 +1853,13 @@ fail_cleanup:
             SDL_ReleaseGPUTexture(device, state->raw_box.diffuse_tex);
         if (state->raw_box.index_buffer)  SDL_ReleaseGPUBuffer(device, state->raw_box.index_buffer);
         if (state->raw_box.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->raw_box.vertex_buffer);
-        forge_gltf_free(&state->raw_box.scene);
+        forge_arena_destroy(&state->raw_box.gltf_arena);
 
         if (state->raw_water.diffuse_tex && state->raw_water.diffuse_tex != state->white_texture)
             SDL_ReleaseGPUTexture(device, state->raw_water.diffuse_tex);
         if (state->raw_water.index_buffer)  SDL_ReleaseGPUBuffer(device, state->raw_water.index_buffer);
         if (state->raw_water.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->raw_water.vertex_buffer);
-        forge_gltf_free(&state->raw_water.scene);
+        forge_arena_destroy(&state->raw_water.gltf_arena);
 
         if (state->pipe_box.normal_tex && state->pipe_box.normal_tex != state->flat_normal_texture)
             SDL_ReleaseGPUTexture(device, state->pipe_box.normal_tex);
@@ -1886,6 +1893,10 @@ fail_cleanup:
         if (state->sampler)             SDL_ReleaseGPUSampler(device, state->sampler);
         if (state->shadow_depth_texture) SDL_ReleaseGPUTexture(device, state->shadow_depth_texture);
         if (state->depth_texture)       SDL_ReleaseGPUTexture(device, state->depth_texture);
+#ifdef FORGE_CAPTURE
+        forge_capture_destroy(&state->capture, device);
+#endif
+        *appstate = NULL;   /* prevent SDL_AppQuit from double-freeing */
         SDL_free(state);
     }
     SDL_ReleaseWindowFromGPUDevice(device, window);
@@ -2484,13 +2495,13 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         SDL_ReleaseGPUTexture(device, state->raw_box.diffuse_tex);
     if (state->raw_box.index_buffer)  SDL_ReleaseGPUBuffer(device, state->raw_box.index_buffer);
     if (state->raw_box.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->raw_box.vertex_buffer);
-    forge_gltf_free(&state->raw_box.scene);
+    forge_arena_destroy(&state->raw_box.gltf_arena);
 
     if (state->raw_water.diffuse_tex && state->raw_water.diffuse_tex != state->white_texture)
         SDL_ReleaseGPUTexture(device, state->raw_water.diffuse_tex);
     if (state->raw_water.index_buffer)  SDL_ReleaseGPUBuffer(device, state->raw_water.index_buffer);
     if (state->raw_water.vertex_buffer) SDL_ReleaseGPUBuffer(device, state->raw_water.vertex_buffer);
-    forge_gltf_free(&state->raw_water.scene);
+    forge_arena_destroy(&state->raw_water.gltf_arena);
 
     /* ── Pipeline model resources ─────────────────────────────────────── */
     if (state->pipe_box.normal_tex && state->pipe_box.normal_tex != state->flat_normal_texture)

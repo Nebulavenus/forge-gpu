@@ -550,23 +550,21 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                       unsigned int *out_original_vertex_count,
                       bool *out_has_tangents,
                       SubmeshEntry *out_submeshes, int *out_submesh_count,
-                      ForgeGltfScene *out_scene)
+                      ForgeGltfScene *out_scene, ForgeArena *arena)
 {
-    if (!forge_gltf_load(path, out_scene)) {
+    if (!forge_gltf_load(path, out_scene, arena)) {
         SDL_Log("Error: failed to load glTF '%s'", path);
         return false;
     }
 
     if (out_scene->primitive_count == 0) {
         SDL_Log("Error: glTF scene has no primitives");
-        forge_gltf_free(out_scene);
         return false;
     }
 
     if (out_scene->primitive_count > MAX_SUBMESHES) {
         SDL_Log("Error: glTF has %d primitives (max %d)",
                 out_scene->primitive_count, MAX_SUBMESHES);
-        forge_gltf_free(out_scene);
         return false;
     }
 
@@ -602,7 +600,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         SDL_Log("Error: merged vertex/index counts overflow 32-bit "
                 "(verts=%" SDL_PRIu64 ", indices=%" SDL_PRIu64 ")",
                 total_verts_64, total_indices_64);
-        forge_gltf_free(out_scene);
         return false;
     }
 
@@ -612,7 +609,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     if (total_verts == 0) {
         SDL_Log("Error: glTF scene has no vertices across %d primitives",
                 prim_count);
-        forge_gltf_free(out_scene);
         return false;
     }
 
@@ -638,7 +634,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     MeshVertex *verts = (MeshVertex *)SDL_calloc(total_verts, sizeof(MeshVertex));
     if (!verts) {
         SDL_Log("Error: allocation failed for %u vertices", total_verts);
-        forge_gltf_free(out_scene);
         return false;
     }
 
@@ -647,7 +642,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     if (!idx_buf) {
         SDL_Log("Error: allocation failed for %u indices", total_indices);
         SDL_free(verts);
-        forge_gltf_free(out_scene);
         return false;
     }
 
@@ -708,7 +702,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                         "(expected 2 or 4)", p, prim->index_stride);
                 SDL_free(verts);
                 SDL_free(idx_buf);
-                forge_gltf_free(out_scene);
                 return false;
             }
         } else {
@@ -726,7 +719,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                     "(expected non-zero multiple of 3)", p, pi_count);
             SDL_free(verts);
             SDL_free(idx_buf);
-            forge_gltf_free(out_scene);
             return false;
         }
 
@@ -746,7 +738,7 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     }
 
     /* NOTE: We do NOT free the scene here — caller needs the material data
-     * for write_fmat().  Caller is responsible for forge_gltf_free(). */
+     * for write_fmat().  Caller is responsible for forge_arena_destroy(). */
 
     /* ── Optional deduplication on the merged buffer ─────────────────────
      * glTF vertices are already indexed per-primitive, but deduplication
@@ -758,7 +750,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
             SDL_Log("Error: allocation failed for remap table");
             SDL_free(verts);
             SDL_free(idx_buf);
-            forge_gltf_free(out_scene);
             return false;
         }
 
@@ -778,7 +769,6 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
             SDL_free(idx_buf);
             SDL_free(deduped);
             SDL_free(new_indices);
-            forge_gltf_free(out_scene);
             return false;
         }
 
@@ -835,10 +825,9 @@ static bool process_mesh(const ToolOptions *opts)
     SubmeshEntry  submeshes[MAX_SUBMESHES];
     int           submesh_count = 0;
 
-    /* glTF scene kept alive for material extraction (write_fmat).
-     * Heap-allocated because ForgeGltfScene is too large for the stack
-     * (materials, nodes, skins with path arrays and matrices). */
+    /* glTF scene kept alive for material extraction (write_fmat). */
     ForgeGltfScene *gltf_scene = NULL;
+    ForgeArena      gltf_arena;
     bool            has_gltf_scene = false;
 
     memset(submeshes, 0, sizeof(submeshes));
@@ -852,10 +841,17 @@ static bool process_mesh(const ToolOptions *opts)
             SDL_Log("Error: allocation failed for glTF scene");
             return false;
         }
+        gltf_arena = forge_arena_create(0);
+        if (!gltf_arena.first) {
+            SDL_Log("Error: arena creation failed (out of memory)");
+            SDL_free(gltf_scene);
+            return false;
+        }
         if (!load_gltf(opts->input_path, opts->deduplicate, opts->verbose,
                        &vertices, &vertex_count, &indices, &index_count,
                        &original_vertex_count, &gltf_has_tangents,
-                       submeshes, &submesh_count, gltf_scene)) {
+                       submeshes, &submesh_count, gltf_scene, &gltf_arena)) {
+            forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
             return false;
         }
@@ -918,7 +914,7 @@ static bool process_mesh(const ToolOptions *opts)
             SDL_free(vertices);
             SDL_free(indices);
             if (has_gltf_scene) {
-                forge_gltf_free(gltf_scene);
+                forge_arena_destroy(&gltf_arena);
                 SDL_free(gltf_scene);
             }
             return false;
@@ -951,7 +947,7 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(vertices);
         SDL_free(indices);
         if (has_gltf_scene) {
-            forge_gltf_free(gltf_scene);
+            forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
         }
         return false;
@@ -973,7 +969,7 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(vertices);
         SDL_free(indices);
         if (has_gltf_scene) {
-            forge_gltf_free(gltf_scene);
+            forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
         }
         return false;
@@ -989,7 +985,7 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(vertices);
         SDL_free(indices);
         if (has_gltf_scene) {
-            forge_gltf_free(gltf_scene);
+            forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
         }
         return false;
@@ -1094,7 +1090,7 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(lod_submeshes);
         SDL_free(lod_errors);
         if (has_gltf_scene) {
-            forge_gltf_free(gltf_scene);
+            forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
         }
         return false;
@@ -1110,7 +1106,7 @@ static bool process_mesh(const ToolOptions *opts)
             SDL_free(lod_submeshes);
             SDL_free(lod_errors);
             if (has_gltf_scene) {
-                forge_gltf_free(gltf_scene);
+                forge_arena_destroy(&gltf_arena);
                 SDL_free(gltf_scene);
             }
             return false;
@@ -1135,7 +1131,7 @@ static bool process_mesh(const ToolOptions *opts)
     SDL_free(lod_submeshes);
     SDL_free(lod_errors);
     if (has_gltf_scene) {
-        forge_gltf_free(gltf_scene);
+        forge_arena_destroy(&gltf_arena);
         SDL_free(gltf_scene);
     }
     return ok;

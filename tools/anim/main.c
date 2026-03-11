@@ -371,9 +371,15 @@ static bool write_meta_json(const char *fanim_path, const char *source_path,
 static bool process_animations(const ToolOptions *opts)
 {
     /* ── Step 1: Load glTF ───────────────────────────────────────────────── */
+    ForgeArena gltf_arena = forge_arena_create(0);
+    if (!gltf_arena.first) {
+        SDL_Log("Error: out of memory creating arena for '%s'", opts->input_path);
+        return false;
+    }
     ForgeGltfScene scene;
-    if (!forge_gltf_load(opts->input_path, &scene)) {
+    if (!forge_gltf_load(opts->input_path, &scene, &gltf_arena)) {
         SDL_Log("Error: failed to load '%s'", opts->input_path);
+        forge_arena_destroy(&gltf_arena);
         return false;
     }
 
@@ -390,13 +396,13 @@ static bool process_animations(const ToolOptions *opts)
 
     /* ── Step 3: Write .fanim binary ─────────────────────────────────────── */
     if (!write_fanim(opts->output_path, &scene, opts->verbose)) {
-        forge_gltf_free(&scene);
+        forge_arena_destroy(&gltf_arena);
         return false;
     }
 
     /* ── Step 4: Write .meta.json sidecar ────────────────────────────────── */
     if (!write_meta_json(opts->output_path, opts->input_path, &scene)) {
-        forge_gltf_free(&scene);
+        forge_arena_destroy(&gltf_arena);
         return false;
     }
 
@@ -404,7 +410,7 @@ static bool process_animations(const ToolOptions *opts)
     SDL_Log("extracted %d clip(s) from '%s'",
             scene.animation_count, basename_from_path(opts->input_path));
 
-    forge_gltf_free(&scene);
+    forge_arena_destroy(&gltf_arena);
     return true;
 }
 

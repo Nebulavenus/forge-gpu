@@ -166,9 +166,10 @@ forge-gpu/
 │   ├── bundler.py         # Asset bundle packing and compression
 │   └── plugins/           # Built-in asset type plugins
 ├── common/
+│   ├── arena/             # Arena (bump) allocator (header-only)
 │   ├── math/              # Math library (header-only, documented)
 │   ├── obj/               # OBJ parser (Wavefront .obj files)
-│   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy)
+│   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy, arena-allocated)
 │   ├── ui/                # UI library (TTF parsing, atlas, immediate-mode controls, layout, panels, windows)
 │   ├── physics/           # Physics library (particles, rigid bodies, collisions)
 │   ├── audio/             # Audio library (playback, mixing, spatial audio, DSP)
@@ -177,7 +178,7 @@ forge-gpu/
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (math, obj, gltf, raster, ui, physics, audio, shapes, pipeline)
+├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, audio, shapes, pipeline)
 ├── scripts/
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
 │       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_39.py)

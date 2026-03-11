@@ -146,6 +146,52 @@ Parse and categorize feedback by:
 
 **Present ALL comments to the user** sorted by severity (Major → Minor → Nitpick) so security/critical issues are addressed first.
 
+#### 2a. Correctly identify which comments belong to the latest review round
+
+**CRITICAL — this is the #1 cause of missed feedback.** Do NOT filter comments
+by `original_commit_id` to find "new" comments. CodeRabbit posts comments
+against various commit SHAs depending on diff positioning, and a comment on
+commit A may actually be new feedback triggered by commit B's review.
+
+**The correct approach: use the review ID, not the commit ID.**
+
+1. First, fetch all reviews and find the latest CodeRabbit review:
+
+   ```bash
+   REVIEW_ID=$(gh api --paginate repos/{owner}/{repo}/pulls/{pr-number}/reviews \
+     | jq -s 'add | map(select(.user.login == "coderabbitai[bot]"))
+              | sort_by(.submitted_at) | last | .id')
+   echo "Latest CodeRabbit review: $REVIEW_ID"
+   ```
+
+2. Then, fetch comments and match them to reviews by `pull_request_review_id`:
+
+   ```bash
+   gh api --paginate repos/{owner}/{repo}/pulls/{pr-number}/comments \
+     | jq -s --argjson rid "$REVIEW_ID" \
+       'add | map(select(.pull_request_review_id == $rid))
+            | map({id, path, line, body: .body[:200]})'
+   ```
+
+3. Comments from the latest review are the **new** comments for this round.
+   Comments from earlier reviews that were NOT auto-resolved are **carried
+   forward** and still need action.
+
+**Why `original_commit_id` filtering is wrong:**
+
+- CodeRabbit may post a comment against commit X even when reviewing commit Y
+  (if the code at that location hasn't changed between commits)
+- A single review round can produce comments with different `original_commit_id`
+  values
+- Filtering by the latest commit SHA misses comments CodeRabbit posted against
+  older commit positions — this causes the agent to report "only 1 new comment"
+  when there are actually 7
+
+**Alternative quick approach:** If you don't want to join on review IDs, simply
+fetch ALL CodeRabbit comments, exclude those that have a human reply dismissing
+them (user said "out of scope"), and present the rest grouped by file. Let the
+user decide which are new vs. already handled.
+
 #### 2b. Check review bodies for duplicate and nitpick comments
 
 **Critical:** CodeRabbit embeds additional feedback directly in **review
@@ -460,8 +506,8 @@ Check two things: the PR-level review decision AND individual reviews.
 gh pr view <pr-number> --json reviewDecision,statusCheckRollup
 
 # Individual reviews — check the LATEST review from each reviewer
-gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews \
-  | jq '[.[] | {user: .user.login, state: .state, date: .submitted_at}]
+gh api --paginate repos/{owner}/{repo}/pulls/{pr-number}/reviews \
+  | jq -s 'add | [.[] | {user: .user.login, state: .state, date: .submitted_at}]
         | group_by(.user)
         | map(sort_by(.date) | last)'
 ```

@@ -355,6 +355,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
   ForgeGltfScene scene;
+  ForgeArena gltf_arena;
   GpuPrimitive *primitives;
   int primitive_count;
   GpuMaterial *materials;
@@ -846,6 +847,12 @@ static void free_model_gpu(SDL_GPUDevice *device, ModelData *model) {
   }
 }
 
+/* Free both GPU resources and CPU arena for a model */
+static void free_model(SDL_GPUDevice *device, ModelData *model) {
+  free_model_gpu(device, model);
+  forge_arena_destroy(&model->gltf_arena);
+}
+
 /* ── Upload parsed scene to GPU ──────────────────────────────────────── */
 
 static bool
@@ -1031,8 +1038,10 @@ static bool setup_model(
 ) {
   SDL_Log("Loading %s from '%s'...", name, gltf_path);
 
-  if (!forge_gltf_load(gltf_path, &model->scene)) {
+  model->gltf_arena = forge_arena_create(0);
+  if (!forge_gltf_load(gltf_path, &model->scene, &model->gltf_arena)) {
     SDL_Log("Failed to load %s from '%s'", name, gltf_path);
+    forge_arena_destroy(&model->gltf_arena);
     return false;
   }
 
@@ -1047,7 +1056,7 @@ static bool setup_model(
 
   if (!upload_model_to_gpu(device, model, white_texture)) {
     SDL_Log("Failed to upload %s to GPU", name);
-    forge_gltf_free(&model->scene);
+    forge_arena_destroy(&model->gltf_arena);
     return false;
   }
 
@@ -1584,8 +1593,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     if (!setup_model(device, &state->box, box_path, "BoxTextured", white_texture)) {
-      free_model_gpu(device, &state->truck);
-      forge_gltf_free(&state->truck.scene);
+      free_model(device, &state->truck);
       goto fail_cleanup;
     }
   }
@@ -1596,10 +1604,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   /* ── 11. Upload grid geometry ─────────────────────────────────────── */
   if (!upload_grid_geometry(device, state)) {
     SDL_Log("Failed to upload grid geometry");
-    free_model_gpu(device, &state->box);
-    forge_gltf_free(&state->box.scene);
-    free_model_gpu(device, &state->truck);
-    forge_gltf_free(&state->truck.scene);
+    free_model(device, &state->box);
+    free_model(device, &state->truck);
     goto fail_cleanup;
   }
 
@@ -2043,10 +2049,8 @@ fail_pipelines:
 
   SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
   SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
-  free_model_gpu(device, &state->box);
-  forge_gltf_free(&state->box.scene);
-  free_model_gpu(device, &state->truck);
-  forge_gltf_free(&state->truck.scene);
+  free_model(device, &state->box);
+  free_model(device, &state->truck);
 
 fail_cleanup:
   SDL_ReleaseGPUSampler(device, state->shadow_sampler);
@@ -2060,6 +2064,7 @@ fail_cleanup:
   SDL_ReleaseWindowFromGPUDevice(device, window);
   SDL_DestroyWindow(window);
   SDL_DestroyGPUDevice(device);
+  *appstate = NULL;   /* prevent SDL_AppQuit from double-freeing */
   SDL_free(state);
   return SDL_APP_FAILURE;
 }
@@ -2473,10 +2478,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 #endif
 
     /* Release in reverse order of creation */
-    free_model_gpu(state->device, &state->box);
-    forge_gltf_free(&state->box.scene);
-    free_model_gpu(state->device, &state->truck);
-    forge_gltf_free(&state->truck.scene);
+    free_model(state->device, &state->box);
+    free_model(state->device, &state->truck);
 
     SDL_ReleaseGPUBuffer(state->device, state->grid_index_buffer);
     SDL_ReleaseGPUBuffer(state->device, state->grid_vertex_buffer);

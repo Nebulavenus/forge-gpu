@@ -58,6 +58,7 @@ GPU-ready formats.
 
 Header-only C libraries
 ([math](common/math/),
+[arena](common/arena/),
 [OBJ](common/obj/),
 [glTF](common/gltf/),
 [UI](common/ui/),

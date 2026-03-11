@@ -224,6 +224,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
     ForgeGltfScene scene;       /* parsed glTF data (nodes, hierarchy, buffers)*/
+    ForgeArena     gltf_arena;  /* arena backing glTF allocations              */
     GpuPrimitive  *primitives;  /* GPU-uploaded primitives (heap-allocated)    */
     int            primitive_count; /* number of primitives in the array       */
     GpuMaterial   *materials;   /* GPU-uploaded materials (heap-allocated)     */
@@ -1016,8 +1017,6 @@ static void free_model_gpu(SDL_GPUDevice *device, ModelData *model)
         SDL_free(model->materials);
         model->materials = NULL;
     }
-
-    forge_gltf_free(&model->scene);
 }
 
 /* ── Helper: upload glTF model to GPU ───────────────────────────────── */
@@ -1140,11 +1139,21 @@ static bool upload_model_to_gpu(SDL_GPUDevice *device, ModelData *model)
 
 static bool setup_model(SDL_GPUDevice *device, ModelData *model, const char *path)
 {
-    if (!forge_gltf_load(path, &model->scene)) {
-        SDL_Log("Failed to load glTF: %s", path);
+    model->gltf_arena = forge_arena_create(0);
+    if (!model->gltf_arena.first) {
+        SDL_Log("Out of memory creating arena for glTF: %s", path);
         return false;
     }
-    return upload_model_to_gpu(device, model);
+    if (!forge_gltf_load(path, &model->scene, &model->gltf_arena)) {
+        SDL_Log("Failed to load glTF: %s", path);
+        forge_arena_destroy(&model->gltf_arena);
+        return false;
+    }
+    if (!upload_model_to_gpu(device, model)) {
+        forge_arena_destroy(&model->gltf_arena);
+        return false;
+    }
+    return true;
 }
 
 
@@ -2389,6 +2398,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 
     free_model_gpu(state->device, &state->truck);
     free_model_gpu(state->device, &state->track);
+
+    forge_arena_destroy(&state->truck.gltf_arena);
+    forge_arena_destroy(&state->track.gltf_arena);
 
     if (state->shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(state->device, state->shadow_pipeline);

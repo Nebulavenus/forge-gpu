@@ -7,7 +7,7 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Foundation** — Project scaffolding, math library, test suite, skills
 - **GPU Lessons 01–39** — From Hello Window through Pipeline-Processed Assets
 - **Math Lessons 01–15** — From Vectors through Bezier Curves
-- **Engine Lessons 01–11** — From Intro to C through Git & Version Control
+- **Engine Lessons 01–12** — From Intro to C through Memory Arenas
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
 - **Asset Lessons 01–08** — From Pipeline Scaffold through Animations

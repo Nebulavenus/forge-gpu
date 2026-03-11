@@ -266,6 +266,7 @@ typedef struct app_state {
 
     /* CesiumMan model. */
     ForgeGltfScene scene;           /* parsed glTF data (nodes, skins)     */
+    ForgeArena     gltf_arena;      /* arena backing glTF allocations      */
     GpuPrimitive  *primitives;      /* GPU buffers per mesh primitive      */
     int            primitive_count;  /* number of uploaded primitives       */
     GpuMaterial   *materials;       /* GPU materials with loaded textures  */
@@ -866,6 +867,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
                 device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR,
                 SDL_GPU_PRESENTMODE_VSYNC)) {
             SDL_Log("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
+            SDL_ReleaseWindowFromGPUDevice(device, window);
             SDL_DestroyWindow(window);
             SDL_DestroyGPUDevice(device);
             return SDL_APP_FAILURE;
@@ -878,6 +880,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     app_state *state = (app_state *)SDL_calloc(1, sizeof(app_state));
     if (!state) {
         SDL_Log("Failed to allocate app_state");
+        SDL_ReleaseWindowFromGPUDevice(device, window);
         SDL_DestroyWindow(window);
         SDL_DestroyGPUDevice(device);
         return SDL_APP_FAILURE;
@@ -949,8 +952,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         char path[PATH_BUFFER_SIZE];
         SDL_snprintf(path, sizeof(path), "%s%s", base, CESIUMMAN_MODEL_PATH);
 
-        if (!forge_gltf_load(path, &state->scene)) {
+        state->gltf_arena = forge_arena_create(0);
+        if (!state->gltf_arena.first) {
+            SDL_Log("ERROR: Out of memory creating arena for glTF");
+            goto init_fail;
+        }
+        if (!forge_gltf_load(path, &state->scene, &state->gltf_arena)) {
             SDL_Log("Failed to load CesiumMan: %s", path);
+            forge_arena_destroy(&state->gltf_arena);
             goto init_fail;
         }
 
@@ -1694,8 +1703,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         forge_capture_destroy(&state->capture, device);
 #endif
 
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
 
+        SDL_ReleaseWindowFromGPUDevice(device, state->window);
         SDL_DestroyWindow(state->window);
         SDL_DestroyGPUDevice(device);
     }

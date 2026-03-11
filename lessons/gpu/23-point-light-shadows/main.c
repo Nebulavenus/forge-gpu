@@ -349,6 +349,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
   ForgeGltfScene scene;        /* parsed glTF scene (CPU-side geometry + metadata) */
+  ForgeArena gltf_arena;       /* arena for glTF allocations                      */
   GpuPrimitive *primitives;    /* GPU buffers for each mesh primitive              */
   int primitive_count;         /* number of primitives uploaded to GPU             */
   GpuMaterial *materials;      /* per-material colors and textures                */
@@ -924,7 +925,7 @@ static void free_model_gpu(SDL_GPUDevice *device, ModelData *model) {
     model->materials = NULL;
   }
 
-  forge_gltf_free(&model->scene);
+  forge_arena_destroy(&model->gltf_arena);
 }
 
 /* ── Helper: upload glTF model to GPU ─────────────────────────────────────── */
@@ -1033,8 +1034,14 @@ upload_model_to_gpu(SDL_GPUDevice *device, SDL_GPUTexture *white_texture, ModelD
 static bool setup_model(
     SDL_GPUDevice *device, SDL_GPUTexture *white_texture, ModelData *model, const char *path
 ) {
-  if (!forge_gltf_load(path, &model->scene)) {
+  model->gltf_arena = forge_arena_create(0);
+  if (!model->gltf_arena.first) {
+    SDL_Log("Out of memory creating arena for glTF: %s", path);
+    return false;
+  }
+  if (!forge_gltf_load(path, &model->scene, &model->gltf_arena)) {
     SDL_Log("Failed to load glTF: %s", path);
+    forge_arena_destroy(&model->gltf_arena);
     return false;
   }
   return upload_model_to_gpu(device, white_texture, model);
@@ -1395,6 +1402,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR,
             SDL_GPU_PRESENTMODE_VSYNC)) {
       SDL_Log("SDL_SetGPUSwapchainParameters failed: %s", SDL_GetError());
+      SDL_ReleaseWindowFromGPUDevice(device, window);
       SDL_DestroyWindow(window);
       SDL_DestroyGPUDevice(device);
       return SDL_APP_FAILURE;
@@ -1406,6 +1414,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   app_state *state = SDL_calloc(1, sizeof(app_state));
   if (!state) {
     SDL_Log("Failed to allocate app_state");
+    SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
     SDL_DestroyGPUDevice(device);
     return SDL_APP_FAILURE;
@@ -1434,6 +1443,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   state->hdr_target = create_hdr_target(device, w, h);
   if (!state->hdr_target) {
     SDL_free(state);
+    SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
     SDL_DestroyGPUDevice(device);
     return SDL_APP_FAILURE;
@@ -1446,6 +1456,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   if (!state->depth_texture) {
     SDL_ReleaseGPUTexture(device, state->hdr_target);
     SDL_free(state);
+    SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
     SDL_DestroyGPUDevice(device);
     return SDL_APP_FAILURE;
@@ -1458,6 +1469,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_ReleaseGPUTexture(device, state->depth_texture);
     SDL_ReleaseGPUTexture(device, state->hdr_target);
     SDL_free(state);
+    SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
     SDL_DestroyGPUDevice(device);
     return SDL_APP_FAILURE;

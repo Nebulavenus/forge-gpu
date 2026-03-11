@@ -17,12 +17,13 @@
  * Usage:
  *   #include "gltf/forge_gltf.h"
  *
+ *   ForgeArena arena = forge_arena_create(0);
  *   ForgeGltfScene scene;
- *   if (forge_gltf_load("model.gltf", &scene)) {
+ *   if (forge_gltf_load("model.gltf", &scene, &arena)) {
  *       // Access scene.nodes, scene.meshes, scene.primitives, etc.
  *       // Upload to GPU, render, etc.
- *       forge_gltf_free(&scene);
  *   }
+ *   forge_arena_destroy(&arena);  // frees all scene memory at once
  *
  * See: lessons/gpu/09-scene-loading/ for a full usage example
  *
@@ -33,8 +34,23 @@
 #define FORGE_GLTF_H
 
 #include <SDL3/SDL.h>
+#include <limits.h>   /* INT_MAX */
 #include "cJSON.h"
 #include "math/forge_math.h"
+#include "arena/forge_arena.h"
+
+/* ── Internal helpers ─────────────────────────────────────────────────────── */
+
+/* Safe multiplication for allocation sizes.  Returns true if a * b fits
+ * in size_t without overflow, and stores the product in *out.  Returns
+ * false on overflow (product is undefined).  Used before every
+ * forge_arena_alloc() call where the count comes from untrusted JSON. */
+static bool forge_gltf__safe_mul(size_t a, size_t b, size_t *out)
+{
+    if (b != 0 && a > SIZE_MAX / b) return false;
+    *out = a * b;
+    return true;
+}
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -180,7 +196,7 @@ typedef struct ForgeGltfMaterial {
 typedef struct ForgeGltfNode {
     int  mesh_index;      /* -1 = transform-only node (no geometry) */
     int  parent;          /* -1 = root */
-    int  children[FORGE_GLTF_MAX_CHILDREN];
+    int  *children;       /* arena-allocated, child_count elements */
     int  child_count;
     mat4 local_transform; /* computed from TRS or raw matrix */
     mat4 world_transform; /* accumulated from root (set by compute_world_transforms) */
@@ -201,10 +217,10 @@ typedef struct ForgeGltfNode {
 
 typedef struct ForgeGltfSkin {
     char name[FORGE_GLTF_NAME_SIZE];
-    int  joints[FORGE_GLTF_MAX_JOINTS];          /* node indices */
+    int  *joints;                                 /* arena-allocated, joint_count elements */
     int  joint_count;
     int  skeleton;                                /* root joint node, -1 if unset */
-    mat4 inverse_bind_matrices[FORGE_GLTF_MAX_JOINTS];
+    mat4 *inverse_bind_matrices;                  /* arena-allocated, joint_count elements */
 } ForgeGltfSkin;
 
 /* ── Animation ────────────────────────────────────────────────────────────── */
@@ -254,9 +270,9 @@ typedef struct ForgeGltfAnimChannel {
 typedef struct ForgeGltfAnimation {
     char                  name[FORGE_GLTF_NAME_SIZE];
     float                 duration;  /* max timestamp across all samplers */
-    ForgeGltfAnimSampler  samplers[FORGE_GLTF_MAX_ANIM_SAMPLERS];
+    ForgeGltfAnimSampler  *samplers; /* arena-allocated, sampler_count elements */
     int                   sampler_count;
-    ForgeGltfAnimChannel  channels[FORGE_GLTF_MAX_ANIM_CHANNELS];
+    ForgeGltfAnimChannel  *channels; /* arena-allocated, channel_count elements */
     int                   channel_count;
 } ForgeGltfAnimation;
 
@@ -269,51 +285,62 @@ typedef struct ForgeGltfBuffer {
 } ForgeGltfBuffer;
 
 /* ── Scene (top-level result) ─────────────────────────────────────────────── */
-/* Everything parsed from a .gltf file.  All arrays are allocated with
- * SDL_calloc and freed by forge_gltf_free(). */
+/* Everything parsed from a .gltf file.  All arrays are arena-allocated
+ * via the ForgeArena passed to forge_gltf_load().  The arena owns all
+ * memory — destroy the arena to free everything at once.
+ *
+ * Before arenas: ForgeGltfScene was ~1.5 MB of fixed-size arrays
+ * (512 nodes × 256 children each = too large for the stack, hard limits
+ * on scene complexity).  Now it is ~100 bytes of pointers — safe on the
+ * stack, and scenes of any size work as long as the arena can grow. */
 
 typedef struct ForgeGltfScene {
-    ForgeGltfNode      nodes[FORGE_GLTF_MAX_NODES];
+    ForgeGltfNode      *nodes;       /* arena-allocated, node_count elements */
     int                node_count;
 
-    ForgeGltfMesh      meshes[FORGE_GLTF_MAX_MESHES];
+    ForgeGltfMesh      *meshes;      /* arena-allocated, mesh_count elements */
     int                mesh_count;
 
-    ForgeGltfPrimitive primitives[FORGE_GLTF_MAX_PRIMITIVES];
+    ForgeGltfPrimitive *primitives;  /* arena-allocated, primitive_count elements */
     int                primitive_count;
 
-    ForgeGltfMaterial  materials[FORGE_GLTF_MAX_MATERIALS];
+    ForgeGltfMaterial  *materials;   /* arena-allocated, material_count elements */
     int                material_count;
 
-    ForgeGltfBuffer    buffers[FORGE_GLTF_MAX_BUFFERS];
+    ForgeGltfBuffer    buffers[FORGE_GLTF_MAX_BUFFERS]; /* fixed — max 16, tiny */
     int                buffer_count;
 
-    int                root_nodes[FORGE_GLTF_MAX_NODES];
+    int                *root_nodes;  /* arena-allocated, root_node_count elements */
     int                root_node_count;
 
-    ForgeGltfSkin      skins[FORGE_GLTF_MAX_SKINS];
+    ForgeGltfSkin      *skins;       /* arena-allocated, skin_count elements */
     int                skin_count;
 
-    ForgeGltfAnimation animations[FORGE_GLTF_MAX_ANIMATIONS];
+    ForgeGltfAnimation *animations;  /* arena-allocated, animation_count elements */
     int                animation_count;
 } ForgeGltfScene;
 
 /* ── API ──────────────────────────────────────────────────────────────────── */
 
 /* Load a .gltf file and all referenced .bin buffers.
- * On success, returns true and fills *scene.  Caller must call
- * forge_gltf_free() when done.
- * On failure, returns false and scene is in an indeterminate state. */
-static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene);
+ * All memory is allocated from the provided arena.  On success, returns
+ * true and fills *scene.  To free, destroy the arena — no separate free
+ * call is needed.  forge_gltf_free() is retained as a no-op for
+ * transition convenience.
+ * On failure, returns false; the arena may contain partial allocations
+ * (destroy it to clean up). */
+static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene,
+                            ForgeArena *arena);
 
-/* Free all memory allocated by forge_gltf_load().
- * Safe to call on a zeroed scene (does nothing). */
+/* Legacy free — now a no-op.  All memory is owned by the arena passed
+ * to forge_gltf_load().  Destroy the arena to release everything. */
 static void forge_gltf_free(ForgeGltfScene *scene);
 
 /* Recursively compute world_transform for all nodes in the hierarchy.
  * Called automatically by forge_gltf_load(), but exposed in case you
- * need to recompute after modifying local transforms. */
-static void forge_gltf_compute_world_transforms(ForgeGltfScene *scene,
+ * need to recompute after modifying local transforms.
+ * Returns false if the depth limit is reached (possible cycle). */
+static bool forge_gltf_compute_world_transforms(ForgeGltfScene *scene,
                                                  int node_idx,
                                                  const mat4 *parent_world);
 
@@ -372,7 +399,8 @@ static char *read_text(const char *path)
     return buf;
 }
 
-static Uint8 *read_binary(const char *path, Uint32 *out_size)
+static Uint8 *read_binary(const char *path, Uint32 *out_size,
+                          ForgeArena *arena)
 {
     SDL_IOStream *io = SDL_IOFromFile(path, "rb");
     if (!io) {
@@ -390,10 +418,19 @@ static Uint8 *read_binary(const char *path, Uint32 *out_size)
         }
         return NULL;
     }
+    if (size > UINT32_MAX) {
+        SDL_Log("forge_gltf: file '%s' too large (%lld bytes)",
+                path, (long long)size);
+        if (!SDL_CloseIO(io)) {
+            SDL_Log("forge_gltf: SDL_CloseIO failed for '%s': %s",
+                    path, SDL_GetError());
+        }
+        return NULL;
+    }
 
-    Uint8 *buf = (Uint8 *)SDL_malloc((size_t)size);
+    Uint8 *buf = (Uint8 *)forge_arena_alloc(arena, (size_t)size);
     if (!buf) {
-        SDL_Log("forge_gltf: alloc failed for '%s' (%lld bytes)",
+        SDL_Log("forge_gltf: arena alloc failed for '%s' (%lld bytes)",
                 path, (long long)size);
         if (!SDL_CloseIO(io)) {
             SDL_Log("forge_gltf: SDL_CloseIO failed for '%s': %s",
@@ -404,7 +441,6 @@ static Uint8 *read_binary(const char *path, Uint32 *out_size)
 
     if (SDL_ReadIO(io, buf, (size_t)size) != (size_t)size) {
         SDL_Log("forge_gltf: read failed for '%s': %s", path, SDL_GetError());
-        SDL_free(buf);
         if (!SDL_CloseIO(io)) {
             SDL_Log("forge_gltf: SDL_CloseIO failed for '%s': %s",
                     path, SDL_GetError());
@@ -415,7 +451,6 @@ static Uint8 *read_binary(const char *path, Uint32 *out_size)
     if (!SDL_CloseIO(io)) {
         SDL_Log("forge_gltf: SDL_CloseIO failed for '%s': %s",
                 path, SDL_GetError());
-        SDL_free(buf);
         return NULL;
     }
     *out_size = (Uint32)size;
@@ -525,7 +560,11 @@ static int type_component_count(const char *type)
 /* ── Accessor data access ────────────────────────────────────────────────── */
 /* Follow the glTF accessor → bufferView → buffer chain to find raw data.
  * Validates componentType, bufferView.byteLength, and accessor bounds
- * per the glTF 2.0 specification before returning a pointer. */
+ * per the glTF 2.0 specification before returning a pointer.
+ * Returns the number of components (1 for SCALAR, 2 for VEC2, 3 for VEC3,
+ * etc.) via *out_num_components.  Callers must validate this against the
+ * glTF spec requirements for each attribute (e.g. POSITION requires VEC3,
+ * indices require SCALAR). */
 
 static const void *forge_gltf__get_accessor(
     const cJSON *root, const ForgeGltfScene *scene,
@@ -543,7 +582,9 @@ static const void *forge_gltf__get_accessor(
     const cJSON *comp = cJSON_GetObjectItemCaseSensitive(acc, "componentType");
     const cJSON *cnt = cJSON_GetObjectItemCaseSensitive(acc, "count");
     const cJSON *type_str = cJSON_GetObjectItemCaseSensitive(acc, "type");
-    if (!bv_idx || !comp || !cnt || !cJSON_IsString(type_str)) return NULL;
+    if (!bv_idx || !comp || !cnt || !cJSON_IsString(type_str) ||
+        !cJSON_IsNumber(comp) || !cJSON_IsNumber(bv_idx) || !cJSON_IsNumber(cnt))
+        return NULL;
 
     /* Validate componentType is one of the six values allowed by the spec. */
     int comp_size = component_size(comp->valueint);
@@ -563,7 +604,14 @@ static const void *forge_gltf__get_accessor(
 
     int acc_offset = 0;
     const cJSON *acc_off = cJSON_GetObjectItemCaseSensitive(acc, "byteOffset");
-    if (cJSON_IsNumber(acc_off)) acc_offset = acc_off->valueint;
+    if (cJSON_IsNumber(acc_off)) {
+        if (acc_off->valueint < 0) {
+            SDL_Log("forge_gltf: accessor %d has negative byteOffset %d",
+                    accessor_idx, acc_off->valueint);
+            return NULL;
+        }
+        acc_offset = acc_off->valueint;
+    }
 
     /* Bounds-check the bufferView index before accessing the array. */
     int view_count = cJSON_GetArraySize(views);
@@ -575,13 +623,20 @@ static const void *forge_gltf__get_accessor(
     const cJSON *buf_idx = cJSON_GetObjectItemCaseSensitive(view, "buffer");
     const cJSON *bv_off_json = cJSON_GetObjectItemCaseSensitive(view, "byteOffset");
     const cJSON *bv_len_json = cJSON_GetObjectItemCaseSensitive(view, "byteLength");
-    if (!buf_idx) return NULL;
+    if (!buf_idx || !cJSON_IsNumber(buf_idx)) return NULL;
 
     int bi = buf_idx->valueint;
     if (bi < 0 || bi >= scene->buffer_count) return NULL;
 
     Uint32 bv_offset = 0;
-    if (cJSON_IsNumber(bv_off_json)) bv_offset = (Uint32)bv_off_json->valueint;
+    if (cJSON_IsNumber(bv_off_json)) {
+        if (bv_off_json->valueint < 0) {
+            SDL_Log("forge_gltf: bufferView %d has negative byteOffset %d",
+                    bv_idx->valueint, bv_off_json->valueint);
+            return NULL;
+        }
+        bv_offset = (Uint32)bv_off_json->valueint;
+    }
 
     /* bufferView.byteLength is required by the spec — reject if missing. */
     if (!cJSON_IsNumber(bv_len_json) || bv_len_json->valueint <= 0) {
@@ -591,8 +646,10 @@ static const void *forge_gltf__get_accessor(
     }
     Uint32 bv_byte_length = (Uint32)bv_len_json->valueint;
 
-    /* Ensure the bufferView itself fits within the binary buffer. */
-    if (bv_offset + bv_byte_length > scene->buffers[bi].size) {
+    /* Ensure the bufferView itself fits within the binary buffer.
+     * Use subtraction form to avoid Uint32 overflow in the addition. */
+    if (bv_byte_length > scene->buffers[bi].size
+        || bv_offset > scene->buffers[bi].size - bv_byte_length) {
         SDL_Log("forge_gltf: bufferView %d exceeds buffer %d bounds "
                 "(offset %u + length %u > %u)",
                 bv_idx->valueint, bi,
@@ -606,18 +663,50 @@ static const void *forge_gltf__get_accessor(
     int byte_stride = element_size; /* tightly packed by default */
     const cJSON *bv_stride_json = cJSON_GetObjectItemCaseSensitive(
         view, "byteStride");
-    if (cJSON_IsNumber(bv_stride_json) && bv_stride_json->valueint > 0) {
-        byte_stride = bv_stride_json->valueint;
+    if (cJSON_IsNumber(bv_stride_json)) {
+        if (bv_stride_json->valueint < 0) {
+            SDL_Log("forge_gltf: accessor %d has negative byteStride %d",
+                    accessor_idx, bv_stride_json->valueint);
+            return NULL;
+        }
+        if (bv_stride_json->valueint > 0) {
+            byte_stride = bv_stride_json->valueint;
+        }
+    }
+
+    /* Reject interleaved accessors — consumers assume tightly packed data.
+     * Per glTF spec byteStride==0 means tightly packed; we also accept
+     * byteStride==element_size (which is equivalent).  Any other stride
+     * means the accessor interleaves with other attributes and cannot be
+     * read as a contiguous array. */
+    if (byte_stride != element_size) {
+        SDL_Log("forge_gltf: accessor %d has interleaved byteStride %d "
+                "(expected %d for tightly packed data)",
+                accessor_idx, byte_stride, element_size);
+        return NULL;
     }
 
     int count = cnt->valueint;
+    if (count < 0) {
+        SDL_Log("forge_gltf: accessor %d has negative count %d",
+                accessor_idx, count);
+        return NULL;
+    }
     if (count > 0) {
-        Uint32 required = (Uint32)acc_offset
-                        + (Uint32)(count - 1) * (Uint32)byte_stride
-                        + (Uint32)element_size;
-        if (required > bv_byte_length) {
+        /* Compute required = acc_offset + (count-1)*byte_stride + element_size.
+         * Use size_t arithmetic to avoid Uint32 overflow on large counts. */
+        size_t stride_span;
+        if (!forge_gltf__safe_mul((size_t)(count - 1), (size_t)byte_stride,
+                                  &stride_span)) {
+            SDL_Log("forge_gltf: accessor %d stride span overflow",
+                    accessor_idx);
+            return NULL;
+        }
+        size_t required = (size_t)acc_offset + stride_span + (size_t)element_size;
+        /* Check for addition overflow (carry past SIZE_MAX). */
+        if (required < stride_span || required > (size_t)bv_byte_length) {
             SDL_Log("forge_gltf: accessor %d exceeds bufferView %d bounds "
-                    "(need %u bytes, view has %u)",
+                    "(need %zu bytes, view has %u)",
                     accessor_idx, bv_idx->valueint, required, bv_byte_length);
             return NULL;
         }
@@ -654,7 +743,8 @@ static const void *forge_gltf__get_accessor(
 /* ── Parse binary buffers ────────────────────────────────────────────────── */
 
 static bool forge_gltf__parse_buffers(const cJSON *root, const char *base_dir,
-                                       ForgeGltfScene *scene)
+                                       ForgeGltfScene *scene,
+                                       ForgeArena *arena)
 {
     const cJSON *arr = cJSON_GetObjectItemCaseSensitive(root, "buffers");
     if (!cJSON_IsArray(arr)) {
@@ -682,7 +772,7 @@ static bool forge_gltf__parse_buffers(const cJSON *root, const char *base_dir,
                                 uri->valuestring);
 
         Uint32 file_size = 0;
-        scene->buffers[i].data = read_binary(path, &file_size);
+        scene->buffers[i].data = read_binary(path, &file_size, arena);
         if (!scene->buffers[i].data) return false;
         scene->buffers[i].size = file_size;
     }
@@ -694,7 +784,8 @@ static bool forge_gltf__parse_buffers(const cJSON *root, const char *base_dir,
 
 static bool forge_gltf__parse_materials(const cJSON *root,
                                          const char *base_dir,
-                                         ForgeGltfScene *scene)
+                                         ForgeGltfScene *scene,
+                                         ForgeArena *arena)
 {
     const cJSON *mats = cJSON_GetObjectItemCaseSensitive(root, "materials");
     if (!cJSON_IsArray(mats)) {
@@ -706,10 +797,24 @@ static bool forge_gltf__parse_materials(const cJSON *root,
     const cJSON *textures_arr = cJSON_GetObjectItemCaseSensitive(root, "textures");
 
     int count = cJSON_GetArraySize(mats);
-    if (count > FORGE_GLTF_MAX_MATERIALS) {
-        SDL_Log("forge_gltf: %d materials, capping at %d",
-                count, FORGE_GLTF_MAX_MATERIALS);
-        count = FORGE_GLTF_MAX_MATERIALS;
+    if (count < 0) {
+        SDL_Log("forge_gltf: invalid material count");
+        return false;
+    }
+    if (count == 0) {
+        scene->material_count = 0;
+        return true;
+    }
+
+    size_t mat_bytes;
+    if (!forge_gltf__safe_mul((size_t)count, sizeof(ForgeGltfMaterial), &mat_bytes)) {
+        SDL_Log("forge_gltf: material allocation size overflow");
+        return false;
+    }
+    scene->materials = (ForgeGltfMaterial *)forge_arena_alloc(arena, mat_bytes);
+    if (!scene->materials) {
+        SDL_Log("forge_gltf: arena alloc failed for %d materials", count);
+        return false;
     }
 
     for (int i = 0; i < count; i++) {
@@ -912,7 +1017,8 @@ static bool forge_gltf__parse_materials(const cJSON *root,
 
 /* ── Parse meshes ────────────────────────────────────────────────────────── */
 
-static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
+static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene,
+                                      ForgeArena *arena)
 {
     const cJSON *meshes = cJSON_GetObjectItemCaseSensitive(root, "meshes");
     if (!cJSON_IsArray(meshes)) {
@@ -921,7 +1027,52 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
     }
 
     int mesh_count = cJSON_GetArraySize(meshes);
-    if (mesh_count > FORGE_GLTF_MAX_MESHES) mesh_count = FORGE_GLTF_MAX_MESHES;
+    if (mesh_count < 0) {
+        SDL_Log("forge_gltf: invalid mesh count");
+        return false;
+    }
+    if (mesh_count == 0) {
+        scene->mesh_count = 0;
+        return true;
+    }
+
+    size_t mesh_bytes;
+    if (!forge_gltf__safe_mul((size_t)mesh_count, sizeof(ForgeGltfMesh), &mesh_bytes)) {
+        SDL_Log("forge_gltf: mesh allocation size overflow");
+        return false;
+    }
+    scene->meshes = (ForgeGltfMesh *)forge_arena_alloc(arena, mesh_bytes);
+    if (!scene->meshes) {
+        SDL_Log("forge_gltf: arena alloc failed for %d meshes", mesh_count);
+        return false;
+    }
+
+    /* Count total primitives to pre-allocate the primitives array.
+     * Guard against overflow: each cJSON_GetArraySize can return up to
+     * INT_MAX, and the sum of all primitive counts must fit in int. */
+    int total_prims = 0;
+    for (int mi = 0; mi < mesh_count; mi++) {
+        const cJSON *mesh = cJSON_GetArrayItem(meshes, mi);
+        const cJSON *prims = cJSON_GetObjectItemCaseSensitive(mesh, "primitives");
+        if (cJSON_IsArray(prims)) {
+            int prim_count = cJSON_GetArraySize(prims);
+            if (prim_count < 0 || prim_count > INT_MAX - total_prims) {
+                SDL_Log("forge_gltf: primitive count overflow");
+                return false;
+            }
+            total_prims += prim_count;
+        }
+    }
+    size_t prim_bytes;
+    if (!forge_gltf__safe_mul((size_t)total_prims, sizeof(ForgeGltfPrimitive), &prim_bytes)) {
+        SDL_Log("forge_gltf: primitive allocation size overflow");
+        return false;
+    }
+    scene->primitives = (ForgeGltfPrimitive *)forge_arena_alloc(arena, prim_bytes);
+    if (!scene->primitives && total_prims > 0) {
+        SDL_Log("forge_gltf: arena alloc failed for %d primitives", total_prims);
+        return false;
+    }
 
     for (int mi = 0; mi < mesh_count; mi++) {
         const cJSON *mesh = cJSON_GetArrayItem(meshes, mi);
@@ -935,8 +1086,6 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
 
         int prim_count = cJSON_GetArraySize(prims);
         for (int pi = 0; pi < prim_count; pi++) {
-            if (scene->primitive_count >= FORGE_GLTF_MAX_PRIMITIVES) break;
-
             const cJSON *prim = cJSON_GetArrayItem(prims, pi);
             const cJSON *attrs = cJSON_GetObjectItemCaseSensitive(
                 prim, "attributes");
@@ -953,10 +1102,18 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
 
             int vert_count = 0;
             int comp_type = 0;
+            int pos_num = 0;
             const float *positions = (const float *)forge_gltf__get_accessor(
                 root, scene, pos_acc->valueint, &vert_count, &comp_type,
-                NULL);
-            if (!positions || comp_type != FORGE_GLTF_FLOAT) continue;
+                &pos_num);
+            /* glTF requires VEC3 for POSITION */
+            if (!positions || comp_type != FORGE_GLTF_FLOAT
+                  || pos_num != 3) {
+                SDL_Log("forge_gltf: mesh %d primitive %d: "
+                        "POSITION accessor %d failed validation",
+                        mi, pi, pos_acc->valueint);
+                return false;
+            }
 
             const float *normals = NULL;
             const cJSON *norm_acc = cJSON_GetObjectItemCaseSensitive(
@@ -964,11 +1121,14 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
             if (norm_acc) {
                 int norm_count = 0;
                 int norm_comp = 0;
+                int norm_num = 0;
                 const float *n = (const float *)forge_gltf__get_accessor(
                     root, scene, norm_acc->valueint, &norm_count, &norm_comp,
-                    NULL);
+                    &norm_num);
+                /* glTF requires VEC3 for NORMAL */
                 if (n && norm_count == vert_count
-                      && norm_comp == FORGE_GLTF_FLOAT) {
+                      && norm_comp == FORGE_GLTF_FLOAT
+                      && norm_num == 3) {
                     normals = n;
                 }
             }
@@ -979,11 +1139,14 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
             if (uv_acc) {
                 int uv_count = 0;
                 int uv_comp = 0;
+                int uv_num = 0;
                 const float *u = (const float *)forge_gltf__get_accessor(
                     root, scene, uv_acc->valueint, &uv_count, &uv_comp,
-                    NULL);
+                    &uv_num);
+                /* glTF requires VEC2 for TEXCOORD_0 */
                 if (u && uv_count == vert_count
-                      && uv_comp == FORGE_GLTF_FLOAT) {
+                      && uv_comp == FORGE_GLTF_FLOAT
+                      && uv_num == 2) {
                     uvs = u;
                 }
             }
@@ -1013,9 +1176,16 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
             }
 
             /* Interleave into ForgeGltfVertex array. */
-            gp->vertices = (ForgeGltfVertex *)SDL_calloc(
-                (size_t)vert_count, sizeof(ForgeGltfVertex));
-            if (!gp->vertices) continue;
+            size_t vert_bytes;
+            if (!forge_gltf__safe_mul((size_t)vert_count, sizeof(ForgeGltfVertex), &vert_bytes)) {
+                SDL_Log("forge_gltf: vertex allocation size overflow");
+                return false;
+            }
+            gp->vertices = (ForgeGltfVertex *)forge_arena_alloc(arena, vert_bytes);
+            if (!gp->vertices) {
+                SDL_Log("forge_gltf: arena alloc failed for vertices");
+                return false;
+            }
             gp->vertex_count = (Uint32)vert_count;
 
             for (int v = 0; v < vert_count; v++) {
@@ -1039,10 +1209,22 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
              * separately from ForgeGltfVertex so that lessons which don't
              * need tangents can use the same base vertex layout. */
             if (tangent_data) {
-                gp->tangents = (vec4 *)SDL_calloc(
-                    (size_t)vert_count, sizeof(vec4));
-                if (gp->tangents) {
-                    gp->has_tangents = true;
+                size_t tang_bytes;
+                /* TANGENT attribute was validated — allocation failure is fatal
+                 * (OOM or overflow), not graceful degradation. */
+                if (!forge_gltf__safe_mul((size_t)vert_count, sizeof(vec4), &tang_bytes)) {
+                    SDL_Log("forge_gltf: tangent byte count overflow "
+                            "(vert_count=%d)", vert_count);
+                    return false;
+                }
+                gp->tangents = (vec4 *)forge_arena_alloc(arena, tang_bytes);
+                if (!gp->tangents) {
+                    SDL_Log("forge_gltf: failed to allocate tangent array "
+                            "(%zu bytes)", tang_bytes);
+                    return false;
+                }
+                gp->has_tangents = true;
+                {
                     int tv;
                     for (tv = 0; tv < vert_count; tv++) {
                         gp->tangents[tv].x = tangent_data[tv * FORGE_GLTF_TANGENT_COMPONENTS + 0];
@@ -1089,16 +1271,26 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
                         && w_num == FORGE_GLTF_JOINTS_PER_VERT) {
 
                         /* Allocate joint indices (always stored as Uint16). */
-                        size_t ji_bytes = (size_t)vert_count
-                                        * FORGE_GLTF_JOINTS_PER_VERT
-                                        * sizeof(Uint16);
-                        gp->joint_indices = (Uint16 *)SDL_malloc(ji_bytes);
+                        size_t ji_elems, ji_bytes;
+                        if (!forge_gltf__safe_mul((size_t)vert_count, FORGE_GLTF_JOINTS_PER_VERT, &ji_elems)
+                            || !forge_gltf__safe_mul(ji_elems, sizeof(Uint16), &ji_bytes)) {
+                            SDL_Log("forge_gltf: mesh %d primitive %d: "
+                                    "joint index size overflow", mi, pi);
+                            return false;
+                        }
+                        gp->joint_indices = (Uint16 *)forge_arena_alloc(
+                            arena, ji_bytes);
 
                         /* Allocate weights (FLOAT × 4). */
-                        size_t wt_bytes = (size_t)vert_count
-                                        * FORGE_GLTF_JOINTS_PER_VERT
-                                        * sizeof(float);
-                        gp->weights = (float *)SDL_malloc(wt_bytes);
+                        size_t wt_elems, wt_bytes;
+                        if (!forge_gltf__safe_mul((size_t)vert_count, FORGE_GLTF_JOINTS_PER_VERT, &wt_elems)
+                            || !forge_gltf__safe_mul(wt_elems, sizeof(float), &wt_bytes)) {
+                            SDL_Log("forge_gltf: mesh %d primitive %d: "
+                                    "weight size overflow", mi, pi);
+                            return false;
+                        }
+                        gp->weights = (float *)forge_arena_alloc(
+                            arena, wt_bytes);
 
                         if (gp->joint_indices && gp->weights) {
                             if (j_comp == FORGE_GLTF_UNSIGNED_SHORT) {
@@ -1106,18 +1298,21 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
                             } else {
                                 /* Widen UNSIGNED_BYTE → Uint16. */
                                 const Uint8 *src = (const Uint8 *)j_data;
-                                int total = vert_count * FORGE_GLTF_JOINTS_PER_VERT;
-                                for (int k = 0; k < total; k++) {
+                                size_t total = (size_t)vert_count * FORGE_GLTF_JOINTS_PER_VERT;
+                                for (size_t k = 0; k < total; k++) {
                                     gp->joint_indices[k] = (Uint16)src[k];
                                 }
                             }
                             SDL_memcpy(gp->weights, w_data, wt_bytes);
                             gp->has_skin_data = true;
                         } else {
-                            SDL_free(gp->joint_indices);
-                            SDL_free(gp->weights);
-                            gp->joint_indices = NULL;
-                            gp->weights = NULL;
+                            /* Validated skin data that fails allocation is a
+                             * hard error — silently dropping it would produce
+                             * an unskinned mesh with corrupted animation. */
+                            SDL_Log("forge_gltf: mesh %d primitive %d: "
+                                    "skin data allocation failed",
+                                    mi, pi);
+                            return false;
                         }
                     } else if (j_data && w_data && !j_valid) {
                         SDL_Log("forge_gltf: unsupported JOINTS_0 type %d",
@@ -1135,39 +1330,111 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
             if (idx_acc && cJSON_IsNumber(idx_acc)) {
                 int idx_count = 0;
                 int idx_comp = 0;
+                int idx_num = 0;
                 const void *idx_data = forge_gltf__get_accessor(
                     root, scene, idx_acc->valueint, &idx_count, &idx_comp,
-                    NULL);
+                    &idx_num);
 
-                if (idx_data && idx_count > 0) {
+                /* glTF requires SCALAR for indices */
+                if (!idx_data || idx_num != 1) {
+                    SDL_Log("forge_gltf: mesh %d primitive %d: "
+                            "index accessor %d failed validation",
+                            mi, pi, idx_acc->valueint);
+                    return false;
+                }
+                if (idx_count > 0) {
                     Uint32 elem_size = 0;
-                    if (idx_comp == FORGE_GLTF_UNSIGNED_SHORT) {
+                    bool widen_bytes = false;
+                    if (idx_comp == FORGE_GLTF_UNSIGNED_BYTE) {
+                        /* glTF allows UNSIGNED_BYTE indices — widen to
+                         * Uint16 so downstream code only handles 2/4. */
+                        elem_size = 2;
+                        widen_bytes = true;
+                    } else if (idx_comp == FORGE_GLTF_UNSIGNED_SHORT) {
                         elem_size = 2;
                     } else if (idx_comp == FORGE_GLTF_UNSIGNED_INT) {
                         elem_size = 4;
                     } else {
-                        SDL_Log("forge_gltf: unsupported index type %d",
-                                idx_comp);
-                        SDL_free(gp->vertices);
-                        gp->vertices = NULL;
-                        continue;
+                        SDL_Log("forge_gltf: unsupported index component "
+                                "type %d for mesh %d primitive %d",
+                                idx_comp, mi, pi);
+                        return false;
                     }
 
-                    Uint32 total = (Uint32)idx_count * elem_size;
-                    gp->indices = SDL_malloc(total);
-                    if (gp->indices) {
-                        SDL_memcpy(gp->indices, idx_data, total);
-                        gp->index_count = (Uint32)idx_count;
-                        gp->index_stride = elem_size;
+                    /* Guard against overflow: idx_count * elem_size
+                     * must fit in Uint32.  elem_size is 2 or 4. */
+                    if ((Uint32)idx_count > UINT32_MAX / elem_size) {
+                        SDL_Log("forge_gltf: index buffer size overflow");
+                        return false;
                     }
+                    Uint32 total = (Uint32)idx_count * elem_size;
+                    gp->indices = forge_arena_alloc(arena, total);
+                    if (!gp->indices) {
+                        SDL_Log("forge_gltf: arena alloc failed for index buffer");
+                        return false;
+                    }
+                    if (widen_bytes) {
+                        /* Widen UNSIGNED_BYTE → Uint16 (same pattern
+                         * as joint index widening above). */
+                        const Uint8 *src = (const Uint8 *)idx_data;
+                        Uint16 *dst = (Uint16 *)gp->indices;
+                        for (Uint32 k = 0; k < (Uint32)idx_count; k++) {
+                            dst[k] = (Uint16)src[k];
+                            if (dst[k] >= gp->vertex_count) {
+                                SDL_Log("forge_gltf: mesh %d primitive %d: "
+                                        "index[%u]=%u >= vertex_count %u",
+                                        mi, pi, k,
+                                        (unsigned)dst[k], gp->vertex_count);
+                                return false;
+                            }
+                        }
+                    } else {
+                        SDL_memcpy(gp->indices, idx_data, total);
+                        /* Validate all indices are within vertex range. */
+                        if (idx_comp == FORGE_GLTF_UNSIGNED_SHORT) {
+                            const Uint16 *idx16 =
+                                (const Uint16 *)gp->indices;
+                            for (Uint32 k = 0; k < (Uint32)idx_count; k++) {
+                                if (idx16[k] >= gp->vertex_count) {
+                                    SDL_Log("forge_gltf: mesh %d primitive "
+                                            "%d: index[%u]=%u >= "
+                                            "vertex_count %u",
+                                            mi, pi, k,
+                                            (unsigned)idx16[k],
+                                            gp->vertex_count);
+                                    return false;
+                                }
+                            }
+                        } else { /* FORGE_GLTF_UNSIGNED_INT */
+                            const Uint32 *idx32 =
+                                (const Uint32 *)gp->indices;
+                            for (Uint32 k = 0; k < (Uint32)idx_count; k++) {
+                                if (idx32[k] >= gp->vertex_count) {
+                                    SDL_Log("forge_gltf: mesh %d primitive "
+                                            "%d: index[%u]=%u >= "
+                                            "vertex_count %u",
+                                            mi, pi, k,
+                                            (unsigned)idx32[k],
+                                            gp->vertex_count);
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    gp->index_count = (Uint32)idx_count;
+                    gp->index_stride = elem_size;
                 }
             }
 
             /* Material reference. */
             const cJSON *mat_idx = cJSON_GetObjectItemCaseSensitive(
                 prim, "material");
-            gp->material_index = cJSON_IsNumber(mat_idx)
-                                 ? mat_idx->valueint : -1;
+            if (cJSON_IsNumber(mat_idx) && mat_idx->valueint >= 0
+                && mat_idx->valueint < scene->material_count) {
+                gp->material_index = mat_idx->valueint;
+            } else {
+                gp->material_index = -1; /* no material or out of range */
+            }
 
             scene->primitive_count++;
             gm->primitive_count++;
@@ -1179,7 +1446,8 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene)
 
 /* ── Parse nodes ─────────────────────────────────────────────────────────── */
 
-static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
+static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene,
+                                     ForgeArena *arena)
 {
     const cJSON *nodes = cJSON_GetObjectItemCaseSensitive(root, "nodes");
     if (!cJSON_IsArray(nodes)) {
@@ -1188,7 +1456,25 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
     }
 
     int count = cJSON_GetArraySize(nodes);
-    if (count > FORGE_GLTF_MAX_NODES) count = FORGE_GLTF_MAX_NODES;
+    if (count < 0) {
+        SDL_Log("forge_gltf: invalid node count");
+        return false;
+    }
+    if (count == 0) {
+        scene->node_count = 0;
+        return true;
+    }
+
+    size_t node_bytes;
+    if (!forge_gltf__safe_mul((size_t)count, sizeof(ForgeGltfNode), &node_bytes)) {
+        SDL_Log("forge_gltf: node allocation size overflow");
+        return false;
+    }
+    scene->nodes = (ForgeGltfNode *)forge_arena_alloc(arena, node_bytes);
+    if (!scene->nodes) {
+        SDL_Log("forge_gltf: arena alloc failed for %d nodes", count);
+        return false;
+    }
 
     for (int i = 0; i < count; i++) {
         const cJSON *node = cJSON_GetArrayItem(nodes, i);
@@ -1208,7 +1494,10 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
 
         /* Mesh reference. */
         const cJSON *mesh_idx = cJSON_GetObjectItemCaseSensitive(node, "mesh");
-        if (cJSON_IsNumber(mesh_idx)) gn->mesh_index = mesh_idx->valueint;
+        if (cJSON_IsNumber(mesh_idx) && mesh_idx->valueint >= 0
+            && mesh_idx->valueint < scene->mesh_count) {
+            gn->mesh_index = mesh_idx->valueint;
+        }
 
         /* Skin reference — store raw index, validate after skins are parsed. */
         const cJSON *skin_idx = cJSON_GetObjectItemCaseSensitive(node, "skin");
@@ -1216,20 +1505,30 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
             gn->skin_index = skin_idx->valueint;
         }
 
-        /* Children. */
+        /* Children — arena-allocated to the actual count (no fixed limit). */
         const cJSON *children = cJSON_GetObjectItemCaseSensitive(
             node, "children");
         if (cJSON_IsArray(children)) {
             int cc = cJSON_GetArraySize(children);
-            if (cc > FORGE_GLTF_MAX_CHILDREN) {
-                SDL_Log("forge_gltf: node %d has %d children, capping at %d",
-                        i, cc, FORGE_GLTF_MAX_CHILDREN);
-                cc = FORGE_GLTF_MAX_CHILDREN;
+            if (cc < 0) cc = 0;
+            if (cc > 0) {
+                size_t child_bytes;
+                if (!forge_gltf__safe_mul((size_t)cc, sizeof(int), &child_bytes)) {
+                    SDL_Log("forge_gltf: node %d children allocation size overflow", i);
+                    return false;
+                }
+                gn->children = (int *)forge_arena_alloc(arena, child_bytes);
+                if (!gn->children) {
+                    SDL_Log("forge_gltf: arena alloc failed for node %d children", i);
+                    return false;
+                }
             }
             int valid = 0;
             for (int c = 0; c < cc; c++) {
                 const cJSON *item = cJSON_GetArrayItem(children, c);
-                if (item) {
+                if (cJSON_IsNumber(item)
+                    && item->valueint >= 0
+                    && item->valueint < count) {
                     gn->children[valid++] = item->valueint;
                 }
             }
@@ -1325,14 +1624,38 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
     scene->root_node_count = 0;
     if (cJSON_IsArray(scenes_arr)) {
         const cJSON *sc = cJSON_GetArrayItem(scenes_arr, default_scene);
+        if (!sc) {
+            SDL_Log("forge_gltf: default scene index %d out of range",
+                    default_scene);
+            return false;
+        }
         const cJSON *roots = cJSON_GetObjectItemCaseSensitive(sc, "nodes");
         if (cJSON_IsArray(roots)) {
             int rc = cJSON_GetArraySize(roots);
+            if (rc < 0) rc = 0;
+            if (rc > 0) {
+                size_t root_bytes;
+                if (!forge_gltf__safe_mul((size_t)rc, sizeof(int), &root_bytes)) {
+                    SDL_Log("forge_gltf: root nodes allocation size overflow");
+                    return false;
+                }
+                scene->root_nodes = (int *)forge_arena_alloc(arena, root_bytes);
+                if (!scene->root_nodes) {
+                    SDL_Log("forge_gltf: arena alloc failed for root nodes");
+                    return false;
+                }
+            }
             int valid_roots = 0;
-            for (int i = 0; i < rc && i < FORGE_GLTF_MAX_NODES; i++) {
+            for (int i = 0; i < rc; i++) {
                 const cJSON *item = cJSON_GetArrayItem(roots, i);
-                if (item) {
+                if (cJSON_IsNumber(item)
+                    && item->valueint >= 0
+                    && item->valueint < count) {
                     scene->root_nodes[valid_roots++] = item->valueint;
+                } else if (item) {
+                    SDL_Log("forge_gltf: default scene root index %d is invalid",
+                            cJSON_IsNumber(item) ? item->valueint : -1);
+                    return false;
                 }
             }
             scene->root_node_count = valid_roots;
@@ -1344,24 +1667,59 @@ static bool forge_gltf__parse_nodes(const cJSON *root, ForgeGltfScene *scene)
 
 /* ── Compute world transforms ────────────────────────────────────────────── */
 
-static void forge_gltf_compute_world_transforms(ForgeGltfScene *scene,
-                                                 int node_idx,
-                                                 const mat4 *parent_world)
+/* Maximum hierarchy depth to prevent stack overflow from circular references.
+ * glTF scenes rarely exceed 64 levels; 256 is generous. */
+#define FORGE_GLTF_MAX_DEPTH 256
+
+static bool forge_gltf__compute_world_transforms_impl(ForgeGltfScene *scene,
+                                                       int node_idx,
+                                                       const mat4 *parent_world,
+                                                       int depth)
 {
-    if (node_idx < 0 || node_idx >= scene->node_count) return;
+    if (node_idx < 0 || node_idx >= scene->node_count) return true;
+    if (depth >= FORGE_GLTF_MAX_DEPTH) {
+        SDL_Log("forge_gltf: hierarchy depth limit (%d) reached at node %d "
+                "(possible cycle)", FORGE_GLTF_MAX_DEPTH, node_idx);
+        return false;
+    }
 
     ForgeGltfNode *node = &scene->nodes[node_idx];
     node->world_transform = mat4_multiply(*parent_world, node->local_transform);
 
     for (int i = 0; i < node->child_count; i++) {
-        forge_gltf_compute_world_transforms(
-            scene, node->children[i], &node->world_transform);
+        if (!forge_gltf__compute_world_transforms_impl(
+                scene, node->children[i], &node->world_transform, depth + 1)) {
+            return false;
+        }
     }
+    return true;
+}
+
+static bool forge_gltf_compute_world_transforms(ForgeGltfScene *scene,
+                                                 int node_idx,
+                                                 const mat4 *parent_world)
+{
+    if (!scene) {
+        SDL_Log("forge_gltf: compute_world_transforms: scene is NULL");
+        return false;
+    }
+    if (!parent_world) {
+        SDL_Log("forge_gltf: compute_world_transforms: parent_world is NULL");
+        return false;
+    }
+    if (node_idx < 0 || node_idx >= scene->node_count) {
+        SDL_Log("forge_gltf: compute_world_transforms: node_idx %d out of "
+                "range (0..%d)", node_idx, scene->node_count - 1);
+        return false;
+    }
+    return forge_gltf__compute_world_transforms_impl(scene, node_idx,
+                                                     parent_world, 0);
 }
 
 /* ── Parse skins ─────────────────────────────────────────────────────────── */
 
-static bool forge_gltf__parse_skins(const cJSON *root, ForgeGltfScene *scene)
+static bool forge_gltf__parse_skins(const cJSON *root, ForgeGltfScene *scene,
+                                     ForgeArena *arena)
 {
     const cJSON *skins = cJSON_GetObjectItemCaseSensitive(root, "skins");
     if (!cJSON_IsArray(skins)) {
@@ -1370,10 +1728,24 @@ static bool forge_gltf__parse_skins(const cJSON *root, ForgeGltfScene *scene)
     }
 
     int count = cJSON_GetArraySize(skins);
-    if (count > FORGE_GLTF_MAX_SKINS) {
-        SDL_Log("forge_gltf: %d skins, capping at %d",
-                count, FORGE_GLTF_MAX_SKINS);
-        count = FORGE_GLTF_MAX_SKINS;
+    if (count < 0) {
+        SDL_Log("forge_gltf: invalid skin count");
+        return false;
+    }
+    if (count == 0) {
+        scene->skin_count = 0;
+        return true;
+    }
+
+    size_t skin_bytes;
+    if (!forge_gltf__safe_mul((size_t)count, sizeof(ForgeGltfSkin), &skin_bytes)) {
+        SDL_Log("forge_gltf: skin allocation size overflow");
+        return false;
+    }
+    scene->skins = (ForgeGltfSkin *)forge_arena_alloc(arena, skin_bytes);
+    if (!scene->skins) {
+        SDL_Log("forge_gltf: arena alloc failed for %d skins", count);
+        return false;
     }
 
     for (int i = 0; i < count; i++) {
@@ -1402,14 +1774,24 @@ static bool forge_gltf__parse_skins(const cJSON *root, ForgeGltfScene *scene)
             skin_obj, "joints");
         if (cJSON_IsArray(joints_arr)) {
             int jc = cJSON_GetArraySize(joints_arr);
-            if (jc > FORGE_GLTF_MAX_JOINTS) {
-                SDL_Log("forge_gltf: skin %d has %d joints, capping at %d",
-                        i, jc, FORGE_GLTF_MAX_JOINTS);
-                jc = FORGE_GLTF_MAX_JOINTS;
+            if (jc < 0) jc = 0;
+            if (jc > 0) {
+                size_t j_bytes, ibm_bytes;
+                if (!forge_gltf__safe_mul((size_t)jc, sizeof(int), &j_bytes)
+                    || !forge_gltf__safe_mul((size_t)jc, sizeof(mat4), &ibm_bytes)) {
+                    SDL_Log("forge_gltf: skin %d joint allocation overflow", i);
+                    return false;
+                }
+                skin->joints = (int *)forge_arena_alloc(arena, j_bytes);
+                skin->inverse_bind_matrices = (mat4 *)forge_arena_alloc(arena, ibm_bytes);
+            }
+            if ((!skin->joints || !skin->inverse_bind_matrices) && jc > 0) {
+                SDL_Log("forge_gltf: arena alloc failed for skin %d joints", i);
+                return false;
             }
             for (int j = 0; j < jc; j++) {
                 const cJSON *item = cJSON_GetArrayItem(joints_arr, j);
-                int ji = item ? item->valueint : -1;
+                int ji = cJSON_IsNumber(item) ? item->valueint : -1;
                 if (ji < 0 || ji >= scene->node_count) {
                     SDL_Log("forge_gltf: skin %d joint %d index %d out of range",
                             i, j, ji);
@@ -1471,7 +1853,8 @@ static bool forge_gltf__parse_skins(const cJSON *root, ForgeGltfScene *scene)
 /* ── Parse animations ────────────────────────────────────────────────────── */
 
 static bool forge_gltf__parse_animations(const cJSON *root,
-                                          ForgeGltfScene *scene)
+                                          ForgeGltfScene *scene,
+                                          ForgeArena *arena)
 {
     const cJSON *anims = cJSON_GetObjectItemCaseSensitive(root, "animations");
     if (!cJSON_IsArray(anims)) {
@@ -1480,10 +1863,24 @@ static bool forge_gltf__parse_animations(const cJSON *root,
     }
 
     int anim_count = cJSON_GetArraySize(anims);
-    if (anim_count > FORGE_GLTF_MAX_ANIMATIONS) {
-        SDL_Log("forge_gltf: %d animations, capping at %d",
-                anim_count, FORGE_GLTF_MAX_ANIMATIONS);
-        anim_count = FORGE_GLTF_MAX_ANIMATIONS;
+    if (anim_count < 0) {
+        SDL_Log("forge_gltf: invalid animation count");
+        return false;
+    }
+    if (anim_count == 0) {
+        scene->animation_count = 0;
+        return true;
+    }
+
+    size_t anim_bytes;
+    if (!forge_gltf__safe_mul((size_t)anim_count, sizeof(ForgeGltfAnimation), &anim_bytes)) {
+        SDL_Log("forge_gltf: animation allocation size overflow");
+        return false;
+    }
+    scene->animations = (ForgeGltfAnimation *)forge_arena_alloc(arena, anim_bytes);
+    if (!scene->animations) {
+        SDL_Log("forge_gltf: arena alloc failed for %d animations", anim_count);
+        return false;
     }
 
     const cJSON *accessors = cJSON_GetObjectItemCaseSensitive(root, "accessors");
@@ -1495,8 +1892,7 @@ static bool forge_gltf__parse_animations(const cJSON *root,
     }
 
     int stored_anims = 0;
-    for (int ai = 0; ai < anim_count
-         && stored_anims < FORGE_GLTF_MAX_ANIMATIONS; ai++) {
+    for (int ai = 0; ai < anim_count; ai++) {
         const cJSON *anim_obj = cJSON_GetArrayItem(anims, ai);
         ForgeGltfAnimation *anim = &scene->animations[stored_anims];
         SDL_memset(anim, 0, sizeof(*anim));
@@ -1512,20 +1908,43 @@ static bool forge_gltf__parse_animations(const cJSON *root,
         if (!cJSON_IsArray(samp_arr)) continue;
 
         int samp_count = cJSON_GetArraySize(samp_arr);
-        if (samp_count > FORGE_GLTF_MAX_ANIM_SAMPLERS) {
-            SDL_Log("forge_gltf: animation %d has %d samplers, capping at %d",
-                    ai, samp_count, FORGE_GLTF_MAX_ANIM_SAMPLERS);
-            samp_count = FORGE_GLTF_MAX_ANIM_SAMPLERS;
+        if (samp_count < 0) samp_count = 0; /* defensive: not documented by cJSON */
+
+        /* Allocate samplers array — may be larger than needed due to
+         * skipped CUBICSPLINE samplers; sampler_count records actual. */
+        if (samp_count > 0) {
+            size_t samp_bytes;
+            if (!forge_gltf__safe_mul((size_t)samp_count, sizeof(ForgeGltfAnimSampler), &samp_bytes)) {
+                SDL_Log("forge_gltf: sampler allocation size overflow");
+                return false;
+            }
+            anim->samplers = (ForgeGltfAnimSampler *)forge_arena_alloc(arena, samp_bytes);
+            if (!anim->samplers) {
+                SDL_Log("forge_gltf: arena alloc failed for animation samplers");
+                return false;
+            }
         }
 
         float max_time = 0.0f;
         int si_out = 0; /* write index for compacted samplers */
 
-        /* Map JSON sampler index → compacted index (-1 if skipped).
+        /* Map JSON sampler index to compacted index (-1 if skipped).
          * Channels reference samplers by JSON index, so we need this
          * to remap channel.sampler_index after compaction. */
-        int sampler_remap[FORGE_GLTF_MAX_ANIM_SAMPLERS];
-        SDL_memset(sampler_remap, -1, sizeof(sampler_remap));
+        int *sampler_remap = NULL;
+        if (samp_count > 0) {
+            size_t remap_bytes;
+            if (!forge_gltf__safe_mul((size_t)samp_count, sizeof(int), &remap_bytes)) {
+                SDL_Log("forge_gltf: sampler remap allocation size overflow");
+                return false;
+            }
+            sampler_remap = (int *)forge_arena_alloc(arena, remap_bytes);
+            if (!sampler_remap) {
+                SDL_Log("forge_gltf: arena alloc failed for sampler remap");
+                return false;
+            }
+        }
+        for (int ri = 0; ri < samp_count; ri++) sampler_remap[ri] = -1;
 
         for (int si = 0; si < samp_count; si++) {
             const cJSON *samp_obj = cJSON_GetArrayItem(samp_arr, si);
@@ -1560,9 +1979,13 @@ static bool forge_gltf__parse_animations(const cJSON *root,
 
             int in_count = 0;
             int in_comp = 0;
+            int in_num = 0;
             const float *timestamps = (const float *)forge_gltf__get_accessor(
-                root, scene, input_json->valueint, &in_count, &in_comp, NULL);
-            if (!timestamps || in_comp != FORGE_GLTF_FLOAT || in_count <= 0) {
+                root, scene, input_json->valueint, &in_count, &in_comp,
+                &in_num);
+            /* glTF requires SCALAR for animation input (timestamps) */
+            if (!timestamps || in_comp != FORGE_GLTF_FLOAT
+                  || in_count <= 0 || in_num != 1) {
                 continue;
             }
 
@@ -1605,10 +2028,24 @@ static bool forge_gltf__parse_animations(const cJSON *root,
         if (!cJSON_IsArray(chan_arr)) continue;
 
         int chan_count = cJSON_GetArraySize(chan_arr);
+        if (chan_count < 0) chan_count = 0;
+        if (chan_count > 0) {
+            size_t chan_bytes;
+            if (!forge_gltf__safe_mul((size_t)chan_count, sizeof(ForgeGltfAnimChannel), &chan_bytes)) {
+                SDL_Log("forge_gltf: channel allocation size overflow");
+                return false;
+            }
+            anim->channels = (ForgeGltfAnimChannel *)forge_arena_alloc(
+                arena, chan_bytes);
+            if (!anim->channels) {
+                SDL_Log("forge_gltf: arena alloc failed for animation channels");
+                return false;
+            }
+        }
+
         int stored = 0;
 
-        for (int ci = 0; ci < chan_count
-             && stored < FORGE_GLTF_MAX_ANIM_CHANNELS; ci++) {
+        for (int ci = 0; ci < chan_count; ci++) {
             const cJSON *chan_obj = cJSON_GetArrayItem(chan_arr, ci);
 
             const cJSON *target = cJSON_GetObjectItemCaseSensitive(
@@ -1695,12 +2132,29 @@ static bool forge_gltf__parse_animations(const cJSON *root,
     return true;
 }
 
+/* Internal helper: zero the scene struct on failure paths within
+ * forge_gltf_load().  Unlike the public forge_gltf_free() (which is a no-op),
+ * this prevents dangling pointers when the arena is about to be destroyed. */
+static void forge_gltf__clear_scene(ForgeGltfScene *scene)
+{
+    if (scene) {
+        SDL_memset(scene, 0, sizeof(*scene));
+    }
+}
+
 /* ── Main load function ──────────────────────────────────────────────────── */
 
-static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene)
+static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene,
+                            ForgeArena *arena)
 {
+    if (!gltf_path || !scene || !arena) {
+        SDL_Log("forge_gltf: invalid arguments to forge_gltf_load");
+        return false;
+    }
+
     SDL_memset(scene, 0, sizeof(*scene));
 
+    /* JSON text is temporary — use SDL_calloc, not the arena. */
     char *json_text = read_text(gltf_path);
     if (!json_text) return false;
 
@@ -1714,12 +2168,12 @@ static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene)
     char base_dir[FORGE_GLTF_PATH_SIZE];
     get_base_dir(base_dir, sizeof(base_dir), gltf_path);
 
-    bool ok = forge_gltf__parse_buffers(root, base_dir, scene);
-    if (ok) ok = forge_gltf__parse_materials(root, base_dir, scene);
-    if (ok) ok = forge_gltf__parse_meshes(root, scene);
-    if (ok) ok = forge_gltf__parse_nodes(root, scene);
-    if (ok) ok = forge_gltf__parse_skins(root, scene);
-    if (ok) ok = forge_gltf__parse_animations(root, scene);
+    bool ok = forge_gltf__parse_buffers(root, base_dir, scene, arena);
+    if (ok) ok = forge_gltf__parse_materials(root, base_dir, scene, arena);
+    if (ok) ok = forge_gltf__parse_meshes(root, scene, arena);
+    if (ok) ok = forge_gltf__parse_nodes(root, scene, arena);
+    if (ok) ok = forge_gltf__parse_skins(root, scene, arena);
+    if (ok) ok = forge_gltf__parse_animations(root, scene, arena);
 
     /* Validate node skin references now that skin_count is known. */
     if (ok) {
@@ -1736,15 +2190,18 @@ static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene)
     cJSON_Delete(root);
 
     if (!ok) {
-        forge_gltf_free(scene);
+        forge_gltf__clear_scene(scene);
         return false;
     }
 
     /* Compute world transforms from hierarchy. */
     mat4 identity = mat4_identity();
     for (int i = 0; i < scene->root_node_count; i++) {
-        forge_gltf_compute_world_transforms(
-            scene, scene->root_nodes[i], &identity);
+        if (!forge_gltf_compute_world_transforms(
+                scene, scene->root_nodes[i], &identity)) {
+            forge_gltf__clear_scene(scene);
+            return false;
+        }
     }
 
     return true;
@@ -1754,21 +2211,10 @@ static bool forge_gltf_load(const char *gltf_path, ForgeGltfScene *scene)
 
 static void forge_gltf_free(ForgeGltfScene *scene)
 {
-    if (!scene) return;
-
-    for (int i = 0; i < scene->primitive_count; i++) {
-        SDL_free(scene->primitives[i].vertices);
-        SDL_free(scene->primitives[i].indices);
-        SDL_free(scene->primitives[i].tangents);
-        SDL_free(scene->primitives[i].joint_indices);
-        SDL_free(scene->primitives[i].weights);
-    }
-
-    for (int i = 0; i < scene->buffer_count; i++) {
-        SDL_free(scene->buffers[i].data);
-    }
-
-    SDL_memset(scene, 0, sizeof(*scene));
+    /* All memory is owned by the arena passed to forge_gltf_load().
+     * Destroy the arena to release everything.  This function is retained
+     * as a no-op so existing code that calls it continues to compile. */
+    (void)scene;
 }
 
 #endif /* FORGE_GLTF_H */

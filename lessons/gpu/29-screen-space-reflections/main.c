@@ -254,6 +254,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
     ForgeGltfScene scene;          /* parsed glTF data (CPU-side)           */
+    ForgeArena     gltf_arena;     /* arena backing glTF allocations        */
     GpuPrimitive  *primitives;     /* GPU buffers per primitive (heap)      */
     int            primitive_count; /* number of primitives in the model    */
     GpuMaterial   *materials;      /* material properties + textures (heap) */
@@ -657,9 +658,9 @@ static SDL_GPUTexture *create_white_texture(SDL_GPUDevice *device)
     return tex;
 }
 
-/* ── Helper: free model GPU resources ───────────────────────────────── */
+/* ── Helper: free model resources (GPU + CPU) ──────────────────────── */
 
-static void free_model_gpu(SDL_GPUDevice *device, ModelData *model)
+static void free_model(SDL_GPUDevice *device, ModelData *model)
 {
     if (model->primitives) {
         for (int i = 0; i < model->primitive_count; i++) {
@@ -699,7 +700,7 @@ static void free_model_gpu(SDL_GPUDevice *device, ModelData *model)
         model->materials = NULL;
     }
 
-    forge_gltf_free(&model->scene);
+    forge_arena_destroy(&model->gltf_arena);
 }
 
 /* ── Helper: upload glTF model to GPU ───────────────────────────────── */
@@ -729,7 +730,7 @@ static bool upload_model_to_gpu(SDL_GPUDevice *device, ModelData *model)
             dst->vertex_buffer = upload_gpu_buffer(
                 device, SDL_GPU_BUFFERUSAGE_VERTEX, src->vertices, vb_size);
             if (!dst->vertex_buffer) {
-                free_model_gpu(device, model);
+                SDL_Log("Failed to upload vertex buffer for primitive %d", i);
                 return false;
             }
         }
@@ -739,7 +740,7 @@ static bool upload_model_to_gpu(SDL_GPUDevice *device, ModelData *model)
             dst->index_buffer = upload_gpu_buffer(
                 device, SDL_GPU_BUFFERUSAGE_INDEX, src->indices, ib_size);
             if (!dst->index_buffer) {
-                free_model_gpu(device, model);
+                SDL_Log("Failed to upload index buffer for primitive %d", i);
                 return false;
             }
             dst->index_type = (src->index_stride == 2)
@@ -755,7 +756,6 @@ static bool upload_model_to_gpu(SDL_GPUDevice *device, ModelData *model)
         sizeof(GpuMaterial));
     if (!model->materials) {
         SDL_Log("Failed to allocate GPU materials");
-        free_model_gpu(device, model);
         return false;
     }
 
@@ -809,7 +809,12 @@ static bool upload_model_to_gpu(SDL_GPUDevice *device, ModelData *model)
 
 static bool setup_model(SDL_GPUDevice *device, ModelData *model, const char *path)
 {
-    if (!forge_gltf_load(path, &model->scene)) {
+    model->gltf_arena = forge_arena_create(0);
+    if (!model->gltf_arena.first) {
+        SDL_Log("Out of memory creating arena for glTF: %s", path);
+        return false;
+    }
+    if (!forge_gltf_load(path, &model->scene, &model->gltf_arena)) {
         SDL_Log("Failed to load glTF: %s", path);
         return false;
     }
@@ -1989,8 +1994,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     forge_capture_destroy(&state->capture, state->device);
 #endif
 
-    free_model_gpu(state->device, &state->truck);
-    free_model_gpu(state->device, &state->box);
+    free_model(state->device, &state->truck);
+    free_model(state->device, &state->box);
 
     if (state->shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(state->device, state->shadow_pipeline);

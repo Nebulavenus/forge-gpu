@@ -44,6 +44,7 @@ source code into a working program.
 | 09 | [HLSL Shared Headers](09-hlsl-shared-headers/) | `#include` in HLSL, `.hlsli` files, include guards, `-I` search paths, comparison to C headers |
 | 10 | [CPU Rasterization](10-cpu-rasterization/) | Edge function triangle rasterization, barycentric interpolation, texture sampling, alpha blending, indexed drawing, BMP output |
 | 11 | [Git & Version Control](11-git-version-control/) | Content hashing, staging area, branching, merging, `.gitignore`, submodules for dependencies, worktrees for parallel workflows |
+| 12 | [Memory Arenas](12-memory-arenas/) | Arena (bump) allocation, batch lifetimes, per-frame scratch memory, automatic block chain growth, `forge_arena.h` library |
 
 <!-- Add lessons here as they are created -->
 

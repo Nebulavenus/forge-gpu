@@ -306,6 +306,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
     ForgeGltfScene scene;           /* parsed glTF scene (CPU-side)              */
+    ForgeArena     gltf_arena;     /* arena backing the glTF scene data         */
     GpuPrimitive  *primitives;      /* GPU buffers per primitive (heap-allocated) */
     int            primitive_count;  /* number of primitives uploaded             */
     GpuMaterial   *materials;       /* GPU materials per glTF material (heap)    */
@@ -872,8 +873,14 @@ static bool setup_model(
 {
     SDL_Log("Loading %s from '%s'...", name, gltf_path);
 
-    if (!forge_gltf_load(gltf_path, &model->scene)) {
+    model->gltf_arena = forge_arena_create(0);
+    if (!model->gltf_arena.first) {
+        SDL_Log("Out of memory creating arena for %s ('%s')", name, gltf_path);
+        return false;
+    }
+    if (!forge_gltf_load(gltf_path, &model->scene, &model->gltf_arena)) {
         SDL_Log("Failed to load %s from '%s'", name, gltf_path);
+        forge_arena_destroy(&model->gltf_arena);
         return false;
     }
 
@@ -886,7 +893,7 @@ static bool setup_model(
 
     if (!upload_model_to_gpu(device, model)) {
         SDL_Log("Failed to upload %s to GPU", name);
-        forge_gltf_free(&model->scene);
+        forge_arena_destroy(&model->gltf_arena);
         return false;
     }
 
@@ -1116,6 +1123,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
                 SDL_GPU_PRESENTMODE_VSYNC)) {
             SDL_Log("SDL_SetGPUSwapchainParameters failed: %s",
                     SDL_GetError());
+            SDL_ReleaseWindowFromGPUDevice(device, window);
             SDL_DestroyWindow(window);
             SDL_DestroyGPUDevice(device);
             return SDL_APP_FAILURE;
@@ -1129,6 +1137,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     app_state *state = (app_state *)SDL_calloc(1, sizeof(app_state));
     if (!state) {
         SDL_Log("Failed to allocate app_state");
+        SDL_ReleaseWindowFromGPUDevice(device, window);
         SDL_DestroyWindow(window);
         SDL_DestroyGPUDevice(device);
         return SDL_APP_FAILURE;
@@ -1136,6 +1145,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->window = window;
     state->device = device;
     state->fog_mode = FOG_MODE_LINEAR;
+
+    /* Assign early so SDL_AppQuit handles cleanup on any later failure. */
+    *appstate = state;
 
     /* ── 7. Create sampler ─────────────────────────────────────────── */
     {
@@ -1152,7 +1164,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->sampler = SDL_CreateGPUSampler(device, &sci);
         if (!state->sampler) {
             SDL_Log("SDL_CreateGPUSampler failed: %s", SDL_GetError());
-            goto fail;
+            return SDL_APP_FAILURE;
         }
     }
 
@@ -1160,7 +1172,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->white_texture = create_1x1_texture(device, 255, 255, 255, 255);
     if (!state->white_texture) {
         SDL_Log("Failed to create white placeholder texture");
-        goto fail;
+        return SDL_APP_FAILURE;
     }
 
     /* ── 9. Load both glTF models ────────────────────────────────────── */
@@ -1168,7 +1180,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         const char *base = SDL_GetBasePath();
         if (!base) {
             SDL_Log("SDL_GetBasePath failed: %s", SDL_GetError());
-            goto fail;
+            return SDL_APP_FAILURE;
         }
         char truck_path[PATH_BUFFER_SIZE];
         char box_path[PATH_BUFFER_SIZE];
@@ -1178,26 +1190,25 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
                            "%s%s", base, TRUCK_MODEL_PATH);
         if (len < 0 || (size_t)len >= sizeof(truck_path)) {
             SDL_Log("Truck model path too long");
-            goto fail;
+            return SDL_APP_FAILURE;
         }
 
         len = SDL_snprintf(box_path, sizeof(box_path),
                            "%s%s", base, BOX_MODEL_PATH);
         if (len < 0 || (size_t)len >= sizeof(box_path)) {
             SDL_Log("Box model path too long");
-            goto fail;
+            return SDL_APP_FAILURE;
         }
 
         if (!setup_model(device, &state->truck, truck_path,
                          "CesiumMilkTruck")) {
-            goto fail;
+            return SDL_APP_FAILURE;
         }
 
         if (!setup_model(device, &state->box, box_path,
                          "BoxTextured")) {
-            free_model_gpu(device, &state->truck);
-            forge_gltf_free(&state->truck.scene);
-            goto fail;
+            /* SDL_AppQuit handles cleanup — *appstate is already assigned. */
+            return SDL_APP_FAILURE;
         }
     }
 
@@ -1211,7 +1222,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         fog_vert_dxil, sizeof(fog_vert_dxil),
         VS_NUM_SAMPLERS, VS_NUM_STORAGE_TEXTURES,
         VS_NUM_STORAGE_BUFFERS, VS_NUM_UNIFORM_BUFFERS);
-    if (!scene_vs) goto fail;
+    if (!scene_vs) return SDL_APP_FAILURE;
 
     SDL_GPUShader *scene_fs = create_shader(
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
@@ -1219,7 +1230,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         fog_frag_dxil, sizeof(fog_frag_dxil),
         FS_NUM_SAMPLERS, FS_NUM_STORAGE_TEXTURES,
         FS_NUM_STORAGE_BUFFERS, FS_NUM_UNIFORM_BUFFERS);
-    if (!scene_fs) { SDL_ReleaseGPUShader(device, scene_vs); goto fail; }
+    if (!scene_fs) { SDL_ReleaseGPUShader(device, scene_vs); return SDL_APP_FAILURE; }
 
     /* ── 11. Define vertex layout ───────────────────────────────────── */
     {
@@ -1286,7 +1297,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             SDL_Log("Failed to create scene pipeline: %s", SDL_GetError());
             SDL_ReleaseGPUShader(device, scene_fs);
             SDL_ReleaseGPUShader(device, scene_vs);
-            goto fail;
+            return SDL_APP_FAILURE;
         }
     }
 
@@ -1302,7 +1313,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             grid_fog_vert_dxil, sizeof(grid_fog_vert_dxil),
             GRID_VS_NUM_SAMPLERS, GRID_VS_NUM_STORAGE_TEXTURES,
             GRID_VS_NUM_STORAGE_BUFFERS, GRID_VS_NUM_UNIFORM_BUFFERS);
-        if (!grid_vs) goto fail;
+        if (!grid_vs) return SDL_APP_FAILURE;
 
         SDL_GPUShader *grid_fs = create_shader(
             device, SDL_GPU_SHADERSTAGE_FRAGMENT,
@@ -1312,7 +1323,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             GRID_FS_NUM_STORAGE_BUFFERS, GRID_FS_NUM_UNIFORM_BUFFERS);
         if (!grid_fs) {
             SDL_ReleaseGPUShader(device, grid_vs);
-            goto fail;
+            return SDL_APP_FAILURE;
         }
 
         SDL_GPUVertexBufferDescription grid_vb_desc;
@@ -1358,7 +1369,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUShader(device, grid_vs);
         if (!state->grid_pipeline) {
             SDL_Log("Failed to create grid pipeline: %s", SDL_GetError());
-            goto fail;
+            return SDL_APP_FAILURE;
         }
     }
 
@@ -1375,12 +1386,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->grid_vertex_buffer = upload_gpu_buffer(
             device, SDL_GPU_BUFFERUSAGE_VERTEX,
             grid_verts, sizeof(grid_verts));
-        if (!state->grid_vertex_buffer) goto fail;
+        if (!state->grid_vertex_buffer) return SDL_APP_FAILURE;
 
         state->grid_index_buffer = upload_gpu_buffer(
             device, SDL_GPU_BUFFERUSAGE_INDEX,
             grid_indices, sizeof(grid_indices));
-        if (!state->grid_index_buffer) goto fail;
+        if (!state->grid_index_buffer) return SDL_APP_FAILURE;
     }
 
     /* ── 15. Create depth texture ────────────────────────────────────── */
@@ -1388,7 +1399,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         int win_w, win_h;
         if (!SDL_GetWindowSizeInPixels(window, &win_w, &win_h)) {
             SDL_Log("SDL_GetWindowSizeInPixels failed: %s", SDL_GetError());
-            goto fail;
+            return SDL_APP_FAILURE;
         }
 
         SDL_GPUTextureCreateInfo dci;
@@ -1405,7 +1416,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         if (!state->depth_texture) {
             SDL_Log("SDL_CreateGPUTexture (depth) failed: %s",
                     SDL_GetError());
-            goto fail;
+            return SDL_APP_FAILURE;
         }
         state->depth_width = (Uint32)win_w;
         state->depth_height = (Uint32)win_h;
@@ -1432,7 +1443,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (state->capture.mode != FORGE_CAPTURE_NONE) {
         if (!forge_capture_init(&state->capture, device, window)) {
             SDL_Log("Failed to initialise capture");
-            goto fail;
+            return SDL_APP_FAILURE;
         }
     }
 #else
@@ -1440,38 +1451,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     (void)argv;
 #endif
 
-    *appstate = state;
-
     SDL_Log("Scene: milk truck at origin, %d boxes in ring (radius=%.1f)",
             state->box_count, BOX_RING_RADIUS);
     SDL_Log("Fog mode: Linear (press 1/2/3 to switch)");
     SDL_Log("Controls: WASD=move, Mouse=look, Space=up, LShift=down, Esc=quit");
 
     return SDL_APP_CONTINUE;
-
-fail:
-    /* Centralised cleanup on init failure. */
-    free_model_gpu(device, &state->box);
-    forge_gltf_free(&state->box.scene);
-    free_model_gpu(device, &state->truck);
-    forge_gltf_free(&state->truck.scene);
-    if (state->grid_index_buffer)
-        SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
-    if (state->grid_vertex_buffer)
-        SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
-    if (state->grid_pipeline)
-        SDL_ReleaseGPUGraphicsPipeline(device, state->grid_pipeline);
-    if (state->scene_pipeline)
-        SDL_ReleaseGPUGraphicsPipeline(device, state->scene_pipeline);
-    if (state->sampler) SDL_ReleaseGPUSampler(device, state->sampler);
-    if (state->white_texture)
-        SDL_ReleaseGPUTexture(device, state->white_texture);
-    if (state->depth_texture)
-        SDL_ReleaseGPUTexture(device, state->depth_texture);
-    SDL_free(state);
-    SDL_DestroyWindow(window);
-    SDL_DestroyGPUDevice(device);
-    return SDL_APP_FAILURE;
 }
 
 /* ── SDL_AppEvent ─────────────────────────────────────────────────────── */
@@ -1809,9 +1794,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 
     /* Release models (handles both primitives and material textures). */
     free_model_gpu(device, &state->box);
-    forge_gltf_free(&state->box.scene);
+    forge_arena_destroy(&state->box.gltf_arena);
     free_model_gpu(device, &state->truck);
-    forge_gltf_free(&state->truck.scene);
+    forge_arena_destroy(&state->truck.gltf_arena);
 
     if (state->white_texture)
         SDL_ReleaseGPUTexture(device, state->white_texture);

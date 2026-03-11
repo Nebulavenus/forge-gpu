@@ -278,6 +278,7 @@ typedef struct app_state {
 
     /* Loaded scene data (CPU side) */
     ForgeGltfScene scene;
+    ForgeArena     gltf_arena;
 
     /* Uploaded GPU buffers (one per primitive) */
     GpuPrimitive   gpu_primitives[FORGE_GLTF_MAX_PRIMITIVES];
@@ -1097,9 +1098,20 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         char gltf_path[PATH_BUFFER_SIZE];
         SDL_snprintf(gltf_path, sizeof(gltf_path), "%s%s", base, GLTF_PATH);
 
-        if (!forge_gltf_load(gltf_path, &state->scene)) {
-            SDL_Log("Failed to load glTF: %s", gltf_path);
+        state->gltf_arena = forge_arena_create(0);
+        if (!state->gltf_arena.first) {
+            SDL_Log("Failed to create glTF arena for '%s'", gltf_path);
             SDL_free(state);
+            SDL_ReleaseWindowFromGPUDevice(device, window);
+            SDL_DestroyWindow(window);
+            SDL_DestroyGPUDevice(device);
+            return SDL_APP_FAILURE;
+        }
+        if (!forge_gltf_load(gltf_path, &state->scene, &state->gltf_arena)) {
+            SDL_Log("Failed to load glTF: %s", gltf_path);
+            forge_arena_destroy(&state->gltf_arena);
+            SDL_free(state);
+            SDL_ReleaseWindowFromGPUDevice(device, window);
             SDL_DestroyWindow(window);
             SDL_DestroyGPUDevice(device);
             return SDL_APP_FAILURE;
@@ -1446,8 +1458,9 @@ fail:
                     state->gpu_primitives[ci].index_buffer);
         }
     }
-    forge_gltf_free(&state->scene);
+    forge_arena_destroy(&state->gltf_arena);
     SDL_free(state);
+    SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
     SDL_DestroyGPUDevice(device);
     return SDL_APP_FAILURE;
@@ -1790,7 +1803,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     if (state->scene_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(device, state->scene_pipeline);
 
-    forge_gltf_free(&state->scene);
+    forge_arena_destroy(&state->gltf_arena);
 
     SDL_ReleaseWindowFromGPUDevice(device, state->window);
     SDL_DestroyWindow(state->window);

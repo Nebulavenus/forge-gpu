@@ -436,6 +436,7 @@ typedef struct GpuMaterial {
 
 typedef struct ModelData {
     ForgeGltfScene  scene;          /* parsed glTF scene (CPU-side) */
+    ForgeArena      gltf_arena;     /* arena backing glTF allocations */
     GpuPrimitive   *primitives;     /* GPU primitive array */
     int             primitive_count; /* number of primitives */
     GpuMaterial    *materials;       /* GPU material array */
@@ -2196,7 +2197,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             goto fail_cleanup;
         }
 
-        if (!forge_gltf_load(box_path, &state->box_model.scene)) {
+        state->box_model.gltf_arena = forge_arena_create(0);
+        if (!forge_gltf_load(box_path, &state->box_model.scene, &state->box_model.gltf_arena)) {
             SDL_Log("Failed to load BoxTextured from '%s'", box_path);
             goto fail_cleanup;
         }
@@ -2217,7 +2219,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             goto fail_cleanup;
         }
 
-        if (!forge_gltf_load(truck_path, &state->truck_model.scene)) {
+        state->truck_model.gltf_arena = forge_arena_create(0);
+        if (!forge_gltf_load(truck_path, &state->truck_model.scene, &state->truck_model.gltf_arena)) {
             SDL_Log("Failed to load CesiumMilkTruck from '%s'", truck_path);
             goto fail_cleanup;
         }
@@ -2552,9 +2555,9 @@ fail_cleanup:
 
     /* Release models — free both GPU resources and parsed scene data */
     free_model_gpu(device, &state->truck_model);
-    forge_gltf_free(&state->truck_model.scene);
+    forge_arena_destroy(&state->truck_model.gltf_arena);
     free_model_gpu(device, &state->box_model);
-    forge_gltf_free(&state->box_model.scene);
+    forge_arena_destroy(&state->box_model.gltf_arena);
 
 #ifdef FORGE_CAPTURE
     forge_capture_destroy(&state->capture, device);
@@ -2572,6 +2575,7 @@ fail_cleanup:
     if (state->depth_texture)
         SDL_ReleaseGPUTexture(device, state->depth_texture);
 
+    *appstate = NULL;   /* prevent SDL_AppQuit from double-freeing */
     SDL_free(state);
     SDL_ReleaseWindowFromGPUDevice(device, window);
     SDL_DestroyWindow(window);
@@ -3577,9 +3581,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 
     /* ── Release model GPU resources ─────────────────────────────────── */
     free_model_gpu(device, &state->box_model);
-    forge_gltf_free(&state->box_model.scene);
+    forge_arena_destroy(&state->box_model.gltf_arena);
     free_model_gpu(device, &state->truck_model);
-    forge_gltf_free(&state->truck_model.scene);
+    forge_arena_destroy(&state->truck_model.gltf_arena);
 
     /* ── Release textures ────────────────────────────────────────────── */
     if (state->white_texture)

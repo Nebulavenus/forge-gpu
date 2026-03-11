@@ -305,6 +305,7 @@ typedef struct GpuMaterial {
 /* A fully loaded glTF model ready for rendering. */
 typedef struct ModelData {
   ForgeGltfScene scene;                  /* parsed glTF scene (CPU-side data)   */
+  ForgeArena gltf_arena;                 /* arena for glTF allocations          */
   GpuPrimitive *primitives;             /* GPU-uploaded primitives array        */
   int primitive_count;                   /* number of primitives                */
   GpuMaterial *materials;               /* GPU-uploaded materials array         */
@@ -851,7 +852,7 @@ static void free_model_gpu(SDL_GPUDevice *device, ModelData *model) {
     model->materials = NULL;
   }
 
-  forge_gltf_free(&model->scene);
+  forge_arena_destroy(&model->gltf_arena);
 }
 
 /* ── Helper: upload glTF model to GPU ─────────────────────────────────────── */
@@ -963,8 +964,10 @@ upload_model_to_gpu(SDL_GPUDevice *device, SDL_GPUTexture *white_texture, ModelD
 static bool setup_model(
     SDL_GPUDevice *device, SDL_GPUTexture *white_texture, ModelData *model, const char *path
 ) {
-  if (!forge_gltf_load(path, &model->scene)) {
+  model->gltf_arena = forge_arena_create(0);
+  if (!forge_gltf_load(path, &model->scene, &model->gltf_arena)) {
     SDL_Log("Failed to load glTF: %s", path);
+    forge_arena_destroy(&model->gltf_arena);
     return false;
   }
   return upload_model_to_gpu(device, white_texture, model);

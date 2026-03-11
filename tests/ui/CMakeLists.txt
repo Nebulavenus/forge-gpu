@@ -26,6 +26,8 @@ add_custom_command(TARGET test_ui POST_BUILD
 
 # Add as a CTest test
 add_test(NAME ui_ttf_parser COMMAND test_ui)
+set_tests_properties(ui_ttf_parser PROPERTIES
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:test_ui>)
 
 # ── UI Context tests (forge_ui_ctx.h) ──────────────────────────────────────
 add_executable(test_ui_ctx test_ui_ctx.c)
@@ -54,6 +56,8 @@ add_custom_command(TARGET test_ui_ctx POST_BUILD
 )
 
 add_test(NAME ui_ctx COMMAND test_ui_ctx)
+set_tests_properties(ui_ctx PROPERTIES
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:test_ui_ctx>)
 
 # ── UI Window tests (forge_ui_window.h) ──────────────────────────────────────
 add_executable(test_ui_window test_ui_window.c)
@@ -82,6 +86,8 @@ add_custom_command(TARGET test_ui_window POST_BUILD
 )
 
 add_test(NAME ui_window COMMAND test_ui_window)
+set_tests_properties(ui_window PROPERTIES
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:test_ui_window>)
 
 # ── UI State Isolation tests ─────────────────────────────────────────────────
 add_executable(test_ui_state_isolation test_ui_state_isolation.c)
@@ -110,6 +116,8 @@ add_custom_command(TARGET test_ui_state_isolation POST_BUILD
 )
 
 add_test(NAME ui_state_isolation COMMAND test_ui_state_isolation)
+set_tests_properties(ui_state_isolation PROPERTIES
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:test_ui_state_isolation>)
 
 # ── UI Theme Contrast tests (forge_ui_theme.h) ─────────────────────────────
 add_executable(test_ui_theme_contrast test_ui_theme_contrast.c)

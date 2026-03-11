@@ -7,8 +7,13 @@ A header-only glTF 2.0 parser for loading 3D scenes into forge-gpu.
 ```c
 #include "gltf/forge_gltf.h"
 
+ForgeArena arena = forge_arena_create(0);
+if (!arena.first) {
+    SDL_Log("Failed to create arena");
+    return;
+}
 ForgeGltfScene scene;
-if (forge_gltf_load("model.gltf", &scene)) {
+if (forge_gltf_load("model.gltf", &scene, &arena)) {
     // Walk the scene hierarchy
     for (int i = 0; i < scene.root_node_count; i++) {
         int ni = scene.root_nodes[i];
@@ -23,9 +28,8 @@ if (forge_gltf_load("model.gltf", &scene)) {
         // prim->vertices, prim->indices ready for GPU upload
         // prim->material_index points to scene.materials[]
     }
-
-    forge_gltf_free(&scene);
 }
+forge_arena_destroy(&arena);  // frees all scene memory
 ```
 
 ## What's Included
@@ -41,20 +45,35 @@ if (forge_gltf_load("model.gltf", &scene)) {
   optional normal map path
 - **`ForgeGltfAlphaMode`** -- Enum: `FORGE_GLTF_ALPHA_OPAQUE`, `FORGE_GLTF_ALPHA_MASK`,
   `FORGE_GLTF_ALPHA_BLEND`
-- **`ForgeGltfNode`** -- Scene hierarchy node with name, TRS transform, and
-  mesh reference
+- **`ForgeGltfNode`** -- Scene hierarchy node with name, TRS transform, skin
+  reference, and mesh reference
+- **`ForgeGltfSkin`** -- Skeletal skin binding: joint node indices and inverse
+  bind matrices
+- **`ForgeGltfAnimation`** -- Named animation clip with samplers and channels
+- **`ForgeGltfAnimSampler`** -- Keyframe timestamps paired with output values,
+  with LINEAR or STEP interpolation
+- **`ForgeGltfAnimChannel`** -- Binds a sampler to a node's TRS property
+  (translation, rotation, or scale)
+- **`ForgeGltfAnimPath`** -- Enum: `FORGE_GLTF_ANIM_TRANSLATION`,
+  `FORGE_GLTF_ANIM_ROTATION`, `FORGE_GLTF_ANIM_SCALE`
+- **`ForgeGltfInterpolation`** -- Enum: `FORGE_GLTF_INTERP_LINEAR`,
+  `FORGE_GLTF_INTERP_STEP`
 - **`ForgeGltfBuffer`** -- A loaded binary buffer (`.bin` file)
 - **`ForgeGltfScene`** -- Top-level container holding all parsed data
 
 ### Functions
 
-- **`forge_gltf_load(path, scene)`** -- Load a `.gltf` file and all referenced
-  `.bin` buffers. Returns `true` on success. Caller must call `forge_gltf_free()`
-- **`forge_gltf_free(scene)`** -- Free all memory allocated by `forge_gltf_load`.
-  Safe to call on a zeroed scene
+- **`forge_gltf_load(path, scene, arena)`** -- Load a `.gltf` file and all
+  referenced `.bin` buffers. All scene memory is allocated from the provided
+  arena. Returns `true` on success. On failure, the arena may contain partial
+  allocations — destroy it to clean up
+- **`forge_gltf_free(scene)`** -- Legacy no-op. All memory is owned by the
+  arena passed to `forge_gltf_load()`. Destroy the arena to release everything
 - **`forge_gltf_compute_world_transforms(scene, node_idx, parent_world)`** --
-  Recursively compute world transforms. Called automatically by `forge_gltf_load`,
-  but exposed for recomputing after modifying local transforms
+  Recursively compute world transforms. Returns `false` if the depth limit
+  (`FORGE_GLTF_MAX_DEPTH`) is reached, indicating a possible cycle. Called
+  automatically by `forge_gltf_load` (which propagates the failure), but
+  exposed for recomputing after modifying local transforms
 
 ### Vertex Layout
 
@@ -65,6 +84,10 @@ Same as the OBJ parser -- the same GPU pipeline works for both:
 | location 0 | `float3` | `TEXCOORD0` | Position |
 | location 1 | `float3` | `TEXCOORD1` | Normal |
 | location 2 | `float2` | `TEXCOORD2` | UV |
+
+Tangent vectors (`vec4`) are stored separately in `prim->tangents` when present
+(`prim->has_tangents`). Per-vertex skin data (joint indices and weights) is
+stored in `prim->joint_indices` and `prim->weights`.
 
 ## Scene Hierarchy
 
@@ -130,6 +153,10 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 - **`KHR_materials_transmission`** extension (approximated as blend)
 - **Scene hierarchy** with parent-child node relationships and named nodes
 - **TRS transforms** (translation, rotation, scale) and raw matrices
+- **Skins** with inverse bind matrices and skeletal joint hierarchies
+- **Animations** with LINEAR and STEP interpolation for translation, rotation,
+  and scale channels
+- **Vertex skin attributes** (`JOINTS_0`, `WEIGHTS_0`) for per-vertex bone weights
 - **Indexed geometry** with 16-bit and 32-bit indices
 - **Vertex attributes**: POSITION, NORMAL, TEXCOORD_0, TANGENT
 - **Multiple binary buffers** referenced by URI
@@ -139,25 +166,35 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `FORGE_GLTF_MAX_NODES` | 512 | Maximum nodes in the scene |
-| `FORGE_GLTF_MAX_MESHES` | 256 | Maximum meshes |
-| `FORGE_GLTF_MAX_PRIMITIVES` | 1024 | Maximum draw calls |
-| `FORGE_GLTF_MAX_MATERIALS` | 256 | Maximum materials |
-| `FORGE_GLTF_MAX_IMAGES` | 128 | Maximum image references |
-| `FORGE_GLTF_MAX_BUFFERS` | 16 | Maximum binary buffer files |
-| `FORGE_GLTF_MAX_CHILDREN` | 256 | Maximum children per node |
+| `FORGE_GLTF_MAX_NODES` | 512 | Default node array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_MESHES` | 256 | Default mesh array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_PRIMITIVES` | 1024 | Default primitive array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_MATERIALS` | 256 | Default material array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_IMAGES` | 128 | Default image array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_BUFFERS` | 16 | Maximum binary buffer files (enforced) |
+| `FORGE_GLTF_MAX_SKINS` | 8 | Default skin array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_JOINTS` | 128 | Default joint array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_ANIMATIONS` | 16 | Default animation array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_ANIM_CHANNELS` | 128 | Default channel array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_ANIM_SAMPLERS` | 128 | Default sampler array sizing hint (not enforced) |
+| `FORGE_GLTF_JOINTS_PER_VERT` | 4 | Joint influences per vertex |
+| `FORGE_GLTF_MAX_CHILDREN` | 256 | Default children array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_DEPTH` | 256 | Maximum hierarchy depth (recursion limit — enforced) |
 | `FORGE_GLTF_PATH_SIZE` | 512 | Maximum file path length |
 | `FORGE_GLTF_NAME_SIZE` | 64 | Maximum node/material name length |
 | `FORGE_GLTF_DEFAULT_ALPHA_CUTOFF` | 0.5 | Default alpha mask threshold |
 
-These limits cover typical models (CesiumMilkTruck: 6 nodes; VirtualCity:
-234 nodes, 167 materials).
+Most constants are sizing hints from before the arena migration and are no
+longer enforced as hard caps — the loader dynamically allocates arrays via the
+arena. `FORGE_GLTF_MAX_BUFFERS` and `FORGE_GLTF_MAX_DEPTH` remain enforced.
+See `forge_gltf.h` for the current allocation behavior.
 
 ## Dependencies
 
 - **SDL3** -- for file I/O, logging, memory allocation
 - **cJSON** -- for JSON parsing (`third_party/cJSON/`)
 - **forge_math** -- for `vec2`, `vec3`, `vec4`, `mat4`, `quat` (`common/math/`)
+- **forge_arena** -- for arena allocation (`common/arena/`)
 
 ## Where It's Used
 
@@ -173,9 +210,9 @@ These limits cover typical models (CesiumMilkTruck: 6 nodes; VirtualCity:
 3. **Readability over performance** -- this code is meant to be learned from
 4. **Defensive parsing** -- validates accessor bounds, component types, and
    buffer sizes before accessing data
-5. **Static arrays** -- fixed-size arrays with generous limits instead of
-   dynamic allocation for the scene structure (primitives and vertices are
-   still dynamically allocated)
+5. **Arena allocation** -- all scene memory is allocated from a caller-provided
+   arena, so cleanup is a single `forge_arena_destroy` call. Only the binary
+   buffer array (`FORGE_GLTF_MAX_BUFFERS`) uses a fixed-size inline array
 
 ## License
 

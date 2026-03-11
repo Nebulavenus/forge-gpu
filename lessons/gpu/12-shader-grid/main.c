@@ -305,6 +305,7 @@ typedef struct app_state {
 
     /* Scene data: CPU-side from forge_gltf.h, GPU-side uploaded here. */
     ForgeGltfScene  scene;
+    ForgeArena      gltf_arena;
     GpuPrimitive   *gpu_primitives;
     int             gpu_primitive_count;
     GpuMaterial    *gpu_materials;
@@ -1157,8 +1158,21 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->depth_width   = (Uint32)win_w;
     state->depth_height  = (Uint32)win_h;
 
-    if (!forge_gltf_load(gltf_path, &state->scene)) {
+    state->gltf_arena = forge_arena_create(0);
+    if (!state->gltf_arena.first) {
+        SDL_Log("Failed to create glTF arena");
+        SDL_ReleaseGPUSampler(device, sampler);
+        SDL_ReleaseGPUTexture(device, white_texture);
+        SDL_ReleaseGPUTexture(device, depth_texture);
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+        SDL_DestroyWindow(window);
+        SDL_DestroyGPUDevice(device);
+        SDL_free(state);
+        return SDL_APP_FAILURE;
+    }
+    if (!forge_gltf_load(gltf_path, &state->scene, &state->gltf_arena)) {
         SDL_Log("Failed to load scene from '%s'", gltf_path);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1176,7 +1190,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     /* ── 9. Upload parsed data to GPU ─────────────────────────────────── */
     if (!upload_scene_to_gpu(device, state)) {
         SDL_Log("Failed to upload scene to GPU");
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1191,7 +1205,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (!upload_grid_geometry(device, state)) {
         SDL_Log("Failed to upload grid geometry");
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1215,7 +1229,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1239,7 +1253,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1312,7 +1326,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1341,7 +1355,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1366,7 +1380,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1449,7 +1463,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1482,7 +1496,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
         free_gpu_scene(device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUSampler(device, sampler);
         SDL_ReleaseGPUTexture(device, white_texture);
         SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1507,7 +1521,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             SDL_ReleaseGPUBuffer(device, state->grid_index_buffer);
             SDL_ReleaseGPUBuffer(device, state->grid_vertex_buffer);
             free_gpu_scene(device, state);
-            forge_gltf_free(&state->scene);
+            forge_arena_destroy(&state->gltf_arena);
             SDL_ReleaseGPUSampler(device, sampler);
             SDL_ReleaseGPUTexture(device, white_texture);
             SDL_ReleaseGPUTexture(device, depth_texture);
@@ -1796,7 +1810,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         forge_capture_destroy(&state->capture, state->device);
 #endif
         free_gpu_scene(state->device, state);
-        forge_gltf_free(&state->scene);
+        forge_arena_destroy(&state->gltf_arena);
         SDL_ReleaseGPUBuffer(state->device, state->grid_index_buffer);
         SDL_ReleaseGPUBuffer(state->device, state->grid_vertex_buffer);
         SDL_ReleaseGPUSampler(state->device, state->sampler);
