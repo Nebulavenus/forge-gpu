@@ -521,18 +521,76 @@ the PR is approved regardless of what `reviewDecision` says.
 Verify:
 
 - All status checks pass
-- The latest review from each reviewer is `APPROVED` (or `COMMENTED` — only
-  `CHANGES_REQUESTED` blocks)
+- The latest review from each reviewer is `APPROVED`
 - No unresolved conversations that need action
 
-**If not ready:**
+**If the latest review is `CHANGES_REQUESTED`:**
 
-- Report what's blocking (conversations, checks, approval)
-- Exit with instructions
+- There are blocking issues. Go back to step 2.
 
-**If ready:**
+**If the latest review is `COMMENTED`:**
 
-- Proceed to step 7
+- `COMMENTED` is **not** an approval — do NOT proceed to merge.
+- The reviewer left feedback (nitpicks, suggestions, or observations) that
+  needs to be acknowledged before merging. Follow step 6a below.
+
+**If the latest review is `APPROVED`:**
+
+- All feedback is resolved. Proceed to step 7.
+
+#### 6a. Handle COMMENTED review state
+
+When the latest review from a reviewer is `COMMENTED`, it means they left
+non-blocking feedback but did not approve. This typically happens when:
+
+- All major issues are resolved but nitpicks remain
+- CodeRabbit found minor suggestions after a re-review
+- A reviewer left observations without requesting changes
+
+**Workflow:**
+
+1. **Read every comment** in the `COMMENTED` review (inline threads, review
+   body nitpicks, and duplicate comments). Present each to the user with
+   context.
+
+2. **For each comment, ask the user:** implement the suggestion, or skip it?
+
+3. **If the user wants to implement:** Fix the issue, commit, push, and
+   request re-review (`@coderabbitai review`). Exit and wait for the next
+   review round.
+
+4. **If the user wants to skip:** Do NOT merge. Instead, request that
+   CodeRabbit resolve the conversation:
+
+   ```bash
+   gh pr comment <pr-number> --body "@coderabbitai resolve"
+   ```
+
+   This tells CodeRabbit the feedback was acknowledged and intentionally
+   skipped. CodeRabbit will typically respond with an `APPROVED` review.
+
+5. **After requesting resolve, do NOT request another review.** Stop the
+   review cycle here — no `@coderabbitai review` comment. The goal is to
+   get the approval from the resolve request, not to trigger another round
+   of feedback.
+
+6. **If there are changes on `main` to merge:** You can safely merge main
+   into the PR branch at this point without triggering additional review
+   feedback (since auto-pause is active and we are not requesting a new
+   review):
+
+   ```bash
+   git fetch origin main
+   git merge origin/main
+   git push
+   ```
+
+7. **Wait for all status checks to pass.** Exit with: "Waiting for
+   CodeRabbit approval and green checks. Run this skill again after checks
+   complete."
+
+8. **On next run:** The latest review should now be `APPROVED` (from the
+   resolve). Verify all checks are green, then proceed to step 7 (merge).
 
 ### 7. Merge the PR
 

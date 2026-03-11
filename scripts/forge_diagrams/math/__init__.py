@@ -47,6 +47,9 @@ __all__ = [
     "diagram_continuity",
     "diagram_arc_length",
     "diagram_bernstein_basis",
+    "diagram_histogram_comparison",
+    "diagram_pdf_curves",
+    "diagram_integration_area",
 ]
 
 from .lesson_01 import diagram_dot_product, diagram_vector_addition
@@ -102,4 +105,9 @@ from .lesson_15 import (
     diagram_de_casteljau_quadratic,
     diagram_lerp_foundation,
     diagram_quadratic_vs_cubic,
+)
+from .lesson_16 import (
+    diagram_histogram_comparison,
+    diagram_integration_area,
+    diagram_pdf_curves,
 )
