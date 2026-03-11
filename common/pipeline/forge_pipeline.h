@@ -4,6 +4,7 @@
  * Loads processed assets produced by the forge-gpu asset pipeline:
  *   - .fmesh v2 files (optimised meshes with submeshes, LODs, tangents)
  *   - .fmat files (PBR material sidecars — JSON)
+ *   - .fscene files (node hierarchy with transforms and mesh references)
  *   - Texture files with .meta.json sidecars (mip chains, format metadata)
  *
  * This is a header-only library.  In exactly ONE .c file, define
@@ -18,7 +19,7 @@
  * Dependencies:
  *   - SDL3/SDL.h   (SDL_LoadFile, SDL_malloc, SDL_free, SDL_Log)
  *   - cJSON.h      (texture .meta.json parsing)
- *   - string.h     (memcpy, memcmp)
+ *   - string.h     (not needed — uses SDL_memcpy, SDL_memcmp, SDL_memset)
  *
  * See tools/mesh/main.c for the .fmesh writer.
  * See lessons/assets/ for walkthroughs of each pipeline stage.
@@ -31,12 +32,24 @@
 
 #include <SDL3/SDL.h>
 #include <stdint.h>
-#include <string.h>
+/* string.h no longer needed — all mem ops use SDL equivalents */
 
 /* cJSON is used for parsing texture .meta.json sidecars. */
 #include "cJSON.h"
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
+
+/* .fscene binary format identifiers */
+#define FORGE_PIPELINE_FSCENE_MAGIC      "FSCN"
+#define FORGE_PIPELINE_FSCENE_VERSION    1
+#define FORGE_PIPELINE_FSCENE_HEADER_SIZE 24
+#define FORGE_PIPELINE_FSCENE_NODE_SIZE  192
+#define FORGE_PIPELINE_FSCENE_MAGIC_SIZE 4
+
+/* Upper bounds for .fscene validation */
+#define FORGE_PIPELINE_MAX_NODES      4096
+#define FORGE_PIPELINE_MAX_ROOTS      256
+#define FORGE_PIPELINE_MAX_SCENE_MESHES 1024
 
 /* .fmesh binary format identifiers */
 #define FORGE_PIPELINE_FMESH_MAGIC   "FMSH"
@@ -196,6 +209,49 @@ typedef struct ForgePipelineTexture {
     ForgePipelineTextureFormat format; /* pixel format of the texture data */
 } ForgePipelineTexture;
 
+/* ── Scene types ───────────────────────────────────────────────────────── */
+
+/* A single node in the scene hierarchy.
+ * Each node has an optional mesh reference, parent-child relationships,
+ * TRS decomposition (for animation), and both local and world transforms.
+ * World transforms are computed at load time by walking the hierarchy. */
+typedef struct ForgePipelineSceneNode {
+    char     name[64];            /* node name (null-terminated) */
+    int32_t  parent;              /* parent node index, -1 = root */
+    int32_t  mesh_index;          /* glTF mesh index, -1 = no mesh */
+    int32_t  skin_index;          /* glTF skin index, -1 = no skin */
+    uint32_t first_child;         /* index into scene.children[] */
+    uint32_t child_count;         /* number of children */
+    uint32_t has_trs;             /* 1 = TRS valid, 0 = raw matrix only */
+    float    translation[3];      /* T component (default 0,0,0) */
+    float    rotation[4];         /* R as quaternion xyzw (default 0,0,0,1) */
+    float    scale[3];            /* S component (default 1,1,1) */
+    float    local_transform[16]; /* column-major 4x4 local matrix */
+    float    world_transform[16]; /* column-major 4x4 world matrix (computed) */
+} ForgePipelineSceneNode;
+
+/* Maps a glTF mesh index to a range of submeshes in the .fmesh file.
+ * The renderer uses this to find which draw calls belong to a given node. */
+typedef struct ForgePipelineSceneMesh {
+    uint32_t first_submesh;  /* first submesh index in the .fmesh */
+    uint32_t submesh_count;  /* number of submeshes (primitives) */
+} ForgePipelineSceneMesh;
+
+/* A loaded .fscene file — the glTF node hierarchy for a model.
+ * Nodes reference meshes by index into the mesh table; the mesh table
+ * maps each glTF mesh to a range of submeshes in the .fmesh file.
+ * World transforms are computed at load time from the node tree. */
+typedef struct ForgePipelineScene {
+    ForgePipelineSceneNode *nodes;    /* node_count entries */
+    uint32_t                node_count;  /* number of nodes in the hierarchy */
+    ForgePipelineSceneMesh *meshes;   /* mesh_count entries */
+    uint32_t                mesh_count;  /* number of glTF meshes */
+    uint32_t               *roots;    /* root_count root node indices */
+    uint32_t                root_count;  /* number of root nodes (no parent) */
+    uint32_t               *children; /* flat children array referenced by nodes */
+    uint32_t                child_count; /* total entries in children array */
+} ForgePipelineScene;
+
 /* ── Function declarations ─────────────────────────────────────────────── */
 
 /*
@@ -292,6 +348,37 @@ bool forge_pipeline_load_texture(const char *path,
  * Safe to call on a zeroed or already-freed texture (no-op if tex is NULL).
  */
 void forge_pipeline_free_texture(ForgePipelineTexture *tex);
+
+/*
+ * forge_pipeline_load_scene — Load a .fscene binary file.
+ *
+ * Reads the file at `path`, validates the header, and populates `scene`
+ * with allocated node, mesh, root, and children data.  World transforms
+ * are computed by walking the hierarchy (parent's world * child's local).
+ *
+ * The caller owns the memory and must call forge_pipeline_free_scene()
+ * when done.
+ *
+ * Returns true on success, false on any error (logged via SDL_Log).
+ */
+bool forge_pipeline_load_scene(const char *path, ForgePipelineScene *scene);
+
+/*
+ * forge_pipeline_free_scene — Release all memory owned by a scene.
+ *
+ * Safe to call on a zeroed or already-freed scene (no-op if scene is NULL).
+ */
+void forge_pipeline_free_scene(ForgePipelineScene *scene);
+
+/*
+ * forge_pipeline_scene_get_mesh — Look up submesh range for a mesh index.
+ *
+ * Returns a pointer to the mesh entry at `mesh_index`, or NULL if the
+ * index is out of range.  Use the returned first_submesh and submesh_count
+ * to index into the .fmesh submesh table.
+ */
+const ForgePipelineSceneMesh *forge_pipeline_scene_get_mesh(
+    const ForgePipelineScene *scene, uint32_t mesh_index);
 
 /* ── Implementation ────────────────────────────────────────────────────── */
 
@@ -1311,6 +1398,528 @@ void forge_pipeline_free_texture(ForgePipelineTexture *tex)
         SDL_free(tex->mips);
     }
     SDL_memset(tex, 0, sizeof(*tex));
+}
+
+/* ── Scene loader (.fscene) ─────────────────────────────────────────────── */
+
+/* Read a little-endian int32 from raw bytes. */
+static int32_t forge_pipeline__read_i32_le(const uint8_t *buf)
+{
+    uint32_t u = forge_pipeline__read_u32_le(buf);
+    int32_t val;
+    SDL_memcpy(&val, &u, sizeof(val));
+    return val;
+}
+
+/* Multiply two column-major 4x4 matrices: out = a * b.
+ * Standalone helper to avoid depending on forge_math.h. */
+static void forge_pipeline__mat4_mul(float *out, const float *a, const float *b)
+{
+    int i, j, k;
+    for (j = 0; j < 4; j++) {
+        for (i = 0; i < 4; i++) {
+            float sum = 0.0f;
+            for (k = 0; k < 4; k++) {
+                sum += a[k * 4 + i] * b[j * 4 + k];
+            }
+            out[j * 4 + i] = sum;
+        }
+    }
+}
+
+/* Set a column-major 4x4 matrix to identity. */
+static void forge_pipeline__mat4_identity(float *m)
+{
+    SDL_memset(m, 0, 16 * sizeof(float));
+    m[0] = m[5] = m[10] = m[15] = 1.0f;
+}
+
+/* Recursively compute world transforms by walking the node tree.
+ * Tracks visited nodes via *visited (caller-allocated, node_count bools).
+ * Validates that each node's stored parent matches the traversal parent.
+ * Returns false if a cycle, duplicate visit, parent mismatch, or invalid
+ * index is detected.  Depth is bounded by node_count — since visited[]
+ * prevents revisiting any node, recursion can never exceed the total
+ * number of nodes in the scene. */
+static bool forge_pipeline__compute_world_transforms(
+    ForgePipelineScene *scene, uint32_t node_idx, int32_t expected_parent,
+    const float *parent_world, uint32_t depth, bool *visited)
+{
+    if (node_idx >= scene->node_count) return true; /* skip invalid */
+    if (depth >= scene->node_count) {
+        SDL_Log("forge_pipeline_load_scene: hierarchy depth %u exceeds node "
+                "count %u (possible cycle at node %u)",
+                depth, scene->node_count, node_idx);
+        return false;
+    }
+    if (visited[node_idx]) {
+        SDL_Log("forge_pipeline_load_scene: node %u visited more than once "
+                "(shared child or cycle)", node_idx);
+        return false;
+    }
+    visited[node_idx] = true;
+
+    ForgePipelineSceneNode *node = &scene->nodes[node_idx];
+
+    /* Verify node's stored parent matches the actual traversal parent */
+    if (node->parent != expected_parent) {
+        SDL_Log("forge_pipeline_load_scene: node %u has parent %d, "
+                "expected %d (graph inconsistency)",
+                node_idx, node->parent, expected_parent);
+        return false;
+    }
+
+    forge_pipeline__mat4_mul(node->world_transform,
+                             parent_world, node->local_transform);
+
+    uint32_t ci;
+    for (ci = 0; ci < node->child_count; ci++) {
+        uint32_t arr_idx = node->first_child + ci;
+        if (arr_idx >= scene->child_count) return true; /* bounds check */
+        uint32_t child_idx = scene->children[arr_idx];
+        if (!forge_pipeline__compute_world_transforms(
+                scene, child_idx, (int32_t)node_idx,
+                node->world_transform, depth + 1, visited)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool forge_pipeline_load_scene(const char *path, ForgePipelineScene *scene)
+{
+    if (!path || !scene) return false;
+    SDL_memset(scene, 0, sizeof(*scene));
+
+    /* Load entire file into memory */
+    size_t file_size = 0;
+    void *file_data = SDL_LoadFile(path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_scene: failed to load '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+
+    const uint8_t *data = (const uint8_t *)file_data;
+
+    /* ── Validate header ─────────────────────────────────────────────────── */
+    if (file_size < FORGE_PIPELINE_FSCENE_HEADER_SIZE) {
+        SDL_Log("forge_pipeline_load_scene: file too small (%zu bytes)", file_size);
+        SDL_free(file_data);
+        return false;
+    }
+
+    if (SDL_memcmp(data, FORGE_PIPELINE_FSCENE_MAGIC,
+                   FORGE_PIPELINE_FSCENE_MAGIC_SIZE) != 0) {
+        SDL_Log("forge_pipeline_load_scene: bad magic in '%s'", path);
+        SDL_free(file_data);
+        return false;
+    }
+
+    uint32_t version    = forge_pipeline__read_u32_le(data + 4);
+    uint32_t node_count = forge_pipeline__read_u32_le(data + 8);
+    uint32_t mesh_count = forge_pipeline__read_u32_le(data + 12);
+    uint32_t root_count = forge_pipeline__read_u32_le(data + 16);
+
+    if (version != FORGE_PIPELINE_FSCENE_VERSION) {
+        SDL_Log("forge_pipeline_load_scene: unsupported version %u in '%s'",
+                version, path);
+        SDL_free(file_data);
+        return false;
+    }
+
+    if (node_count > FORGE_PIPELINE_MAX_NODES) {
+        SDL_Log("forge_pipeline_load_scene: node_count %u exceeds max %u",
+                node_count, FORGE_PIPELINE_MAX_NODES);
+        SDL_free(file_data);
+        return false;
+    }
+    if (mesh_count > FORGE_PIPELINE_MAX_SCENE_MESHES) {
+        SDL_Log("forge_pipeline_load_scene: mesh_count %u exceeds max %u",
+                mesh_count, FORGE_PIPELINE_MAX_SCENE_MESHES);
+        SDL_free(file_data);
+        return false;
+    }
+    if (root_count > FORGE_PIPELINE_MAX_ROOTS) {
+        SDL_Log("forge_pipeline_load_scene: root_count %u exceeds max %u",
+                root_count, FORGE_PIPELINE_MAX_ROOTS);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* ── Compute expected file size (with overflow protection) ────────── */
+    size_t offset = FORGE_PIPELINE_FSCENE_HEADER_SIZE;
+    size_t roots_size = (size_t)root_count * 4;
+    size_t mesh_table_size = (size_t)mesh_count * 8;
+    size_t node_table_size = (size_t)node_count * FORGE_PIPELINE_FSCENE_NODE_SIZE;
+
+    /* Check for overflow: node_count * 192 could overflow on 32-bit */
+    if (node_count > 0 &&
+        node_table_size / FORGE_PIPELINE_FSCENE_NODE_SIZE != node_count) {
+        SDL_Log("forge_pipeline_load_scene: node_count %u causes size overflow",
+                node_count);
+        SDL_free(file_data);
+        return false;
+    }
+
+    size_t min_size = offset + roots_size + mesh_table_size + node_table_size;
+    /* Check each addition for overflow */
+    if (min_size < offset || min_size < roots_size) {
+        SDL_Log("forge_pipeline_load_scene: section sizes overflow");
+        SDL_free(file_data);
+        return false;
+    }
+
+    if (file_size < min_size) {
+        SDL_Log("forge_pipeline_load_scene: file too small for %u nodes, "
+                "%u meshes, %u roots (%zu < %zu)",
+                node_count, mesh_count, root_count, file_size, min_size);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* ── Read root indices ───────────────────────────────────────────────── */
+    uint32_t *roots = NULL;
+    if (root_count > 0) {
+        roots = (uint32_t *)SDL_malloc(root_count * sizeof(uint32_t));
+        if (!roots) {
+            SDL_Log("forge_pipeline_load_scene: allocation failed for roots");
+            SDL_free(file_data);
+            return false;
+        }
+        uint32_t ri;
+        for (ri = 0; ri < root_count; ri++) {
+            roots[ri] = forge_pipeline__read_u32_le(data + offset);
+            offset += 4;
+            /* Validate root index is within node array bounds */
+            if (roots[ri] >= node_count) {
+                SDL_Log("forge_pipeline_load_scene: root[%u] = %u "
+                        "out of range (node_count = %u)",
+                        ri, roots[ri], node_count);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+    }
+
+    /* ── Read mesh table ─────────────────────────────────────────────────── */
+    ForgePipelineSceneMesh *meshes = NULL;
+    if (mesh_count > 0) {
+        meshes = (ForgePipelineSceneMesh *)SDL_malloc(
+            mesh_count * sizeof(ForgePipelineSceneMesh));
+        if (!meshes) {
+            SDL_Log("forge_pipeline_load_scene: allocation failed for meshes");
+            SDL_free(roots);
+            SDL_free(file_data);
+            return false;
+        }
+        uint32_t mi;
+        for (mi = 0; mi < mesh_count; mi++) {
+            meshes[mi].first_submesh = forge_pipeline__read_u32_le(data + offset);
+            meshes[mi].submesh_count = forge_pipeline__read_u32_le(data + offset + 4);
+            offset += 8;
+
+            /* Validate submesh range fits within the format limit */
+            uint32_t end = meshes[mi].first_submesh + meshes[mi].submesh_count;
+            if (end < meshes[mi].first_submesh ||
+                end > FORGE_PIPELINE_MAX_SUBMESHES) {
+                SDL_Log("forge_pipeline_load_scene: mesh %u submesh range "
+                        "[%u, %u) exceeds max %u",
+                        mi, meshes[mi].first_submesh, end,
+                        (uint32_t)FORGE_PIPELINE_MAX_SUBMESHES);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+    }
+
+    /* ── Read node table ─────────────────────────────────────────────────── */
+    ForgePipelineSceneNode *nodes = NULL;
+    uint32_t total_children = 0;
+
+    if (node_count > 0) {
+        nodes = (ForgePipelineSceneNode *)SDL_calloc(
+            node_count, sizeof(ForgePipelineSceneNode));
+        if (!nodes) {
+            SDL_Log("forge_pipeline_load_scene: allocation failed for nodes");
+            SDL_free(meshes);
+            SDL_free(roots);
+            SDL_free(file_data);
+            return false;
+        }
+
+        uint32_t ni;
+        for (ni = 0; ni < node_count; ni++) {
+            const uint8_t *p = data + offset;
+            ForgePipelineSceneNode *node = &nodes[ni];
+
+            /* Name: 64 bytes */
+            SDL_memcpy(node->name, p, 64);
+            node->name[63] = '\0';  /* ensure null termination */
+            p += 64;
+
+            /* Parent, mesh, skin */
+            node->parent     = forge_pipeline__read_i32_le(p);      p += 4;
+            node->mesh_index = forge_pipeline__read_i32_le(p);      p += 4;
+            node->skin_index = forge_pipeline__read_i32_le(p);      p += 4;
+
+            /* Validate parent: must be -1 (root) or a valid node index */
+            if (node->parent < -1 ||
+                (node->parent >= 0 &&
+                 (uint32_t)node->parent >= node_count)) {
+                SDL_Log("forge_pipeline_load_scene: node %u parent %d "
+                        "out of range (node_count = %u)",
+                        ni, node->parent, node_count);
+                SDL_free(nodes);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+
+            /* Validate mesh_index: must be -1 (no mesh) or [0, mesh_count) */
+            if (node->mesh_index < -1 ||
+                (node->mesh_index >= 0 &&
+                 (uint32_t)node->mesh_index >= mesh_count)) {
+                SDL_Log("forge_pipeline_load_scene: node %u mesh_index %d "
+                        "out of range (mesh_count = %u)",
+                        ni, node->mesh_index, mesh_count);
+                SDL_free(nodes);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+
+            /* Validate skin_index: must be -1 (no skin) or non-negative */
+            if (node->skin_index < -1) {
+                SDL_Log("forge_pipeline_load_scene: node %u skin_index %d "
+                        "is invalid (-1 means no skin)",
+                        ni, node->skin_index);
+                SDL_free(nodes);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+
+            /* Children */
+            node->first_child = forge_pipeline__read_u32_le(p);     p += 4;
+            node->child_count = forge_pipeline__read_u32_le(p);     p += 4;
+
+            /* TRS flag: must be 0 or 1 */
+            {
+                uint32_t has_trs_raw = forge_pipeline__read_u32_le(p);
+                p += 4;
+                if (has_trs_raw > 1) {
+                    SDL_Log("forge_pipeline_load_scene: node %u has_trs=%u "
+                            "(expected 0 or 1)", ni, has_trs_raw);
+                    SDL_free(nodes);
+                    SDL_free(meshes);
+                    SDL_free(roots);
+                    SDL_free(file_data);
+                    return false;
+                }
+                node->has_trs = has_trs_raw;
+            }
+
+            int fi;
+            for (fi = 0; fi < 3; fi++) {
+                node->translation[fi] = forge_pipeline__read_f32_le(p);
+                p += 4;
+            }
+            for (fi = 0; fi < 4; fi++) {
+                node->rotation[fi] = forge_pipeline__read_f32_le(p);
+                p += 4;
+            }
+            for (fi = 0; fi < 3; fi++) {
+                node->scale[fi] = forge_pipeline__read_f32_le(p);
+                p += 4;
+            }
+
+            /* Local transform */
+            for (fi = 0; fi < 16; fi++) {
+                node->local_transform[fi] = forge_pipeline__read_f32_le(p);
+                p += 4;
+            }
+
+            /* Accumulate total children with overflow check */
+            uint32_t prev_total = total_children;
+            total_children += node->child_count;
+            if (total_children < prev_total) {
+                SDL_Log("forge_pipeline_load_scene: total_children overflow "
+                        "at node %u", ni);
+                SDL_free(nodes);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+
+            offset += FORGE_PIPELINE_FSCENE_NODE_SIZE;
+        }
+
+        /* A valid forest with N nodes and R roots has at most N-R edges.
+         * Reject impossible totals early — before allocating children[]. */
+        {
+            uint32_t max_edges = node_count > root_count
+                               ? node_count - root_count : 0;
+            if (total_children > max_edges) {
+                SDL_Log("forge_pipeline_load_scene: total_children %u exceeds "
+                        "maximum edges for forest (%u nodes, %u roots)",
+                        total_children, node_count, root_count);
+                SDL_free(nodes);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+
+        /* Validate first_child + child_count doesn't exceed total children
+         * for each node. */
+        for (ni = 0; ni < node_count; ni++) {
+            ForgePipelineSceneNode *node = &nodes[ni];
+            if (node->child_count > 0) {
+                uint32_t end = node->first_child + node->child_count;
+                /* Overflow or past end of children array */
+                if (end < node->first_child || end > total_children) {
+                    SDL_Log("forge_pipeline_load_scene: node %u children "
+                            "range [%u, %u) exceeds total_children %u",
+                            ni, node->first_child, end, total_children);
+                    SDL_free(nodes);
+                    SDL_free(meshes);
+                    SDL_free(roots);
+                    SDL_free(file_data);
+                    return false;
+                }
+            }
+        }
+    }
+
+    /* ── Read children array ─────────────────────────────────────────────── */
+    /* Use 64-bit math to prevent overflow on 32-bit hosts where
+     * (size_t)total_children * 4 could wrap before the bounds check. */
+    uint64_t children_bytes = (uint64_t)total_children * 4;
+    uint64_t children_end   = (uint64_t)offset + children_bytes;
+    if (children_end > (uint64_t)file_size) {
+        SDL_Log("forge_pipeline_load_scene: file too small for children array "
+                "(%zu < %" SDL_PRIu64 ")", file_size, children_end);
+        SDL_free(nodes);
+        SDL_free(meshes);
+        SDL_free(roots);
+        SDL_free(file_data);
+        return false;
+    }
+
+    uint32_t *children = NULL;
+    if (total_children > 0) {
+        children = (uint32_t *)SDL_malloc(total_children * sizeof(uint32_t));
+        if (!children) {
+            SDL_Log("forge_pipeline_load_scene: allocation failed for children");
+            SDL_free(nodes);
+            SDL_free(meshes);
+            SDL_free(roots);
+            SDL_free(file_data);
+            return false;
+        }
+        uint32_t ci;
+        for (ci = 0; ci < total_children; ci++) {
+            children[ci] = forge_pipeline__read_u32_le(data + offset);
+            offset += 4;
+            /* Validate child index is within node array bounds */
+            if (children[ci] >= node_count) {
+                SDL_Log("forge_pipeline_load_scene: children[%u] = %u "
+                        "out of range (node_count = %u)",
+                        ci, children[ci], node_count);
+                SDL_free(children);
+                SDL_free(nodes);
+                SDL_free(meshes);
+                SDL_free(roots);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+    }
+
+    /* Done with the raw file data */
+    SDL_free(file_data);
+
+    /* ── Populate scene struct ───────────────────────────────────────────── */
+    scene->nodes       = nodes;
+    scene->node_count  = node_count;
+    scene->meshes      = meshes;
+    scene->mesh_count  = mesh_count;
+    scene->roots       = roots;
+    scene->root_count  = root_count;
+    scene->children    = children;
+    scene->child_count = total_children;
+
+    /* ── Compute world transforms ────────────────────────────────────────── */
+    float identity[16];
+    forge_pipeline__mat4_identity(identity);
+
+    /* Track visited nodes to detect cycles and unreachable nodes.
+     * SDL_calloc(0, ...) may return NULL on some platforms (C standard says
+     * the result is implementation-defined), so skip allocation for empty
+     * scenes. */
+    bool *visited = NULL;
+    if (node_count > 0) {
+        visited = (bool *)SDL_calloc(node_count, sizeof(bool));
+        if (!visited) {
+            SDL_Log("forge_pipeline_load_scene: allocation failed for visited[]");
+            forge_pipeline_free_scene(scene);
+            return false;
+        }
+    }
+
+    uint32_t ri;
+    for (ri = 0; ri < root_count; ri++) {
+        if (!forge_pipeline__compute_world_transforms(
+                scene, roots[ri], -1, identity, 0, visited)) {
+            /* Cycle or duplicate child detected — free and fail */
+            SDL_free(visited);
+            forge_pipeline_free_scene(scene);
+            return false;
+        }
+    }
+
+    /* Verify every node was reached exactly once */
+    {
+        uint32_t vi;
+        for (vi = 0; vi < node_count; vi++) {
+            if (!visited[vi]) {
+                SDL_Log("forge_pipeline_load_scene: node %u unreachable "
+                        "from roots[]", vi);
+                SDL_free(visited);
+                forge_pipeline_free_scene(scene);
+                return false;
+            }
+        }
+    }
+    SDL_free(visited);
+
+    return true;
+}
+
+void forge_pipeline_free_scene(ForgePipelineScene *scene)
+{
+    if (!scene) return;
+    SDL_free(scene->nodes);
+    SDL_free(scene->meshes);
+    SDL_free(scene->roots);
+    SDL_free(scene->children);
+    SDL_memset(scene, 0, sizeof(*scene));
+}
+
+const ForgePipelineSceneMesh *forge_pipeline_scene_get_mesh(
+    const ForgePipelineScene *scene, uint32_t mesh_index)
+{
+    if (!scene || mesh_index >= scene->mesh_count) return NULL;
+    return &scene->meshes[mesh_index];
 }
 
 #endif /* FORGE_PIPELINE_IMPLEMENTATION */

@@ -27,6 +27,7 @@ from .assets import (
     diagram_mesh_processing_pipeline,
     diagram_parametric_sphere,
     diagram_random_vs_sequential,
+    diagram_scene_hierarchy,
     diagram_seam_duplication,
     diagram_smooth_vs_flat_normals,
     diagram_struct_of_arrays,
@@ -326,6 +327,9 @@ DIAGRAMS = {
         ("bundle_layout.png", diagram_bundle_layout),
         ("random_vs_sequential.png", diagram_random_vs_sequential),
         ("dependency_graph.png", diagram_dependency_graph),
+    ],
+    "assets/09": [
+        ("scene_hierarchy.png", diagram_scene_hierarchy),
     ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
@@ -712,6 +716,7 @@ LESSON_NAMES = {
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",
     "assets/05": "assets/05-asset-bundles",
+    "assets/09": "assets/09-scene-hierarchy",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",

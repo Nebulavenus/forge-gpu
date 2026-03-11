@@ -157,6 +157,7 @@ endif()
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(tools/mesh)
     add_subdirectory(tools/anim)
+    add_subdirectory(tools/scene)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

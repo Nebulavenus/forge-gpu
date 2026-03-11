@@ -60,6 +60,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 06 | [Loading Processed Assets](06-loading-processed-assets/) | C library | Header-only C loader for .fmesh meshes and pipeline-processed textures; `forge_pipeline.h` |
 | 07 | [Materials](07-materials/) | C + Python | Full PBR material support: glTF parser extensions, multi-primitive mesh processing, .fmesh v2 submesh table, .fmat material sidecars |
 | 08 | [Animations](08-animations/) | C | glTF animation parsing and runtime evaluation: channels, samplers, keyframe interpolation (lerp/slerp), looping |
+| 09 | [Scene Hierarchy](09-scene-hierarchy/) | C + Python | glTF node tree extraction, `.fscene` binary format, runtime world transform computation, mesh instancing |
 
 ## Building
 
