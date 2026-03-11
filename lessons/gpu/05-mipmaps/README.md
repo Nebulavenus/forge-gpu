@@ -23,6 +23,10 @@ press **SPACE**:
 The quad scales up and down with a sine wave so you can observe the mip
 level transitions in real time.
 
+**Prerequisite:** Read [Math Lesson 04 — Mipmaps & LOD](../../math/04-mipmaps-and-lod/)
+first. It covers the theory behind mip chains, level-of-detail selection, and
+trilinear filtering — this lesson focuses on the GPU implementation.
+
 ## Key concepts
 
 ### The aliasing problem
