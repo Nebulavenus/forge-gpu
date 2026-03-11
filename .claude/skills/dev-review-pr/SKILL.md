@@ -559,38 +559,60 @@ non-blocking feedback but did not approve. This typically happens when:
    request re-review (`@coderabbitai review`). Exit and wait for the next
    review round.
 
-4. **If the user wants to skip:** Do NOT merge. Instead, request that
-   CodeRabbit resolve the conversation:
+4. **If the user wants to skip:** Request that CodeRabbit resolve the
+   conversation:
 
    ```bash
    gh pr comment <pr-number> --body "@coderabbitai resolve"
    ```
 
    This tells CodeRabbit the feedback was acknowledged and intentionally
-   skipped. CodeRabbit will typically respond with an `APPROVED` review.
+   skipped. CodeRabbit responds with an `APPROVED` review.
 
-5. **After requesting resolve, do NOT request another review.** Stop the
-   review cycle here — no `@coderabbitai review` comment. The goal is to
-   get the approval from the resolve request, not to trigger another round
-   of feedback.
+5. **CRITICAL: No commits after resolve.** Any new commit on the branch
+   — your own code, a merge from main, a rebase — dismisses the approval
+   that `@coderabbitai resolve` grants. This forces you to start the
+   cycle over.
 
-6. **If there are changes on `main` to merge:** You can safely merge main
-   into the PR branch at this point without triggering additional review
-   feedback (since auto-pause is active and we are not requesting a new
-   review):
+   Also do NOT request another review (`@coderabbitai review`) — that
+   triggers a new feedback round.
 
-   ```bash
-   git fetch origin main
-   git merge origin/main
-   git push
-   ```
+6. **The catch-22: branch must be up to date to merge, but merging main
+   dismisses the approval.** If `main` has moved ahead since the PR was
+   created, you must merge main to satisfy branch protection — but that
+   commit dismisses the approval from resolve.
 
-7. **Wait for all status checks to pass.** Exit with: "Waiting for
-   CodeRabbit approval and green checks. Run this skill again after checks
-   complete."
+   **Practical workflow:**
 
-8. **On next run:** The latest review should now be `APPROVED` (from the
-   resolve). Verify all checks are green, then proceed to step 7 (merge).
+   a. Push all local changes first (if any). Wait for checks to pass.
+
+   b. Request resolve:
+
+      ```bash
+      gh pr comment <pr-number> --body "@coderabbitai resolve"
+      ```
+
+   c. If the branch is already up to date with main, merge immediately
+      after the approval arrives — no problem.
+
+   d. If the branch is behind main, you must merge main first, which
+      dismisses the approval. In this case, use `--admin` to merge:
+
+      ```bash
+      git fetch origin main
+      git merge origin/main
+      git push
+      # Wait for checks to pass, then:
+      gh pr merge <pr-number> --squash --delete-branch --admin
+      ```
+
+      Only use `--admin` when: the nitpick was intentionally skipped
+      with user confirmation, all checks are green, and the only reason
+      for the missing approval is the main merge dismissing it. Present
+      this to the user for confirmation.
+
+   Note: CodeRabbit's auto-pause prevents the main merge from triggering
+   new review feedback — the only consequence is the dismissed approval.
 
 ### 7. Merge the PR
 
