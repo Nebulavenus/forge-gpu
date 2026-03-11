@@ -34,9 +34,12 @@ from .assets import (
     diagram_texture_format_comparison,
 )
 from .engine import (
+    diagram_alignment_padding,
     diagram_alpha_blending,
     diagram_barycentric_coords,
+    diagram_block_chain_growth,
     diagram_bounding_box,
+    diagram_bump_allocation,
     diagram_call_stack,
     diagram_debugger_workflow,
     diagram_edge_functions,
@@ -345,6 +348,11 @@ DIAGRAMS = {
         ("three_areas.png", diagram_three_areas),
         ("worktree_architecture.png", diagram_worktree_architecture),
         ("submodule_vs_fetchcontent.png", diagram_submodule_vs_fetchcontent),
+    ],
+    "engine/12": [
+        ("bump_allocation.png", diagram_bump_allocation),
+        ("alignment_padding.png", diagram_alignment_padding),
+        ("block_chain_growth.png", diagram_block_chain_growth),
     ],
     "math/01": [
         ("vector_addition.png", diagram_vector_addition),
@@ -700,6 +708,7 @@ LESSON_NAMES = {
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",
     "engine/11": "engine/11-git-version-control",
+    "engine/12": "engine/12-memory-arenas",
     "math/01": "math/01-vectors",
     "math/02": "math/02-coordinate-spaces",
     "math/03": "math/03-bilinear-interpolation",

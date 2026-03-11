@@ -102,6 +102,8 @@ The demo program shows five patterns that cover how arenas are used in practice:
 
 ### How bump allocation works
 
+![Bump allocation advances a pointer through a memory block with each alloc call](assets/bump_allocation.png)
+
 A traditional allocator like `malloc` maintains a free list, coalesces
 adjacent free blocks, and searches for a block that fits. Each allocation and
 free involves bookkeeping.
@@ -142,6 +144,8 @@ Allocate with explicit alignment (must be a power of 2):
 ```c
 float *simd_data = forge_arena_alloc_aligned(&arena, 64, 16);  /* 16-byte aligned */
 ```
+
+![How alignment rounds up the pointer, creating padding bytes between allocations](assets/alignment_padding.png)
 
 Query usage:
 
@@ -203,6 +207,8 @@ Vertex *verts = forge_arena_alloc(&frame_arena, num_verts * sizeof(Vertex));
 ```
 
 ### How the block chain grows
+
+![Arena grows by appending new blocks to a linked list](assets/block_chain_growth.png)
 
 When an allocation does not fit in the current block, `forge_arena_alloc`
 allocates a new block via `SDL_malloc` and appends it to the linked list. The

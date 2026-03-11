@@ -18,6 +18,9 @@ __all__ = [
     "diagram_three_areas",
     "diagram_worktree_architecture",
     "diagram_submodule_vs_fetchcontent",
+    "diagram_bump_allocation",
+    "diagram_alignment_padding",
+    "diagram_block_chain_growth",
 ]
 
 from .lesson_04 import (
@@ -44,4 +47,9 @@ from .lesson_11 import (
     diagram_submodule_vs_fetchcontent,
     diagram_three_areas,
     diagram_worktree_architecture,
+)
+from .lesson_12 import (
+    diagram_alignment_padding,
+    diagram_block_chain_growth,
+    diagram_bump_allocation,
 )
