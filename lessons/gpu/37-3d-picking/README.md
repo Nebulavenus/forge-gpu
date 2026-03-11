@@ -449,7 +449,7 @@ cmake --build build --target 37-3d-picking --config Debug
 ## AI skill
 
 This lesson has a matching AI skill at
-[`.claude/skills/3d-picking/SKILL.md`](../../../.claude/skills/3d-picking/SKILL.md)
+[`.claude/skills/forge-3d-picking/SKILL.md`](../../../.claude/skills/forge-3d-picking/SKILL.md)
 that distills the pattern into a reusable command. Invoke it with
 `/forge-3d-picking` in Claude Code to add color-ID picking, stencil-ID picking,
 and selection highlighting to any SDL GPU project.

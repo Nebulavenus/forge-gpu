@@ -525,7 +525,7 @@ cmake --build build --target 38-indirect-drawing --config Debug
 ## AI skill
 
 The indirect drawing pattern is available as a reusable skill at
-[`.claude/skills/indirect-drawing/SKILL.md`](../../../.claude/skills/indirect-drawing/SKILL.md).
+[`.claude/skills/forge-indirect-drawing/SKILL.md`](../../../.claude/skills/forge-indirect-drawing/SKILL.md).
 Invoke with `/forge-indirect-drawing` to add GPU-driven indirect rendering
 with compute frustum culling to any SDL GPU project.
 

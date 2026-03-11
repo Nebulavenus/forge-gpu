@@ -367,8 +367,8 @@ This lesson uses the following from `common/math/forge_math.h`:
 ## AI skill
 
 This lesson has a matching Claude Code skill at
-[`.claude/skills/edge-detection/SKILL.md`](../../../.claude/skills/edge-detection/SKILL.md).
-Invoke it with `/edge-detection` or let Claude apply it automatically when edge
+[`.claude/skills/forge-edge-detection/SKILL.md`](../../../.claude/skills/forge-edge-detection/SKILL.md).
+Invoke it with `/forge-edge-detection` or let Claude apply it automatically when edge
 detection or stencil X-ray techniques are needed in your project.
 
 ## What's next

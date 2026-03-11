@@ -269,6 +269,12 @@ Each batch agent does the same work:
      `/dev-create-diagram`") should name skills that actually exist.
    - **Lesson references** — lesson numbers and names should match actual
      directories (e.g. "based on Lesson 28" should link to a real lesson).
+   - **Naming convention** — every skill directory and `name:` field must use
+     the correct prefix. Lesson skills (any track) use `forge-` (e.g.
+     `forge-stencil-testing`, `forge-bloom`), development/workflow skills use
+     `dev-` (e.g. `dev-create-pr`, `dev-publish-lesson`). Flag any skill
+     whose directory name lacks the expected prefix. Check that the `name:`
+     field in the YAML frontmatter matches the directory name exactly.
 
 2. **Work efficiently** — scan for path references, verify against the
    filesystem, move on. Don't read every line in detail — focus on paths
@@ -277,8 +283,11 @@ Each batch agent does the same work:
 3. **Report** each finding with skill name and issue. Report "No issues" if
    the batch is clean.
 
-4. **If `--fix`:** Update path references. Do NOT rewrite skill logic or
-   workflows — only fix factual inaccuracies.
+4. **If `--fix`:** Update path references and `name:` fields. Rename skill
+   directories to match the naming convention (`git mv` the directory). Update
+   all references to the old directory name across the repo (lesson READMEs,
+   track READMEs, other SKILL.md cross-references). Do NOT rewrite skill
+   logic or workflows — only fix factual inaccuracies and naming.
 
 ### Agent 4: README coverage
 

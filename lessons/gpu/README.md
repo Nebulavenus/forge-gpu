@@ -228,8 +228,8 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-vertex-pulling`** — Programmable vertex fetch with storage buffer reads
 - **`/forge-stencil-testing`** — Stencil buffer for portals, outlines, and per-pixel masking
 - **`/forge-decals`** — Deferred decal projection with depth reconstruction
-- **`/edge-detection`** — Sobel edge detection, stencil X-ray vision, Fresnel silhouettes
-- **`/3d-picking`** — GPU-based object selection with color-ID and stencil-ID methods
+- **`/forge-edge-detection`** — Sobel edge detection, stencil X-ray vision, Fresnel silhouettes
+- **`/forge-3d-picking`** — GPU-based object selection with color-ID and stencil-ID methods
 - **`/forge-indirect-drawing`** — GPU-driven indirect draw calls with compute frustum culling
 - **`/forge-pipeline-assets`** — Load .fmesh binary meshes and pipeline-processed textures
 
