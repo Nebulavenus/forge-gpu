@@ -8,6 +8,7 @@ Usage:
     python scripts/run.py math/01                 # math lesson 01
     python scripts/run.py gpu/03                  # explicit GPU lesson 03
     python scripts/run.py engine/01               # engine lesson 01
+    python scripts/run.py physics/01               # physics lesson 01
     python scripts/run.py                         # list available lessons
 
 Extra arguments after the lesson name are forwarded to the executable:
@@ -22,6 +23,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LESSONS_DIR = os.path.join(REPO_ROOT, "lessons")
 BUILD_DIR = os.path.join(REPO_ROOT, "build")
 
+# Supported lesson tracks — add new tracks here
+LESSON_TYPES = ("gpu", "math", "engine", "physics")
+
 # Build configurations to search, in priority order
 BUILD_CONFIGS = ["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]
 
@@ -29,7 +33,7 @@ BUILD_CONFIGS = ["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]
 def discover_lessons():
     """Find all lesson directories, returning list of (type, dirname) tuples."""
     lessons = []
-    for lesson_type in ["gpu", "math", "engine"]:
+    for lesson_type in LESSON_TYPES:
         type_dir = os.path.join(LESSONS_DIR, lesson_type)
         if not os.path.isdir(type_dir):
             continue
@@ -68,7 +72,7 @@ def match_lesson(query, lessons):
     forced_type = None
     if "/" in query:
         parts = query.split("/", 1)
-        if parts[0] in ("gpu", "math", "engine"):
+        if parts[0] in LESSON_TYPES:
             forced_type = parts[0]
             query = parts[1]
 
@@ -94,7 +98,8 @@ def match_lesson(query, lessons):
         print(f"Ambiguous query '{query}' matches multiple lessons:")
         for t, d in matches:
             print(f"  {t}/{d}")
-        print("Be more specific, e.g.: gpu/02, math/01, or engine/01")
+        examples = ", ".join(f"{t}/01" for t in LESSON_TYPES)
+        print(f"Be more specific, e.g.: {examples}")
         return None
 
     return None
@@ -117,8 +122,8 @@ def list_lessons(lessons):
     print("\nUsage: python scripts/run.py <name-or-number> [args...]")
     print("  e.g.: python scripts/run.py 02")
     print("        python scripts/run.py first-triangle")
-    print("        python scripts/run.py math/01")
-    print("        python scripts/run.py engine/01")
+    for t in LESSON_TYPES:
+        print(f"        python scripts/run.py {t}/01")
 
 
 def main():
