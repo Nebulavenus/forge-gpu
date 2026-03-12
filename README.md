@@ -1,10 +1,12 @@
 # forge-gpu
 
-forge-gpu aims to be a helpful guide to developing real-time graphics with SDL3's GPU API and building games. The project is written using C99, and features standalone lessons, tracks covering
-rendering, math, engine fundamentals, UI, physics, and asset pipelines.
+forge-gpu aims to be a helpful guide to developing real-time graphics with 
+SDL3's GPU API and building games. The project is written using C99, and 
+features standalone lessons, tracks covering rendering, math, engine 
+fundamentals, UI, physics, and asset pipelines.
 
 The lessons build on shared, header-only C libraries, a Python asset
-pipeline, and includes reusable AI skills.
+pipeline, and include reusable AI skills.
 SDL3 GPU handles the platform abstraction over Vulkan, D3D12, and Metal.
 
 <table>
