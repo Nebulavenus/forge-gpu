@@ -46,7 +46,7 @@ See the [GPU track](lessons/gpu/) for all lessons.
 By the end of the GPU track you'll have built programs covering shadow
 mapping, screen-space reflections, bloom, SSAO, skeletal animation, stencil
 portals, and deferred decals — all in plain C on SDL3 GPU. Each lesson
-introduces one concept and builds on the previous ones.
+introduces a new concept and builds on the previous ones.
 
 Other tracks fill in the foundations: the math behind every transform and
 lighting calculation, how CMake and C actually work, how to build a UI system
