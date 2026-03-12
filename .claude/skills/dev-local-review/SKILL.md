@@ -60,6 +60,13 @@ Run a review against main (default):
 /coderabbit:review --base main
 ```
 
+**Important:** Always pass the project's `.coderabbit.yaml` config so the
+local review applies the same rules as the GitHub bot:
+
+```text
+/coderabbit:review --base main -c .coderabbit.yaml
+```
+
 Review only committed or uncommitted changes:
 
 ```text

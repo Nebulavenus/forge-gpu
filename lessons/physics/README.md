@@ -37,9 +37,9 @@ capsules) so the simulation behavior is front and center.
 
 ## Lessons
 
-| # | Topic | What you'll learn |
-|---|-------|-------------------|
-| [01](01-point-particles/) | Point Particles | Symplectic Euler integration, gravity, drag, sphere-plane collision, fixed timestep |
+| | Lesson | About |
+|---|--------|-------|
+| [<img src="01-point-particles/assets/screenshot.png" width="480" alt="Point Particles"/>](01-point-particles/) | [**01 — Point Particles**](01-point-particles/) | Symplectic Euler integration, gravity, drag, sphere-plane collision, fixed timestep |
 
 ## Shared library
 
