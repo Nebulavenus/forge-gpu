@@ -50,7 +50,7 @@ introduce a new concept, sometimes more, building on the previous ones.
 Other tracks fill in the foundations: math topics including transform and
 lighting calculations, how CMake and C work, how to build a UI system
 from font parsing to interactive controls, and how to process raw assets into
-GPU-ready formats.
+GPU optimized formats.
 
 ## What you'll get
 
