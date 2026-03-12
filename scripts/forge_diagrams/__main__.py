@@ -209,6 +209,7 @@ from .math import (
     diagram_gradient_noise_concept,
     diagram_hash_pipeline,
     diagram_histogram_comparison,
+    diagram_histogram_to_density,
     diagram_integration_area,
     diagram_lacunarity_persistence,
     diagram_lerp_foundation,
@@ -437,6 +438,7 @@ DIAGRAMS = {
         ("histogram_comparison.png", diagram_histogram_comparison),
         ("pdf_curves.png", diagram_pdf_curves),
         ("integration_area.png", diagram_integration_area),
+        ("histogram_to_density.png", diagram_histogram_to_density),
     ],
     "physics/01": [
         ("euler_comparison.png", diagram_symplectic_vs_explicit_euler),

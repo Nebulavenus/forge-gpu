@@ -16,9 +16,10 @@ texture resolution, Monte Carlo rendering, and game design pacing.
 
 The demo prints six sections: extensive vs intensive quantities, histogram
 comparison, density ratios, PDFs, numerical integration, and graphics
-applications. Three diagrams are generated in `assets/`:
+applications. Four diagrams are generated in `assets/`:
 
 - `histogram_comparison.png` — count vs density histogram side-by-side
+- `histogram_to_density.png` — increasing bin count converging to the PDF
 - `pdf_curves.png` — Gaussian and uniform probability density functions
 - `integration_area.png` — shaded sigma regions under a Gaussian curve
 
@@ -97,6 +98,25 @@ density normalization does not freeze the shape — but it makes the area
 directly comparable across datasets with different N or bin choices.
 
 ![Histogram comparison — count vs density normalization](assets/histogram_comparison.png)
+
+### From histogram to density curve
+
+A density histogram with a few wide bins gives a rough, blocky approximation
+of the underlying distribution. As you increase the number of bins, two things
+happen: each bin covers a narrower range, and the bar heights track the local
+density more precisely. The outline of the histogram begins to look like a
+smooth curve.
+
+![More bins → histogram approaches the density curve](assets/histogram_to_density.png)
+
+With 5 bins the shape is barely recognizable. At 15 bins the bell shape
+emerges. By 50 bins the bars follow the curve closely, and at 200 bins the
+histogram is nearly indistinguishable from the true probability density
+function. In the limit of infinitely many infinitesimally narrow bins (and
+infinite data), the histogram converges to the PDF exactly.
+
+This is the motivation for defining a continuous density function: it is the
+shape that every histogram is trying to approximate.
 
 ### Probability density functions
 

@@ -319,3 +319,89 @@ def diagram_integration_area():
 
     fig.tight_layout()
     save(fig, "math/16-density-functions", "integration_area.png")
+
+
+# ---------------------------------------------------------------------------
+# math/16-density-functions — histogram_to_density.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_histogram_to_density():
+    """Show how increasing the number of bins makes a histogram converge to the PDF."""
+    rng = np.random.default_rng(42)
+    data = rng.normal(loc=4.0, scale=1.5, size=2000)
+    data = data[(data >= -1) & (data < 9)]
+
+    stroke = [pe.withStroke(linewidth=3, foreground=STYLE["bg"])]
+
+    # True PDF for overlay
+    x_pdf = np.linspace(-1, 9, 400)
+    mu, sigma = 4.0, 1.5
+    y_pdf = (1.0 / (sigma * np.sqrt(2 * np.pi))) * np.exp(
+        -0.5 * ((x_pdf - mu) / sigma) ** 2
+    )
+
+    bin_counts = [5, 15, 50, 200]
+    titles = ["5 bins", "15 bins", "50 bins", "200 bins"]
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8), facecolor=STYLE["bg"])
+
+    for ax, n_bins, title in zip(axes.flat, bin_counts, titles, strict=True):
+        setup_axes(ax, xlim=(-1, 9), ylim=(0, 0.38), grid=True, aspect=None)
+
+        bins = np.linspace(-1, 9, n_bins + 1)
+        ax.hist(
+            data,
+            bins=bins,
+            density=True,
+            color=STYLE["accent1"],
+            alpha=0.65,
+            edgecolor=STYLE["bg"],
+            linewidth=0.5 if n_bins > 30 else 1.0,
+        )
+
+        # Overlay true PDF
+        ax.plot(x_pdf, y_pdf, color=STYLE["accent2"], linewidth=2.0)
+
+        ax.set_title(
+            title,
+            color=STYLE["text"],
+            fontsize=12,
+            fontweight="bold",
+            pad=12,
+        )
+        ax.set_xlabel("x", color=STYLE["axis"], fontsize=9)
+        ax.set_ylabel("density", color=STYLE["axis"], fontsize=9)
+
+    # Legend in last panel
+    axes[1, 1].text(
+        7.5,
+        0.34,
+        "histogram",
+        color=STYLE["accent1"],
+        fontsize=9,
+        fontweight="bold",
+        ha="right",
+        path_effects=stroke,
+    )
+    axes[1, 1].text(
+        7.5,
+        0.30,
+        "true PDF",
+        color=STYLE["accent2"],
+        fontsize=9,
+        fontweight="bold",
+        ha="right",
+        path_effects=stroke,
+    )
+
+    fig.suptitle(
+        "More Bins → Histogram Approaches the Density Curve",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        y=0.98,
+    )
+
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    save(fig, "math/16-density-functions", "histogram_to_density.png")

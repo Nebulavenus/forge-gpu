@@ -50,6 +50,7 @@ __all__ = [
     "diagram_histogram_comparison",
     "diagram_pdf_curves",
     "diagram_integration_area",
+    "diagram_histogram_to_density",
 ]
 
 from .lesson_01 import diagram_dot_product, diagram_vector_addition
@@ -108,6 +109,7 @@ from .lesson_15 import (
 )
 from .lesson_16 import (
     diagram_histogram_comparison,
+    diagram_histogram_to_density,
     diagram_integration_area,
     diagram_pdf_curves,
 )
