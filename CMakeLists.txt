@@ -4,6 +4,9 @@ project(forge-gpu LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Generate compile_commands.json for clangd / editors
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # ── SDL3 ──────────────────────────────────────────────────────────────────────
 # Try a pre-installed SDL3 first (e.g. -DCMAKE_PREFIX_PATH=/opt/sdl3).
 # If not found, fall back to building from source via FetchContent so learners

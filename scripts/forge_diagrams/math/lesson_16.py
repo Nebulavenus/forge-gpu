@@ -24,7 +24,7 @@ def diagram_histogram_comparison():
 
     # --- Count histogram (left) ---
     setup_axes(ax1, xlim=(-0.5, 8.5), ylim=(0, 60), grid=True, aspect=None)
-    counts, _, _bars = ax1.hist(
+    counts, _, _ = ax1.hist(
         data,
         bins=bins,
         color=STYLE["accent1"],

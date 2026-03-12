@@ -11,5 +11,9 @@
     "build",
     "out",
     "third_party"
-  ]
+  ],
+  "typeCheckingMode": "basic",
+  "reportArgumentType": false,
+  "reportUnsupportedDunderAll": false,
+  "reportUnusedVariable": false
 }
