@@ -47,7 +47,7 @@ mapping, screen-space reflections, bloom, SSAO, skeletal animation, stencil
 portals, and deferred decal. Lessons aim to
 introduce a new concept, sometimes more, building on the previous ones.
 
-Other tracks fill in the foundations: the math behind transform and
+Other tracks fill in the foundations: math topics including transform and
 lighting calculations, how CMake and C work, how to build a UI system
 from font parsing to interactive controls, and how to process raw assets into
 GPU-ready formats.
