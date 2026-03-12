@@ -5,10 +5,11 @@ argument-hint: "[lesson-number or lesson-name]"
 disable-model-invocation: false
 ---
 
-Run a systematic quality review on a GPU or math lesson before publishing.
-This skill encodes every recurring theme from PR review feedback across the
-project's history (51 closed PRs, 177 review comments). Running this pass
-before `/dev-publish-lesson` should eliminate most reviewer findings.
+Run a systematic quality review on a GPU, math, physics, or audio lesson
+before publishing. This skill encodes every recurring theme from PR review
+feedback across the project's history (51 closed PRs, 177 review comments).
+Running this pass before `/dev-publish-lesson` should eliminate most reviewer
+findings.
 
 The user provides:
 
@@ -391,7 +392,32 @@ pyright
 
 ---
 
-## 14. Build and shader compilation
+## 14. `forge_scene.h` usage (GPU lessons >= 40, physics, audio)
+
+**GPU lessons from ~lesson 40 onward, all physics lessons, and all audio
+lessons** must use `forge_scene.h` for the rendering baseline (shadow map,
+Blinn-Phong, grid, sky, camera, UI). This eliminates hundreds of lines of
+boilerplate and ensures a consistent rendering foundation.
+
+**What to check:**
+
+- [ ] `main.c` includes `#define FORGE_SCENE_IMPLEMENTATION` followed by
+  `#include "scene/forge_scene.h"`
+- [ ] `app_state` contains a `ForgeScene scene` field instead of individual
+  pipelines, textures, and samplers for the baseline rendering
+- [ ] Rendering uses `forge_scene_begin_frame` / `forge_scene_begin_shadow_pass`
+  / `forge_scene_begin_main_pass` / `forge_scene_end_frame` pattern
+- [ ] No duplicate baseline shaders in the lesson's `shaders/` directory
+  (scene, grid, shadow, sky, UI shaders are provided by `forge_scene.h`)
+- [ ] Lesson-specific shaders (if any) are in `shaders/` and serve a purpose
+  beyond the baseline (e.g. debug visualization, waveform display)
+
+**Skip this check for:** GPU lessons < 40, math lessons, engine lessons, UI
+lessons, asset pipeline lessons.
+
+---
+
+## 15. Build and shader compilation
 
 Verify the lesson compiles and shaders are up to date.
 
@@ -406,7 +432,7 @@ cmake --build build --target lesson_NN_name
 
 ---
 
-## 15. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
+## 16. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
 
 If the lesson has diagrams (check for `assets/*.png` files that are not
 screenshots), verify each diagram function against the README:
@@ -443,8 +469,9 @@ Final Pass Results — Lesson NN: Name
 11. Markdown lint         ✅ PASS
 12. Python lint           ⏭️  SKIP  (no scripts modified)
 13. Pyright types         ⏭️  SKIP  (no scripts modified)
-14. Build & shaders       ✅ PASS
-15. Diagram correctness   ⏭️  SKIP  (no diagrams)
+14. forge_scene.h usage   ✅ PASS  (physics lesson uses forge_scene.h)
+15. Build & shaders       ✅ PASS
+16. Diagram correctness   ⏭️  SKIP  (no diagrams)
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

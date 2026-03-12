@@ -71,15 +71,12 @@ lessons/audio/NN-topic-name/
   README.md
   assets/
     *.wav              (audio samples for the lesson)
-  shaders/
-    scene.vert.hlsl
-    scene.frag.hlsl
-    grid.vert.hlsl
-    grid.frag.hlsl
-    ui.vert.hlsl
-    ui.frag.hlsl
-    compiled/
 ```
+
+Baseline rendering shaders (shadow, scene, grid, sky, UI) are provided by
+`forge_scene.h` — no per-lesson copies needed. If the lesson introduces a
+topic-specific shader (e.g. a waveform visualization pass), add a `shaders/`
+subdirectory for those files only.
 
 ### 3. Design and implement the audio library code
 
@@ -257,31 +254,34 @@ correctness, edge cases, and determinism. Every function added to
 A focused C program that demonstrates audio concepts with both audible output
 and visual feedback using SDL GPU and forge UI.
 
+**MANDATORY: Use `forge_scene.h` for the rendering baseline.** The scene
+library provides Blinn-Phong lighting, shadow mapping, grid floor, sky
+gradient, FPS camera, and UI in a single `forge_scene_init()` call. This
+eliminates hundreds of lines of rendering boilerplate and lets the lesson
+focus on audio. See the `forge-scene-renderer` skill for the full API.
+
 **Every audio lesson MUST include these features:**
 
-1. **SDL GPU rendered scene** — A 3D scene providing visual context for the
-   audio. For spatial audio lessons, this means visible sound source positions
-   in the scene. For fundamentals lessons, a simple scene with visual feedback
-   (waveform visualization, VU meters as colored geometry) is sufficient.
-   Use the same rendering baseline as physics lessons:
-   - Blinn-Phong lighting with materials
-   - Procedural grid floor
-   - Shadow map
-   - Depth buffer and sRGB swapchain
+1. **SDL GPU rendered scene via `forge_scene.h`** — A 3D scene providing
+   visual context for the audio. For spatial audio lessons, this means visible
+   sound source positions in the scene. For fundamentals lessons, a simple
+   scene with visual feedback (waveform visualization, VU meters as colored
+   geometry) is sufficient. The rendering baseline (Blinn-Phong, grid, shadow
+   map, depth buffer, sRGB swapchain, sky) is provided by `forge_scene.h`.
 
-2. **First-person camera** — WASD + mouse look with delta time. Use the
-   `forge-camera-and-input` skill pattern. The camera position doubles as
-   the audio listener position for spatial audio lessons.
+2. **First-person camera** — Provided by `forge_scene.h`. The camera position
+   (accessible via `forge_scene_cam_pos()`) doubles as the audio listener
+   position for spatial audio lessons.
 
-3. **Forge UI panel** — An immediate-mode UI panel (using `common/ui/`) for
-   audio controls. Every lesson must have at least:
+3. **Forge UI panel** — Provided by `forge_scene.h` via
+   `forge_scene_begin_ui()` / `forge_scene_end_ui()`. Every lesson must have
+   at least:
    - Master volume slider
    - Play/pause button (or status indicator)
    - Lesson-specific controls (per-source volume, panning, effect parameters)
-   Use the `forge-ui-rendering` skill pattern for GPU rendering of the UI.
 
-4. **Capture support** — `forge_capture.h` integration for screenshots via
-   `scripts/capture_lesson.py`.
+4. **Capture support** — `forge_capture.h` integration (when `FORGE_CAPTURE`
+   defined) via `scripts/capture_lesson.py`.
 
 **Audio requirements:**
 
@@ -338,128 +338,103 @@ sources. Never write inline geometry generation functions.
 #include "math/forge_math.h"
 #include "audio/forge_audio.h"
 #include "shapes/forge_shapes.h"
-#include "ui/forge_ui.h"
 
-/* Capture infrastructure (compiled only with -DFORGE_CAPTURE=ON) */
-#ifdef FORGE_CAPTURE
-#include "capture/forge_capture.h"
-#endif
-
-/* Shader bytecode headers */
-#include "shaders/compiled/scene_vert_spirv.h"
-#include "shaders/compiled/scene_vert_dxil.h"
-#include "shaders/compiled/scene_frag_spirv.h"
-#include "shaders/compiled/scene_frag_dxil.h"
-#include "shaders/compiled/grid_vert_spirv.h"
-#include "shaders/compiled/grid_vert_dxil.h"
-#include "shaders/compiled/grid_frag_spirv.h"
-#include "shaders/compiled/grid_frag_dxil.h"
-#include "shaders/compiled/ui_vert_spirv.h"
-#include "shaders/compiled/ui_vert_dxil.h"
-#include "shaders/compiled/ui_frag_spirv.h"
-#include "shaders/compiled/ui_frag_dxil.h"
+#define FORGE_SCENE_IMPLEMENTATION
+#include "scene/forge_scene.h"
 
 /* ── Constants ────────────────────────────────────────────────────── */
 
-#define WINDOW_WIDTH   1280
-#define WINDOW_HEIGHT  720
-#define SHADOW_MAP_SIZE 1024
 #define AUDIO_SAMPLE_RATE 48000
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
-typedef struct SceneVertex {
-    vec3 position;
-    vec3 normal;
-} SceneVertex;
-
-typedef struct VertUniforms {
-    mat4 mvp;
-    mat4 model;
-    mat4 light_vp;
-} VertUniforms;
-
-typedef struct FragUniforms {
-    float mat_ambient[4];
-    float mat_diffuse[4];
-    float mat_specular[4];  /* rgb + shininess in w */
-    float light_dir[4];
-    float eye_pos[4];
-    float shadow_texel_size[4];
-} FragUniforms;
-
 typedef struct app_state {
-    SDL_Window    *window;
-    SDL_GPUDevice *device;
+    ForgeScene scene;  /* rendering, camera, shadow map, grid, sky, UI */
 
-    /* Pipelines */
-    SDL_GPUGraphicsPipeline *scene_pipeline;
-    SDL_GPUGraphicsPipeline *grid_pipeline;
-    SDL_GPUGraphicsPipeline *ui_pipeline;
-    SDL_GPUGraphicsPipeline *shadow_pipeline;
-
-    /* GPU resources */
-    SDL_GPUBuffer  *sphere_vb, *sphere_ib;
-    SDL_GPUTexture *depth_tex;
-    SDL_GPUTexture *shadow_map;
-    SDL_GPUSampler *shadow_sampler;
+    /* GPU resources — app-owned geometry */
+    SDL_GPUBuffer *sphere_vb, *sphere_ib;
     int sphere_index_count;
 
-    /* UI */
-    ForgeUiContext  ui_ctx;
-    SDL_GPUTexture *ui_font_atlas;
-    SDL_GPUBuffer  *ui_vb, *ui_ib;
-
-    /* Camera (also the audio listener) */
-    vec3  cam_position;
-    float cam_yaw, cam_pitch;
-    bool  mouse_captured;
-
-    /* Timing */
-    Uint64 last_ticks;
-
     /* Audio state — lesson-specific */
-    SDL_AudioStream *audio_stream;
+    SDL_AudioStream *audio_stream;  /* SDL audio output stream          */
     /* ForgeAudioBuffer buffers[N]; */
     /* ForgeAudioSource sources[N]; */
-    float master_volume;
-    bool  audio_paused;
-
-#ifdef FORGE_CAPTURE
-    ForgeCapture capture;
-#endif
+    float master_volume;            /* linear gain [0..1]               */
+    bool  audio_paused;             /* true = audio playback frozen     */
 } app_state;
 ```
 
-### 5. Create shaders
+**Init pattern:**
 
-Audio lessons need three or four shader pairs:
+```c
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
+{
+    app_state *state = SDL_calloc(1, sizeof(*state));
+    if (!state) return SDL_APP_FAILURE;
+    *appstate = state;
 
-**a) Scene shaders** (`scene.vert.hlsl`, `scene.frag.hlsl`)
+    ForgeSceneConfig cfg = forge_scene_default_config("Audio NN — Topic");
+    cfg.cam_start_pos = vec3_create(0.0f, 4.0f, 12.0f);
+    cfg.font_path = "assets/fonts/liberation_mono/LiberationMono-Regular.ttf";
 
-- Vertex: transform position by MVP, compute world position/normal, compute
-  shadow-map UV via light VP matrix
-- Fragment: Blinn-Phong lighting with material uniforms + shadow map sampling
+    if (!forge_scene_init(&state->scene, &cfg, argc, argv))
+        return SDL_APP_FAILURE;
 
-**b) Grid shaders** (`grid.vert.hlsl`, `grid.frag.hlsl`)
+    state->master_volume = 1.0f;
 
-- Use the `forge-shader-grid` skill pattern exactly
+    /* Set up SDL audio stream, load WAV assets, upload shapes ... */
+    return SDL_APP_CONTINUE;
+}
+```
 
-**c) UI shaders** (`ui.vert.hlsl`, `ui.frag.hlsl`)
+**Iterate pattern (camera position as listener):**
 
-- Use the `forge-ui-rendering` skill pattern exactly
-- These render the forge UI panel overlay
+```c
+SDL_AppResult SDL_AppIterate(void *appstate)
+{
+    app_state *state = appstate;
+    ForgeScene *s = &state->scene;
 
-**d) Shadow shaders** (`shadow.vert.hlsl`, `shadow.frag.hlsl`)
+    if (!forge_scene_begin_frame(s)) return SDL_APP_CONTINUE;
 
-- Vertex: transform by light VP matrix only
-- Fragment: depth-only pass
+    /* Use camera position as audio listener */
+    vec3 listener_pos = forge_scene_cam_pos(s);
 
-**Compile shaders** using the project script:
+    /* Shadow pass */
+    forge_scene_begin_shadow_pass(s);
+    /* forge_scene_draw_shadow_mesh(s, vb, ib, count, model); */
+    forge_scene_end_shadow_pass(s);
+
+    /* Main pass */
+    forge_scene_begin_main_pass(s);
+    /* Draw sound source markers as colored spheres */
+    /* forge_scene_draw_mesh(s, vb, ib, count, model, color); */
+    forge_scene_draw_grid(s);
+    forge_scene_end_main_pass(s);
+
+    /* UI pass — audio controls */
+    float mx, my;
+    Uint32 buttons = SDL_GetMouseState(&mx, &my);
+    forge_scene_begin_ui(s, mx, my, (buttons & SDL_BUTTON_LMASK) != 0);
+    /* forge_ui_* slider/button calls for volume, pan, effects ... */
+    forge_scene_end_ui(s);
+
+    return forge_scene_end_frame(s);
+}
+```
+
+### 5. Shaders
+
+The baseline shaders (scene, grid, shadow, sky, UI) are compiled into
+`forge_scene.h` — no per-lesson copies needed. If the lesson introduces a
+topic-specific shader (e.g. a waveform or spectrum visualization pass),
+add those files to `shaders/` and compile them:
 
 ```bash
 python scripts/compile_shaders.py audio/NN-topic-name
 ```
+
+Most audio lessons need no lesson-specific shaders at all.
 
 ### 6. Create `CMakeLists.txt`
 
@@ -481,6 +456,22 @@ if(TARGET SDL3::SDL3-shared)
             $<TARGET_FILE_DIR:NN-topic-name>
     )
 endif()
+
+# Copy font asset next to executable
+add_custom_command(TARGET NN-topic-name POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:NN-topic-name>/assets/fonts/liberation_mono
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/assets/fonts/liberation_mono/LiberationMono-Regular.ttf
+        $<TARGET_FILE_DIR:NN-topic-name>/assets/fonts/liberation_mono/
+)
+
+# Copy WAV assets next to executable
+add_custom_command(TARGET NN-topic-name POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets
+        $<TARGET_FILE_DIR:NN-topic-name>/assets
+)
 ```
 
 ### 7. Prepare WAV assets
@@ -633,10 +624,10 @@ build\lessons\audio\NN-topic-name\Debug\NN-topic-name.exe
   [Audio Lesson NN](../../audio/NN-topic/) for this concept in action"
 - **Update audio lesson README**: List related lessons in "Where it's used"
 
-### 11. Build, compile shaders, and test
+### 11. Build and test
 
 ```bash
-# Compile shaders
+# Compile lesson-specific shaders (skip if lesson has no shaders/ directory)
 python scripts/compile_shaders.py audio/NN-topic-name
 
 # Build
@@ -725,18 +716,22 @@ Audio lessons do **not** cover:
 ### Rendering and UI baseline
 
 Every audio lesson includes the same rendering and UI foundation so the
-focus stays on the audio. This baseline is **not optional**:
+focus stays on the audio. This baseline is **not optional**.
 
-| Feature | Implementation | Reference skill |
+**Use `forge_scene.h`** — one `forge_scene_init()` call provides all of
+the following. See the `forge-scene-renderer` skill for the full API.
+
+| Feature | Provided by `forge_scene.h` | Original skill reference |
 |---|---|---|
 | Blinn-Phong lighting | Per-material ambient + diffuse + specular | `forge-blinn-phong-materials` |
 | Procedural grid floor | Anti-aliased shader grid on XZ plane | `forge-shader-grid` |
-| Shadow map | Single directional shadow map | `forge-cascaded-shadow-maps` (1 cascade) |
+| Shadow map | Single directional shadow map | `forge-cascaded-shadow-maps` |
+| Sky gradient | Procedural sky background | `forge-procedural-sky` |
 | Camera controls | WASD + mouse look with delta time | `forge-camera-and-input` |
-| Depth buffer | D16_UNORM or D32_FLOAT with depth testing | `forge-depth-and-3d` |
+| Depth buffer | Depth testing with appropriate format | `forge-depth-and-3d` |
 | sRGB swapchain | SDR_LINEAR for correct gamma | `forge-sdl-gpu-setup` |
-| Procedural geometry | All shapes from `forge_shapes.h` | `forge-procedural-geometry` |
 | Forge UI panel | Immediate-mode controls for audio parameters | `forge-ui-rendering` |
+| Procedural geometry | All shapes from `forge_shapes.h` | `forge-procedural-geometry` |
 | Capture support | Screenshot via forge_capture.h | `dev-add-screenshot` |
 
 ### Audio-specific visual elements

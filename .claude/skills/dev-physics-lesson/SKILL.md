@@ -67,15 +67,12 @@ lessons/physics/NN-topic-name/
   CMakeLists.txt
   README.md
   assets/
-  shaders/
-    scene.vert.hlsl
-    scene.frag.hlsl
-    grid.vert.hlsl
-    grid.frag.hlsl
-    shadow.vert.hlsl
-    shadow.frag.hlsl
-    compiled/
 ```
+
+Baseline rendering shaders (shadow, scene, grid, sky, UI) are provided by
+`forge_scene.h` — no per-lesson copies needed. If the lesson introduces a
+topic-specific shader (e.g. a debug visualization pass), add a `shaders/`
+subdirectory for those files only.
 
 ### 3. Design and implement the physics library code
 
@@ -327,21 +324,21 @@ A focused C program that simulates a physics scenario and renders it in
 real time using SDL GPU. Physics lessons are **interactive 3D applications**
 with full rendering — not console programs.
 
-**Every physics lesson MUST include these rendering features:**
+**MANDATORY: Use `forge_scene.h` for the rendering baseline.** The scene
+library provides Blinn-Phong lighting, shadow mapping, grid floor, sky
+gradient, FPS camera, and UI in a single `forge_scene_init()` call. This
+eliminates hundreds of lines of rendering boilerplate and lets the lesson
+focus on physics. See the `forge-scene-renderer` skill for the full API.
 
-1. **Blinn-Phong lighting** — Ambient + diffuse + specular shading so objects
-   look three-dimensional. Use the `forge-blinn-phong-materials` skill pattern.
-2. **Procedural grid floor** — Anti-aliased shader grid on the XZ plane for
-   spatial reference. Use the `forge-shader-grid` skill pattern.
-3. **Directional shadow map** — A single shadow map from the directional light
-   so objects cast shadows on the ground and each other. Use a simplified
-   version of the `forge-cascaded-shadow-maps` skill (one cascade is enough
-   for physics demos — the scene is typically small). Use front-face culling
-   and depth bias in the shadow pipeline.
-4. **First-person camera** — WASD + mouse look with delta time. Use the
-   `forge-camera-and-input` skill pattern.
-5. **Capture support** — `forge_capture.h` integration for screenshots and GIF
-   capture via `scripts/capture_lesson.py`.
+**The rendering baseline (provided by `forge_scene.h`):**
+
+1. **Blinn-Phong lighting** — Per-material ambient + diffuse + specular
+2. **Procedural grid floor** — Anti-aliased shader grid on XZ plane
+3. **Directional shadow map** — Single shadow map with PCF
+4. **Sky gradient** — Procedural sky background
+5. **First-person camera** — WASD + mouse look with delta time
+6. **UI system** — Immediate-mode forge UI for controls
+7. **Capture support** — `forge_capture.h` integration (when `FORGE_CAPTURE` defined)
 
 **Physics simulation requirements:**
 
@@ -456,122 +453,111 @@ forge_shapes_free(&box);
 #include "physics/forge_physics.h"
 #include "shapes/forge_shapes.h"
 
-/* Capture infrastructure (compiled only with -DFORGE_CAPTURE=ON) */
-#ifdef FORGE_CAPTURE
-#include "capture/forge_capture.h"
-#endif
-
-/* Shader bytecode headers */
-#include "shaders/compiled/scene_vert_spirv.h"
-#include "shaders/compiled/scene_vert_dxil.h"
-#include "shaders/compiled/scene_frag_spirv.h"
-#include "shaders/compiled/scene_frag_dxil.h"
-#include "shaders/compiled/grid_vert_spirv.h"
-#include "shaders/compiled/grid_vert_dxil.h"
-#include "shaders/compiled/grid_frag_spirv.h"
-#include "shaders/compiled/grid_frag_dxil.h"
-#include "shaders/compiled/shadow_vert_spirv.h"
-#include "shaders/compiled/shadow_vert_dxil.h"
-#include "shaders/compiled/shadow_frag_spirv.h"
-#include "shaders/compiled/shadow_frag_dxil.h"
+#define FORGE_SCENE_IMPLEMENTATION
+#include "scene/forge_scene.h"
 
 /* ── Constants ────────────────────────────────────────────────────── */
 
-#define WINDOW_WIDTH   1280
-#define WINDOW_HEIGHT  720
 #define PHYSICS_DT     (1.0f / 60.0f)
-#define SHADOW_MAP_SIZE 2048
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
-typedef struct SceneVertex {
-    vec3 position;
-    vec3 normal;
-} SceneVertex;
-
-typedef struct VertUniforms {
-    mat4 mvp;
-    mat4 model;
-    mat4 light_vp;  /* for shadow map lookup */
-} VertUniforms;
-
-typedef struct FragUniforms {
-    float mat_ambient[4];
-    float mat_diffuse[4];
-    float mat_specular[4];  /* rgb + shininess in w */
-    float light_dir[4];
-    float eye_pos[4];
-    float shadow_texel_size[4]; /* xy = 1/shadow_map_size, zw unused */
-} FragUniforms;
-
 typedef struct app_state {
-    SDL_Window    *window;
-    SDL_GPUDevice *device;
+    ForgeScene scene;  /* rendering, camera, shadow map, grid, sky, UI */
 
-    /* Pipelines */
-    SDL_GPUGraphicsPipeline *scene_pipeline;
-    SDL_GPUGraphicsPipeline *grid_pipeline;
-    SDL_GPUGraphicsPipeline *shadow_pipeline;
-
-    /* GPU resources */
-    SDL_GPUBuffer  *sphere_vb, *sphere_ib;
-    SDL_GPUBuffer  *box_vb, *box_ib;
-    SDL_GPUBuffer  *grid_vb, *grid_ib;
-    SDL_GPUTexture *depth_tex;
-    SDL_GPUTexture *shadow_map;
-    SDL_GPUSampler *shadow_sampler;
+    /* GPU resources — app-owned geometry */
+    SDL_GPUBuffer *sphere_vb, *sphere_ib;
+    SDL_GPUBuffer *box_vb, *box_ib;
     int sphere_index_count, box_index_count;
 
-    /* Camera */
-    vec3  cam_position;
-    float cam_yaw, cam_pitch;
-    bool  mouse_captured;
-
-    /* Timing */
-    Uint64 last_ticks;
-    float  accumulator;
-    float  sim_time;
-    bool   paused;
-    bool   slow_motion;
+    /* Timing / simulation control */
+    float accumulator;   /* fixed-timestep accumulator (seconds)       */
+    float sim_time;      /* total simulated time (seconds)             */
+    bool  paused;        /* true = physics frozen, camera still works  */
+    bool  slow_motion;   /* true = half-speed simulation               */
 
     /* Physics state — lesson-specific */
     /* ForgePhysicsParticle particles[N]; */
     /* ... */
-
-#ifdef FORGE_CAPTURE
-    ForgeCapture capture;
-#endif
 } app_state;
 ```
 
-### 5. Create shaders
+**Init pattern:**
 
-Physics lessons need three shader pairs:
+```c
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
+{
+    app_state *state = SDL_calloc(1, sizeof(*state));
+    if (!state) return SDL_APP_FAILURE;
+    *appstate = state;
 
-**a) Scene shaders** (`scene.vert.hlsl`, `scene.frag.hlsl`)
+    ForgeSceneConfig cfg = forge_scene_default_config("Physics NN — Topic");
+    cfg.cam_start_pos = vec3_create(0.0f, 4.0f, 12.0f);
+    cfg.font_path = "assets/fonts/liberation_mono/LiberationMono-Regular.ttf";
 
-- Vertex: transform position by MVP, compute world position/normal, compute
-  shadow-map UV via light VP matrix
-- Fragment: Blinn-Phong lighting with material uniforms + shadow map sampling
-  (PCF 3x3 for soft shadows)
+    if (!forge_scene_init(&state->scene, &cfg, argc, argv))
+        return SDL_APP_FAILURE;
 
-**b) Grid shaders** (`grid.vert.hlsl`, `grid.frag.hlsl`)
+    /* Generate and upload shapes (see forge_shapes.h) ... */
+    return SDL_APP_CONTINUE;
+}
+```
 
-- Use the `forge-shader-grid` skill pattern exactly
-- Grid should also receive shadows from scene objects
+**Iterate pattern:**
 
-**c) Shadow shaders** (`shadow.vert.hlsl`, `shadow.frag.hlsl`)
+```c
+SDL_AppResult SDL_AppIterate(void *appstate)
+{
+    app_state *state = appstate;
+    ForgeScene *s = &state->scene;
 
-- Vertex: transform by light VP matrix only
-- Fragment: empty (depth-only pass). The fragment shader can be a minimal
-  passthrough or even just output nothing — the depth write is automatic.
-  Some backends require a fragment shader to be bound, so always include one.
+    if (!forge_scene_begin_frame(s)) return SDL_APP_CONTINUE;
+    float dt = forge_scene_dt(s);
 
-**Compile shaders** using the project script:
+    /* Fixed-timestep physics */
+    if (!state->paused) {
+        float step_dt = state->slow_motion ? dt * 0.5f : dt;
+        state->accumulator += step_dt;
+        while (state->accumulator >= PHYSICS_DT) {
+            physics_step(state, PHYSICS_DT);
+            state->accumulator -= PHYSICS_DT;
+        }
+    }
+
+    /* Shadow pass */
+    forge_scene_begin_shadow_pass(s);
+    /* forge_scene_draw_shadow_mesh(s, vb, ib, count, model); */
+    forge_scene_end_shadow_pass(s);
+
+    /* Main pass */
+    forge_scene_begin_main_pass(s);
+    /* forge_scene_draw_mesh(s, vb, ib, count, model, color); */
+    forge_scene_draw_grid(s);
+    forge_scene_end_main_pass(s);
+
+    /* UI pass (optional) */
+    float mx, my;
+    Uint32 buttons = SDL_GetMouseState(&mx, &my);
+    forge_scene_begin_ui(s, mx, my, (buttons & SDL_BUTTON_LMASK) != 0);
+    /* forge_ui_* calls ... */
+    forge_scene_end_ui(s);
+
+    return forge_scene_end_frame(s);
+}
+```
+
+### 5. Shaders
+
+The baseline shaders (scene, grid, shadow, sky, UI) are compiled into
+`forge_scene.h` — no per-lesson copies needed. If the lesson introduces a
+topic-specific shader (e.g. a debug visualization or force-vector overlay),
+add those files to `shaders/` and compile them:
 
 ```bash
 python scripts/compile_shaders.py physics/NN-topic-name
 ```
+
+Most physics lessons need no lesson-specific shaders at all.
 
 ### 6. Create `CMakeLists.txt`
 
@@ -585,7 +571,7 @@ if(FORGE_CAPTURE)
     target_compile_definitions(NN-topic-name PRIVATE FORGE_CAPTURE)
 endif()
 
-# Copy SDL3 DLL next to executable (Windows)
+# Copy SDL3 DLL and font asset next to executable
 if(TARGET SDL3::SDL3-shared)
     add_custom_command(TARGET NN-topic-name POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -593,6 +579,14 @@ if(TARGET SDL3::SDL3-shared)
             $<TARGET_FILE_DIR:NN-topic-name>
     )
 endif()
+
+add_custom_command(TARGET NN-topic-name POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:NN-topic-name>/assets/fonts/liberation_mono
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/assets/fonts/liberation_mono/LiberationMono-Regular.ttf
+        $<TARGET_FILE_DIR:NN-topic-name>/assets/fonts/liberation_mono/
+)
 ```
 
 ### 7. Create `README.md`
@@ -736,10 +730,10 @@ build\lessons\physics\NN-topic-name\Debug\NN-topic-name.exe
   [Physics Lesson NN](../../physics/NN-topic/) for this concept in action"
 - **Update physics lesson README**: List related lessons in "Where it's used"
 
-### 10. Build, compile shaders, and test
+### 10. Build and test
 
 ```bash
-# Compile shaders
+# Compile lesson-specific shaders (skip if lesson has no shaders/ directory)
 python scripts/compile_shaders.py physics/NN-topic-name
 
 # Build
@@ -853,17 +847,22 @@ Physics lessons do **not** cover:
 
 Every physics lesson includes the same rendering foundation so the focus
 stays on the physics. This baseline is **not optional** — it ensures
-consistent visual quality across the track:
+consistent visual quality across the track.
 
-| Feature | Implementation | Reference skill |
+**Use `forge_scene.h`** — one `forge_scene_init()` call provides all of
+the following. See the `forge-scene-renderer` skill for the full API.
+
+| Feature | Provided by `forge_scene.h` | Original skill reference |
 |---|---|---|
 | Blinn-Phong lighting | Per-material ambient + diffuse + specular | `forge-blinn-phong-materials` |
 | Procedural grid floor | Anti-aliased shader grid on XZ plane | `forge-shader-grid` |
-| Shadow map | Single directional shadow map with PCF | `forge-cascaded-shadow-maps` (1 cascade) |
+| Shadow map | Single directional shadow map with PCF | `forge-cascaded-shadow-maps` |
+| Sky gradient | Procedural sky background | `forge-procedural-sky` |
 | Camera controls | WASD + mouse look with delta time | `forge-camera-and-input` |
-| Depth buffer | D16_UNORM or D32_FLOAT with depth testing | `forge-depth-and-3d` |
+| Depth buffer | Depth testing with appropriate format | `forge-depth-and-3d` |
 | sRGB swapchain | SDR_LINEAR for correct gamma | `forge-sdl-gpu-setup` |
-| Procedural geometry | All shapes from `forge_shapes.h` — no inline generation | `forge-procedural-geometry` |
+| UI system | Immediate-mode forge UI | `forge-ui-rendering` |
+| Procedural geometry | All shapes from `forge_shapes.h` | `forge-procedural-geometry` |
 | Capture support | Screenshot + GIF via forge_capture.h | `dev-add-screenshot` |
 
 ### Simulation controls

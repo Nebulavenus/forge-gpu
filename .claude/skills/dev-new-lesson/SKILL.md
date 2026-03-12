@@ -37,6 +37,11 @@ If any of these are missing, ask the user before proceeding.
 
 4. **Create main.c** using the SDL callback architecture:
    - `#define SDL_MAIN_USE_CALLBACKS 1` before includes
+   - **For lessons that need a full 3D scene** (lighting, shadow map, grid,
+     camera, UI), use `forge_scene.h` instead of building the rendering
+     baseline from scratch. This applies to all GPU lessons from ~lesson 40
+     onward, and to all physics and audio lessons. See the
+     `forge-scene-renderer` skill for the full API.
    - Include required headers:
 
      ```c
@@ -44,6 +49,10 @@ If any of these are missing, ask the user before proceeding.
      #include <SDL3/SDL_main.h>
      #include <stddef.h>    /* offsetof */
      #include "math/forge_math.h"  /* ALWAYS include the math library */
+
+     /* For lessons needing a full 3D scene baseline: */
+     #define FORGE_SCENE_IMPLEMENTATION
+     #include "scene/forge_scene.h"
      ```
 
    - `SDL_AppInit` — create GPU device, window, claim swapchain, allocate app_state

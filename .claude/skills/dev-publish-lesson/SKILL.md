@@ -42,7 +42,11 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] `lessons/<track>/NN-name/main.c` exists
 - [ ] `lessons/<track>/NN-name/CMakeLists.txt` exists
 - [ ] `lessons/<track>/NN-name/README.md` exists
-- [ ] `lessons/<track>/NN-name/shaders/` directory exists with shader source files
+- [ ] `lessons/<track>/NN-name/shaders/` directory exists with shader source
+  files — **unless** the lesson uses `forge_scene.h` for the rendering
+  baseline (physics, audio, and GPU lessons >= 40), in which case baseline
+  shaders are provided by the library and a `shaders/` directory is only
+  needed for lesson-specific shaders
 - [ ] `lessons/<track>/NN-name/assets/screenshot.png` exists
 - [ ] `.claude/skills/<topic>/SKILL.md` exists (the matching skill)
 
@@ -107,6 +111,18 @@ earlier lesson (GPU, engine, or math) that introduced it.
   C language, build system, or debugging topics
 - [ ] Links to math lessons are provided when math concepts appear for the
   first time
+
+### `forge_scene.h` usage (GPU >= 40, physics, audio)
+
+- [ ] **Physics and audio lessons** use `forge_scene.h` for the rendering
+  baseline (`#define FORGE_SCENE_IMPLEMENTATION` + `#include "scene/forge_scene.h"`)
+- [ ] **GPU lessons >= 40** use `forge_scene.h` for the rendering baseline
+- [ ] `app_state` contains `ForgeScene scene` instead of individual pipelines,
+  textures, and samplers for baseline rendering
+- [ ] No duplicate baseline shaders (scene, grid, shadow, sky, UI) in the
+  lesson's `shaders/` directory — those are provided by `forge_scene.h`
+
+Skip this section for GPU lessons < 40, math, engine, UI, and asset lessons.
 
 ### Skill file structure
 
