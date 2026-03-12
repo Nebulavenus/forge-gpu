@@ -80,8 +80,11 @@ AI-assisted building. All tested, documented, and usable in your own projects.
 - **A C compiler** (MSVC, GCC, or Clang)
 - **A GPU** with Vulkan, Direct3D 12, or Metal support
 - **Python 3.10+** (for helper scripts and the asset pipeline)
+- **Git LFS** — binary assets and animated GIFs are stored with Git Large File Storage
 
 SDL3 is fetched automatically — no manual installation required.
+
+After cloning, run `git lfs install && git lfs pull` to fetch large files.
 
 ### Build and run
 

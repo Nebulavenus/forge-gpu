@@ -1,18 +1,21 @@
 ---
 name: dev-add-screenshot
-description: Capture a screenshot for a forge-gpu lesson and update its README
+description: Capture a screenshot or animated GIF for a forge-gpu lesson and update its README
 argument-hint: "[lesson-path]"
 disable-model-invocation: false
 ---
 
-Capture a screenshot (PNG) from a lesson executable and embed it in the
-lesson's README.
+Capture a screenshot (PNG) or animated GIF from a lesson executable and
+embed it in the lesson's README.
 
 ## When to use
 
 - After creating or updating a GPU lesson
 - When a lesson README has a `<!-- TODO: screenshot -->` placeholder
 - When the visual output of a lesson has changed
+- **Use GIF mode for animated lessons** — any lesson with motion, animation,
+  or time-varying output (uniforms, particles, physics, etc.) should use an
+  animated GIF instead of a static screenshot
 
 ## How it works
 
@@ -43,8 +46,11 @@ cmake -B build -DFORGE_CAPTURE=ON
 # 2. Build the lesson (use a Task agent with model: "haiku")
 cmake --build build --config Debug --target <target-name>
 
-# 3. Capture a static screenshot
+# 3a. Capture a static screenshot
 python scripts/capture_lesson.py lessons/gpu/<lesson-dir>
+
+# 3b. OR capture an animated GIF (for lessons with motion/animation)
+python scripts/capture_lesson.py lessons/gpu/<lesson-dir> --gif
 ```
 
 ## Steps
@@ -82,13 +88,31 @@ cmake --build build --config Debug --target <target-name>
 
 ### 5. Run the capture script
 
+**Static screenshot** (for lessons with no animation):
+
 ```bash
 python scripts/capture_lesson.py lessons/gpu/<lesson-dir>
 ```
 
+**Animated GIF** (for lessons with motion, animation, or time-varying output):
+
+```bash
+python scripts/capture_lesson.py lessons/gpu/<lesson-dir> --gif
+```
+
+The GIF captures 120 frames at 30 fps by default (4 seconds). Adjust with
+`--gif-frames N` and `--gif-fps N`. Pillow assembles the frames — it is
+already installed in the project environment.
+
+**When to use GIF vs screenshot:** If the lesson has any animation or motion
+(uniforms changing over time, particles, physics, camera movement), use
+`--gif`. Static scenes (hello window, first triangle, texture display) use
+a screenshot.
+
 ### 6. Verify the output
 
-- Check that `lessons/gpu/<lesson-dir>/assets/screenshot.png` exists
+- **Screenshot:** Check that `lessons/gpu/<lesson-dir>/assets/screenshot.png` exists
+- **GIF:** Check that `lessons/gpu/<lesson-dir>/assets/animation.gif` exists
 - Verify the README was updated (TODO placeholder replaced with image markdown)
 
 ### 7. Report to the user
@@ -232,10 +256,14 @@ and the lavapipe ICD file are available. No flag needed.
 | `--no-update-readme` | off | Skip README placeholder replacement |
 | `--build` | auto | Force rebuild before capturing |
 | `--headless` | auto | Use lavapipe + Xvfb (auto-detected when no `DISPLAY`) |
+| `--gif` | off | Capture an animated GIF instead of a screenshot |
+| `--gif-frames N` | 120 | Number of frames to capture for GIF |
+| `--gif-fps N` | 30 | Playback frame rate for the GIF |
 
 ## Output locations
 
 - Screenshots: `lessons/gpu/<name>/assets/screenshot.png`
+- Animated GIFs: `lessons/gpu/<name>/assets/animation.gif`
 
 ## Expected dimensions
 

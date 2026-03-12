@@ -24,7 +24,7 @@ portable C interface.
 |---|--------|-------|
 | [<img src="01-hello-window/assets/screenshot.png" width="480" alt="Hello Window"/>](01-hello-window/) | [**01 — Hello Window**](01-hello-window/) | GPU device, swapchain, and render pass — get a window on screen |
 | [<img src="02-first-triangle/assets/screenshot.png" width="480" alt="First Triangle"/>](02-first-triangle/) | [**02 — First Triangle**](02-first-triangle/) | Vertex buffers, HLSL shaders, and a graphics pipeline — your first draw call |
-| [<img src="03-uniforms-and-motion/assets/screenshot.png" width="480" alt="Uniforms & Motion"/>](03-uniforms-and-motion/) | [**03 — Uniforms & Motion**](03-uniforms-and-motion/) | Pass per-frame data to shaders with push uniforms and animate geometry |
+| [<img src="03-uniforms-and-motion/assets/animation.gif" width="480" alt="Uniforms & Motion"/>](03-uniforms-and-motion/) | [**03 — Uniforms & Motion**](03-uniforms-and-motion/) | Pass per-frame data to shaders with push uniforms and animate geometry |
 | [<img src="04-textures-and-samplers/assets/screenshot.png" width="480" alt="Textures & Samplers"/>](04-textures-and-samplers/) | [**04 — Textures & Samplers**](04-textures-and-samplers/) | Load images, create GPU textures and samplers, draw textured geometry with index buffers |
 | [<img src="05-mipmaps/assets/screenshot.png" width="480" alt="Mipmaps"/>](05-mipmaps/) | [**05 — Mipmaps**](05-mipmaps/) | Generate mip chains, configure trilinear filtering, and control LOD |
 | [<img src="06-depth-and-3d/assets/screenshot.png" width="480" alt="Depth & 3D"/>](06-depth-and-3d/) | [**06 — Depth & 3D**](06-depth-and-3d/) | Depth buffer, model-view-projection pipeline, back-face culling, and window resize |
