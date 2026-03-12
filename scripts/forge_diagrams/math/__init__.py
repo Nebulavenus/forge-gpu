@@ -10,6 +10,8 @@ __all__ = [
     "diagram_coord_ndc",
     "diagram_coord_screen_space",
     "diagram_bilinear_interpolation",
+    "diagram_aliasing_problem",
+    "diagram_lod_walkthrough",
     "diagram_mip_chain",
     "diagram_trilinear_interpolation",
     "diagram_matrix_basis_vectors",
@@ -63,7 +65,12 @@ from .lesson_02 import (
     diagram_coord_world_space,
 )
 from .lesson_03 import diagram_bilinear_interpolation
-from .lesson_04 import diagram_mip_chain, diagram_trilinear_interpolation
+from .lesson_04 import (
+    diagram_aliasing_problem,
+    diagram_lod_walkthrough,
+    diagram_mip_chain,
+    diagram_trilinear_interpolation,
+)
 from .lesson_05 import diagram_matrix_basis_vectors
 from .lesson_06 import diagram_frustum, diagram_similar_triangles
 from .lesson_09 import diagram_camera_basis_vectors, diagram_view_transform

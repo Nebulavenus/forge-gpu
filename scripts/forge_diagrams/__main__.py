@@ -179,6 +179,7 @@ from .gpu import (
     diagram_xray_depth_fail,
 )
 from .math import (
+    diagram_aliasing_problem,
     diagram_arc_length,
     diagram_avalanche_matrix,
     diagram_bernstein_basis,
@@ -213,6 +214,7 @@ from .math import (
     diagram_integration_area,
     diagram_lacunarity_persistence,
     diagram_lerp_foundation,
+    diagram_lod_walkthrough,
     diagram_matrix_basis_vectors,
     diagram_mip_chain,
     diagram_noise_comparison,
@@ -380,6 +382,8 @@ DIAGRAMS = {
     "math/04": [
         ("mip_chain.png", diagram_mip_chain),
         ("trilinear_interpolation.png", diagram_trilinear_interpolation),
+        ("aliasing_problem.png", diagram_aliasing_problem),
+        ("lod_walkthrough.png", diagram_lod_walkthrough),
     ],
     "math/05": [
         ("matrix_basis_vectors.png", diagram_matrix_basis_vectors),

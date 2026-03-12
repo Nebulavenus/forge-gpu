@@ -3,7 +3,7 @@
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Rectangle
+from matplotlib.patches import FancyBboxPatch, Rectangle
 
 from .._common import STYLE, save, setup_axes
 
@@ -388,6 +388,277 @@ def diagram_trilinear_interpolation():
     )
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, "math/04-mipmaps-and-lod", "trilinear_interpolation.png")
+
+
+# ---------------------------------------------------------------------------
+# math/04-mipmaps-and-lod — aliasing_problem.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_aliasing_problem():
+    """Show why aliasing happens when many texels map to one pixel."""
+    text_fx = [pe.withStroke(linewidth=3, foreground=STYLE["bg"])]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5), facecolor=STYLE["bg"])
+
+    # --- Left panel: Near — 1 texel per pixel ---
+    setup_axes(ax1, xlim=(-0.2, 4.2), ylim=(-0.8, 4.5), grid=False)
+    ax1.set_aspect("equal")
+
+    # 4x4 checkerboard (texels)
+    for row in range(4):
+        for col in range(4):
+            shade = STYLE["accent1"] if (row + col) % 2 == 0 else STYLE["surface"]
+            alpha = 0.6 if shade == STYLE["accent1"] else 0.3
+            r = Rectangle(
+                (col, row),
+                1,
+                1,
+                facecolor=shade,
+                edgecolor=STYLE["grid"],
+                linewidth=0.5,
+                alpha=alpha,
+                zorder=1,
+            )
+            ax1.add_patch(r)
+
+    # 4x4 dashed pixel grid (same size)
+    for row in range(4):
+        for col in range(4):
+            r = Rectangle(
+                (col, row),
+                1,
+                1,
+                fill=False,
+                edgecolor=STYLE["warn"],
+                linewidth=1.2,
+                linestyle="--",
+                zorder=3,
+            )
+            ax1.add_patch(r)
+
+    ax1.set_title(
+        "Near the Camera",
+        color=STYLE["text"],
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+    ax1.text(
+        2.0,
+        -0.55,
+        "Each pixel samples ~1 texel \u2014 accurate",
+        color=STYLE["text"],
+        fontsize=9,
+        ha="center",
+        fontweight="bold",
+        path_effects=text_fx,
+    )
+
+    # --- Right panel: Far — many texels per pixel ---
+    setup_axes(ax2, xlim=(-0.2, 4.2), ylim=(-0.8, 4.5), grid=False)
+    ax2.set_aspect("equal")
+
+    # 16x16 checkerboard (texels)
+    cell = 4.0 / 16.0
+    for row in range(16):
+        for col in range(16):
+            shade = STYLE["accent1"] if (row + col) % 2 == 0 else STYLE["surface"]
+            alpha = 0.6 if shade == STYLE["accent1"] else 0.3
+            r = Rectangle(
+                (col * cell, row * cell),
+                cell,
+                cell,
+                facecolor=shade,
+                edgecolor=STYLE["grid"],
+                linewidth=0.2,
+                alpha=alpha,
+                zorder=1,
+            )
+            ax2.add_patch(r)
+
+    # 4x4 dashed pixel grid
+    pixel_size = 1.0
+    for row in range(4):
+        for col in range(4):
+            r = Rectangle(
+                (col * pixel_size, row * pixel_size),
+                pixel_size,
+                pixel_size,
+                fill=False,
+                edgecolor=STYLE["warn"],
+                linewidth=1.2,
+                linestyle="--",
+                zorder=3,
+            )
+            ax2.add_patch(r)
+
+    # Highlight one pixel cell (row 1, col 2)
+    hl_col, hl_row = 2, 1
+    highlight = Rectangle(
+        (hl_col * pixel_size, hl_row * pixel_size),
+        pixel_size,
+        pixel_size,
+        facecolor=STYLE["warn"],
+        edgecolor=STYLE["warn"],
+        linewidth=2.5,
+        alpha=0.15,
+        zorder=4,
+    )
+    ax2.add_patch(highlight)
+    highlight_border = Rectangle(
+        (hl_col * pixel_size, hl_row * pixel_size),
+        pixel_size,
+        pixel_size,
+        fill=False,
+        edgecolor=STYLE["warn"],
+        linewidth=2.5,
+        zorder=5,
+    )
+    ax2.add_patch(highlight_border)
+
+    # Annotation pointing to highlighted cell
+    ax2.annotate(
+        "This pixel covers 16 texels\nbut only samples a few",
+        xy=(hl_col * pixel_size + pixel_size / 2, hl_row * pixel_size + pixel_size / 2),
+        xytext=(3.4, 3.8),
+        color=STYLE["warn"],
+        fontsize=8,
+        fontweight="bold",
+        ha="center",
+        arrowprops={
+            "arrowstyle": "->",
+            "color": STYLE["warn"],
+            "lw": 1.5,
+        },
+        path_effects=text_fx,
+        zorder=6,
+    )
+
+    ax2.set_title(
+        "Far from Camera",
+        color=STYLE["text"],
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+
+    fig.suptitle(
+        "The Aliasing Problem: Texels vs Pixels",
+        color=STYLE["text"],
+        fontsize=14,
+        fontweight="bold",
+        y=1.0,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    save(fig, "math/04-mipmaps-and-lod", "aliasing_problem.png")
+
+
+# ---------------------------------------------------------------------------
+# math/04-mipmaps-and-lod — lod_walkthrough.png
+# ---------------------------------------------------------------------------
+
+
+def diagram_lod_walkthrough():
+    """Trace a complete pixel through the LOD pipeline with concrete numbers."""
+    text_fx = [pe.withStroke(linewidth=3, foreground=STYLE["bg"])]
+
+    fig = plt.figure(figsize=(11, 4), facecolor=STYLE["bg"])
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(STYLE["bg"])
+    ax.set_xlim(-0.5, 11.0)
+    ax.set_ylim(-1.5, 2.5)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_aspect("equal")
+
+    # Box definitions: (center_x, label, subtitle, border_color)
+    boxes = [
+        (1.0, "Pixel UV\n(0.60, 0.40)", "Next pixel: (0.65, 0.40)", STYLE["accent1"]),
+        (3.2, "UV Derivative\nddx = 0.05", "\u0394u per pixel", STYLE["accent2"]),
+        (5.4, "Footprint\n0.05 \u00d7 256 = 12.8\ntexels/pixel", "", STYLE["accent3"]),
+        (7.6, "LOD\nlog\u2082(12.8) = 3.68", "", STYLE["accent4"]),
+        (
+            9.8,
+            "Sample\n32% mip 3 (32\u00d732)\n68% mip 4 (16\u00d716)",
+            "",
+            STYLE["warn"],
+        ),
+    ]
+
+    box_w = 1.8
+    box_h = 1.6
+
+    for cx, label, subtitle, border_color in boxes:
+        # Box
+        box = FancyBboxPatch(
+            (cx - box_w / 2, -box_h / 2),
+            box_w,
+            box_h,
+            boxstyle="round,pad=0.1",
+            facecolor=STYLE["surface"],
+            edgecolor=border_color,
+            linewidth=2,
+            zorder=2,
+        )
+        ax.add_patch(box)
+
+        # Label text
+        ax.text(
+            cx,
+            0.0 if not subtitle else 0.1,
+            label,
+            color=STYLE["text"],
+            fontsize=8,
+            ha="center",
+            va="center",
+            fontweight="bold",
+            path_effects=text_fx,
+            zorder=3,
+        )
+
+        # Subtitle below the box
+        if subtitle:
+            ax.text(
+                cx,
+                -box_h / 2 - 0.2,
+                subtitle,
+                color=STYLE["text_dim"],
+                fontsize=7,
+                ha="center",
+                va="top",
+                path_effects=text_fx,
+                zorder=3,
+            )
+
+    # Arrows between boxes
+    for i in range(len(boxes) - 1):
+        x_start = boxes[i][0] + box_w / 2 + 0.02
+        x_end = boxes[i + 1][0] - box_w / 2 - 0.02
+        ax.annotate(
+            "",
+            xy=(x_end, 0),
+            xytext=(x_start, 0),
+            arrowprops={
+                "arrowstyle": "->",
+                "color": STYLE["text_dim"],
+                "lw": 1.5,
+            },
+            zorder=1,
+        )
+
+    ax.set_title(
+        "LOD Selection: Tracing One Pixel Through the Pipeline",
+        color=STYLE["text"],
+        fontsize=13,
+        fontweight="bold",
+        pad=12,
+    )
+
+    fig.tight_layout()
+    save(fig, "math/04-mipmaps-and-lod", "lod_walkthrough.png")
 
 
 # ---------------------------------------------------------------------------
