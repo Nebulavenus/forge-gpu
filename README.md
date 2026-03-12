@@ -41,15 +41,15 @@ Indirect Drawing
 
 See the [GPU track](lessons/gpu/) for all lessons.
 
-## What you'll learn
+## Topics covered
 
-By the end of the GPU track you'll have built programs covering shadow
+Following along the GPU track you can build programs covering shadow
 mapping, screen-space reflections, bloom, SSAO, skeletal animation, stencil
-portals, and deferred decals — all in plain C on SDL3 GPU. Each lesson
-introduces a new concept and builds on the previous ones.
+portals, and deferred decal. Lessons aim to
+introduce a new concept, sometimes more, building on the previous ones.
 
-Other tracks fill in the foundations: the math behind every transform and
-lighting calculation, how CMake and C actually work, how to build a UI system
+Other tracks fill in the foundations: the math behind transform and
+lighting calculations, how CMake and C work, how to build a UI system
 from font parsing to interactive controls, and how to process raw assets into
 GPU-ready formats.
 
@@ -82,7 +82,7 @@ AI-assisted building. All tested, documented, and usable in your own projects.
 - **Python 3.10+** (for helper scripts and the asset pipeline)
 - **Git LFS** — binary assets and animated GIFs are stored with Git Large File Storage
 
-SDL3 is fetched automatically — no manual installation required.
+SDL3 is fetched as part of running the build.
 
 After cloning, run `git lfs install && git lfs pull` to fetch large files.
 
@@ -104,9 +104,9 @@ common errors from the ground up.
 
 ## Lesson tracks
 
-Each track focuses on one area. They cross-reference each other — GPU
-lessons link to the math behind them, engine lessons explain the build
-system everything runs on.
+Tracks are specialized to specific topics. They cross-reference each other — GPU
+lessons link to helpful math lessons, engine lessons explain the build
+system and other relevant topics.
 
 - **[GPU](lessons/gpu/)** — Rendering from a triangle to shadow maps, reflections, animation, and stencil effects
 - **[Math](lessons/math/)** — Vectors, matrices, quaternions, projections, color spaces, noise, Bézier curves
@@ -134,4 +134,4 @@ While building:
 
 ## License
 
-[zlib](LICENSE) — the same license as SDL.
+[zlib](LICENSE) — This project uses same license used by SDL.
