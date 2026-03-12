@@ -7,10 +7,13 @@ lives in its own subdirectory and has a detailed README with API reference.
 
 | Module      | Header(s)                  | Purpose                                     |
 |-------------|----------------------------|---------------------------------------------|
+| `arena/`    | `forge_arena.h`            | Arena (bump) allocator                      |
 | `math/`     | `forge_math.h`             | Vectors, matrices, quaternions, transforms  |
 | `obj/`      | `forge_obj.h`              | Wavefront OBJ file parser                   |
 | `gltf/`     | `forge_gltf.h`             | glTF 2.0 scene/material/hierarchy parser    |
+| `scene/`    | `forge_scene.h`            | Scene renderer (shadows, lighting, camera)  |
 | `ui/`       | `forge_ui.h`, `forge_ui_ctx.h`, `forge_ui_theme.h`, `forge_ui_window.h` | TTF parsing, font atlas, text layout, immediate-mode UI |
+| `audio/`    | `forge_audio.h`            | Audio playback, mixing, spatial audio, DSP  |
 | `physics/`  | `forge_physics.h`          | Particle dynamics, rigid bodies, collisions |
 | `shapes/`   | `forge_shapes.h`           | Procedural geometry (sphere, torus, etc.)   |
 | `raster/`   | `forge_raster.h`           | CPU triangle rasterizer (edge functions)    |

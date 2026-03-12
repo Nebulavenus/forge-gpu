@@ -8,8 +8,9 @@ invoked as subprocesses by the Python pipeline.
 
 | Tool   | Description                                              |
 |--------|----------------------------------------------------------|
-| `mesh/` | Mesh processing: deduplication, optimization, tangent generation, LOD simplification. Reads OBJ/glTF, writes `.fmesh` binary format. |
-| `anim/` | Animation processing: glTF animation extraction and conversion. |
+| `mesh/`  | Mesh processing: deduplication, optimization, tangent generation, LOD simplification. Reads OBJ/glTF, writes `.fmesh` binary format. |
+| `anim/`  | Animation processing: glTF animation extraction and conversion. |
+| `scene/` | Scene hierarchy extraction: reads glTF/GLB, writes `.fscene` binary with node tree and `.meta.json` sidecar. |
 
 ## Building
 
@@ -18,4 +19,5 @@ Tools are built as part of the main CMake project:
 ```bash
 cmake --build build --target forge_mesh_tool
 cmake --build build --target forge_anim_tool
+cmake --build build --target forge_scene_tool
 ```

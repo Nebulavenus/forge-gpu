@@ -115,6 +115,7 @@ The plugin is discovered automatically — no core code changes needed.
 | `texture` | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp` | Resize, format convert, mipmaps, metadata |
 | `mesh` | `.obj`, `.gltf`, `.glb` | Scaffold (no-op) |
 | `animation` | `.gltf`, `.glb` | Animation extraction and keyframe processing |
+| `scene` | `.gltf`, `.glb` | Scene hierarchy extraction via `forge-scene-tool` |
 
 The texture plugin was built in Lesson 02.  Mesh optimization with
 meshoptimizer and MikkTSpace is added in Lesson 03.  The animation plugin
@@ -195,6 +196,7 @@ The pipeline is built incrementally across the
 | [06 — Loading Processed Assets](../lessons/assets/06-loading-processed-assets/) | Header-only C loader for .fmesh and pipeline-processed textures |
 | [07 — Materials](../lessons/assets/07-materials/) | PBR material support, .fmat sidecars, multi-primitive meshes |
 | [08 — Animations](../lessons/assets/08-animations/) | glTF animation parsing and runtime keyframe evaluation |
+| [09 — Scene Hierarchy](../lessons/assets/09-scene-hierarchy/) | Node tree extraction, `.fscene` binary format, `forge-scene-tool` |
 
 ## License
 

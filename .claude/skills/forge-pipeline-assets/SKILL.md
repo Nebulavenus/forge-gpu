@@ -200,6 +200,6 @@ uint32_t select_lod(float distance, uint32_t max_lods) {
 
 ## Reference
 
-- [Lesson 39 — Pipeline-Processed Assets](lessons/gpu/39-pipeline-processed-assets/)
-- [Asset Lesson 06 — Loading Processed Assets](lessons/assets/06-loading-processed-assets/)
-- [Asset Lesson 07 — Materials](lessons/assets/07-materials/)
+- [Lesson 39 — Pipeline-Processed Assets](../../../lessons/gpu/39-pipeline-processed-assets/)
+- [Asset Lesson 06 — Loading Processed Assets](../../../lessons/assets/06-loading-processed-assets/)
+- [Asset Lesson 07 — Materials](../../../lessons/assets/07-materials/)

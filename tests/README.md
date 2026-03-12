@@ -7,11 +7,13 @@ corresponds to a module in `common/` or `pipeline/`.
 
 | Directory    | Language | What it tests                          |
 |-------------|----------|----------------------------------------|
+| `arena/`    | C        | Arena allocator (`common/arena/`)      |
 | `gltf/`     | C        | glTF 2.0 parser (`common/gltf/`)       |
 | `math/`     | C        | Math library (`common/math/`)          |
 | `obj/`      | C        | OBJ parser (`common/obj/`)             |
 | `physics/`  | C        | Physics library (`common/physics/`)    |
 | `raster/`   | C        | CPU rasterizer (`common/raster/`)      |
+| `scene/`    | C        | Scene renderer (`common/scene/`)       |
 | `shapes/`   | C        | Procedural geometry (`common/shapes/`) |
 | `ui/`       | C        | UI library (`common/ui/`)              |
 | `pipeline/` | Python   | Asset pipeline (`pipeline/`)           |

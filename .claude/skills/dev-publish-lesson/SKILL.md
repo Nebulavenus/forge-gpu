@@ -39,11 +39,11 @@ Before committing, verify the lesson has all required pieces from the
 
 ### Required files
 
-- [ ] `lessons/NN-name/main.c` exists
-- [ ] `lessons/NN-name/CMakeLists.txt` exists
-- [ ] `lessons/NN-name/README.md` exists
-- [ ] `lessons/NN-name/shaders/` directory exists with shader source files
-- [ ] `lessons/NN-name/assets/screenshot.png` exists
+- [ ] `lessons/<track>/NN-name/main.c` exists
+- [ ] `lessons/<track>/NN-name/CMakeLists.txt` exists
+- [ ] `lessons/<track>/NN-name/README.md` exists
+- [ ] `lessons/<track>/NN-name/shaders/` directory exists with shader source files
+- [ ] `lessons/<track>/NN-name/assets/screenshot.png` exists
 - [ ] `.claude/skills/<topic>/SKILL.md` exists (the matching skill)
 
 ### main.c structure
@@ -68,7 +68,7 @@ Before committing, verify the lesson has all required pieces from the
 
 ### Integration with project
 
-- [ ] Root `CMakeLists.txt` includes `add_subdirectory(lessons/NN-name)`
+- [ ] Root `CMakeLists.txt` includes `add_subdirectory(lessons/<track>/NN-name)`
 - [ ] Root `README.md` has a table row for this lesson with link and description
 - [ ] Root `PLAN.md` has the lesson checked off in completed section
 
@@ -158,7 +158,7 @@ git diff --cached
 Stage all lesson-related files:
 
 ```bash
-git add lessons/NN-name/
+git add lessons/<track>/NN-name/
 git add .claude/skills/<topic>/
 git add CMakeLists.txt PLAN.md README.md
 ```
@@ -207,9 +207,9 @@ New APIs covered:
 - SDL_AnotherAPI — what it does
 
 Files added:
-- lessons/NN-name/main.c — [brief description]
-- lessons/NN-name/README.md — lesson documentation
-- lessons/NN-name/shaders/*.hlsl — [shader description]
+- lessons/<track>/NN-name/main.c — [brief description]
+- lessons/<track>/NN-name/README.md — lesson documentation
+- lessons/<track>/NN-name/shaders/*.hlsl — [shader description]
 - .claude/skills/<topic>/SKILL.md — reusable skill for [concept]
 
 Also updates root README.md, PLAN.md, and CMakeLists.txt to integrate
@@ -244,7 +244,7 @@ This lesson shows how to [what the user builds], introducing:
 - **[API/concept 2]** — [why it matters]
 
 ## What's included
-- ✅ Lesson NN implementation (`lessons/NN-name/`)
+- ✅ Lesson NN implementation (`lessons/<track>/NN-name/`)
 - ✅ HLSL shaders with SPIRV/DXIL bytecodes
 - ✅ Comprehensive README with exercises
 - ✅ Reusable skill (`.claude/skills/<topic>/`)

@@ -159,6 +159,7 @@ forge-gpu/
 │   ├── assets/            # Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── pipeline/              # Asset pipeline library (Python, pip-installable)
+│   ├── __init__.py        # Package marker
 │   ├── __main__.py        # CLI entry point
 │   ├── config.py          # TOML configuration loader
 │   ├── plugin.py          # Plugin base class, registry, discovery
@@ -179,7 +180,7 @@ forge-gpu/
 │   ├── capture/           # Screenshot/GIF capture utility
 │   ├── scene/             # Scene renderer library (shadow map, Blinn-Phong, grid, sky, camera, UI)
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, audio, shapes, scene, pipeline)
+├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, shapes, scene, pipeline)
 ├── scripts/
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
 │       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_39.py)
@@ -191,7 +192,10 @@ forge-gpu/
 │       └── physics/       # Physics lesson diagrams
 ├── tools/
 │   ├── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
-│   └── anim/              # C animation processing tool (glTF animation extraction)
+│   ├── anim/              # C animation processing tool (glTF animation extraction)
+│   └── scene/             # C scene hierarchy extraction tool (glTF to .fscene)
+├── assets/                # Shared assets (fonts, models, skyboxes)
+├── docs/                  # Project documentation and plans
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
 └── third_party/           # Dependencies (SDL3, etc.)
 ```

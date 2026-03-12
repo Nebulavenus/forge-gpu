@@ -31,6 +31,7 @@ forge_diagrams/
 ├── math/              Math lesson diagrams
 ├── ui/                UI lesson diagrams
 ├── engine/            Engine lesson diagrams
+├── audio/             Audio lesson diagrams
 ├── assets/            Asset pipeline lesson diagrams
 └── physics/           Physics lesson diagrams
 ```
