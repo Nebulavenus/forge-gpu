@@ -9,12 +9,58 @@ and [Lesson 06 (Reading Error Messages)](../lessons/engine/06-reading-error-mess
 ## Prerequisites
 
 - **CMake 3.24+**
+- **Ninja** — the build system used by CI and recommended for local builds
 - **A C compiler** — MSVC on Windows, GCC or Clang on Linux/macOS
 - **A GPU** with Vulkan, Direct3D 12, or Metal support
 - **Python 3.10+** — for helper scripts and the asset pipeline
 
 SDL3 is fetched automatically via CMake's FetchContent — no manual
 installation required.
+
+### Installing Python
+
+**Windows:** Download from [python.org](https://www.python.org/downloads/).
+Check "Add python.exe to PATH" during installation. Alternatively:
+
+```bash
+winget install Python.Python.3.12
+```
+
+**Linux:**
+
+```bash
+sudo apt install python3 python3-pip    # Debian / Ubuntu
+sudo dnf install python3 python3-pip    # Fedora
+```
+
+**macOS:** Python 3 is included with Xcode Command Line Tools. Or:
+
+```bash
+brew install python
+```
+
+### Installing Ninja
+
+**Windows:** Visual Studio 2022+ includes Ninja. If you open a
+"Developer Command Prompt" or "Developer PowerShell", Ninja is already on
+your PATH. You can also install it standalone:
+
+```bash
+winget install Ninja-build.Ninja
+```
+
+**Linux:**
+
+```bash
+sudo apt install ninja-build    # Debian / Ubuntu
+sudo dnf install ninja-build    # Fedora
+```
+
+**macOS:**
+
+```bash
+brew install ninja
+```
 
 ### Verify your environment
 
@@ -35,12 +81,17 @@ python scripts/setup.py --build
 ## Building
 
 ```bash
-cmake -B build
-cmake --build build --config Debug
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
 ```
 
 The first build takes longer because CMake downloads and builds SDL3. Subsequent
 builds are incremental.
+
+Using Ninja (instead of the Visual Studio generator on Windows or Make on
+Linux) produces a `compile_commands.json` in the build directory, which
+gives editors and language servers (clangd, VS Code, etc.) full knowledge
+of include paths and compiler flags.
 
 ### Common issues
 
@@ -54,13 +105,21 @@ is free) with the "Desktop development with C++" workload. On Linux,
 `sudo apt install build-essential` (Debian/Ubuntu) or equivalent. On macOS,
 `xcode-select --install`.
 
-**"Generator not found" or build errors on Windows** — CMake defaults to
-the Visual Studio generator on Windows. If you have multiple compilers, you
-can specify one explicitly:
+**"Ninja not found"** — See the [Installing Ninja](#installing-ninja) section
+above. On Windows, make sure you're in a Developer Command Prompt (which adds
+Ninja to PATH), or install it via `winget`.
+
+**"Generator not found" or build errors on Windows** — If Ninja is not
+available, CMake can fall back to the Visual Studio generator:
 
 ```bash
 cmake -B build -G "Visual Studio 17 2022"
+cmake --build build --config Debug
 ```
+
+Note: the Visual Studio generator is multi-config, so you pass `--config Debug`
+at build time instead of `-DCMAKE_BUILD_TYPE=Debug` at configure time. It does
+not produce `compile_commands.json`.
 
 **FetchContent download fails** — Check your internet connection. If you're
 behind a proxy, configure git: `git config --global http.proxy http://proxy:port`.
@@ -83,11 +142,11 @@ python scripts/run.py                     # list all lessons
 You can also run executables directly:
 
 ```bash
-# Windows
-build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
+# Ninja (single-config) — executable is directly in the lesson folder
+build/lessons/gpu/01-hello-window/01-hello-window
 
-# Linux / macOS
-./build/lessons/gpu/01-hello-window/01-hello-window
+# Visual Studio (multi-config) — executable is in a Debug/ subfolder
+build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
 ```
 
 ## Shader compilation
@@ -134,14 +193,13 @@ git submodule update --init
 Run all C tests:
 
 ```bash
-cd build
-ctest -C Debug --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
 Run a specific test suite:
 
 ```bash
-cmake --build build --config Debug --target test_math
+cmake --build build --target test_math
 ctest --test-dir build -R math
 ```
 
