@@ -67,7 +67,8 @@ Header-only C libraries
 [rasterization](common/raster/),
 [pipeline loader](common/pipeline/),
 [capture](common/capture/),
-[audio](common/audio/)),
+[audio](common/audio/),
+[scene](common/scene/)),
 a [Python asset pipeline](pipeline/), and
 [Claude Code skills](.claude/skills/) that encode lesson patterns for
 AI-assisted building. All tested, documented, and usable in your own projects.

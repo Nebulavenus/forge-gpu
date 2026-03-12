@@ -177,8 +177,9 @@ forge-gpu/
 │   ├── shapes/            # Procedural geometry (sphere, torus, capsule, etc.)
 │   ├── raster/            # CPU triangle rasterizer (edge function method)
 │   ├── capture/           # Screenshot/GIF capture utility
+│   ├── scene/             # Scene renderer library (shadow map, Blinn-Phong, grid, sky, camera, UI)
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, shapes, pipeline)
+├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, audio, shapes, scene, pipeline)
 ├── scripts/
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
 │       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_39.py)

@@ -61,6 +61,7 @@ portable C interface.
 | [<img src="37-3d-picking/assets/screenshot.png" width="480" alt="3D Picking"/>](37-3d-picking/) | [**37 — 3D Picking**](37-3d-picking/) | GPU-based object picking with color-ID and stencil-ID methods, plus selection highlighting |
 | [<img src="38-indirect-drawing/assets/screenshot.png" width="480" alt="Indirect Drawing"/>](38-indirect-drawing/) | [**38 — Indirect Drawing**](38-indirect-drawing/) | GPU-driven draw calls with compute frustum culling, indirect argument buffers, and dual-camera debug visualization |
 | [<img src="39-pipeline-processed-assets/assets/screenshot.png" width="480" alt="Pipeline-Processed Assets"/>](39-pipeline-processed-assets/) | [**39 — Pipeline-Processed Assets**](39-pipeline-processed-assets/) | Load .fmesh binary meshes and pipeline-processed textures, compare against raw glTF loading in split-screen |
+| [<img src="40-scene-renderer/assets/screenshot.png" width="480" alt="Scene Renderer"/>](40-scene-renderer/) | [**40 — Scene Renderer**](40-scene-renderer/) | Reusable header-only library packaging the full rendering stack — shadow mapping, Blinn-Phong, grid, sky, camera, and UI in one init call |
 
 ## Prerequisites
 
@@ -232,6 +233,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-3d-picking`** — GPU-based object selection with color-ID and stencil-ID methods
 - **`/forge-indirect-drawing`** — GPU-driven indirect draw calls with compute frustum culling
 - **`/forge-pipeline-assets`** — Load .fmesh binary meshes and pipeline-processed textures
+- **`/forge-scene-renderer`** — Complete 3D scene with forge_scene.h — shadows, lighting, grid, sky, camera, UI
 
 **How to use:**
 
