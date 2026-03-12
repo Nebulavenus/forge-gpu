@@ -5,7 +5,7 @@ understand what they're building. Plain C, standalone lessons, tracks covering
 rendering, math, engine fundamentals, UI, physics, and asset pipelines.
 
 The lessons build on shared, header-only C libraries, a Python asset
-pipeline, and reusable [AI skills](.claude/skills/).
+pipeline, and reusable AI skills.
 SDL3 GPU handles the platform abstraction over Vulkan, D3D12, and Metal.
 
 <table>
