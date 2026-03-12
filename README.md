@@ -46,7 +46,7 @@ See the [GPU track](lessons/gpu/) for all lessons.
 
 Following along the GPU track you can build programs covering shadow
 mapping, screen-space reflections, bloom, SSAO, skeletal animation, stencil
-portals, and deferred decal. Lessons aim to
+portals, and deferred decals. Lessons aim to
 introduce a new concept, sometimes more, building on the previous ones.
 
 Other tracks fill in the foundations: math topics including transform and
