@@ -4,10 +4,9 @@ A guide to real-time graphics with SDL3's GPU API for programmers who want to
 understand what they're building. Plain C, standalone lessons, tracks covering
 rendering, math, engine fundamentals, UI, physics, and asset pipelines.
 
-The lessons build on shared, header-only C libraries and a Python asset
-pipeline — all tested, documented, and yours to use in your own projects.
+The lessons build on shared, header-only C libraries, a Python asset
+pipeline, and reusable [AI skills](.claude/skills/).
 SDL3 GPU handles the platform abstraction over Vulkan, D3D12, and Metal.
-You focus on the graphics.
 
 <table>
 <tr>
