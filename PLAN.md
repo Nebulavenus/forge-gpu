@@ -126,9 +126,15 @@ full plan. Summary:
 - [ ] Update skills (dev-new-lesson, dev-physics-lesson, dev-final-pass, dev-publish-lesson) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 
+### Skinned Animation Pipeline
+
+- [x] **Asset Lesson 10 — Animation Loader and Per-Clip Export** — Runtime `.fanim` loader in `forge_pipeline.h`; per-clip export via `--split` flag in `forge-anim-tool`; `.fanims` stub manifest; animation pipeline plugin defaults to split mode
+- [x] **Asset Lesson 11 — Animation Manifest and Named Lookup** — `.fanims` JSON manifest with loop flags, tags, and named clip lookup; `forge_pipeline_load_anim_set`, `forge_pipeline_find_clip`, and `forge_pipeline_load_clip` API; manifest generation with tags in `forge-anim-tool`
+- [x] **Asset Lesson 12 — Skin Data and Skinned Vertices** — `.fskin` binary format for joint hierarchies and inverse bind matrices; skinned vertex support in `.fmesh` v3; `forge_pipeline_load_skins` API; mesh tool and scene tool extensions
+
 ### Web Frontend
 
-- [ ] **Asset Lesson 10 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
-- [ ] **Asset Lesson 11 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
-- [ ] **Asset Lesson 12 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
-- [ ] **Asset Lesson 13 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+- [ ] **Asset Lesson 13 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
+- [ ] **Asset Lesson 14 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
+- [ ] **Asset Lesson 15 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
+- [ ] **Asset Lesson 16 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern

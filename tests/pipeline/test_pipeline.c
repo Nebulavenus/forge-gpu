@@ -318,9 +318,9 @@ static void cleanup_file(const char *path)
 
 static void test_load_mesh_no_tangents(void)
 {
+    TEST("load_mesh_no_tangents");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_no_tan.fmesh");
-    TEST("load_mesh_no_tangents");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 1));
 
@@ -348,9 +348,9 @@ static void test_load_mesh_no_tangents(void)
 
 static void test_load_mesh_with_tangents(void)
 {
+    TEST("load_mesh_with_tangents");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_tan.fmesh");
-    TEST("load_mesh_with_tangents");
 
     ASSERT_TRUE(write_test_fmesh(path, true, 1));
 
@@ -377,9 +377,9 @@ static void test_load_mesh_with_tangents(void)
 
 static void test_load_mesh_multiple_lods(void)
 {
+    TEST("load_mesh_multiple_lods");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_multi_lod.fmesh");
-    TEST("load_mesh_multiple_lods");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 3));
 
@@ -406,9 +406,9 @@ static void test_load_mesh_multiple_lods(void)
 
 static void test_mesh_lod_accessor(void)
 {
+    TEST("mesh_lod_accessor");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_lod_acc.fmesh");
-    TEST("mesh_lod_accessor");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 3));
 
@@ -427,9 +427,9 @@ static void test_mesh_lod_accessor(void)
 
 static void test_mesh_lod_indices(void)
 {
+    TEST("mesh_lod_indices");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_lod_idx.fmesh");
-    TEST("mesh_lod_indices");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 3));
 
@@ -452,9 +452,9 @@ static void test_mesh_lod_indices(void)
 
 static void test_mesh_vertex_data_integrity(void)
 {
+    TEST("mesh_vertex_data_integrity");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_vdata.fmesh");
-    TEST("mesh_vertex_data_integrity");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 1));
 
@@ -508,18 +508,18 @@ static void test_load_mesh_null_path(void)
 
 static void test_load_mesh_null_mesh(void)
 {
+    TEST("load_mesh_null_mesh");
     char path[512];
     temp_path(path, sizeof(path), "whatever.fmesh");
-    TEST("load_mesh_null_mesh");
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, NULL));
     END_TEST();
 }
 
 static void test_load_mesh_nonexistent(void)
 {
+    TEST("load_mesh_nonexistent");
     char path[512];
     temp_path(path, sizeof(path), "nonexistent_xyz_42.fmesh");
-    TEST("load_mesh_nonexistent");
     ForgePipelineMesh mesh;
     ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
     END_TEST();
@@ -527,9 +527,9 @@ static void test_load_mesh_nonexistent(void)
 
 static void test_load_mesh_invalid_magic(void)
 {
+    TEST("load_mesh_invalid_magic");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_bad_magic.fmesh");
-    TEST("load_mesh_invalid_magic");
 
     ASSERT_TRUE(write_broken_fmesh(path, "NOPE", 2, 3, 32, 1, 0, 128));
 
@@ -542,9 +542,9 @@ static void test_load_mesh_invalid_magic(void)
 
 static void test_load_mesh_invalid_version(void)
 {
+    TEST("load_mesh_invalid_version");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_bad_ver.fmesh");
-    TEST("load_mesh_invalid_version");
 
     ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 99, 3, 32, 1, 0, 128));
 
@@ -557,9 +557,9 @@ static void test_load_mesh_invalid_version(void)
 
 static void test_load_mesh_invalid_stride(void)
 {
+    TEST("load_mesh_invalid_stride");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_bad_stride.fmesh");
-    TEST("load_mesh_invalid_stride");
 
     ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 64, 1, 0, 128));
 
@@ -572,9 +572,9 @@ static void test_load_mesh_invalid_stride(void)
 
 static void test_load_mesh_truncated_header(void)
 {
+    TEST("load_mesh_truncated_header");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_trunc_hdr.fmesh");
-    TEST("load_mesh_truncated_header");
 
     /* Write only 16 bytes — less than the 32-byte header */
     ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 32, 1, 0, 16));
@@ -588,9 +588,9 @@ static void test_load_mesh_truncated_header(void)
 
 static void test_load_mesh_truncated_data(void)
 {
+    TEST("load_mesh_truncated_data");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_trunc_data.fmesh");
-    TEST("load_mesh_truncated_data");
 
     /* Write a valid header with 3 vertices, stride 32, 1 LOD, 1 submesh,
      * but only 48 bytes total — not enough for LOD-submesh table + vertex data.
@@ -607,9 +607,9 @@ static void test_load_mesh_truncated_data(void)
 
 static void test_load_mesh_too_many_lods(void)
 {
+    TEST("load_mesh_too_many_lods");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_too_many_lods.fmesh");
-    TEST("load_mesh_too_many_lods");
 
     /* lod_count = 99, exceeds FORGE_PIPELINE_MAX_LODS (8) */
     ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 32, 99, 0, 128));
@@ -623,9 +623,9 @@ static void test_load_mesh_too_many_lods(void)
 
 static void test_load_mesh_stride_tan_without_flag(void)
 {
+    TEST("load_mesh_stride_tan_without_flag");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_stride_noflag.fmesh");
-    TEST("load_mesh_stride_tan_without_flag");
 
     /* stride = 48 (tangent stride) but flags = 0 (no TANGENTS flag) */
     ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 2, 3, 48, 1, 0, 256));
@@ -639,9 +639,9 @@ static void test_load_mesh_stride_tan_without_flag(void)
 
 static void test_load_mesh_v1_rejected(void)
 {
+    TEST("load_mesh_v1_rejected");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_v1_reject.fmesh");
-    TEST("load_mesh_v1_rejected");
 
     /* Write a v1 header — should be rejected since we only support v2 */
     ASSERT_TRUE(write_broken_fmesh(path, "FMSH", 1, 3, 32, 1, 0, 128));
@@ -668,9 +668,9 @@ static void test_free_mesh_null(void)
 
 static void test_free_mesh_zeroes(void)
 {
+    TEST("free_mesh_zeroes");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_free_zero.fmesh");
-    TEST("free_mesh_zeroes");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 1));
 
@@ -706,11 +706,11 @@ static void test_free_mesh_zeroes(void)
 
 static void test_has_tangents(void)
 {
+    TEST("has_tangents");
     char path_tan[512];
     char path_no_tan[512];
     temp_path(path_tan, sizeof(path_tan), "test_pipeline_has_tan.fmesh");
     temp_path(path_no_tan, sizeof(path_no_tan), "test_pipeline_no_tan2.fmesh");
-    TEST("has_tangents");
 
     /* With tangents */
     ASSERT_TRUE(write_test_fmesh(path_tan, true, 1));
@@ -736,9 +736,9 @@ static void test_has_tangents(void)
 
 static void test_lod_index_count_out_of_range(void)
 {
+    TEST("lod_index_count_out_of_range");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_lod_oor.fmesh");
-    TEST("lod_index_count_out_of_range");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 2));
 
@@ -763,9 +763,9 @@ static void test_lod_index_count_out_of_range(void)
 
 static void test_lod_indices_out_of_range(void)
 {
+    TEST("lod_indices_out_of_range");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_lod_ptr_oor.fmesh");
-    TEST("lod_indices_out_of_range");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 2));
 
@@ -880,11 +880,11 @@ static bool write_meta_json(const char *path, uint32_t width, uint32_t height,
 
 static void test_load_texture_single_mip(void)
 {
+    TEST("load_texture_single_mip");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_tex.meta.json");
-    TEST("load_texture_single_mip");
 
     /* Write a fake image and a meta.json with no mip array */
     ASSERT_TRUE(write_fake_image(img_path));
@@ -911,6 +911,7 @@ static void test_load_texture_single_mip(void)
 
 static void test_load_texture_with_mip_levels(void)
 {
+    TEST("load_texture_with_mip_levels");
     char img_path[512];
     char meta_path[512];
     char mip1_path[512];
@@ -919,7 +920,6 @@ static void test_load_texture_with_mip_levels(void)
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_texm.meta.json");
     temp_path(mip1_path, sizeof(mip1_path), "test_pipeline_texm_mip1.png");
     temp_path(mip2_path, sizeof(mip2_path), "test_pipeline_texm_mip2.png");
-    TEST("load_texture_with_mip_levels");
 
     /* Write fake images for mip 0, 1, and 2 */
     ASSERT_TRUE(write_fake_image(img_path));
@@ -960,11 +960,11 @@ static void test_load_texture_with_mip_levels(void)
 
 static void test_load_texture_format_default(void)
 {
+    TEST("load_texture_format_default");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_texfmt.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_texfmt.meta.json");
-    TEST("load_texture_format_default");
 
     ASSERT_TRUE(write_fake_image(img_path));
     ASSERT_TRUE(write_meta_json(meta_path,
@@ -996,20 +996,20 @@ static void test_load_texture_null_path(void)
 
 static void test_load_texture_null_tex(void)
 {
+    TEST("load_texture_null_tex");
     char path[512];
     temp_path(path, sizeof(path), "whatever.png");
-    TEST("load_texture_null_tex");
     ASSERT_TRUE(!forge_pipeline_load_texture(path, NULL));
     END_TEST();
 }
 
 static void test_load_texture_no_meta(void)
 {
+    TEST("load_texture_no_meta");
     char img_path[512];
     char meta_cleanup_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex_nometa.png");
     temp_path(meta_cleanup_path, sizeof(meta_cleanup_path), "test_pipeline_tex_nometa.meta.json");
-    TEST("load_texture_no_meta");
 
     /* Image exists but no .meta.json sidecar */
     ASSERT_TRUE(write_fake_image(img_path));
@@ -1026,11 +1026,11 @@ static void test_load_texture_no_meta(void)
 
 static void test_load_texture_invalid_json(void)
 {
+    TEST("load_texture_invalid_json");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex_badjson.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_tex_badjson.meta.json");
-    TEST("load_texture_invalid_json");
 
     ASSERT_TRUE(write_fake_image(img_path));
 
@@ -1048,11 +1048,11 @@ static void test_load_texture_invalid_json(void)
 
 static void test_load_texture_missing_dimensions(void)
 {
+    TEST("load_texture_missing_dimensions");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex_nodim.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_tex_nodim.meta.json");
-    TEST("load_texture_missing_dimensions");
 
     ASSERT_TRUE(write_fake_image(img_path));
 
@@ -1070,13 +1070,13 @@ static void test_load_texture_missing_dimensions(void)
 
 static void test_load_texture_missing_mip_file(void)
 {
+    TEST("load_texture_missing_mip_file");
     char img_path[512];
     char meta_path[512];
     char mip1_cleanup_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex_mipmiss.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_tex_mipmiss.meta.json");
     temp_path(mip1_cleanup_path, sizeof(mip1_cleanup_path), "test_pipeline_tex_mipmiss_mip1.png");
-    TEST("load_texture_missing_mip_file");
 
     /* Write mip 0 but not mip 1 */
     ASSERT_TRUE(write_fake_image(img_path));
@@ -1094,11 +1094,11 @@ static void test_load_texture_missing_mip_file(void)
 
 static void test_load_texture_zero_dimensions(void)
 {
+    TEST("load_texture_zero_dimensions");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex_zerodim.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_tex_zerodim.meta.json");
-    TEST("load_texture_zero_dimensions");
 
     ASSERT_TRUE(write_fake_image(img_path));
 
@@ -1116,11 +1116,11 @@ static void test_load_texture_zero_dimensions(void)
 
 static void test_load_texture_negative_dimensions(void)
 {
+    TEST("load_texture_negative_dimensions");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_tex_negdim.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_tex_negdim.meta.json");
-    TEST("load_texture_negative_dimensions");
 
     ASSERT_TRUE(write_fake_image(img_path));
 
@@ -1150,11 +1150,11 @@ static void test_free_texture_null(void)
 
 static void test_free_texture_zeroes(void)
 {
+    TEST("free_texture_zeroes");
     char img_path[512];
     char meta_path[512];
     temp_path(img_path, sizeof(img_path), "test_pipeline_texfree.png");
     temp_path(meta_path, sizeof(meta_path), "test_pipeline_texfree.meta.json");
-    TEST("free_texture_zeroes");
 
     ASSERT_TRUE(write_fake_image(img_path));
     ASSERT_TRUE(write_meta_json(meta_path,
@@ -1183,9 +1183,9 @@ static void test_free_texture_zeroes(void)
 
 static void test_submesh_single(void)
 {
+    TEST("submesh_single");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_sub1.fmesh");
-    TEST("submesh_single");
 
     ASSERT_TRUE(write_test_fmesh(path, false, 1));
 
@@ -1212,9 +1212,9 @@ static void test_submesh_single(void)
 
 static void test_submesh_multiple(void)
 {
+    TEST("submesh_multiple");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_sub3.fmesh");
-    TEST("submesh_multiple");
 
     ASSERT_TRUE(write_test_fmesh_ex(path, false, 2, 3));
 
@@ -1304,9 +1304,9 @@ static bool write_test_fmat(const char *path)
 
 static void test_load_materials_valid(void)
 {
+    TEST("load_materials_valid");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_mats.fmat");
-    TEST("load_materials_valid");
 
     ASSERT_TRUE(write_test_fmat(path));
 
@@ -1352,9 +1352,9 @@ static void test_load_materials_valid(void)
 
 static void test_load_materials_null_args(void)
 {
+    TEST("load_materials_null_args");
     char path[512];
     temp_path(path, sizeof(path), "whatever.fmat");
-    TEST("load_materials_null_args");
 
     ForgePipelineMaterialSet set;
     ASSERT_TRUE(!forge_pipeline_load_materials(NULL, &set));
@@ -1365,9 +1365,9 @@ static void test_load_materials_null_args(void)
 
 static void test_load_materials_bad_version(void)
 {
+    TEST("load_materials_bad_version");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_mats_badver.fmat");
-    TEST("load_materials_bad_version");
 
     const char *json = "{ \"version\": 99, \"materials\": [] }";
     ASSERT_TRUE(SDL_SaveFile(path, json, SDL_strlen(json)));
@@ -1381,9 +1381,9 @@ static void test_load_materials_bad_version(void)
 
 static void test_load_materials_defaults(void)
 {
+    TEST("load_materials_defaults");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_mats_defaults.fmat");
-    TEST("load_materials_defaults");
 
     /* Minimal material — omit most optional fields */
     const char *json =
@@ -1421,9 +1421,9 @@ static void test_load_materials_defaults(void)
 
 static void test_load_materials_malformed_arrays(void)
 {
+    TEST("load_materials_malformed_arrays");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_mats_malformed.fmat");
-    TEST("load_materials_malformed_arrays");
 
     /* base_color_factor has a string element and emissive_factor has only 2
      * elements.  The loader must not crash — non-numeric elements fall back
@@ -1469,9 +1469,9 @@ static void test_load_materials_malformed_arrays(void)
 
 static void test_load_materials_non_numeric_factors(void)
 {
+    TEST("load_materials_non_numeric_factors");
     char path[512];
     temp_path(path, sizeof(path), "test_pipeline_mats_nonnumeric.fmat");
-    TEST("load_materials_non_numeric_factors");
 
     /* All numeric factor fields set to strings or null — must not crash,
      * must fall back to spec defaults. */
@@ -2018,7 +2018,7 @@ static void test_load_scene_invalid_magic(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2042,7 +2042,7 @@ static void test_load_scene_invalid_version(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2066,7 +2066,7 @@ static void test_load_scene_version_zero(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2089,7 +2089,7 @@ static void test_load_scene_truncated_header(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2116,7 +2116,7 @@ static void test_load_scene_truncated_node_data(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2143,7 +2143,7 @@ static void test_load_scene_node_count_exceeds_max(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2170,7 +2170,7 @@ static void test_load_scene_root_count_exceeds_max(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2197,7 +2197,7 @@ static void test_load_scene_mesh_count_exceeds_max(void)
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
     SDL_WriteIO(io, buf, sizeof(buf));
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2228,8 +2228,8 @@ static void test_load_scene_root_index_out_of_range(void)
 
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
-    SDL_WriteIO(io, buf, size);
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, size) == size);
+    ASSERT_TRUE(SDL_CloseIO(io));
     SDL_free(buf);
 
     ForgePipelineScene scene;
@@ -2303,8 +2303,8 @@ static void test_load_scene_first_child_overflow(void)
 
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
-    SDL_WriteIO(io, buf, size);
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, size) == size);
+    ASSERT_TRUE(SDL_CloseIO(io));
     SDL_free(buf);
 
     ForgePipelineScene scene;
@@ -2341,8 +2341,8 @@ static void test_load_scene_truncated_children(void)
 
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
-    SDL_WriteIO(io, buf, size);
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, size) == size);
+    ASSERT_TRUE(SDL_CloseIO(io));
     SDL_free(buf);
 
     ForgePipelineScene scene;
@@ -2361,7 +2361,7 @@ static void test_load_scene_empty_file(void)
 
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_CloseIO(io));
 
     ForgePipelineScene scene;
     ASSERT_TRUE(!forge_pipeline_load_scene(path, &scene));
@@ -2789,8 +2789,8 @@ static void test_load_scene_trs_roundtrip(void)
 
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     ASSERT_NOT_NULL(io);
-    SDL_WriteIO(io, buf, size);
-    SDL_CloseIO(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, size) == size);
+    ASSERT_TRUE(SDL_CloseIO(io));
     SDL_free(buf);
 
     ForgePipelineScene scene;
@@ -2950,6 +2950,2175 @@ static void test_scene_get_mesh_empty(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Animation loader tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Write a test .fanim file with the given parameters.
+ * Creates a valid binary with `clip_count` clips, each having
+ * `sampler_count` samplers (translation, 2 keyframes) and
+ * `channel_count` channels. */
+static bool write_test_fanim(const char *path, int clip_count,
+                              int sampler_count, int channel_count)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) return false;
+
+    bool ok = true;
+
+    /* Header */
+    ok = ok && (SDL_WriteIO(io, "FANM", 4) == 4);
+    {
+        uint8_t buf[4];
+        write_u32(buf, 0, 1); /* version */
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+        write_u32(buf, 0, (uint32_t)clip_count);
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    }
+
+    int ci;
+    for (ci = 0; ci < clip_count; ci++) {
+        uint8_t buf[4];
+
+        /* Name: 64 bytes */
+        char name[64];
+        SDL_memset(name, 0, sizeof(name));
+        SDL_snprintf(name, sizeof(name), "clip_%d", ci);
+        ok = ok && (SDL_WriteIO(io, name, 64) == 64);
+
+        /* Duration */
+        write_f32(buf, 0, 1.0f + (float)ci);
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+        /* Sampler count */
+        write_u32(buf, 0, (uint32_t)sampler_count);
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+        /* Channel count */
+        write_u32(buf, 0, (uint32_t)channel_count);
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+        /* Samplers */
+        int si;
+        for (si = 0; si < sampler_count; si++) {
+            /* keyframe_count = 2 */
+            write_u32(buf, 0, 2);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+            /* value_components = 3 (translation) */
+            write_u32(buf, 0, 3);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+            /* interpolation = 0 (LINEAR) */
+            write_u32(buf, 0, 0);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+            /* timestamps: 0.0, 1.0 */
+            write_f32(buf, 0, 0.0f);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+            write_f32(buf, 0, 1.0f);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+            /* values: 2 keyframes × 3 components = 6 floats */
+            int vi;
+            for (vi = 0; vi < 6; vi++) {
+                write_f32(buf, 0, (float)vi * 0.5f);
+                ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+            }
+        }
+
+        /* Channels */
+        int chi;
+        for (chi = 0; chi < channel_count; chi++) {
+            /* target_node */
+            write_i32(buf, 0, (int32_t)chi);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+            /* target_path = 0 (translation) */
+            write_u32(buf, 0, 0);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+            /* sampler_index = 0 (first sampler) */
+            write_u32(buf, 0, 0);
+            ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+        }
+    }
+
+    if (!SDL_CloseIO(io)) return false;
+    return ok;
+}
+
+/* Write a .fanim with a rotation sampler (value_components = 4). */
+static bool write_test_fanim_rotation(const char *path)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) return false;
+
+    bool ok = true;
+    uint8_t buf[4];
+
+    /* Header */
+    ok = ok && (SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* 1 clip */
+
+    /* Clip header */
+    char name[64];
+    SDL_memset(name, 0, sizeof(name));
+    SDL_strlcpy(name, "rotate", sizeof(name));
+    ok = ok && (SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 2.0f); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* duration */
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* 1 sampler */
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* 1 channel */
+
+    /* Sampler: rotation, 2 keyframes, LINEAR */
+    write_u32(buf, 0, 2); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* keyframes */
+    write_u32(buf, 0, 4); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* components */
+    write_u32(buf, 0, 0); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* LINEAR */
+
+    /* Timestamps */
+    write_f32(buf, 0, 0.0f); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_f32(buf, 0, 2.0f); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    /* Values: 2 × 4 = 8 floats (identity quaternion → 90° rotation) */
+    float vals[8] = { 0.0f, 0.0f, 0.0f, 1.0f,   /* identity quat */
+                      0.0f, 0.7071f, 0.0f, 0.7071f }; /* 90° Y */
+    int vi;
+    for (vi = 0; vi < 8; vi++) {
+        write_f32(buf, 0, vals[vi]);
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    }
+
+    /* Channel: node 0, rotation, sampler 0 */
+    write_i32(buf, 0, 0); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* ROTATION */
+    write_u32(buf, 0, 0); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    if (!SDL_CloseIO(io)) return false;
+    return ok;
+}
+
+/* Write a .fanim with STEP interpolation. */
+static bool write_test_fanim_step(const char *path)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) return false;
+
+    bool ok = true;
+    uint8_t buf[4];
+
+    ok = ok && (SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    char name[64];
+    SDL_memset(name, 0, sizeof(name));
+    SDL_strlcpy(name, "step_anim", sizeof(name));
+    ok = ok && (SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    /* Sampler: translation, 2 keyframes, STEP */
+    write_u32(buf, 0, 2); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 3); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 1); ok = ok && (SDL_WriteIO(io, buf, 4) == 4); /* STEP */
+
+    write_f32(buf, 0, 0.0f); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_f32(buf, 0, 1.0f); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    int vi;
+    for (vi = 0; vi < 6; vi++) {
+        write_f32(buf, 0, (float)(vi + 1));
+        ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    }
+
+    write_i32(buf, 0, 0); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 0); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 0); ok = ok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    if (!SDL_CloseIO(io)) return false;
+    return ok;
+}
+
+/* ── Animation loading: valid files ─────────────────────────────────────── */
+
+static void test_load_anim_single_clip(void)
+{
+    TEST("load_anim_single_clip — 1 clip, 1 sampler, 1 channel");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_single.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clip_count, 1);
+    ASSERT_TRUE(SDL_strcmp(file.clips[0].name, "clip_0") == 0);
+    ASSERT_FLOAT_EQ(file.clips[0].duration, 1.0f);
+    ASSERT_UINT_EQ(file.clips[0].sampler_count, 1);
+    ASSERT_UINT_EQ(file.clips[0].channel_count, 1);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_rotation_sampler(void)
+{
+    TEST("load_anim_rotation — rotation sampler with 4 components");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_rot.fanim");
+    bool wrote = write_test_fanim_rotation(path);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clips[0].samplers[0].value_components, 4);
+    ASSERT_UINT_EQ(file.clips[0].samplers[0].keyframe_count, 2);
+    ASSERT_UINT_EQ(file.clips[0].channels[0].target_path,
+                   FORGE_PIPELINE_ANIM_ROTATION);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_multi_sampler(void)
+{
+    TEST("load_anim_multi_sampler — clip with 3 samplers");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_multisamp.fanim");
+    bool wrote = write_test_fanim(path, 1, 3, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clips[0].sampler_count, 3);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_multi_channel(void)
+{
+    TEST("load_anim_multi_channel — clip with 3 channels");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_multich.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 3);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clips[0].channel_count, 3);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_multi_clip(void)
+{
+    TEST("load_anim_multi_clip — 3 clips in one file");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_multiclip.fanim");
+    bool wrote = write_test_fanim(path, 3, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clip_count, 3);
+    ASSERT_TRUE(SDL_strcmp(file.clips[0].name, "clip_0") == 0);
+    ASSERT_TRUE(SDL_strcmp(file.clips[1].name, "clip_1") == 0);
+    ASSERT_TRUE(SDL_strcmp(file.clips[2].name, "clip_2") == 0);
+    ASSERT_FLOAT_EQ(file.clips[1].duration, 2.0f);
+    ASSERT_FLOAT_EQ(file.clips[2].duration, 3.0f);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_step_interp(void)
+{
+    TEST("load_anim_step — STEP interpolation roundtrip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_step.fanim");
+    bool wrote = write_test_fanim_step(path);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clips[0].samplers[0].interpolation,
+                   FORGE_PIPELINE_INTERP_STEP);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_name_roundtrip(void)
+{
+    TEST("load_anim_name — clip name roundtrip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_name.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(SDL_strcmp(file.clips[0].name, "clip_0") == 0);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_duration_roundtrip(void)
+{
+    TEST("load_anim_duration — duration roundtrip for multi-clip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_dur.fanim");
+    bool wrote = write_test_fanim(path, 2, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_FLOAT_EQ(file.clips[0].duration, 1.0f);
+    ASSERT_FLOAT_EQ(file.clips[1].duration, 2.0f);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Animation loading: error cases ─────────────────────────────────────── */
+
+static void test_load_anim_null_path(void)
+{
+    TEST("load_anim_null_path");
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(NULL, &file));
+    END_TEST();
+}
+
+static void test_load_anim_null_file(void)
+{
+    TEST("load_anim_null_file");
+    ASSERT_TRUE(!forge_pipeline_load_animation("dummy.fanim", NULL));
+    END_TEST();
+}
+
+static void test_load_anim_both_null(void)
+{
+    TEST("load_anim_both_null");
+    ASSERT_TRUE(!forge_pipeline_load_animation(NULL, NULL));
+    END_TEST();
+}
+
+static void test_load_anim_nonexistent(void)
+{
+    TEST("load_anim_nonexistent");
+    ForgePipelineAnimFile file;
+    char path[512];
+    temp_path(path, sizeof(path), "no_such_file.fanim");
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    END_TEST();
+}
+
+static void test_load_anim_bad_magic(void)
+{
+    TEST("load_anim_bad_magic");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_badmagic.fanim");
+
+    /* Write file with wrong magic */
+    uint8_t buf[12];
+    SDL_memcpy(buf, "XXXX", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 0);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 12) == 12);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_bad_version(void)
+{
+    TEST("load_anim_bad_version");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_badver.fanim");
+
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FANM", 4);
+    write_u32(buf, 4, 99);
+    write_u32(buf, 8, 0);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 12) == 12);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_version_zero(void)
+{
+    TEST("load_anim_version_zero");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_ver0.fanim");
+
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FANM", 4);
+    write_u32(buf, 4, 0);
+    write_u32(buf, 8, 0);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 12) == 12);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_truncated_header(void)
+{
+    TEST("load_anim_truncated_header — file too small for header");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_trunchdr.fanim");
+
+    uint8_t buf[8];
+    SDL_memcpy(buf, "FANM", 4);
+    write_u32(buf, 4, 1);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 8) == 8);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_truncated_clip(void)
+{
+    TEST("load_anim_truncated_clip — header says 1 clip but no clip data");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_truncclip.fanim");
+
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FANM", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 1); /* 1 clip, but no clip data follows */
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 12) == 12);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_truncated_sampler(void)
+{
+    TEST("load_anim_truncated_sampler — clip header ok but sampler data missing");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_truncsamp.fanim");
+
+    /* Write header + clip header (says 1 sampler) but no sampler data */
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* version */
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 clip */
+
+    /* Clip header */
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4); /* duration */
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 sampler */
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4); /* 0 channels */
+    /* No sampler data follows — truncated */
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_truncated_channel(void)
+{
+    TEST("load_anim_truncated_channel — samplers ok but channels truncated");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_truncch.fanim");
+
+    /* Write a complete clip with 0 samplers but 1 channel (no channel data) */
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4); /* 0 samplers */
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 channel — but no data */
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_clip_count_exceeds_max(void)
+{
+    TEST("load_anim_clip_count_exceeds_max");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_maxclips.fanim");
+
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FANM", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, FORGE_PIPELINE_MAX_ANIM_CLIPS + 1);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 12) == 12);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_sampler_count_exceeds_max(void)
+{
+    TEST("load_anim_sampler_count_exceeds_max");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_maxsamp.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, FORGE_PIPELINE_MAX_ANIM_SAMPLERS + 1);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_channel_count_exceeds_max(void)
+{
+    TEST("load_anim_channel_count_exceeds_max");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_maxch.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, FORGE_PIPELINE_MAX_ANIM_CHANNELS + 1);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 4) == 4);
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_channel_sampler_oob(void)
+{
+    TEST("load_anim_channel_sampler_oob — channel references nonexistent sampler");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_choob.fanim");
+
+    /* 1 clip, 1 sampler, 1 channel — channel sampler_index = 5 (out of bounds) */
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 sampler */
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 channel */
+
+    /* Valid sampler */
+    write_u32(buf, 0, 2); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 3); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+    write_f32(buf, 0, 0.0f); SDL_WriteIO(io, buf, 4);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    int vi;
+    for (vi = 0; vi < 6; vi++) {
+        write_f32(buf, 0, 0.0f); SDL_WriteIO(io, buf, 4);
+    }
+
+    /* Channel with sampler_index = 5 (out of bounds) */
+    write_i32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 5); SDL_WriteIO(io, buf, 4); /* OOB */
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Animation data integrity ───────────────────────────────────────────── */
+
+static void test_load_anim_timestamps(void)
+{
+    TEST("load_anim_timestamps — timestamp values roundtrip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_ts.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+
+    ForgePipelineAnimSampler *s = &file.clips[0].samplers[0];
+    ASSERT_FLOAT_EQ(s->timestamps[0], 0.0f);
+    ASSERT_FLOAT_EQ(s->timestamps[1], 1.0f);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_keyframe_values(void)
+{
+    TEST("load_anim_keyframe_values — value array roundtrip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_vals.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+
+    ForgePipelineAnimSampler *s = &file.clips[0].samplers[0];
+    /* Values were written as vi * 0.5f for vi in 0..5 */
+    ASSERT_FLOAT_EQ(s->values[0], 0.0f);
+    ASSERT_FLOAT_EQ(s->values[1], 0.5f);
+    ASSERT_FLOAT_EQ(s->values[2], 1.0f);
+    ASSERT_FLOAT_EQ(s->values[3], 1.5f);
+    ASSERT_FLOAT_EQ(s->values[4], 2.0f);
+    ASSERT_FLOAT_EQ(s->values[5], 2.5f);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_channel_targets(void)
+{
+    TEST("load_anim_channel_targets — target_node and path roundtrip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_targets.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 3);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+
+    ASSERT_INT_EQ(file.clips[0].channels[0].target_node, 0);
+    ASSERT_INT_EQ(file.clips[0].channels[1].target_node, 1);
+    ASSERT_INT_EQ(file.clips[0].channels[2].target_node, 2);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_empty_file(void)
+{
+    TEST("load_anim_empty — 0 clips is valid");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_empty.fanim");
+
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FANM", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 0);
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 12) == 12);
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clip_count, 0);
+    ASSERT_NULL(file.clips);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_zero_keyframes(void)
+{
+    TEST("load_anim_zero_keyframes — sampler with 0 keyframes");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_zerokf.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 0.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 sampler */
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4); /* 0 channels */
+
+    /* Sampler with 0 keyframes */
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4); /* keyframe_count = 0 */
+    write_u32(buf, 0, 3); SDL_WriteIO(io, buf, 4); /* value_components = 3 */
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4); /* LINEAR */
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(file.clips[0].samplers[0].keyframe_count, 0);
+    ASSERT_NULL(file.clips[0].samplers[0].timestamps);
+    ASSERT_NULL(file.clips[0].samplers[0].values);
+
+    forge_pipeline_free_animation(&file);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Animation loading: value validation ────────────────────────────────── */
+
+static void test_load_anim_keyframe_count_exceeds_max(void)
+{
+    TEST("load_anim_keyframe_count_exceeds_max");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_maxkf.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    write_u32(buf, 0, FORGE_PIPELINE_MAX_KEYFRAMES + 1);
+    ASSERT_TRUE(SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 3); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_invalid_interpolation(void)
+{
+    TEST("load_anim_invalid_interpolation — not LINEAR or STEP");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_badinterp.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    write_u32(buf, 0, 2); SDL_WriteIO(io, buf, 4); /* 2 keyframes */
+    write_u32(buf, 0, 3); SDL_WriteIO(io, buf, 4); /* 3 components */
+    write_u32(buf, 0, 99); SDL_WriteIO(io, buf, 4); /* invalid interp */
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_invalid_target_path(void)
+{
+    TEST("load_anim_invalid_target_path — not translation/rotation/scale");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_badpath.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 sampler */
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4); /* 1 channel */
+
+    /* Valid sampler */
+    write_u32(buf, 0, 2); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 3); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4); /* LINEAR */
+    write_f32(buf, 0, 0.0f); SDL_WriteIO(io, buf, 4);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    int vi;
+    for (vi = 0; vi < 6; vi++) {
+        write_f32(buf, 0, 0.0f); SDL_WriteIO(io, buf, 4);
+    }
+
+    /* Channel with invalid target_path = 42 */
+    write_i32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 42); SDL_WriteIO(io, buf, 4); /* invalid path */
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_invalid_value_components(void)
+{
+    TEST("load_anim_invalid_value_components — not 3 or 4");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_badcomp.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    uint8_t buf[4];
+
+    ASSERT_TRUE(SDL_WriteIO(io, "FANM", 4) == 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+
+    char name[64];
+    SDL_memset(name, 0, 64);
+    ASSERT_TRUE(SDL_WriteIO(io, name, 64) == 64);
+    write_f32(buf, 0, 1.0f); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 1); SDL_WriteIO(io, buf, 4);
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    write_u32(buf, 0, 2); SDL_WriteIO(io, buf, 4); /* 2 keyframes */
+    write_u32(buf, 0, 5); SDL_WriteIO(io, buf, 4); /* invalid: 5 components */
+    write_u32(buf, 0, 0); SDL_WriteIO(io, buf, 4);
+
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineAnimFile file;
+    ASSERT_TRUE(!forge_pipeline_load_animation(path, &file));
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Animation free safety ──────────────────────────────────────────────── */
+
+static void test_free_anim_null(void)
+{
+    TEST("free_anim_null — NULL pointer");
+    forge_pipeline_free_animation(NULL);
+    END_TEST();
+}
+
+static void test_free_anim_zeroed(void)
+{
+    TEST("free_anim_zeroed — zero-initialized struct");
+    ForgePipelineAnimFile file;
+    SDL_memset(&file, 0, sizeof(file));
+    forge_pipeline_free_animation(&file);
+    ASSERT_UINT_EQ(file.clip_count, 0);
+    ASSERT_NULL(file.clips);
+    END_TEST();
+}
+
+static void test_free_anim_double(void)
+{
+    TEST("free_anim_double — double free is safe");
+    char path[512];
+    temp_path(path, sizeof(path), "test_anim_dblf.fanim");
+    bool wrote = write_test_fanim(path, 1, 1, 1);
+    ASSERT_TRUE(wrote);
+
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_animation(path, &file);
+    ASSERT_TRUE(loaded);
+    forge_pipeline_free_animation(&file);
+    forge_pipeline_free_animation(&file);
+    ASSERT_NULL(file.clips);
+
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Animation manifest (.fanims) tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Helper: write a .fanims manifest JSON file for testing */
+static bool write_test_fanims(const char *path, const char *json)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("write_test_fanims: SDL_IOFromFile failed for '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+    size_t written = SDL_IOprintf(io, "%s", json);
+    if (written == 0 && SDL_strlen(json) > 0) {
+        SDL_Log("write_test_fanims: SDL_IOprintf failed for '%s': %s",
+                path, SDL_GetError());
+        if (!SDL_CloseIO(io)) {
+            SDL_Log("write_test_fanims: SDL_CloseIO failed for '%s': %s",
+                    path, SDL_GetError());
+        }
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("write_test_fanims: SDL_CloseIO failed for '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+/* ── Valid loading (6 tests) ── */
+
+static void test_load_anim_set_single_clip(void)
+{
+    TEST("load_anim_set_single_clip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_single.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"TestModel\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.5, "
+        "\"loop\": true, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(set.clip_count, 1);
+    ASSERT_TRUE(SDL_strcmp(set.model, "TestModel") == 0);
+    ASSERT_TRUE(SDL_strcmp(set.clips[0].name, "walk") == 0);
+    ASSERT_TRUE(SDL_strcmp(set.clips[0].file, "walk.fanim") == 0);
+    ASSERT_FLOAT_EQ(set.clips[0].duration, 1.5f);
+    ASSERT_TRUE(set.clips[0].loop == true);
+    ASSERT_UINT_EQ(set.clips[0].tag_count, 0);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_multiple_clips(void)
+{
+    TEST("load_anim_set_multiple_clips");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_multi.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"Hero\", \"clips\": {"
+        "  \"run\":  { \"file\": \"run.fanim\",  \"duration\": 1.25, \"loop\": true, \"tags\": [] },"
+        "  \"idle\": { \"file\": \"idle.fanim\", \"duration\": 2.0,  \"loop\": true, \"tags\": [] },"
+        "  \"jump\": { \"file\": \"jump.fanim\", \"duration\": 0.8,  \"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(set.clip_count, 3);
+    ASSERT_TRUE(SDL_strcmp(set.model, "Hero") == 0);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_with_tags(void)
+{
+    TEST("load_anim_set_with_tags");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_tags.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"run\": { \"file\": \"run.fanim\", \"duration\": 1.0, "
+        "\"loop\": true, \"tags\": [\"locomotion\", \"ground\"] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(set.clips[0].tag_count, 2);
+    ASSERT_TRUE(SDL_strcmp(set.clips[0].tags[0], "locomotion") == 0);
+    ASSERT_TRUE(SDL_strcmp(set.clips[0].tags[1], "ground") == 0);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_loop_flags(void)
+{
+    TEST("load_anim_set_loop_flags");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_loop.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"idle\": { \"file\": \"idle.fanim\", \"duration\": 2.0, \"loop\": true, \"tags\": [] },"
+        "  \"die\":  { \"file\": \"die.fanim\",  \"duration\": 1.0, \"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    const ForgePipelineAnimClipInfo *idle = forge_pipeline_find_clip(&set, "idle");
+    const ForgePipelineAnimClipInfo *die = forge_pipeline_find_clip(&set, "die");
+    ASSERT_NOT_NULL(idle);
+    ASSERT_NOT_NULL(die);
+    ASSERT_TRUE(idle->loop == true);
+    ASSERT_TRUE(die->loop == false);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_model_name(void)
+{
+    TEST("load_anim_set_model_name");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_model.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"CesiumMan\", \"clips\": {}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(SDL_strcmp(set.model, "CesiumMan") == 0);
+    ASSERT_UINT_EQ(set.clip_count, 0);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_base_dir(void)
+{
+    TEST("load_anim_set_base_dir");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_basedir.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(SDL_strlen(set.base_dir) > 0);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Named lookup (5 tests) ── */
+
+static void test_find_clip_exists(void)
+{
+    TEST("find_clip_exists");
+    char path[512];
+    temp_path(path, sizeof(path), "test_find_exists.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] },"
+        "  \"run\":  { \"file\": \"run.fanim\",  \"duration\": 0.5, "
+        "\"loop\": true, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    const ForgePipelineAnimClipInfo *clip = forge_pipeline_find_clip(&set, "run");
+    ASSERT_NOT_NULL(clip);
+    ASSERT_TRUE(SDL_strcmp(clip->name, "run") == 0);
+    ASSERT_TRUE(SDL_strcmp(clip->file, "run.fanim") == 0);
+    ASSERT_FLOAT_EQ(clip->duration, 0.5f);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_find_clip_not_found(void)
+{
+    TEST("find_clip_not_found");
+    char path[512];
+    temp_path(path, sizeof(path), "test_find_notfound.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    const ForgePipelineAnimClipInfo *clip = forge_pipeline_find_clip(&set, "dance");
+    ASSERT_NULL(clip);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_find_clip_null_set(void)
+{
+    TEST("find_clip_null_set");
+    const ForgePipelineAnimClipInfo *clip = forge_pipeline_find_clip(NULL, "walk");
+    ASSERT_NULL(clip);
+    END_TEST();
+}
+
+static void test_find_clip_null_name(void)
+{
+    TEST("find_clip_null_name");
+    char path[512];
+    temp_path(path, sizeof(path), "test_find_nullname.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    const ForgePipelineAnimClipInfo *clip = forge_pipeline_find_clip(&set, NULL);
+    ASSERT_NULL(clip);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_find_clip_empty_set(void)
+{
+    TEST("find_clip_empty_set");
+    char path[512];
+    temp_path(path, sizeof(path), "test_find_empty.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    const ForgePipelineAnimClipInfo *clip = forge_pipeline_find_clip(&set, "walk");
+    ASSERT_NULL(clip);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Error cases (8 tests) ── */
+
+static void test_load_anim_set_null_path(void)
+{
+    TEST("load_anim_set_null_path");
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(NULL, &set);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_anim_set_null_set(void)
+{
+    TEST("load_anim_set_null_set");
+    bool loaded = forge_pipeline_load_anim_set("dummy.fanims", NULL);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_anim_set_nonexistent(void)
+{
+    TEST("load_anim_set_nonexistent");
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set("nonexistent.fanims", &set);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_anim_set_invalid_json(void)
+{
+    TEST("load_anim_set_invalid_json");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_badjson.fanims");
+    ASSERT_TRUE(write_test_fanims(path, "{ not valid json }}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_missing_version(void)
+{
+    TEST("load_anim_set_missing_version");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_noversion.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"model\": \"M\", \"clips\": {} }"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_bad_version(void)
+{
+    TEST("load_anim_set_bad_version");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_badversion.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 99, \"model\": \"M\", \"clips\": {} }"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_missing_clips(void)
+{
+    TEST("load_anim_set_missing_clips");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_noclips.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\" }"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_anim_set_clip_missing_file(void)
+{
+    TEST("load_anim_set_clip_missing_file");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_nofile.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"duration\": 1.0, \"loop\": false }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Free safety (3 tests) ── */
+
+static void test_free_anim_set_null(void)
+{
+    TEST("free_anim_set_null");
+    forge_pipeline_free_anim_set(NULL);
+    /* no crash = pass */
+    END_TEST();
+}
+
+static void test_free_anim_set_zeroed(void)
+{
+    TEST("free_anim_set_zeroed");
+    ForgePipelineAnimSet set;
+    SDL_memset(&set, 0, sizeof(set));
+    forge_pipeline_free_anim_set(&set);
+    ASSERT_NULL(set.clips);
+    END_TEST();
+}
+
+static void test_free_anim_set_double(void)
+{
+    TEST("free_anim_set_double");
+    char path[512];
+    temp_path(path, sizeof(path), "test_set_double_free.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    forge_pipeline_free_anim_set(&set);
+    forge_pipeline_free_anim_set(&set);
+    ASSERT_NULL(set.clips);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Load clip convenience (4 tests) ── */
+
+static void test_load_clip_not_found(void)
+{
+    TEST("load_clip_not_found");
+    char path[512];
+    temp_path(path, sizeof(path), "test_loadclip_notfound.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"walk.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_clip(&set, "dance", &file);
+    ASSERT_TRUE(!loaded);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_clip_missing_fanim(void)
+{
+    TEST("load_clip_missing_fanim");
+    char path[512];
+    temp_path(path, sizeof(path), "test_loadclip_missing.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"walk\": { \"file\": \"nonexistent.fanim\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(path, &set));
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_clip(&set, "walk", &file);
+    ASSERT_TRUE(!loaded);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_clip_null_args(void)
+{
+    TEST("load_clip_null_args");
+    ForgePipelineAnimFile file;
+    bool loaded = forge_pipeline_load_clip(NULL, "walk", &file);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_clip_success(void)
+{
+    TEST("load_clip_success");
+    /* Write a valid .fanim binary for the clip */
+    char fanim_path[512];
+    temp_path(fanim_path, sizeof(fanim_path), "dance.fanim");
+    ASSERT_TRUE(write_test_fanim(fanim_path, 1, 1, 1));
+
+    /* Write a .fanims manifest referencing it */
+    char fanims_path[512];
+    temp_path(fanims_path, sizeof(fanims_path), "test_loadclip_ok.fanims");
+    ASSERT_TRUE(write_test_fanims(fanims_path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"dance\": { \"file\": \"dance.fanim\", \"duration\": 1.0, "
+        "\"loop\": true, \"tags\": [\"combat\"] }"
+        "}}"));
+
+    ForgePipelineAnimSet set;
+    ASSERT_TRUE(forge_pipeline_load_anim_set(fanims_path, &set));
+
+    ForgePipelineAnimFile anim;
+    bool clip_loaded = forge_pipeline_load_clip(&set, "dance", &anim);
+    ASSERT_TRUE(clip_loaded);
+    ASSERT_UINT_EQ(anim.clip_count, 1);
+    ASSERT_TRUE(SDL_strcmp(anim.clips[0].name, "clip_0") == 0);
+    ASSERT_FLOAT_EQ(anim.clips[0].duration, 1.0f);
+    ASSERT_UINT_EQ(anim.clips[0].sampler_count, 1);
+    ASSERT_UINT_EQ(anim.clips[0].channel_count, 1);
+
+    forge_pipeline_free_animation(&anim);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(fanim_path);
+    cleanup_file(fanims_path);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Skin (.fskin) tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Helper: write raw bytes to a file for error testing */
+static bool write_raw_file(const char *path, const void *data, size_t size)
+{
+    bool ok = SDL_SaveFile(path, data, size);
+    if (!ok) {
+        SDL_Log("write_raw_file: SDL_SaveFile failed for '%s': %s",
+                path, SDL_GetError());
+    }
+    return ok;
+}
+
+/* Helper: write a test .fskin binary file with given skin/joint count. */
+static bool write_test_fskin(const char *path, uint32_t skin_count,
+                              uint32_t joint_count, const char *skin_name)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("write_test_fskin: SDL_IOFromFile failed: %s", SDL_GetError());
+        return false;
+    }
+
+    /* Header */
+    bool ok = true;
+    ok = ok && (SDL_WriteIO(io, "FSKN", 4) == 4);
+    uint32_t version = 1;
+    ok = ok && (SDL_WriteIO(io, &version, 4) == 4);
+    ok = ok && (SDL_WriteIO(io, &skin_count, 4) == 4);
+
+    uint32_t si;
+    for (si = 0; si < skin_count && ok; si++) {
+        char name_buf[64];
+        SDL_memset(name_buf, 0, sizeof(name_buf));
+        if (skin_name) {
+            SDL_strlcpy(name_buf, skin_name, sizeof(name_buf));
+        }
+        ok = ok && (SDL_WriteIO(io, name_buf, 64) == 64);
+
+        ok = ok && (SDL_WriteIO(io, &joint_count, 4) == 4);
+        int32_t skeleton = -1;
+        ok = ok && (SDL_WriteIO(io, &skeleton, 4) == 4);
+
+        uint32_t ji;
+        for (ji = 0; ji < joint_count && ok; ji++) {
+            int32_t joint = (int32_t)ji;
+            ok = ok && (SDL_WriteIO(io, &joint, 4) == 4);
+        }
+
+        uint32_t mi;
+        for (mi = 0; mi < joint_count && ok; mi++) {
+            float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+            ok = ok && (SDL_WriteIO(io, identity, sizeof(identity)) == sizeof(identity));
+        }
+    }
+
+    if (!ok) {
+        SDL_Log("write_test_fskin: write error: %s", SDL_GetError());
+        if (!SDL_CloseIO(io)) {
+            SDL_Log("write_test_fskin: SDL_CloseIO failed: %s", SDL_GetError());
+        }
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("write_test_fskin: SDL_CloseIO failed: %s", SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+/* ── Skin valid loading (5 tests) ── */
+
+static void test_load_skin_single(void)
+{
+    TEST("load_skin_single");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_single.fskin");
+    write_test_fskin(path, 1, 4, "TestSkin");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(set.skin_count, 1);
+    ASSERT_TRUE(SDL_strcmp(set.skins[0].name, "TestSkin") == 0);
+    ASSERT_UINT_EQ(set.skins[0].joint_count, 4);
+    ASSERT_INT_EQ(set.skins[0].skeleton, -1);
+    forge_pipeline_free_skins(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_multiple(void)
+{
+    TEST("load_skin_multiple");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_multi.fskin");
+    write_test_fskin(path, 3, 2, "Skin");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(set.skin_count, 3);
+    forge_pipeline_free_skins(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_ibm_roundtrip(void)
+{
+    TEST("load_skin_ibm_roundtrip");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_ibm.fskin");
+    write_test_fskin(path, 1, 2, "IBMTest");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_NOT_NULL(set.skins[0].inverse_bind_matrices);
+    ASSERT_FLOAT_EQ(set.skins[0].inverse_bind_matrices[0], 1.0f);
+    ASSERT_FLOAT_EQ(set.skins[0].inverse_bind_matrices[5], 1.0f);
+    ASSERT_FLOAT_EQ(set.skins[0].inverse_bind_matrices[10], 1.0f);
+    ASSERT_FLOAT_EQ(set.skins[0].inverse_bind_matrices[15], 1.0f);
+    ASSERT_FLOAT_EQ(set.skins[0].inverse_bind_matrices[1], 0.0f);
+    forge_pipeline_free_skins(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_joint_indices(void)
+{
+    TEST("load_skin_joint_indices");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_joints.fskin");
+    write_test_fskin(path, 1, 4, "JointTest");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_NOT_NULL(set.skins[0].joints);
+    ASSERT_INT_EQ(set.skins[0].joints[0], 0);
+    ASSERT_INT_EQ(set.skins[0].joints[1], 1);
+    ASSERT_INT_EQ(set.skins[0].joints[2], 2);
+    ASSERT_INT_EQ(set.skins[0].joints[3], 3);
+    forge_pipeline_free_skins(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_skeleton_root(void)
+{
+    TEST("load_skin_skeleton_root");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_skeleton.fskin");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_NOT_NULL(io);
+    ASSERT_TRUE(SDL_WriteIO(io, "FSKN", 4) == 4);
+    uint32_t version = 1, count = 1;
+    ASSERT_TRUE(SDL_WriteIO(io, &version, 4) == 4);
+    ASSERT_TRUE(SDL_WriteIO(io, &count, 4) == 4);
+    char name_buf[64];
+    SDL_memset(name_buf, 0, sizeof(name_buf));
+    SDL_strlcpy(name_buf, "RootTest", sizeof(name_buf));
+    ASSERT_TRUE(SDL_WriteIO(io, name_buf, 64) == 64);
+    uint32_t jc = 1;
+    ASSERT_TRUE(SDL_WriteIO(io, &jc, 4) == 4);
+    int32_t skel = 5;
+    ASSERT_TRUE(SDL_WriteIO(io, &skel, 4) == 4);
+    int32_t joint = 0;
+    ASSERT_TRUE(SDL_WriteIO(io, &joint, 4) == 4);
+    float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    ASSERT_TRUE(SDL_WriteIO(io, identity, sizeof(identity)) == sizeof(identity));
+    ASSERT_TRUE(SDL_CloseIO(io));
+
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_INT_EQ(set.skins[0].skeleton, 5);
+    forge_pipeline_free_skins(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Skin error cases (10 tests) ── */
+
+static void test_load_skin_null_path(void)
+{
+    TEST("load_skin_null_path");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(NULL, &set);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_skin_null_set(void)
+{
+    TEST("load_skin_null_set");
+    bool loaded = forge_pipeline_load_skins("dummy.fskin", NULL);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_skin_nonexistent(void)
+{
+    TEST("load_skin_nonexistent");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins("nonexistent.fskin", &set);
+    ASSERT_TRUE(!loaded);
+    END_TEST();
+}
+
+static void test_load_skin_bad_magic(void)
+{
+    TEST("load_skin_bad_magic");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_badmagic.fskin");
+    uint8_t buf[12];
+    SDL_memcpy(buf, "BAAD", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 0);
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_bad_version(void)
+{
+    TEST("load_skin_bad_version");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_badver.fskin");
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FSKN", 4);
+    write_u32(buf, 4, 99);
+    write_u32(buf, 8, 0);
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_truncated_header(void)
+{
+    TEST("load_skin_truncated_header");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_trunchdr.fskin");
+    uint8_t buf[8];
+    SDL_memcpy(buf, "FSKN", 4);
+    write_u32(buf, 4, 1);
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_truncated_joints(void)
+{
+    TEST("load_skin_truncated_joints");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_truncjoints.fskin");
+    /* Header(12) + name(64) + joint_count(4) + skeleton(4) = 84 bytes
+     * But joint data missing */
+    uint8_t buf[84];
+    SDL_memset(buf, 0, sizeof(buf));
+    SDL_memcpy(buf, "FSKN", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 1);
+    write_u32(buf, 76, 4);  /* joint_count = 4 */
+    write_i32(buf, 80, -1);
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_truncated_ibm(void)
+{
+    TEST("load_skin_truncated_ibm");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_truncibm.fskin");
+    /* Header(12) + name(64) + jc(4) + skel(4) + 1 joint(4) = 88 bytes
+     * But no IBM data */
+    uint8_t buf[88];
+    SDL_memset(buf, 0, sizeof(buf));
+    SDL_memcpy(buf, "FSKN", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 1);
+    write_u32(buf, 76, 1);  /* joint_count = 1 */
+    write_i32(buf, 80, -1);
+    write_i32(buf, 84, 0);  /* joint[0] = 0 */
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_count_exceeds_max(void)
+{
+    TEST("load_skin_count_exceeds_max");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_maxcount.fskin");
+    uint8_t buf[12];
+    SDL_memcpy(buf, "FSKN", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 999);
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skin_joint_count_exceeds_max(void)
+{
+    TEST("load_skin_joint_count_exceeds_max");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_maxjoints.fskin");
+    uint8_t buf[84];
+    SDL_memset(buf, 0, sizeof(buf));
+    SDL_memcpy(buf, "FSKN", 4);
+    write_u32(buf, 4, 1);
+    write_u32(buf, 8, 1);
+    write_u32(buf, 76, 999);
+    write_i32(buf, 80, -1);
+    write_raw_file(path, buf, sizeof(buf));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Skin free safety (3 tests) ── */
+
+static void test_free_skin_null(void)
+{
+    TEST("free_skin_null");
+    forge_pipeline_free_skins(NULL);
+    /* no crash = pass */
+    END_TEST();
+}
+
+static void test_free_skin_zeroed(void)
+{
+    TEST("free_skin_zeroed");
+    ForgePipelineSkinSet set;
+    SDL_memset(&set, 0, sizeof(set));
+    forge_pipeline_free_skins(&set);
+    ASSERT_NULL(set.skins);
+    END_TEST();
+}
+
+static void test_free_skin_double(void)
+{
+    TEST("free_skin_double");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_dblf.fskin");
+    write_test_fskin(path, 1, 2, "DoubleFree");
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    forge_pipeline_free_skins(&set);
+    forge_pipeline_free_skins(&set);
+    ASSERT_NULL(set.skins);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Skinned mesh loading tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Helper: write a minimal v3 .fmesh with the given stride and flags. */
+static bool write_test_fmesh_v3(const char *path, uint32_t stride,
+                                 uint32_t flags)
+{
+    uint32_t vertex_count = 3;
+    uint32_t lod_count = 1;
+    uint32_t submesh_count = 1;
+
+    uint8_t header[32];
+    SDL_memset(header, 0, sizeof(header));
+    SDL_memcpy(header, "FMSH", 4);
+    write_u32(header, 4, 3);
+    write_u32(header, 8, vertex_count);
+    write_u32(header, 12, stride);
+    write_u32(header, 16, lod_count);
+    write_u32(header, 20, flags);
+    write_u32(header, 24, submesh_count);
+
+    uint8_t lod_data[12];
+    write_u32(lod_data, 0, 3);
+    write_u32(lod_data, 4, 0);
+    write_f32(lod_data, 8, 0.0f);
+
+    uint8_t submesh_data[12];
+    write_u32(submesh_data, 0, 3);
+    write_u32(submesh_data, 4, 0);
+    write_i32(submesh_data, 8, -1);
+
+    size_t verts_size = (size_t)vertex_count * stride;
+    uint8_t *verts = (uint8_t *)SDL_calloc(1, verts_size);
+    if (!verts) {
+        SDL_Log("write_test_fmesh_v3: SDL_calloc failed for '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+
+    uint8_t indices[12];
+    write_u32(indices, 0, 0);
+    write_u32(indices, 4, 1);
+    write_u32(indices, 8, 2);
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("write_test_fmesh_v3: SDL_IOFromFile failed for '%s': %s",
+                path, SDL_GetError());
+        SDL_free(verts);
+        return false;
+    }
+    bool ok = true;
+    ok = ok && (SDL_WriteIO(io, header, sizeof(header)) == sizeof(header));
+    ok = ok && (SDL_WriteIO(io, lod_data, sizeof(lod_data)) == sizeof(lod_data));
+    ok = ok && (SDL_WriteIO(io, submesh_data, sizeof(submesh_data)) == sizeof(submesh_data));
+    ok = ok && (SDL_WriteIO(io, verts, verts_size) == verts_size);
+    ok = ok && (SDL_WriteIO(io, indices, sizeof(indices)) == sizeof(indices));
+    SDL_free(verts);
+    if (!ok) {
+        SDL_Log("write_test_fmesh_v3: write error for '%s': %s",
+                path, SDL_GetError());
+        if (!SDL_CloseIO(io)) {
+            SDL_Log("write_test_fmesh_v3: SDL_CloseIO failed for '%s': %s",
+                    path, SDL_GetError());
+        }
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("write_test_fmesh_v3: SDL_CloseIO failed for '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+static void test_load_skinned_mesh_stride_56(void)
+{
+    TEST("load_skinned_mesh_stride_56");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_mesh_56.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 56, FORGE_PIPELINE_FLAG_SKINNED));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(mesh.vertex_stride, 56);
+    ASSERT_TRUE(forge_pipeline_has_skin_data(&mesh));
+    ASSERT_TRUE(!forge_pipeline_has_tangents(&mesh));
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skinned_mesh_stride_72(void)
+{
+    TEST("load_skinned_mesh_stride_72");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_mesh_72.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 72,
+        FORGE_PIPELINE_FLAG_SKINNED | FORGE_PIPELINE_FLAG_TANGENTS));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(mesh.vertex_stride, 72);
+    ASSERT_TRUE(forge_pipeline_has_skin_data(&mesh));
+    ASSERT_TRUE(forge_pipeline_has_tangents(&mesh));
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skinned_mesh_flag_set(void)
+{
+    TEST("load_skinned_mesh_flag_set");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_mesh_flag.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 56, FORGE_PIPELINE_FLAG_SKINNED));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE((mesh.flags & FORGE_PIPELINE_FLAG_SKINNED) != 0);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skinned_mesh_v2_compat(void)
+{
+    TEST("load_skinned_mesh_v2_compat");
+    char path[512];
+    temp_path(path, sizeof(path), "test_v2_compat.fmesh");
+    ASSERT_TRUE(write_test_fmesh(path, false, 1));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(!forge_pipeline_has_skin_data(&mesh));
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skinned_mesh_v3_no_skin(void)
+{
+    TEST("load_skinned_mesh_v3_no_skin");
+    char path[512];
+    temp_path(path, sizeof(path), "test_v3_noskin.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 32, 0));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(!forge_pipeline_has_skin_data(&mesh));
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skinned_mesh_invalid_stride(void)
+{
+    TEST("load_skinned_mesh_invalid_stride");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_badstride.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 32, FORGE_PIPELINE_FLAG_SKINNED));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_has_skin_data_null(void)
+{
+    TEST("has_skin_data_null");
+    ASSERT_TRUE(!forge_pipeline_has_skin_data(NULL));
+    END_TEST();
+}
+
+static void test_load_skinned_mesh_v3_header(void)
+{
+    TEST("load_skinned_mesh_v3_header");
+    char path[512];
+    temp_path(path, sizeof(path), "test_v3_header.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 56, FORGE_PIPELINE_FLAG_SKINNED));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_UINT_EQ(mesh.vertex_count, 3);
+    ASSERT_UINT_EQ(mesh.lod_count, 1);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_skinned_stride_no_flag(void)
+{
+    TEST("load_skinned_stride_no_flag");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_noflag.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 56, 0));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_v2_no_skin_flag(void)
+{
+    TEST("load_v2_no_skin_flag");
+    char path[512];
+    temp_path(path, sizeof(path), "test_v2_noskinflag.fmesh");
+    ASSERT_TRUE(write_test_fmesh(path, false, 1));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE((mesh.flags & FORGE_PIPELINE_FLAG_SKINNED) == 0);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Unknown flag bits rejection (1 test) ── */
+
+static void test_load_mesh_unknown_flags(void)
+{
+    TEST("load_mesh_unknown_flags");
+    /* Build a v3 .fmesh with an unknown flag bit set (bit 2 = 0x4) */
+    char path[512];
+    temp_path(path, sizeof(path), "test_unknown_flags.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 32, 0x4u)); /* bit 2 is not a known flag */
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Path traversal rejection in load_clip (3 tests) ── */
+
+static void test_load_clip_path_traversal(void)
+{
+    TEST("load_clip_path_traversal");
+    char path[512];
+    temp_path(path, sizeof(path), "test_clip_traversal.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"evil\": { \"file\": \"../secret.bin\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ForgePipelineAnimFile file;
+    bool clip_loaded = forge_pipeline_load_clip(&set, "evil", &file);
+    ASSERT_TRUE(!clip_loaded);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_clip_absolute_path(void)
+{
+    TEST("load_clip_absolute_path");
+    char path[512];
+    temp_path(path, sizeof(path), "test_clip_abspath.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"abs\": { \"file\": \"/etc/passwd\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ForgePipelineAnimFile file;
+    bool clip_loaded = forge_pipeline_load_clip(&set, "abs", &file);
+    ASSERT_TRUE(!clip_loaded);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_clip_windows_drive_path(void)
+{
+    TEST("load_clip_windows_drive_path");
+    char path[512];
+    temp_path(path, sizeof(path), "test_clip_drive.fanims");
+    ASSERT_TRUE(write_test_fanims(path,
+        "{ \"version\": 1, \"model\": \"M\", \"clips\": {"
+        "  \"win\": { \"file\": \"C:\\\\evil.bin\", \"duration\": 1.0, "
+        "\"loop\": false, \"tags\": [] }"
+        "}}"));
+    ForgePipelineAnimSet set;
+    bool loaded = forge_pipeline_load_anim_set(path, &set);
+    ASSERT_TRUE(loaded);
+    ForgePipelineAnimFile file;
+    bool clip_loaded = forge_pipeline_load_clip(&set, "win", &file);
+    ASSERT_TRUE(!clip_loaded);
+    forge_pipeline_free_anim_set(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Zero-joint skin handling (1 test) ── */
+
+static void test_load_skin_zero_joints(void)
+{
+    TEST("load_skin_zero_joints");
+    char path[512];
+    temp_path(path, sizeof(path), "test_skin_zero_joints.fskin");
+    /* Write a .fskin with 1 skin that has 0 joints */
+    ASSERT_TRUE(write_test_fskin(path, 1, 0, "EmptySkin"));
+    ForgePipelineSkinSet set;
+    bool loaded = forge_pipeline_load_skins(path, &set);
+    ASSERT_TRUE(loaded);
+    ASSERT_INT_EQ(set.skin_count, 1);
+    ASSERT_INT_EQ(set.skins[0].joint_count, 0);
+    ASSERT_TRUE(set.skins[0].joints == NULL);
+    ASSERT_TRUE(set.skins[0].inverse_bind_matrices == NULL);
+    forge_pipeline_free_skins(&set);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -3094,6 +5263,151 @@ int main(int argc, char *argv[])
     SDL_Log("\nScene accessors:");
     test_scene_get_mesh_null();
     test_scene_get_mesh_empty();
+
+    /* ── Animation loading: valid files (8 tests) ── */
+    SDL_Log("\nAnimation loading — valid files:");
+    test_load_anim_single_clip();
+    test_load_anim_rotation_sampler();
+    test_load_anim_multi_sampler();
+    test_load_anim_multi_channel();
+    test_load_anim_multi_clip();
+    test_load_anim_step_interp();
+    test_load_anim_name_roundtrip();
+    test_load_anim_duration_roundtrip();
+
+    /* ── Animation loading: error cases (15 tests) ── */
+    SDL_Log("\nAnimation loading — error cases:");
+    test_load_anim_null_path();
+    test_load_anim_null_file();
+    test_load_anim_both_null();
+    test_load_anim_nonexistent();
+    test_load_anim_bad_magic();
+    test_load_anim_bad_version();
+    test_load_anim_version_zero();
+    test_load_anim_truncated_header();
+    test_load_anim_truncated_clip();
+    test_load_anim_truncated_sampler();
+    test_load_anim_truncated_channel();
+    test_load_anim_clip_count_exceeds_max();
+    test_load_anim_sampler_count_exceeds_max();
+    test_load_anim_channel_count_exceeds_max();
+    test_load_anim_channel_sampler_oob();
+
+    /* ── Animation data integrity (5 tests) ── */
+    SDL_Log("\nAnimation data integrity:");
+    test_load_anim_timestamps();
+    test_load_anim_keyframe_values();
+    test_load_anim_channel_targets();
+    test_load_anim_empty_file();
+    test_load_anim_zero_keyframes();
+
+    /* ── Animation value validation (4 tests) ── */
+    SDL_Log("\nAnimation value validation:");
+    test_load_anim_keyframe_count_exceeds_max();
+    test_load_anim_invalid_interpolation();
+    test_load_anim_invalid_target_path();
+    test_load_anim_invalid_value_components();
+
+    /* ── Animation free (3 tests) ── */
+    SDL_Log("\nAnimation free:");
+    test_free_anim_null();
+    test_free_anim_zeroed();
+    test_free_anim_double();
+
+    /* ── Animation manifest: valid loading (6 tests) ── */
+    SDL_Log("\nAnimation manifest — valid loading:");
+    test_load_anim_set_single_clip();
+    test_load_anim_set_multiple_clips();
+    test_load_anim_set_with_tags();
+    test_load_anim_set_loop_flags();
+    test_load_anim_set_model_name();
+    test_load_anim_set_base_dir();
+
+    /* ── Animation manifest: named lookup (5 tests) ── */
+    SDL_Log("\nAnimation manifest — named lookup:");
+    test_find_clip_exists();
+    test_find_clip_not_found();
+    test_find_clip_null_set();
+    test_find_clip_null_name();
+    test_find_clip_empty_set();
+
+    /* ── Animation manifest: error cases (8 tests) ── */
+    SDL_Log("\nAnimation manifest — error cases:");
+    test_load_anim_set_null_path();
+    test_load_anim_set_null_set();
+    test_load_anim_set_nonexistent();
+    test_load_anim_set_invalid_json();
+    test_load_anim_set_missing_version();
+    test_load_anim_set_bad_version();
+    test_load_anim_set_missing_clips();
+    test_load_anim_set_clip_missing_file();
+
+    /* ── Animation manifest: free safety (3 tests) ── */
+    SDL_Log("\nAnimation manifest — free safety:");
+    test_free_anim_set_null();
+    test_free_anim_set_zeroed();
+    test_free_anim_set_double();
+
+    /* ── Animation manifest: load clip convenience (3 tests) ── */
+    SDL_Log("\nAnimation manifest — load clip convenience:");
+    test_load_clip_not_found();
+    test_load_clip_missing_fanim();
+    test_load_clip_null_args();
+    test_load_clip_success();
+
+    /* ── Skin valid loading (5 tests) ── */
+    SDL_Log("\nSkin loading — valid files:");
+    test_load_skin_single();
+    test_load_skin_multiple();
+    test_load_skin_ibm_roundtrip();
+    test_load_skin_joint_indices();
+    test_load_skin_skeleton_root();
+
+    /* ── Skin error cases (10 tests) ── */
+    SDL_Log("\nSkin loading — error cases:");
+    test_load_skin_null_path();
+    test_load_skin_null_set();
+    test_load_skin_nonexistent();
+    test_load_skin_bad_magic();
+    test_load_skin_bad_version();
+    test_load_skin_truncated_header();
+    test_load_skin_truncated_joints();
+    test_load_skin_truncated_ibm();
+    test_load_skin_count_exceeds_max();
+    test_load_skin_joint_count_exceeds_max();
+
+    /* ── Skin free safety (3 tests) ── */
+    SDL_Log("\nSkin free:");
+    test_free_skin_null();
+    test_free_skin_zeroed();
+    test_free_skin_double();
+
+    /* ── Skinned mesh loading (10 tests) ── */
+    SDL_Log("\nSkinned mesh loading:");
+    test_load_skinned_mesh_stride_56();
+    test_load_skinned_mesh_stride_72();
+    test_load_skinned_mesh_flag_set();
+    test_load_skinned_mesh_v2_compat();
+    test_load_skinned_mesh_v3_no_skin();
+    test_load_skinned_mesh_invalid_stride();
+    test_has_skin_data_null();
+    test_load_skinned_mesh_v3_header();
+    test_load_skinned_stride_no_flag();
+    test_load_v2_no_skin_flag();
+
+    /* ── Unknown flag bits (1 test) ── */
+    SDL_Log("\nUnknown flag bits:");
+    test_load_mesh_unknown_flags();
+
+    /* ── Path traversal rejection (3 tests) ── */
+    SDL_Log("\nPath traversal rejection:");
+    test_load_clip_path_traversal();
+    test_load_clip_absolute_path();
+    test_load_clip_windows_drive_path();
+
+    /* ── Zero-joint skin (1 test) ── */
+    SDL_Log("\nZero-joint skin:");
+    test_load_skin_zero_joints();
 
     /* ── Summary ── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

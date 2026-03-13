@@ -43,7 +43,9 @@
 #define FMESH_MAGIC         "FMSH"
 #define FMESH_MAGIC_SIZE    4
 #define FMESH_VERSION       2
+#define FMESH_VERSION_SKIN  3
 #define FMESH_FLAG_TANGENTS (1u << 0)
+#define FMESH_FLAG_SKINNED  (1u << 1)
 
 #define MAX_LOD_LEVELS      8
 #define MAX_SUBMESHES       64
@@ -61,11 +63,15 @@
  * more detail but may prevent reaching the target index count. */
 #define SIMPLIFY_TARGET_ERROR 0.01f
 
-/* Vertex stride depends on whether tangents are present:
- *   No tangents: position(3) + normal(3) + uv(2) = 8 floats = 32 bytes
- *   Tangents:    position(3) + normal(3) + uv(2) + tangent(4) = 12 floats = 48 bytes */
-#define VERTEX_STRIDE_NO_TAN  (sizeof(float) * 8)
-#define VERTEX_STRIDE_TAN     (sizeof(float) * 12)
+/* Vertex stride depends on whether tangents and skin data are present:
+ *   No tangents:            position(3) + normal(3) + uv(2) = 8 floats = 32 bytes
+ *   Tangents:               position(3) + normal(3) + uv(2) + tangent(4) = 12 floats = 48 bytes
+ *   Skin (no tangents):     pos(3) + norm(3) + uv(2) + joints(4×u16) + weights(4) = 56 bytes
+ *   Skin + tangents:        pos(3) + norm(3) + uv(2) + tan(4) + joints(4×u16) + weights(4) = 72 bytes */
+#define VERTEX_STRIDE_NO_TAN       (sizeof(float) * 8)
+#define VERTEX_STRIDE_TAN          (sizeof(float) * 12)
+#define VERTEX_STRIDE_SKIN_NO_TAN  56
+#define VERTEX_STRIDE_SKIN_TAN     72
 
 /* ── Output vertex layout ────────────────────────────────────────────────── */
 
@@ -140,7 +146,10 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
                             int lod_count, int submesh_count,
                             const LodSubmeshEntry *lod_submeshes,
                             const float *lod_errors,
-                            unsigned int flags);
+                            unsigned int flags,
+                            const Uint16 *skin_joints,
+                            const float *skin_weights,
+                            bool has_skin);
 static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene);
 static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              unsigned int vertex_count, unsigned int vertex_stride,
@@ -370,27 +379,7 @@ static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
 
 /* ── Binary helper ───────────────────────────────────────────────────────── */
 
-/* Write a uint32 in little-endian byte order to an SDL I/O stream.
- * SDL_IOStream handles locale-independent output and consistent
- * newline behavior across platforms. */
-static bool write_u32_le(SDL_IOStream *io, uint32_t val)
-{
-    uint8_t bytes[4];
-    bytes[0] = (uint8_t)(val);
-    bytes[1] = (uint8_t)(val >> 8);
-    bytes[2] = (uint8_t)(val >> 16);
-    bytes[3] = (uint8_t)(val >> 24);
-    return SDL_WriteIO(io, bytes, 4) == 4;
-}
-
-/* Write a signed int32 in little-endian byte order. Material indices
- * can be -1 (no material), so we need signed support. */
-static bool write_i32_le(SDL_IOStream *io, int32_t val)
-{
-    uint32_t uval;
-    memcpy(&uval, &val, sizeof(uval));
-    return write_u32_le(io, uval);
-}
+#include "../common/binary_io.h"
 
 /* ── Filename extraction helper ──────────────────────────────────────────── */
 
@@ -550,7 +539,9 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                       unsigned int *out_original_vertex_count,
                       bool *out_has_tangents,
                       SubmeshEntry *out_submeshes, int *out_submesh_count,
-                      ForgeGltfScene *out_scene, ForgeArena *arena)
+                      ForgeGltfScene *out_scene, ForgeArena *arena,
+                      Uint16 **out_skin_joints, float **out_skin_weights,
+                      bool *out_has_skin)
 {
     if (!forge_gltf_load(path, out_scene, arena)) {
         SDL_Log("Error: failed to load glTF '%s'", path);
@@ -575,6 +566,8 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     Uint64 total_indices_64 = 0;
     bool any_has_tangents = false;
     bool all_have_tangents = true;
+    bool any_has_skin = false;
+    bool all_have_skin = true;
     int prim_count = out_scene->primitive_count;
     int p;
 
@@ -594,6 +587,19 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         } else {
             all_have_tangents = false;
         }
+
+        if (prim->has_skin_data) {
+            any_has_skin = true;
+        } else {
+            all_have_skin = false;
+        }
+    }
+
+    /* Skin data must be present on all or no primitives */
+    if (any_has_skin && !all_have_skin) {
+        SDL_Log("Error: some primitives have skin data and others do not "
+                "(all-or-nothing required)");
+        return false;
     }
 
     if (total_verts_64 > SDL_MAX_UINT32 || total_indices_64 > SDL_MAX_UINT32) {
@@ -616,6 +622,17 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     /* If any primitive is missing tangents, MikkTSpace should regenerate
      * for the whole mesh — so we need ALL primitives to have tangents. */
     *out_has_tangents = all_have_tangents;
+    *out_has_skin = all_have_skin;
+
+    /* Skinned meshes skip deduplication — joint/weight data is not part of
+     * the MeshVertex comparison key, so meshoptimizer would incorrectly
+     * merge vertices with different skin bindings. */
+    if (all_have_skin && deduplicate) {
+        if (verbose) {
+            SDL_Log("  Skinned mesh detected — deduplication disabled");
+        }
+        deduplicate = false;
+    }
 
     if (verbose) {
         SDL_Log("Input: %u vertices, %u indices (%u triangles) across "
@@ -627,6 +644,9 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         } else if (any_has_tangents) {
             SDL_Log("  glTF provides tangent vectors on some primitives "
                     "(MikkTSpace will regenerate for consistency)");
+        }
+        if (all_have_skin) {
+            SDL_Log("  glTF provides skin data (joints + weights)");
         }
     }
 
@@ -643,6 +663,22 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         SDL_Log("Error: allocation failed for %u indices", total_indices);
         SDL_free(verts);
         return false;
+    }
+
+    /* Parallel skin arrays — allocated only when skin data is present */
+    Uint16 *skin_joints = NULL;
+    float  *skin_weights = NULL;
+    if (all_have_skin) {
+        skin_joints = (Uint16 *)SDL_calloc(total_verts * 4, sizeof(Uint16));
+        skin_weights = (float *)SDL_calloc(total_verts * 4, sizeof(float));
+        if (!skin_joints || !skin_weights) {
+            SDL_Log("Error: allocation failed for skin data");
+            SDL_free(skin_joints);
+            SDL_free(skin_weights);
+            SDL_free(idx_buf);
+            SDL_free(verts);
+            return false;
+        }
     }
 
     /* ── Second pass: copy vertex/index data from each primitive ─────────
@@ -681,6 +717,19 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                 verts[dst].tangent[2] = prim->tangents[i].z;
                 verts[dst].tangent[3] = prim->tangents[i].w;
             }
+
+            /* Copy skin data into parallel arrays */
+            if (all_have_skin && prim->joint_indices && prim->weights) {
+                unsigned int base = dst * 4;
+                skin_joints[base + 0] = prim->joint_indices[i * 4 + 0];
+                skin_joints[base + 1] = prim->joint_indices[i * 4 + 1];
+                skin_joints[base + 2] = prim->joint_indices[i * 4 + 2];
+                skin_joints[base + 3] = prim->joint_indices[i * 4 + 3];
+                skin_weights[base + 0] = prim->weights[i * 4 + 0];
+                skin_weights[base + 1] = prim->weights[i * 4 + 1];
+                skin_weights[base + 2] = prim->weights[i * 4 + 2];
+                skin_weights[base + 3] = prim->weights[i * 4 + 3];
+            }
         }
 
         /* Copy indices, adjusting by the vertex offset so they reference
@@ -702,6 +751,8 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                         "(expected 2 or 4)", p, prim->index_stride);
                 SDL_free(verts);
                 SDL_free(idx_buf);
+                SDL_free(skin_joints);
+                SDL_free(skin_weights);
                 return false;
             }
         } else {
@@ -719,6 +770,8 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                     "(expected non-zero multiple of 3)", p, pi_count);
             SDL_free(verts);
             SDL_free(idx_buf);
+            SDL_free(skin_joints);
+            SDL_free(skin_weights);
             return false;
         }
 
@@ -800,6 +853,8 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
 
     *out_vertices = verts;
     *out_indices  = idx_buf;
+    *out_skin_joints = skin_joints;
+    *out_skin_weights = skin_weights;
     return true;
 }
 
@@ -820,6 +875,9 @@ static bool process_mesh(const ToolOptions *opts)
     unsigned int  index_count  = 0;
     unsigned int  original_vertex_count = 0;
     bool          gltf_has_tangents = false;
+    Uint16       *skin_joints  = NULL;
+    float        *skin_weights = NULL;
+    bool          has_skin_data = false;
 
     /* Submesh tracking — OBJ produces 1 submesh, glTF can produce many */
     SubmeshEntry  submeshes[MAX_SUBMESHES];
@@ -850,7 +908,8 @@ static bool process_mesh(const ToolOptions *opts)
         if (!load_gltf(opts->input_path, opts->deduplicate, opts->verbose,
                        &vertices, &vertex_count, &indices, &index_count,
                        &original_vertex_count, &gltf_has_tangents,
-                       submeshes, &submesh_count, gltf_scene, &gltf_arena)) {
+                       submeshes, &submesh_count, gltf_scene, &gltf_arena,
+                       &skin_joints, &skin_weights, &has_skin_data)) {
             forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
             return false;
@@ -893,13 +952,18 @@ static bool process_mesh(const ToolOptions *opts)
 
         /* Pass 3: Vertex fetch optimization — reorders the vertex buffer
          * so vertices are accessed sequentially, improving memory locality.
-         * Runs on the entire merged buffer (all submeshes share vertices). */
-        meshopt_optimizeVertexFetch(vertices, indices, index_count,
-                                     vertices, vertex_count, sizeof(MeshVertex));
+         * Runs on the entire merged buffer (all submeshes share vertices).
+         * Skipped for skinned meshes because the reorder would desync the
+         * parallel joint/weight arrays. */
+        if (!has_skin_data) {
+            meshopt_optimizeVertexFetch(vertices, indices, index_count,
+                                         vertices, vertex_count,
+                                         sizeof(MeshVertex));
+        }
 
         if (opts->verbose) {
-            SDL_Log("Optimization: per-submesh cache/overdraw + "
-                    "global fetch complete");
+            SDL_Log("Optimization: per-submesh cache/overdraw%s complete",
+                    has_skin_data ? " (fetch skipped — skinned)" : " + global fetch");
         }
     }
 
@@ -913,6 +977,8 @@ static bool process_mesh(const ToolOptions *opts)
         if (!generate_tangents(vertices, vertex_count, indices, index_count)) {
             SDL_free(vertices);
             SDL_free(indices);
+            SDL_free(skin_joints);
+            SDL_free(skin_weights);
             if (has_gltf_scene) {
                 forge_arena_destroy(&gltf_arena);
                 SDL_free(gltf_scene);
@@ -946,6 +1012,8 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(lod_errors);
         SDL_free(vertices);
         SDL_free(indices);
+        SDL_free(skin_joints);
+        SDL_free(skin_weights);
         if (has_gltf_scene) {
             forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
@@ -968,6 +1036,8 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(lod_errors);
         SDL_free(vertices);
         SDL_free(indices);
+        SDL_free(skin_joints);
+        SDL_free(skin_weights);
         if (has_gltf_scene) {
             forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
@@ -984,6 +1054,8 @@ static bool process_mesh(const ToolOptions *opts)
         SDL_free(lod_errors);
         SDL_free(vertices);
         SDL_free(indices);
+        SDL_free(skin_joints);
+        SDL_free(skin_weights);
         if (has_gltf_scene) {
             forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
@@ -1068,27 +1140,39 @@ static bool process_mesh(const ToolOptions *opts)
     /* ── Step 7: Determine vertex stride and flags ───────────────────────
      * The output format stores only the attributes that are present.
      * Without tangents, each vertex is 32 bytes (pos + normal + uv).
-     * With tangents, each vertex is 48 bytes (pos + normal + uv + tangent). */
+     * With tangents, each vertex is 48 bytes (pos + normal + uv + tangent).
+     * Skinned meshes add joints(8B) + weights(16B) = 24 bytes. */
     unsigned int flags = 0;
     unsigned int vertex_stride;
 
-    if (has_tangents) {
+    if (has_skin_data) {
+        flags |= FMESH_FLAG_SKINNED;
+        if (has_tangents) {
+            flags |= FMESH_FLAG_TANGENTS;
+            vertex_stride = (unsigned int)VERTEX_STRIDE_SKIN_TAN;
+        } else {
+            vertex_stride = (unsigned int)VERTEX_STRIDE_SKIN_NO_TAN;
+        }
+    } else if (has_tangents) {
         flags |= FMESH_FLAG_TANGENTS;
         vertex_stride = (unsigned int)VERTEX_STRIDE_TAN;
     } else {
         vertex_stride = (unsigned int)VERTEX_STRIDE_NO_TAN;
     }
 
-    /* ── Step 8: Write binary .fmesh v2 ──────────────────────────────────*/
+    /* ── Step 8: Write binary .fmesh ─────────────────────────────────────*/
     bool ok = write_fmesh_v2(opts->output_path, vertices, vertex_count,
                               vertex_stride, all_indices,
                               opts->lod_count, submesh_count,
-                              lod_submeshes, lod_errors, flags);
+                              lod_submeshes, lod_errors, flags,
+                              skin_joints, skin_weights, has_skin_data);
     if (!ok) {
         SDL_free(vertices);
         SDL_free(all_indices);
         SDL_free(lod_submeshes);
         SDL_free(lod_errors);
+        SDL_free(skin_joints);
+        SDL_free(skin_weights);
         if (has_gltf_scene) {
             forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
@@ -1105,6 +1189,8 @@ static bool process_mesh(const ToolOptions *opts)
             SDL_free(all_indices);
             SDL_free(lod_submeshes);
             SDL_free(lod_errors);
+            SDL_free(skin_joints);
+            SDL_free(skin_weights);
             if (has_gltf_scene) {
                 forge_arena_destroy(&gltf_arena);
                 SDL_free(gltf_scene);
@@ -1130,6 +1216,8 @@ static bool process_mesh(const ToolOptions *opts)
     SDL_free(all_indices);
     SDL_free(lod_submeshes);
     SDL_free(lod_errors);
+    SDL_free(skin_joints);
+    SDL_free(skin_weights);
     if (has_gltf_scene) {
         forge_arena_destroy(&gltf_arena);
         SDL_free(gltf_scene);
@@ -1145,7 +1233,10 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
                             int lod_count, int submesh_count,
                             const LodSubmeshEntry *lod_submeshes,
                             const float *lod_errors,
-                            unsigned int flags)
+                            unsigned int flags,
+                            const Uint16 *skin_joints,
+                            const float *skin_weights,
+                            bool has_skin)
 {
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     if (!io) {
@@ -1168,7 +1259,7 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
 
     bool ok = true;
     ok = ok && (SDL_WriteIO(io, FMESH_MAGIC, FMESH_MAGIC_SIZE) == FMESH_MAGIC_SIZE);
-    ok = ok && write_u32_le(io, FMESH_VERSION);
+    ok = ok && write_u32_le(io, has_skin ? FMESH_VERSION_SKIN : FMESH_VERSION);
     ok = ok && write_u32_le(io, vertex_count);
     ok = ok && write_u32_le(io, vertex_stride);
     ok = ok && write_u32_le(io, (uint32_t)lod_count);
@@ -1215,14 +1306,32 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
 
     /* ── Vertex data ─────────────────────────────────────────────────────
      * Write each vertex using only the fields indicated by vertex_stride.
-     * Without tangents we write 8 floats; with tangents we write 12. */
+     * Without tangents we write 8 floats; with tangents we write 12.
+     * Skinned vertices interleave joints(4×u16) + weights(4×f32) after
+     * the base attributes (and tangent if present). */
     {
         unsigned int i;
+        bool has_tan = (flags & FMESH_FLAG_TANGENTS) != 0;
+        /* Base size without skin data — what we write from MeshVertex */
+        size_t base_size = has_tan ? VERTEX_STRIDE_TAN : VERTEX_STRIDE_NO_TAN;
+
         for (i = 0; i < vertex_count; i++) {
-            if (SDL_WriteIO(io, &vertices[i], (size_t)vertex_stride) != (size_t)vertex_stride) {
+            /* Write position + normal + uv (+ tangent if present) */
+            if (SDL_WriteIO(io, &vertices[i], base_size) != base_size) {
                 SDL_Log("Error: failed writing vertex %u", i);
                 SDL_CloseIO(io);
                 return false;
+            }
+
+            /* Append skin data: 4 × uint16 joints + 4 × float weights */
+            if (has_skin && skin_joints && skin_weights) {
+                unsigned int base = i * 4;
+                if (SDL_WriteIO(io, &skin_joints[base], 8) != 8 ||
+                    SDL_WriteIO(io, &skin_weights[base], 16) != 16) {
+                    SDL_Log("Error: failed writing skin data for vertex %u", i);
+                    SDL_CloseIO(io);
+                    return false;
+                }
             }
         }
     }

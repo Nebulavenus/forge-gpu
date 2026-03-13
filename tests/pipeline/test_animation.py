@@ -22,7 +22,7 @@ def _make_gltf(path: Path) -> Path:
 
 
 def _fake_meta(output_dir: Path, stem: str) -> None:
-    """Create a fake .meta.json and .fanim so plugin can read results."""
+    """Create fake .meta.json, .fanim, and .fanims so plugin can read results."""
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / f"{stem}.fanim").write_bytes(b"FANM" + b"\x00" * 96)
     meta = {
@@ -38,6 +38,20 @@ def _fake_meta(output_dir: Path, stem: str) -> None:
         ],
     }
     (output_dir / f"{stem}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    # Split-mode manifest (the default) — matches what the real tool produces
+    manifest = {
+        "version": 1,
+        "model": f"{stem}.gltf",
+        "clips": {
+            "Walk": {
+                "file": f"{stem}.fanim",
+                "duration": 1.25,
+                "loop": False,
+                "tags": [],
+            }
+        },
+    }
+    (output_dir / f"{stem}.fanims").write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _mock_run_success(output_dir: Path, stem: str):
@@ -228,8 +242,7 @@ def test_anim_metadata_recorded(mock_tool, mock_run, plugin, source_gltf, tmp_pa
     result = plugin.process(source_gltf, output_dir, {})
 
     assert result.metadata["clip_count"] == 1
-    assert result.metadata["clips"][0]["name"] == "Walk"
-    assert result.metadata["clips"][0]["duration"] == 1.25
+    assert result.metadata["manifest_data"]["clips"]["Walk"]["duration"] == 1.25
 
 
 # -- 11. Output extension --------------------------------------------------

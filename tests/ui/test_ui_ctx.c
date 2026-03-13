@@ -446,7 +446,7 @@ static void test_free_null_ctx(void)
 {
     TEST("ctx_free: NULL ctx does not crash");
     forge_ui_ctx_free(NULL);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 static void test_free_double_free(void)
@@ -458,7 +458,7 @@ static void test_free_double_free(void)
     ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
     forge_ui_ctx_free(&ctx);
     forge_ui_ctx_free(&ctx);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 /* ── forge_ui_ctx_begin tests ───────────────────────────────────────────── */
@@ -531,7 +531,7 @@ static void test_begin_null_ctx(void)
 {
     TEST("ctx_begin: NULL ctx does not crash");
     forge_ui_ctx_begin(NULL, 0.0f, 0.0f, false);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 /* ── forge_ui_ctx_end tests ─────────────────────────────────────────────── */
@@ -602,7 +602,7 @@ static void test_end_null_ctx(void)
 {
     TEST("ctx_end: NULL ctx does not crash");
     forge_ui_ctx_end(NULL);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 /* ── forge_ui_ctx_label tests ───────────────────────────────────────────── */
@@ -679,7 +679,7 @@ static void test_label_null_ctx(void)
     forge_ui_ctx_label_colored(NULL, "Hello", LABEL_TEST_X, LABEL_TEST_Y,
                                LABEL_TEST_R, LABEL_TEST_G, LABEL_TEST_B,
                                LABEL_TEST_A);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 /* ── forge_ui_ctx_button tests ──────────────────────────────────────────── */
@@ -2251,7 +2251,7 @@ static void test_set_keyboard_null_ctx(void)
     TEST("ctx_set_keyboard: NULL ctx does not crash");
     forge_ui_ctx_set_keyboard(NULL, "X", false, false, false, false,
                               false, false, false);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 static void test_begin_resets_keyboard(void)
@@ -2310,7 +2310,7 @@ static void test_emit_border_null_ctx(void)
     TEST("emit_border: NULL ctx does not crash");
     ForgeUiRect r = { 0, 0, 100, 100 };
     forge_ui__emit_border(NULL, r, 1.0f, 1, 1, 1, 1);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 static void test_emit_border_zero_width(void)
@@ -5704,14 +5704,14 @@ static void test_push_id_null_ctx_no_crash(void)
     TEST("push_id: NULL ctx does not crash");
     forge_ui_push_id(NULL, "scope");
     /* Should not crash — just returns early */
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 static void test_pop_id_null_ctx_no_crash(void)
 {
     TEST("pop_id: NULL ctx does not crash");
     forge_ui_pop_id(NULL);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 static void test_pop_id_underflow_no_crash(void)
@@ -6506,7 +6506,7 @@ static void test_rect_null_ctx(void)
     ForgeUiColor color = { 1.0f, 0.0f, 0.0f, 1.0f };
     ForgeUiRect rect = { SR_TEST_X, SR_TEST_Y, SR_TEST_W, SR_TEST_H };
     forge_ui_ctx_rect(NULL, rect, color);
-    ASSERT_TRUE(true);
+    /* no crash = pass */
 }
 
 static void test_rect_nan_rect_rejected(void)
@@ -6877,7 +6877,7 @@ static void test_progress_bar_null_ctx(void)
     ForgeUiColor fill = { 1.0f, 0.0f, 0.0f, 1.0f };
     ForgeUiRect rect = { PB_TEST_X, PB_TEST_Y, PB_TEST_W, PB_TEST_H };
     forge_ui_ctx_progress_bar(NULL, PB_TEST_VAL, PB_TEST_MAX, fill, rect);
-    ASSERT_TRUE(true); /* no crash = pass */
+    /* no crash = pass */
 }
 
 static void test_progress_bar_layout_basic(void)
@@ -8004,7 +8004,7 @@ static void test_hsv_to_rgb_null_output(void)
 {
     TEST("hsv_to_rgb: NULL output pointers do not crash");
     forge_ui_hsv_to_rgb(0.0f, 1.0f, 1.0f, NULL, NULL, NULL);
-    ASSERT_TRUE(1);  /* survived without crash */
+    /* survived without crash */
 }
 
 static void test_hsv_to_rgb_nan_hue(void)
@@ -8129,7 +8129,7 @@ static void test_rgb_to_hsv_null_output(void)
 {
     TEST("rgb_to_hsv: NULL output pointers do not crash");
     forge_ui_rgb_to_hsv(1.0f, 0.0f, 0.0f, NULL, NULL, NULL);
-    ASSERT_TRUE(1);
+    /* no crash = pass */
 }
 
 static void test_rgb_to_hsv_nan_input(void)
@@ -9532,7 +9532,7 @@ static void test_gradient_rect_null_ctx(void)
                                   0.0f, 1.0f, 0.0f,
                                   0.0f, 0.0f, 1.0f,
                                   1.0f, 1.0f, 0.0f);
-    ASSERT_TRUE(1);
+    /* no crash = pass */
 }
 
 #define TEST_GRAD_CLIP_X    50.0f

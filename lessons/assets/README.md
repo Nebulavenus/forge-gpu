@@ -61,6 +61,9 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 07 | [Materials](07-materials/) | C + Python | Full PBR material support: glTF parser extensions, multi-primitive mesh processing, .fmesh v2 submesh table, .fmat material sidecars |
 | 08 | [Animations](08-animations/) | C | glTF animation parsing and runtime evaluation: channels, samplers, keyframe interpolation (lerp/slerp), looping |
 | 09 | [Scene Hierarchy](09-scene-hierarchy/) | C + Python | glTF node tree extraction, `.fscene` binary format, runtime world transform computation, mesh instancing |
+| 10 | [Animation Loader](10-animation-loader/) | C + Python | Runtime `.fanim` loader in `forge_pipeline.h`, per-clip export via `--split`, `.fanims` stub manifest |
+| 11 | [Animation Manifest](11-animation-manifest/) | C + Python | `.fanims` JSON manifest loader, named clip lookup, convenience loading, loop flags and tags |
+| 12 | [Skinned Animations](12-skinned-animations/) | C + Python | `.fskin` binary format, skinned vertices in `.fmesh` v3, scene/mesh tool extensions |
 
 ## Building
 

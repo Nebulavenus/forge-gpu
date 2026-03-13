@@ -1086,7 +1086,7 @@ static void test_draw_shadow_mesh_null_buffers_is_safe(void)
      * instead of early-returning on the pass check. */
     scene.pass = (SDL_GPURenderPass *)1;
     forge_scene_draw_shadow_mesh(&scene, NULL, NULL, 0, mat4_identity());
-    ASSERT_TRUE(1); /* reached here without crashing */
+    /* reached here without crashing */
     END_TEST();
 }
 
@@ -1098,7 +1098,7 @@ static void test_draw_mesh_null_buffers_is_safe(void)
     scene.pass = (SDL_GPURenderPass *)1;
     float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
     forge_scene_draw_mesh(&scene, NULL, NULL, 0, mat4_identity(), color);
-    ASSERT_TRUE(1); /* reached here without crashing */
+    /* reached here without crashing */
     END_TEST();
 }
 
@@ -1112,7 +1112,7 @@ static void test_draw_mesh_zero_index_count_is_safe(void)
     /* Non-NULL pass + buffers, but zero index_count should be a no-op */
     forge_scene_draw_mesh(&scene, (SDL_GPUBuffer *)1, (SDL_GPUBuffer *)1,
                           0, mat4_identity(), color);
-    ASSERT_TRUE(1); /* reached here without crashing */
+    /* reached here without crashing */
     END_TEST();
 }
 
@@ -1120,7 +1120,7 @@ static void test_destroy_null_scene_is_safe(void)
 {
     TEST("robustness — destroy(NULL) does not crash");
     forge_scene_destroy(NULL);
-    ASSERT_TRUE(1); /* reached here without crashing */
+    /* reached here without crashing */
     END_TEST();
 }
 
@@ -1130,7 +1130,7 @@ static void test_destroy_uninitialized_zeroed_scene(void)
     ForgeScene scene;
     SDL_memset(&scene, 0, sizeof(scene));
     forge_scene_destroy(&scene);
-    ASSERT_TRUE(1); /* reached here without crashing */
+    /* reached here without crashing */
     END_TEST();
 }
 

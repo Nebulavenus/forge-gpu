@@ -1,13 +1,13 @@
 """Animation extraction plugin — reads glTF/GLB animation data and writes
-a compact binary ``.fanim`` file.
+compact binary ``.fanim`` files.
 
 Processes 3D model files that contain animation clips through an external
 C tool:
 
 1. **Parse** the glTF ``animations[]`` array — channels, samplers, keyframes.
-2. **Write** a ``.fanim`` binary with all clips, samplers, and channels.
-3. **Generate** a ``.meta.json`` sidecar with clip names, durations, and
-   channel counts.
+2. **Write** per-clip ``.fanim`` binaries (split mode) or a single combined
+   ``.fanim`` (legacy mode).
+3. **Generate** a ``.fanims`` stub manifest listing the exported clips.
 
 The heavy lifting is done by ``forge-anim-tool``, a compiled C binary that
 uses the shared ``forge_gltf.h`` parser.  If the tool is not installed the
@@ -19,6 +19,7 @@ Settings are read from the ``[animation]`` section of ``pipeline.toml``::
 
     [animation]
     tool_path = ""    # Override forge-anim-tool location
+    split = true      # Per-clip export (default: true)
 """
 
 from __future__ import annotations
@@ -76,11 +77,15 @@ class AnimationPlugin(AssetPlugin):
         """Run ``forge-anim-tool`` on *source* and return the result.
 
         *settings* comes from ``[animation]`` in ``pipeline.toml``.
+
+        When ``split`` is true (the default), the tool writes one ``.fanim``
+        file per animation clip plus a ``.fanims`` stub manifest.  When
+        false, all clips are packed into a single ``.fanim`` file (legacy
+        behaviour from Lesson 08).
         """
         # -- Locate the tool ------------------------------------------------
         tool = _find_anim_tool(settings)
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{source.stem}.fanim"
 
         if tool is None:
             log.warning(
@@ -98,9 +103,22 @@ class AnimationPlugin(AssetPlugin):
                 },
             )
 
+        # -- Determine mode -------------------------------------------------
+        split = settings.get("split", True)
+
         # -- Build command line ---------------------------------------------
-        args: list[str] = [tool, str(source), str(output_path)]
-        args.append("--verbose")
+        if split:
+            args: list[str] = [
+                tool,
+                str(source),
+                "--split",
+                "--output-dir",
+                str(output_dir),
+                "--verbose",
+            ]
+        else:
+            output_path = output_dir / f"{source.stem}.fanim"
+            args = [tool, str(source), str(output_path), "--verbose"]
 
         log.debug("Running: %s", " ".join(args))
 
@@ -128,21 +146,100 @@ class AnimationPlugin(AssetPlugin):
                 f"{result.stderr.strip()}"
             )
 
+        if result.stdout:
+            log.debug("  stdout: %s", result.stdout.strip())
+
+        # -- Collect outputs ------------------------------------------------
+        metadata: dict = {
+            "format": ".fanim",
+            "processed": True,
+            "split": split,
+        }
+
+        if split:
+            # Use the deterministic manifest as the source of truth for
+            # which clip files were produced (avoids picking up stale
+            # .fanim files from a previous run).
+            manifest_path = output_dir / f"{source.stem}.fanims"
+            clip_files: list[str] = []
+            manifest_loaded = False
+
+            if manifest_path.exists():
+                metadata["manifest"] = manifest_path.name
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if not isinstance(manifest, dict):
+                        raise RuntimeError(
+                            f"Invalid manifest: root is not an object "
+                            f"in {manifest_path}"
+                        )
+                    metadata["manifest_data"] = manifest
+                    clips = manifest.get("clips", {})
+                    if not isinstance(clips, dict):
+                        raise RuntimeError(
+                            f"Invalid manifest: 'clips' is not an object "
+                            f"in {manifest_path}"
+                        )
+                    manifest_loaded = True
+                    clip_files = []
+                    for clip_name, clip in clips.items():
+                        if not isinstance(clip, dict):
+                            raise RuntimeError(
+                                f"Invalid manifest: clip '{clip_name}' is not "
+                                f"an object in {manifest_path}"
+                            )
+                        file_val = clip.get("file")
+                        if not isinstance(file_val, str):
+                            raise RuntimeError(
+                                f"Invalid manifest: clip '{clip_name}' missing "
+                                f"string 'file' field in {manifest_path}"
+                            )
+                        clip_files.append(file_val)
+
+                    # Validate that all manifest-referenced clip files exist
+                    missing = [
+                        name for name in clip_files if not (output_dir / name).is_file()
+                    ]
+                    if missing:
+                        raise RuntimeError(
+                            f"Invalid manifest: missing clip file(s) "
+                            f"{missing} referenced by {manifest_path}"
+                        )
+                except (json.JSONDecodeError, OSError, RuntimeError) as exc:
+                    raise RuntimeError(
+                        f"Could not read animation manifest {manifest_path}: {exc}"
+                    ) from exc
+
+            # Only fall back to directory scan when no manifest exists.
+            # A manifest with zero clips is valid (source has no animations).
+            if not manifest_loaded:
+                clip_files = [f.name for f in sorted(output_dir.glob("*.fanim"))]
+                if not clip_files:
+                    raise RuntimeError(
+                        f"forge-anim-tool exited successfully but did not "
+                        f"create split outputs for {source.name}"
+                    )
+
+            metadata["clip_files"] = clip_files
+            metadata["clip_count"] = len(clip_files)
+
+            # Use the first clip file as the canonical output, or the
+            # manifest if there are no clip binaries (zero animations).
+            canonical = output_dir / clip_files[0] if clip_files else manifest_path
+            return AssetResult(
+                source=source,
+                output=canonical,
+                metadata=metadata,
+            )
+
+        # Legacy single-file mode
+        output_path = output_dir / f"{source.stem}.fanim"
         if not output_path.exists():
             raise RuntimeError(
                 f"forge-anim-tool exited successfully but did not create {output_path}"
             )
 
-        if result.stdout:
-            log.debug("  stdout: %s", result.stdout.strip())
-
-        # -- Read metadata sidecar ------------------------------------------
         meta_path = output_path.with_suffix(".meta.json")
-        metadata: dict = {
-            "format": ".fanim",
-            "processed": True,
-        }
-
         if meta_path.exists():
             try:
                 sidecar = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -154,9 +251,6 @@ class AnimationPlugin(AssetPlugin):
                     meta_path,
                     exc,
                 )
-        else:
-            log.debug("  no metadata sidecar at %s — using defaults", meta_path.name)
-
         metadata["meta_file"] = meta_path.name
 
         return AssetResult(

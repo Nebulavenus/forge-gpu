@@ -1,0 +1,192 @@
+# Asset Lesson 11 — Animation Manifest and Named Lookup
+
+Adds a `.fanims` JSON manifest loader to `forge_pipeline.h` and upgrades
+`forge-anim-tool` to write complete manifests with loop flags and tags.
+After this lesson, gameplay code can look up animation clips by name,
+query loop settings, and filter by tags — without parsing filenames or
+hard-coding clip indices.
+
+## What you'll learn
+
+- How to parse a JSON manifest with cJSON — version validation, object
+  iteration, type checking
+- Named clip lookup: linear scan with `SDL_strcmp`
+- Convenience loading: manifest lookup + path resolution + binary loader
+  in one call
+- Directory-relative path resolution for portable asset references
+- Manifest design: human-editable JSON so artists can set loop flags and
+  tags after export without re-running the tool
+
+## Result
+
+After completing this lesson:
+
+- `forge_pipeline.h` can load `.fanims` manifests and look up clips by name
+- `forge_pipeline_load_clip()` resolves a clip name to a `.fanim` file and
+  loads it in one call
+- `forge-anim-tool --split` writes manifests with `loop` and `tags` fields
+- Tests validate the manifest loader across valid files, error cases, named
+  lookup, free safety, and convenience loading
+
+Look up and load a clip by name:
+
+```c
+ForgePipelineAnimSet set;
+if (forge_pipeline_load_anim_set("model.fanims", &set)) {
+    /* Find clip metadata */
+    const ForgePipelineAnimClipInfo *info =
+        forge_pipeline_find_clip(&set, "walk");
+    if (info) {
+        printf("walk: duration=%.2f loop=%s\n",
+               info->duration, info->loop ? "yes" : "no");
+    }
+
+    /* Load clip binary data by name */
+    ForgePipelineAnimFile file;
+    if (forge_pipeline_load_clip(&set, "walk", &file)) {
+        /* file.clips[0].samplers, .channels are ready to use */
+        forge_pipeline_free_animation(&file);
+    }
+
+    forge_pipeline_free_anim_set(&set);
+}
+```
+
+## The `.fanims` manifest format
+
+The manifest is a JSON file listing the per-clip `.fanim` files produced
+by `forge-anim-tool --split`. It is human-editable — artists and designers
+set loop flags and tags after export without re-running the tool.
+
+```json
+{
+  "version": 1,
+  "model": "CesiumMan",
+  "clips": {
+    "run":  { "file": "run.fanim",  "duration": 1.25, "loop": true,  "tags": ["locomotion"] },
+    "idle": { "file": "idle.fanim", "duration": 2.0,  "loop": true,  "tags": ["idle"] },
+    "jump": { "file": "jump.fanim", "duration": 0.8,  "loop": false, "tags": ["action"] }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | number | Must be `1` |
+| `model` | string | Model name (informational) |
+| `clips` | object | Keyed by clip name |
+| `clips.*.file` | string | Relative path to `.fanim` binary (required) |
+| `clips.*.duration` | number | Clip duration in seconds (optional, default 0) |
+| `clips.*.loop` | boolean | Whether the clip loops (optional, default false) |
+| `clips.*.tags` | array | String tags for filtering (optional, default empty) |
+
+## Manifest loader
+
+The loader (`forge_pipeline_load_anim_set`) reads the JSON file with
+`SDL_LoadFile`, parses it with cJSON, validates the version, and iterates
+the `clips` object. Each clip entry must have a string `file` field; other
+fields are optional with sensible defaults.
+
+The `base_dir` field is computed from the manifest file path — it stores
+the directory containing the manifest so that relative `.fanim` paths can
+be resolved at load time.
+
+### Named lookup
+
+`forge_pipeline_find_clip()` performs a linear scan over the clip array,
+comparing names with `SDL_strcmp`. For typical animation sets (under 50
+clips), linear scan is faster than a hash table due to cache locality and
+zero setup cost.
+
+### Convenience loading
+
+`forge_pipeline_load_clip()` combines three steps into one call:
+
+1. Find the clip by name in the manifest
+2. Construct the full path: `base_dir + clip.file`
+3. Call `forge_pipeline_load_animation()` to load the binary data
+
+## Manifest generation
+
+When `forge-anim-tool` runs in `--split` mode, it writes a `.fanims`
+manifest alongside the per-clip `.fanim` files. The generated manifest
+includes:
+
+- `version`: always 1
+- `model`: derived from the input filename stem
+- Per-clip entries with `file`, `duration`, `loop` (default false), and
+  `tags` (default empty)
+
+The tool generates conservative defaults. Users edit the manifest to set
+loop flags and add tags for their specific needs.
+
+## Pipeline plugin
+
+The animation plugin (`pipeline/plugins/animation.py`) reads the manifest
+as the source of truth for which clip files were produced. It validates
+the manifest structure strictly — the JSON root must be an object, `clips`
+must be an object, and each clip entry must be an object with a string
+`file` field.
+
+## Key concepts
+
+- **Human-editable manifests** — JSON manifests are generated by tools but
+  edited by humans. The tool writes conservative defaults; artists customize
+  loop flags and tags without re-running the export pipeline.
+- **Named lookup** — gameplay code references clips by name (`"walk"`,
+  `"idle"`) rather than by index or filename. This decouples game logic
+  from the asset pipeline's file naming conventions.
+- **Path resolution** — the manifest stores relative paths; the loader
+  resolves them against the manifest's directory. This keeps manifests
+  portable across different build output locations.
+- **Strict validation** — the loader rejects malformed manifests (missing
+  version, non-object clips, missing file fields) rather than silently
+  producing partial results.
+
+## Building
+
+Build the tests:
+
+```bash
+cmake --build build --target test_pipeline
+ctest --test-dir build -R pipeline
+```
+
+Build the animation tool:
+
+```bash
+cmake --build build --target forge_anim_tool
+```
+
+Test manifest generation:
+
+```bash
+./build/tools/anim/forge_anim_tool assets/models/CesiumMan/CesiumMan.gltf \
+    --split --output-dir /tmp/cesiumman/ --verbose
+cat /tmp/cesiumman/CesiumMan.fanims
+```
+
+## Exercises
+
+1. **Add a `forge_pipeline_find_clips_by_tag` function** — return all clips
+   that have a given tag. Useful for gameplay systems that need "all
+   locomotion animations" or "all idle variants."
+
+2. **Case-insensitive lookup** — modify `forge_pipeline_find_clip` to use
+   case-insensitive comparison. Consider whether this should be opt-in
+   (a separate function) or the default behavior.
+
+3. **Manifest merge** — write a tool or function that merges two `.fanims`
+   manifests (e.g., base animations + DLC animations) into one. Handle
+   name collisions by preferring the override manifest.
+
+## Cross-references
+
+- [Asset Lesson 06 — Loading Processed Assets](../06-loading-processed-assets/) —
+  introduced cJSON for JSON parsing in the pipeline
+- [Asset Lesson 10 — Animation Loader](../10-animation-loader/) — `.fanim`
+  binary format and runtime loader
+- [Asset Lesson 12 — Skinned Animations](../12-skinned-animations/) — skin
+  data and skinned vertices (next lesson)
+- `common/gltf/forge_gltf_anim.h` — runtime keyframe evaluation (slerp,
+  binary search)

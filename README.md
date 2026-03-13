@@ -114,7 +114,7 @@ system and other relevant topics.
 - **[Engine](lessons/engine/)** — CMake, C fundamentals, debugging, RenderDoc, git
 - **[UI](lessons/ui/)** — Immediate-mode UI from TTF parsing to draggable windows and developer tools
 - **[Physics](lessons/physics/)** — Particles, rigid bodies, collisions, constraints
-- **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry, asset bundles
+- **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry, asset bundles, animation pipeline
 
 ## Using Claude Code
 

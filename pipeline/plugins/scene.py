@@ -109,6 +109,10 @@ class ScenePlugin(AssetPlugin):
         args: list[str] = [tool, str(source), str(output_path)]
         args.append("--verbose")
 
+        # Export skin data when enabled (default: true for skinned models)
+        if settings.get("skins", True):
+            args.append("--skins")
+
         log.debug("Running: %s", " ".join(args))
 
         # -- Execute --------------------------------------------------------

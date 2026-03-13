@@ -35,6 +35,7 @@
  *
  * Usage:
  *   forge-anim-tool <input.gltf> <output.fanim> [--verbose]
+ *   forge-anim-tool <input.gltf> --split --output-dir <dir> [--verbose]
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -50,43 +51,34 @@
 #define FANIM_MAGIC      "FANM"
 #define FANIM_MAGIC_SIZE 4
 #define FANIM_VERSION    1
+#define FANIMS_VERSION   1  /* .fanims JSON manifest version */
+
+/* Runtime limits — must match forge_pipeline.h so the loader accepts files
+ * we produce.  Validated before writing any .fanim output. */
+#define MAX_CLIP_STEMS       256
+#define MAX_ANIM_SAMPLERS    512
+#define MAX_ANIM_CHANNELS    512
+#define MAX_KEYFRAMES        65536
+
+/* Buffer sizes for stem names, file paths, and model names. */
+#define STEM_NAME_MAX        256
+#define CLIP_PATH_MAX        1024
+#define MODEL_NAME_MAX       256
+#define STEM_SUFFIX_RESERVE  12   /* room for "_2147483647" + NUL */
 
 /* ── Tool options ────────────────────────────────────────────────────────── */
 
 typedef struct ToolOptions {
     const char *input_path;   /* source glTF/GLB file */
-    const char *output_path;  /* destination .fanim file */
+    const char *output_path;  /* destination .fanim file (single-file mode) */
+    const char *output_dir;   /* destination directory (--split mode) */
     bool        verbose;      /* print statistics to stdout */
+    bool        split;        /* write one .fanim per clip */
 } ToolOptions;
 
 /* ── Binary helper ───────────────────────────────────────────────────────── */
 
-/* Write a uint32 in little-endian byte order to an SDL I/O stream. */
-static bool write_u32_le(SDL_IOStream *io, uint32_t val)
-{
-    uint8_t bytes[4];
-    bytes[0] = (uint8_t)(val);
-    bytes[1] = (uint8_t)(val >> 8);
-    bytes[2] = (uint8_t)(val >> 16);
-    bytes[3] = (uint8_t)(val >> 24);
-    return SDL_WriteIO(io, bytes, 4) == 4;
-}
-
-/* Write a signed int32 in little-endian byte order. */
-static bool write_i32_le(SDL_IOStream *io, int32_t val)
-{
-    uint32_t uval;
-    memcpy(&uval, &val, sizeof(uval));
-    return write_u32_le(io, uval);
-}
-
-/* Write a float in little-endian byte order. */
-static bool write_float_le(SDL_IOStream *io, float val)
-{
-    uint32_t bits;
-    memcpy(&bits, &val, sizeof(bits));
-    return write_u32_le(io, bits);
-}
+#include "../common/binary_io.h"
 
 /* ── Filename extraction helper ──────────────────────────────────────────── */
 
@@ -137,13 +129,23 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
 {
     opts->input_path = NULL;
     opts->output_path = NULL;
+    opts->output_dir = NULL;
     opts->verbose = false;
+    opts->split = false;
 
     int positional = 0;
     int i;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
             opts->verbose = true;
+        } else if (strcmp(argv[i], "--split") == 0) {
+            opts->split = true;
+        } else if (strcmp(argv[i], "--output-dir") == 0) {
+            if (i + 1 >= argc) {
+                SDL_Log("Error: --output-dir requires an argument");
+                return false;
+            }
+            opts->output_dir = argv[++i];
         } else if (argv[i][0] == '-') {
             SDL_Log("Error: unknown option '%s'", argv[i]);
             return false;
@@ -160,9 +162,31 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
         }
     }
 
-    if (!opts->input_path || !opts->output_path) {
-        SDL_Log("Usage: forge-anim-tool <input.gltf> <output.fanim> [--verbose]");
+    if (!opts->input_path) {
+        SDL_Log("Usage: forge-anim-tool <input.gltf> <output.fanim> [--verbose]\n"
+                "       forge-anim-tool <input.gltf> --split --output-dir <dir> [--verbose]");
         return false;
+    }
+
+    /* Enforce mutually exclusive CLI modes. */
+    if (opts->split) {
+        if (!opts->output_dir) {
+            SDL_Log("Error: --split requires --output-dir <dir>");
+            return false;
+        }
+        if (opts->output_path) {
+            SDL_Log("Error: positional <output.fanim> is invalid with --split");
+            return false;
+        }
+    } else {
+        if (!opts->output_path) {
+            SDL_Log("Usage: forge-anim-tool <input.gltf> <output.fanim> [--verbose]");
+            return false;
+        }
+        if (opts->output_dir) {
+            SDL_Log("Error: --output-dir is only valid with --split");
+            return false;
+        }
     }
     return true;
 }
@@ -366,6 +390,261 @@ static bool write_meta_json(const char *fanim_path, const char *source_path,
     return true;
 }
 
+/* ── Per-clip split helpers ──────────────────────────────────────────────── */
+
+/* Sanitize a clip name for use as a filename.
+ * Lowercases letters, replaces spaces and special chars with underscores,
+ * strips leading/trailing underscores. Result is written to `out`. */
+static void sanitize_clip_name(const char *name, char *out, size_t out_size)
+{
+    if (!name || !out || out_size == 0) return;
+
+    size_t j = 0;
+    size_t i;
+    for (i = 0; name[i] != '\0' && j < out_size - 1; i++) {
+        char c = name[i];
+        if (c >= 'A' && c <= 'Z') {
+            out[j++] = (char)(c + ('a' - 'A'));
+        } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            out[j++] = c;
+        } else {
+            /* Replace spaces/special chars with underscore, but avoid
+             * consecutive underscores */
+            if (j > 0 && out[j - 1] != '_') {
+                out[j++] = '_';
+            }
+        }
+    }
+    /* Strip trailing underscore */
+    if (j > 0 && out[j - 1] == '_') {
+        j--;
+    }
+    /* Fallback for empty names */
+    if (j == 0) {
+        SDL_strlcpy(out, "clip", out_size);
+        return;
+    }
+    out[j] = '\0';
+}
+
+/* Deduplicate a sanitized clip stem against already-used stems.
+ * If `base` collides with an existing entry, appends "_2", "_3", etc.
+ * Returns false if the stem table overflows. */
+static bool dedupe_clip_stem(const char *base,
+                             char stems[][STEM_NAME_MAX], int *stem_count,
+                             int max_stems, char *out, size_t out_size)
+{
+    /* Trim base so there is always room for a suffix like "_999". */
+    char base_trimmed[STEM_NAME_MAX];
+    SDL_strlcpy(base_trimmed, base, sizeof(base_trimmed));
+    if (SDL_strlen(base_trimmed) > out_size - STEM_SUFFIX_RESERVE) {
+        base_trimmed[out_size - STEM_SUFFIX_RESERVE] = '\0';
+    }
+    SDL_strlcpy(out, base_trimmed, out_size);
+    int suffix = 1;
+    bool collision = true;
+    while (collision) {
+        collision = false;
+        int i;
+        for (i = 0; i < *stem_count; i++) {
+            if (strcmp(stems[i], out) == 0) {
+                collision = true;
+                int n = SDL_snprintf(out, out_size, "%s_%d",
+                                     base_trimmed, suffix++);
+                if (n < 0 || (size_t)n >= out_size) {
+                    return false; /* cannot produce a unique stem */
+                }
+                break;
+            }
+        }
+    }
+    if (*stem_count >= max_stems) {
+        return false;
+    }
+    SDL_strlcpy(stems[*stem_count], out, STEM_NAME_MAX);
+    (*stem_count)++;
+    return true;
+}
+
+/* Write a single-clip .fanim file for one animation. */
+static bool write_fanim_single_clip(const char *output_path,
+                                     const ForgeGltfAnimation *anim,
+                                     bool verbose)
+{
+    SDL_IOStream *io = SDL_IOFromFile(output_path, "wb");
+    if (!io) {
+        SDL_Log("Error: failed to open '%s' for writing: %s",
+                output_path, SDL_GetError());
+        return false;
+    }
+
+    bool ok = true;
+
+    /* Header: 1 clip */
+    ok = ok && (SDL_WriteIO(io, FANIM_MAGIC, FANIM_MAGIC_SIZE) == FANIM_MAGIC_SIZE);
+    ok = ok && write_u32_le(io, FANIM_VERSION);
+    ok = ok && write_u32_le(io, 1);
+
+    if (!ok) {
+        SDL_Log("Error: failed writing single-clip .fanim header");
+        SDL_CloseIO(io);
+        return false;
+    }
+
+    /* Clip header */
+    char name_buf[FORGE_GLTF_NAME_SIZE];
+    memset(name_buf, 0, sizeof(name_buf));
+    SDL_strlcpy(name_buf, anim->name, sizeof(name_buf));
+    ok = ok && (SDL_WriteIO(io, name_buf, sizeof(name_buf)) == sizeof(name_buf));
+    ok = ok && write_float_le(io, anim->duration);
+    ok = ok && write_u32_le(io, (uint32_t)anim->sampler_count);
+    ok = ok && write_u32_le(io, (uint32_t)anim->channel_count);
+
+    /* Samplers */
+    int si;
+    for (si = 0; si < anim->sampler_count && ok; si++) {
+        const ForgeGltfAnimSampler *samp = &anim->samplers[si];
+        ok = ok && write_u32_le(io, (uint32_t)samp->keyframe_count);
+        ok = ok && write_u32_le(io, (uint32_t)samp->value_components);
+        ok = ok && write_u32_le(io, (uint32_t)samp->interpolation);
+
+        int ki;
+        for (ki = 0; ki < samp->keyframe_count && ok; ki++) {
+            ok = ok && write_float_le(io, samp->timestamps[ki]);
+        }
+        int total_values = samp->keyframe_count * samp->value_components;
+        int vi;
+        for (vi = 0; vi < total_values && ok; vi++) {
+            ok = ok && write_float_le(io, samp->values[vi]);
+        }
+    }
+
+    /* Channels */
+    int chi;
+    for (chi = 0; chi < anim->channel_count && ok; chi++) {
+        const ForgeGltfAnimChannel *ch = &anim->channels[chi];
+        ok = ok && write_i32_le(io, (int32_t)ch->target_node);
+        ok = ok && write_u32_le(io, (uint32_t)ch->target_path);
+        ok = ok && write_u32_le(io, (uint32_t)ch->sampler_index);
+    }
+
+    if (!ok || SDL_GetIOStatus(io) == SDL_IO_STATUS_ERROR) {
+        SDL_Log("Error: write error on '%s': %s", output_path, SDL_GetError());
+        SDL_CloseIO(io);
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("Error: failed to close '%s': %s", output_path, SDL_GetError());
+        return false;
+    }
+
+    if (verbose) {
+        SDL_Log("  Wrote clip \"%s\" (%.3f s) to '%s'",
+                anim->name, (double)anim->duration, output_path);
+    }
+    return true;
+}
+
+/* Pre-compute sanitized + deduplicated clip stems for all animations.
+ * Both the manifest writer and the per-clip exporter need identical stems;
+ * generating them once avoids duplicated sanitize+dedupe passes and
+ * guarantees the two paths stay in sync. */
+static bool generate_clip_stems(const ForgeGltfScene *scene,
+                                 char stems[][STEM_NAME_MAX], int *count)
+{
+    *count = 0;
+    int ci;
+    for (ci = 0; ci < scene->animation_count; ci++) {
+        char sanitized[STEM_NAME_MAX];
+        sanitize_clip_name(scene->animations[ci].name,
+                           sanitized, sizeof(sanitized));
+        char unique[STEM_NAME_MAX];
+        if (!dedupe_clip_stem(sanitized, stems, count,
+                              MAX_CLIP_STEMS, unique, sizeof(unique))) {
+            SDL_Log("Error: too many clips for deduplication (max %d)",
+                    MAX_CLIP_STEMS);
+            return false;
+        }
+        /* dedupe_clip_stem already appended unique to stems[]. Copy the
+         * final unique name back so the caller has it at stems[ci]. */
+    }
+    return true;
+}
+
+/* Write a .fanims JSON manifest listing the per-clip files.
+ * The manifest includes clip name, file, duration, loop flag, and tags.
+ * Users can edit this file to set loop flags and tags after export. */
+static bool write_fanims_stub(const char *output_dir,
+                               const char *model_name,
+                               const ForgeGltfScene *scene,
+                               const char stems[][STEM_NAME_MAX],
+                               int stem_count)
+{
+    char manifest_path[CLIP_PATH_MAX];
+    int n = SDL_snprintf(manifest_path, sizeof(manifest_path),
+                         "%s/%s.fanims", output_dir, model_name);
+    if (n < 0 || (size_t)n >= sizeof(manifest_path)) {
+        SDL_Log("Error: manifest path too long for '%s/%s.fanims'",
+                output_dir, model_name);
+        return false;
+    }
+
+    SDL_IOStream *io = SDL_IOFromFile(manifest_path, "wb");
+    if (!io) {
+        SDL_Log("Error: failed to open '%s' for writing: %s",
+                manifest_path, SDL_GetError());
+        return false;
+    }
+
+    SDL_IOprintf(io, "{\n");
+    SDL_IOprintf(io, "  \"version\": %d,\n", FANIMS_VERSION);
+    SDL_IOprintf(io, "  \"model\": ");
+    write_json_string(io, model_name);
+    SDL_IOprintf(io, ",\n");
+    SDL_IOprintf(io, "  \"clips\": {\n");
+
+    int ci;
+    for (ci = 0; ci < stem_count; ci++) {
+        const ForgeGltfAnimation *anim = &scene->animations[ci];
+
+        SDL_IOprintf(io, "    ");
+        write_json_string(io, stems[ci]);
+        SDL_IOprintf(io, ": { \"file\": \"%s.fanim\", \"duration\": %.6f, "
+                     "\"loop\": false, \"tags\": [] }",
+                     stems[ci], (double)anim->duration);
+        if (ci < stem_count - 1) {
+            SDL_IOprintf(io, ",");
+        }
+        SDL_IOprintf(io, "\n");
+    }
+
+    SDL_IOprintf(io, "  }\n");
+    SDL_IOprintf(io, "}\n");
+
+    if (SDL_GetIOStatus(io) == SDL_IO_STATUS_ERROR) {
+        SDL_Log("Error: write error on '%s': %s", manifest_path, SDL_GetError());
+        SDL_CloseIO(io);
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("Error: failed to close '%s': %s", manifest_path, SDL_GetError());
+        return false;
+    }
+
+    SDL_Log("Wrote manifest: '%s'", manifest_path);
+    return true;
+}
+
+/* Extract the model name (filename stem) from a path. */
+static void model_name_from_path(const char *path, char *out, size_t out_size)
+{
+    const char *name = basename_from_path(path);
+    SDL_strlcpy(out, name, out_size);
+    /* Strip extension */
+    char *dot = strrchr(out, '.');
+    if (dot) *dot = '\0';
+}
+
 /* ── Main processing ─────────────────────────────────────────────────────── */
 
 static bool process_animations(const ToolOptions *opts)
@@ -388,27 +667,126 @@ static bool process_animations(const ToolOptions *opts)
                 opts->input_path, scene.animation_count, scene.node_count);
     }
 
-    /* ── Step 2: Check for animations ────────────────────────────────────── */
+    /* ── Step 2: Validate against runtime limits ─────────────────────────── */
     if (scene.animation_count == 0) {
         SDL_Log("Warning: '%s' contains no animations — writing empty .fanim",
                 opts->input_path);
     }
 
-    /* ── Step 3: Write .fanim binary ─────────────────────────────────────── */
-    if (!write_fanim(opts->output_path, &scene, opts->verbose)) {
+    if (scene.animation_count > MAX_CLIP_STEMS) {
+        SDL_Log("Error: '%s' has %d clips (max %d)",
+                opts->input_path, scene.animation_count, MAX_CLIP_STEMS);
         forge_arena_destroy(&gltf_arena);
         return false;
     }
 
-    /* ── Step 4: Write .meta.json sidecar ────────────────────────────────── */
-    if (!write_meta_json(opts->output_path, opts->input_path, &scene)) {
-        forge_arena_destroy(&gltf_arena);
-        return false;
+    {
+        int ci;
+        for (ci = 0; ci < scene.animation_count; ci++) {
+            const ForgeGltfAnimation *anim = &scene.animations[ci];
+            if (anim->sampler_count > MAX_ANIM_SAMPLERS) {
+                SDL_Log("Error: clip '%s' has %d samplers (max %d)",
+                        anim->name, anim->sampler_count, MAX_ANIM_SAMPLERS);
+                forge_arena_destroy(&gltf_arena);
+                return false;
+            }
+            if (anim->channel_count > MAX_ANIM_CHANNELS) {
+                SDL_Log("Error: clip '%s' has %d channels (max %d)",
+                        anim->name, anim->channel_count, MAX_ANIM_CHANNELS);
+                forge_arena_destroy(&gltf_arena);
+                return false;
+            }
+            {
+                int si;
+                for (si = 0; si < anim->sampler_count; si++) {
+                    const ForgeGltfAnimSampler *samp = &anim->samplers[si];
+                    if (samp->value_components != 3 &&
+                        samp->value_components != 4) {
+                        SDL_Log("Error: clip '%s' sampler %d has invalid "
+                                "value_components=%d (expected 3 or 4)",
+                                anim->name, si, samp->value_components);
+                        forge_arena_destroy(&gltf_arena);
+                        return false;
+                    }
+                    if (samp->keyframe_count > MAX_KEYFRAMES) {
+                        SDL_Log("Error: clip '%s' sampler %d has %d keyframes "
+                                "(max %d)", anim->name, si,
+                                samp->keyframe_count, MAX_KEYFRAMES);
+                        forge_arena_destroy(&gltf_arena);
+                        return false;
+                    }
+                }
+            }
+        }
     }
 
-    /* Print summary to stdout (captured by the Python pipeline plugin) */
-    SDL_Log("extracted %d clip(s) from '%s'",
-            scene.animation_count, basename_from_path(opts->input_path));
+    /* ── Step 3: Write output ────────────────────────────────────────────── */
+    if (opts->split) {
+        /* Ensure the output directory exists before writing files. */
+        if (!SDL_CreateDirectory(opts->output_dir)) {
+            SDL_Log("Error: failed to create output directory '%s': %s",
+                    opts->output_dir, SDL_GetError());
+            forge_arena_destroy(&gltf_arena);
+            return false;
+        }
+
+        /* Pre-compute sanitized + deduplicated stems once so the per-clip
+         * exporter and the manifest writer use identical names. */
+        char clip_stems[MAX_CLIP_STEMS][STEM_NAME_MAX];
+        int stem_count = 0;
+        if (!generate_clip_stems(&scene, clip_stems, &stem_count)) {
+            forge_arena_destroy(&gltf_arena);
+            return false;
+        }
+
+        int ci;
+        for (ci = 0; ci < scene.animation_count; ci++) {
+            char clip_path[CLIP_PATH_MAX];
+            int pn = SDL_snprintf(clip_path, sizeof(clip_path),
+                                  "%s/%s.fanim",
+                                  opts->output_dir, clip_stems[ci]);
+            if (pn < 0 || (size_t)pn >= sizeof(clip_path)) {
+                SDL_Log("Error: clip path too long for '%s/%s.fanim'",
+                        opts->output_dir, clip_stems[ci]);
+                forge_arena_destroy(&gltf_arena);
+                return false;
+            }
+
+            if (!write_fanim_single_clip(clip_path, &scene.animations[ci],
+                                          opts->verbose)) {
+                forge_arena_destroy(&gltf_arena);
+                return false;
+            }
+        }
+
+        /* Write .fanims stub manifest */
+        char model_name[MODEL_NAME_MAX];
+        model_name_from_path(opts->input_path, model_name, sizeof(model_name));
+        if (!write_fanims_stub(opts->output_dir, model_name, &scene,
+                               (const char (*)[STEM_NAME_MAX])clip_stems,
+                               stem_count)) {
+            forge_arena_destroy(&gltf_arena);
+            return false;
+        }
+
+        SDL_Log("split %d clip(s) from '%s' into '%s'",
+                scene.animation_count, basename_from_path(opts->input_path),
+                opts->output_dir);
+    } else {
+        /* Single-file mode: all clips in one .fanim */
+        if (!write_fanim(opts->output_path, &scene, opts->verbose)) {
+            forge_arena_destroy(&gltf_arena);
+            return false;
+        }
+
+        if (!write_meta_json(opts->output_path, opts->input_path, &scene)) {
+            forge_arena_destroy(&gltf_arena);
+            return false;
+        }
+
+        SDL_Log("extracted %d clip(s) from '%s'",
+                scene.animation_count, basename_from_path(opts->input_path));
+    }
 
     forge_arena_destroy(&gltf_arena);
     return true;

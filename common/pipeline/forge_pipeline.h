@@ -5,6 +5,7 @@
  *   - .fmesh v2 files (optimised meshes with submeshes, LODs, tangents)
  *   - .fmat files (PBR material sidecars — JSON)
  *   - .fscene files (node hierarchy with transforms and mesh references)
+ *   - .fanim files (animation clips with samplers and channels)
  *   - Texture files with .meta.json sidecars (mip chains, format metadata)
  *
  * This is a header-only library.  In exactly ONE .c file, define
@@ -53,7 +54,8 @@
 
 /* .fmesh binary format identifiers */
 #define FORGE_PIPELINE_FMESH_MAGIC   "FMSH"
-#define FORGE_PIPELINE_FMESH_VERSION 2
+#define FORGE_PIPELINE_FMESH_VERSION      2
+#define FORGE_PIPELINE_FMESH_VERSION_SKIN 3
 
 /* .fmesh header layout sizes (bytes) */
 #define FORGE_PIPELINE_HEADER_SIZE    32
@@ -83,6 +85,26 @@
 
 /* .fmat material sidecar format version */
 #define FORGE_PIPELINE_FMAT_VERSION   1
+
+/* .fanim binary format identifiers */
+#define FORGE_PIPELINE_FANIM_MAGIC       "FANM"
+#define FORGE_PIPELINE_FANIM_MAGIC_SIZE  4
+#define FORGE_PIPELINE_FANIM_VERSION     1
+#define FORGE_PIPELINE_FANIM_HEADER_SIZE 12
+
+/* .fanim clip header: 64B name + 4B duration + 4B sampler_count +
+ * 4B channel_count */
+#define FORGE_PIPELINE_CLIP_HEADER_SIZE    76
+
+/* .fanim sampler header: 3 × u32 (keyframe_count, value_components,
+ * interpolation) */
+#define FORGE_PIPELINE_SAMPLER_HEADER_SIZE 12
+
+/* Upper bounds for .fanim validation */
+#define FORGE_PIPELINE_MAX_ANIM_CLIPS    256
+#define FORGE_PIPELINE_MAX_ANIM_SAMPLERS 512
+#define FORGE_PIPELINE_MAX_ANIM_CHANNELS 512
+#define FORGE_PIPELINE_MAX_KEYFRAMES     65536
 
 /* ── Mesh types ────────────────────────────────────────────────────────── */
 
@@ -252,6 +274,140 @@ typedef struct ForgePipelineScene {
     uint32_t                child_count; /* total entries in children array */
 } ForgePipelineScene;
 
+/* ── Animation types ───────────────────────────────────────────────────── */
+
+/* Interpolation mode for animation samplers. */
+typedef enum ForgePipelineAnimInterp {
+    FORGE_PIPELINE_INTERP_LINEAR = 0,
+    FORGE_PIPELINE_INTERP_STEP   = 1
+} ForgePipelineAnimInterp;
+
+/* Target property for animation channels. */
+typedef enum ForgePipelineAnimPath {
+    FORGE_PIPELINE_ANIM_TRANSLATION = 0,
+    FORGE_PIPELINE_ANIM_ROTATION    = 1,
+    FORGE_PIPELINE_ANIM_SCALE       = 2
+} ForgePipelineAnimPath;
+
+/* A single animation sampler: keyframe timestamps and output values.
+ * Translation/scale have 3 components, rotation has 4 (quaternion). */
+typedef struct ForgePipelineAnimSampler {
+    float   *timestamps;        /* heap-allocated, keyframe_count floats */
+    float   *values;            /* keyframe_count * value_components floats */
+    uint32_t keyframe_count;    /* number of keyframes in this sampler */
+    uint32_t value_components;  /* 3 (translation/scale) or 4 (rotation) */
+    ForgePipelineAnimInterp interpolation; /* LINEAR or STEP */
+} ForgePipelineAnimSampler;
+
+/* A single animation channel: links a sampler to a node property. */
+typedef struct ForgePipelineAnimChannel {
+    int32_t               target_node;   /* scene node index (-1 if unset) */
+    ForgePipelineAnimPath target_path;   /* translation, rotation, or scale */
+    uint32_t              sampler_index; /* index into the clip's sampler array */
+} ForgePipelineAnimChannel;
+
+/* One animation clip with its samplers and channels. */
+typedef struct ForgePipelineAnimation {
+    char     name[64];                    /* clip name (null-terminated) */
+    float    duration;                    /* max timestamp across all samplers (seconds) */
+    ForgePipelineAnimSampler *samplers;   /* heap-allocated sampler array */
+    uint32_t                  sampler_count; /* number of samplers */
+    ForgePipelineAnimChannel *channels;   /* heap-allocated channel array */
+    uint32_t                  channel_count; /* number of channels */
+} ForgePipelineAnimation;
+
+/* A loaded .fanim file containing one or more animation clips. */
+typedef struct ForgePipelineAnimFile {
+    ForgePipelineAnimation *clips;      /* heap-allocated clip array */
+    uint32_t                clip_count; /* number of clips in the file */
+} ForgePipelineAnimFile;
+
+/* ── Animation manifest types (.fanims) ───────────────────────────────── */
+
+/* .fanims manifest version */
+#define FORGE_PIPELINE_FANIMS_VERSION     1
+
+/* Upper bounds for .fanims manifest validation */
+#define FORGE_PIPELINE_MAX_ANIM_SET_CLIPS 256
+#define FORGE_PIPELINE_MAX_CLIP_TAGS      16
+#define FORGE_PIPELINE_MAX_TAG_LEN        32
+
+/* Information about one animation clip from a .fanims manifest. */
+typedef struct ForgePipelineAnimClipInfo {
+    char     name[64];        /* clip name (manifest key) */
+    char     file[256];       /* relative .fanim path */
+    float    duration;        /* clip duration in seconds */
+    bool     loop;            /* true if the clip should loop */
+    char     tags[FORGE_PIPELINE_MAX_CLIP_TAGS][FORGE_PIPELINE_MAX_TAG_LEN];
+                              /* user-defined tags (e.g. "locomotion", "idle") */
+    uint32_t tag_count;       /* number of valid tags */
+} ForgePipelineAnimClipInfo;
+
+/* A loaded .fanims manifest — metadata for a set of per-clip .fanim files. */
+typedef struct ForgePipelineAnimSet {
+    char     model[64];       /* model name from manifest */
+    ForgePipelineAnimClipInfo *clips; /* heap-allocated clip info array */
+    uint32_t                   clip_count; /* number of clips in the manifest */
+    char     base_dir[512];   /* directory containing the manifest (for path resolution) */
+} ForgePipelineAnimSet;
+
+/* ── Skin types (.fskin) ──────────────────────────────────────────────── */
+
+/* .fskin binary format identifiers */
+#define FORGE_PIPELINE_FSKIN_MAGIC       "FSKN"
+#define FORGE_PIPELINE_FSKIN_MAGIC_SIZE  4
+#define FORGE_PIPELINE_FSKIN_VERSION     1
+#define FORGE_PIPELINE_FSKIN_HEADER_SIZE 12
+
+/* Upper bounds for .fskin validation */
+#define FORGE_PIPELINE_MAX_SKINS         64
+#define FORGE_PIPELINE_MAX_SKIN_JOINTS   256
+
+/* A single skin: joint hierarchy and inverse bind matrices. */
+typedef struct ForgePipelineSkin {
+    char     name[64];              /* skin name (null-terminated) */
+    int32_t *joints;                /* joint_count node indices */
+    float   *inverse_bind_matrices; /* joint_count * 16 floats (column-major) */
+    uint32_t joint_count;           /* number of joints in this skin */
+    int32_t  skeleton;              /* root joint node, -1 if unset */
+} ForgePipelineSkin;
+
+/* A loaded .fskin file containing one or more skins. */
+typedef struct ForgePipelineSkinSet {
+    ForgePipelineSkin *skins;       /* heap-allocated skin array */
+    uint32_t           skin_count;  /* number of skins in the file */
+} ForgePipelineSkinSet;
+
+/* ── Skinned vertex types ─────────────────────────────────────────────── */
+
+/* .fmesh v3 flag for skinned vertex data */
+#define FORGE_PIPELINE_FLAG_SKINNED (1u << 1)
+
+/* Skinned vertex strides:
+ * Stride 56: position(12) + normal(12) + uv(8) + joints(8) + weights(16)
+ * Stride 72: position(12) + normal(12) + uv(8) + tangent(16) + joints(8) + weights(16) */
+#define FORGE_PIPELINE_VERTEX_STRIDE_SKIN     56
+#define FORGE_PIPELINE_VERTEX_STRIDE_SKIN_TAN 72
+
+/* Skinned vertex without tangent data (stride 56). */
+typedef struct ForgePipelineVertexSkin {
+    float    position[3];   /* 12B */
+    float    normal[3];     /* 12B */
+    float    uv[2];         /*  8B */
+    uint16_t joints[4];     /*  8B — bone indices */
+    float    weights[4];    /* 16B — blend weights */
+} ForgePipelineVertexSkin;  /* 56B total */
+
+/* Skinned vertex with tangent data (stride 72). */
+typedef struct ForgePipelineVertexSkinTan {
+    float    position[3];   /* 12B */
+    float    normal[3];     /* 12B */
+    float    uv[2];         /*  8B */
+    float    tangent[4];    /* 16B — xyz = tangent direction, w = bitangent sign */
+    uint16_t joints[4];     /*  8B — bone indices */
+    float    weights[4];    /* 16B — blend weights */
+} ForgePipelineVertexSkinTan; /* 72B total */
+
 /* ── Function declarations ─────────────────────────────────────────────── */
 
 /*
@@ -380,6 +536,92 @@ void forge_pipeline_free_scene(ForgePipelineScene *scene);
 const ForgePipelineSceneMesh *forge_pipeline_scene_get_mesh(
     const ForgePipelineScene *scene, uint32_t mesh_index);
 
+/*
+ * forge_pipeline_load_animation — Load a .fanim binary file.
+ *
+ * Reads the file at `path`, validates the header, and populates `file`
+ * with allocated clip, sampler, and channel data.  Per-sampler timestamp
+ * and value arrays are individually heap-allocated.  The caller owns the
+ * memory and must call forge_pipeline_free_animation() when done.
+ *
+ * Returns true on success, false on any error (logged via SDL_Log).
+ */
+bool forge_pipeline_load_animation(const char *path,
+                                    ForgePipelineAnimFile *file);
+
+/*
+ * forge_pipeline_free_animation — Release all memory owned by an anim file.
+ *
+ * Frees per-sampler arrays, per-clip sampler/channel arrays, the clips
+ * array, and zeroes the struct.  Safe to call on a zeroed, NULL, or
+ * already-freed file.
+ */
+void forge_pipeline_free_animation(ForgePipelineAnimFile *file);
+
+/*
+ * forge_pipeline_load_anim_set — Load a .fanims JSON manifest.
+ *
+ * Reads the file at `path`, parses the manifest, and populates `set`
+ * with allocated clip info data.  The base_dir is set to the directory
+ * containing the manifest file for resolving relative .fanim paths.
+ *
+ * Returns true on success, false on any error (logged via SDL_Log).
+ */
+bool forge_pipeline_load_anim_set(const char *path,
+                                   ForgePipelineAnimSet *set);
+
+/*
+ * forge_pipeline_free_anim_set — Release all memory owned by an anim set.
+ *
+ * Safe to call on a zeroed, NULL, or already-freed set.
+ */
+void forge_pipeline_free_anim_set(ForgePipelineAnimSet *set);
+
+/*
+ * forge_pipeline_find_clip — Find a clip by name in an animation set.
+ *
+ * Returns a pointer to the clip info, or NULL if not found.
+ * The returned pointer is valid until the set is freed.
+ */
+const ForgePipelineAnimClipInfo *forge_pipeline_find_clip(
+    const ForgePipelineAnimSet *set, const char *name);
+
+/*
+ * forge_pipeline_load_clip — Load a clip by name from an animation set.
+ *
+ * Convenience: finds the clip in the manifest, constructs the full path
+ * from base_dir + file, and calls forge_pipeline_load_animation().
+ *
+ * Returns true on success, false if the clip is not found or loading fails.
+ */
+bool forge_pipeline_load_clip(const ForgePipelineAnimSet *set,
+                               const char *name,
+                               ForgePipelineAnimFile *file);
+
+/*
+ * forge_pipeline_load_skins — Load a .fskin binary file.
+ *
+ * Reads the file at `path`, validates the header, and populates `skins`
+ * with allocated skin data (joints and inverse bind matrices).
+ * The caller owns the memory and must call forge_pipeline_free_skins().
+ *
+ * Returns true on success, false on any error (logged via SDL_Log).
+ */
+bool forge_pipeline_load_skins(const char *path,
+                                ForgePipelineSkinSet *skins);
+
+/*
+ * forge_pipeline_free_skins — Release all memory owned by a skin set.
+ *
+ * Safe to call on a zeroed, NULL, or already-freed set.
+ */
+void forge_pipeline_free_skins(ForgePipelineSkinSet *skins);
+
+/*
+ * forge_pipeline_has_skin_data — Check if the mesh has skinned vertices.
+ */
+bool forge_pipeline_has_skin_data(const ForgePipelineMesh *mesh);
+
 /* ── Implementation ────────────────────────────────────────────────────── */
 
 #ifdef FORGE_PIPELINE_IMPLEMENTATION
@@ -459,12 +701,15 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     }
     p += FORGE_PIPELINE_FMESH_MAGIC_SIZE;
 
-    /* Version — v2 only */
+    /* Version — v2 or v3 */
     uint32_t version = forge_pipeline__read_u32_le(p);
     p += sizeof(uint32_t);
-    if (version != FORGE_PIPELINE_FMESH_VERSION) {
+    if (version != FORGE_PIPELINE_FMESH_VERSION &&
+        version != FORGE_PIPELINE_FMESH_VERSION_SKIN) {
         SDL_Log("forge_pipeline_load_mesh: '%s' has unsupported version %u "
-                "(expected %u)", path, version, FORGE_PIPELINE_FMESH_VERSION);
+                "(expected %u or %u)", path, version,
+                FORGE_PIPELINE_FMESH_VERSION,
+                FORGE_PIPELINE_FMESH_VERSION_SKIN);
         SDL_free(file_data);
         return false;
     }
@@ -477,11 +722,11 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     uint32_t vertex_stride = forge_pipeline__read_u32_le(p);
     p += sizeof(uint32_t);
     if (vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_NO_TAN &&
-        vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_TAN) {
-        SDL_Log("forge_pipeline_load_mesh: '%s' has invalid vertex stride %u "
-                "(expected %d or %d)", path, vertex_stride,
-                FORGE_PIPELINE_VERTEX_STRIDE_NO_TAN,
-                FORGE_PIPELINE_VERTEX_STRIDE_TAN);
+        vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_TAN &&
+        vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_SKIN &&
+        vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_SKIN_TAN) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' has invalid vertex stride %u",
+                path, vertex_stride);
         SDL_free(file_data);
         return false;
     }
@@ -511,19 +756,61 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     }
     p += FORGE_PIPELINE_HEADER_RESERVED; /* remaining reserved padding */
 
-    /* ── Validate tangent flag / stride consistency ───────────────── */
+    /* Reject unknown flag bits — prevents misinterpreting corrupt or
+     * newer-version files that use flags this loader doesn't understand. */
+    {
+        const uint32_t known_flags =
+            FORGE_PIPELINE_FLAG_TANGENTS | FORGE_PIPELINE_FLAG_SKINNED;
+        if ((flags & ~known_flags) != 0u) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' has unknown flags 0x%08x",
+                    path, flags & ~known_flags);
+            SDL_free(file_data);
+            return false;
+        }
+    }
+
+    /* ── Validate flag / stride consistency ───────────────────────── */
     bool has_tangents = (flags & FORGE_PIPELINE_FLAG_TANGENTS) != 0;
-    if (has_tangents && vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_TAN) {
+    bool has_skin = (flags & FORGE_PIPELINE_FLAG_SKINNED) != 0;
+
+    /* Tangent flag must match tangent-capable strides */
+    if (has_tangents && vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_TAN &&
+        vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_SKIN_TAN) {
         SDL_Log("forge_pipeline_load_mesh: '%s' has TANGENTS flag but "
-                "stride is %u (expected %d)", path, vertex_stride,
-                FORGE_PIPELINE_VERTEX_STRIDE_TAN);
+                "stride is %u", path, vertex_stride);
         SDL_free(file_data);
         return false;
     }
-    if (!has_tangents && vertex_stride == FORGE_PIPELINE_VERTEX_STRIDE_TAN) {
+    if (!has_tangents && (vertex_stride == FORGE_PIPELINE_VERTEX_STRIDE_TAN ||
+        vertex_stride == FORGE_PIPELINE_VERTEX_STRIDE_SKIN_TAN)) {
         SDL_Log("forge_pipeline_load_mesh: '%s' has tangent stride %u "
                 "but FORGE_PIPELINE_FLAG_TANGENTS is not set",
                 path, vertex_stride);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Skin flag must match skinned strides */
+    if (has_skin && vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_SKIN &&
+        vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_SKIN_TAN) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' has SKINNED flag but "
+                "stride is %u", path, vertex_stride);
+        SDL_free(file_data);
+        return false;
+    }
+    if (!has_skin && (vertex_stride == FORGE_PIPELINE_VERTEX_STRIDE_SKIN ||
+        vertex_stride == FORGE_PIPELINE_VERTEX_STRIDE_SKIN_TAN)) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' has skinned stride %u "
+                "but FORGE_PIPELINE_FLAG_SKINNED is not set",
+                path, vertex_stride);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Skinned data requires v3 */
+    if (has_skin && version < FORGE_PIPELINE_FMESH_VERSION_SKIN) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' v%u has SKINNED flag "
+                "(requires v3)", path, version);
         SDL_free(file_data);
         return false;
     }
@@ -815,6 +1102,14 @@ bool forge_pipeline_has_tangents(const ForgePipelineMesh *mesh)
         return false;
     }
     return (mesh->flags & FORGE_PIPELINE_FLAG_TANGENTS) != 0;
+}
+
+bool forge_pipeline_has_skin_data(const ForgePipelineMesh *mesh)
+{
+    if (!mesh) {
+        return false;
+    }
+    return (mesh->flags & FORGE_PIPELINE_FLAG_SKINNED) != 0;
 }
 
 uint32_t forge_pipeline_lod_index_count(const ForgePipelineMesh *mesh,
@@ -1920,6 +2215,805 @@ const ForgePipelineSceneMesh *forge_pipeline_scene_get_mesh(
 {
     if (!scene || mesh_index >= scene->mesh_count) return NULL;
     return &scene->meshes[mesh_index];
+}
+
+/* ── Animation loader (.fanim) ──────────────────────────────────────────── */
+
+/* Free a single clip's internal arrays (samplers, channels). */
+static void forge_pipeline__free_clip(ForgePipelineAnimation *clip)
+{
+    if (!clip) return;
+    if (clip->samplers) {
+        uint32_t si;
+        for (si = 0; si < clip->sampler_count; si++) {
+            SDL_free(clip->samplers[si].timestamps);
+            SDL_free(clip->samplers[si].values);
+        }
+        SDL_free(clip->samplers);
+    }
+    SDL_free(clip->channels);
+}
+
+bool forge_pipeline_load_animation(const char *path,
+                                    ForgePipelineAnimFile *file)
+{
+    /* ── Validate inputs ──────────────────────────────────────────────── */
+    if (!path) {
+        SDL_Log("forge_pipeline_load_animation: path is NULL");
+        return false;
+    }
+    if (!file) {
+        SDL_Log("forge_pipeline_load_animation: file is NULL");
+        return false;
+    }
+    SDL_memset(file, 0, sizeof(*file));
+
+    /* ── Load entire file ─────────────────────────────────────────────── */
+    size_t file_size = 0;
+    uint8_t *file_data = (uint8_t *)SDL_LoadFile(path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_animation: failed to load '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+
+    /* ── Validate header ──────────────────────────────────────────────── */
+    if (file_size < FORGE_PIPELINE_FANIM_HEADER_SIZE) {
+        SDL_Log("forge_pipeline_load_animation: file '%s' too small for "
+                "header (%zu bytes, need %d)", path, file_size,
+                FORGE_PIPELINE_FANIM_HEADER_SIZE);
+        SDL_free(file_data);
+        return false;
+    }
+
+    const uint8_t *p = file_data;
+
+    if (SDL_memcmp(p, FORGE_PIPELINE_FANIM_MAGIC,
+                   FORGE_PIPELINE_FANIM_MAGIC_SIZE) != 0) {
+        SDL_Log("forge_pipeline_load_animation: '%s' is not a .fanim file "
+                "(bad magic)", path);
+        SDL_free(file_data);
+        return false;
+    }
+    p += FORGE_PIPELINE_FANIM_MAGIC_SIZE;
+
+    uint32_t version = forge_pipeline__read_u32_le(p);
+    p += sizeof(uint32_t);
+    if (version == 0 || version != FORGE_PIPELINE_FANIM_VERSION) {
+        SDL_Log("forge_pipeline_load_animation: '%s' has unsupported version "
+                "%u (expected %u)", path, version,
+                FORGE_PIPELINE_FANIM_VERSION);
+        SDL_free(file_data);
+        return false;
+    }
+
+    uint32_t clip_count = forge_pipeline__read_u32_le(p);
+    p += sizeof(uint32_t);
+    if (clip_count > FORGE_PIPELINE_MAX_ANIM_CLIPS) {
+        SDL_Log("forge_pipeline_load_animation: '%s' has %u clips (max %d)",
+                path, clip_count, FORGE_PIPELINE_MAX_ANIM_CLIPS);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Empty file (0 clips) is valid */
+    if (clip_count == 0) {
+        SDL_free(file_data);
+        return true;
+    }
+
+    /* ── Allocate clips array ─────────────────────────────────────────── */
+    ForgePipelineAnimation *clips = (ForgePipelineAnimation *)SDL_calloc(
+        clip_count, sizeof(ForgePipelineAnimation));
+    if (!clips) {
+        SDL_Log("forge_pipeline_load_animation: allocation failed for clips");
+        SDL_free(file_data);
+        return false;
+    }
+
+    const uint8_t *end = file_data + file_size;
+
+    /* ── Read each clip ───────────────────────────────────────────────── */
+    uint32_t ci;
+    for (ci = 0; ci < clip_count; ci++) {
+        ForgePipelineAnimation *clip = &clips[ci];
+
+        /* Clip header: 64B name + 4B duration + 4B sampler_count +
+         * 4B channel_count */
+        if (p + FORGE_PIPELINE_CLIP_HEADER_SIZE > end) {
+            SDL_Log("forge_pipeline_load_animation: '%s' truncated at "
+                    "clip %u header", path, ci);
+            goto fail;
+        }
+
+        SDL_memcpy(clip->name, p, 64);
+        clip->name[63] = '\0';
+        p += 64;
+
+        clip->duration = forge_pipeline__read_f32_le(p);
+        p += sizeof(float);
+
+        clip->sampler_count = forge_pipeline__read_u32_le(p);
+        p += sizeof(uint32_t);
+        clip->channel_count = forge_pipeline__read_u32_le(p);
+        p += sizeof(uint32_t);
+
+        if (clip->sampler_count > FORGE_PIPELINE_MAX_ANIM_SAMPLERS) {
+            SDL_Log("forge_pipeline_load_animation: '%s' clip %u has %u "
+                    "samplers (max %d)", path, ci, clip->sampler_count,
+                    FORGE_PIPELINE_MAX_ANIM_SAMPLERS);
+            goto fail;
+        }
+        if (clip->channel_count > FORGE_PIPELINE_MAX_ANIM_CHANNELS) {
+            SDL_Log("forge_pipeline_load_animation: '%s' clip %u has %u "
+                    "channels (max %d)", path, ci, clip->channel_count,
+                    FORGE_PIPELINE_MAX_ANIM_CHANNELS);
+            goto fail;
+        }
+
+        /* ── Allocate and read samplers ───────────────────────────────── */
+        if (clip->sampler_count > 0) {
+            clip->samplers = (ForgePipelineAnimSampler *)SDL_calloc(
+                clip->sampler_count, sizeof(ForgePipelineAnimSampler));
+            if (!clip->samplers) {
+                SDL_Log("forge_pipeline_load_animation: allocation failed "
+                        "for clip %u samplers", ci);
+                goto fail;
+            }
+        }
+
+        uint32_t si;
+        for (si = 0; si < clip->sampler_count; si++) {
+            ForgePipelineAnimSampler *samp = &clip->samplers[si];
+
+            /* Sampler header: 3 × u32 */
+            if (p + FORGE_PIPELINE_SAMPLER_HEADER_SIZE > end) {
+                SDL_Log("forge_pipeline_load_animation: '%s' truncated at "
+                        "clip %u sampler %u header", path, ci, si);
+                goto fail;
+            }
+
+            samp->keyframe_count  = forge_pipeline__read_u32_le(p);
+            p += sizeof(uint32_t);
+            samp->value_components = forge_pipeline__read_u32_le(p);
+            p += sizeof(uint32_t);
+            {
+                uint32_t interp_raw = forge_pipeline__read_u32_le(p);
+                p += sizeof(uint32_t);
+                if (interp_raw != FORGE_PIPELINE_INTERP_LINEAR &&
+                    interp_raw != FORGE_PIPELINE_INTERP_STEP) {
+                    SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                            "sampler %u has invalid interpolation %u",
+                            path, ci, si, interp_raw);
+                    goto fail;
+                }
+                samp->interpolation = (ForgePipelineAnimInterp)interp_raw;
+            }
+
+            if (samp->keyframe_count > FORGE_PIPELINE_MAX_KEYFRAMES) {
+                SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                        "sampler %u has %u keyframes (max %d)",
+                        path, ci, si, samp->keyframe_count,
+                        FORGE_PIPELINE_MAX_KEYFRAMES);
+                goto fail;
+            }
+
+            if (samp->value_components != 3 && samp->value_components != 4) {
+                SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                        "sampler %u has invalid value_components %u "
+                        "(expected 3 or 4)", path, ci, si,
+                        samp->value_components);
+                goto fail;
+            }
+
+            /* Timestamps: keyframe_count floats */
+            size_t ts_bytes = (size_t)samp->keyframe_count * sizeof(float);
+            if (p + ts_bytes > end) {
+                SDL_Log("forge_pipeline_load_animation: '%s' truncated at "
+                        "clip %u sampler %u timestamps", path, ci, si);
+                goto fail;
+            }
+
+            if (samp->keyframe_count > 0) {
+                samp->timestamps = (float *)SDL_malloc(ts_bytes);
+                if (!samp->timestamps) {
+                    SDL_Log("forge_pipeline_load_animation: allocation "
+                            "failed for timestamps");
+                    goto fail;
+                }
+                uint32_t ki;
+                for (ki = 0; ki < samp->keyframe_count; ki++) {
+                    samp->timestamps[ki] = forge_pipeline__read_f32_le(p);
+                    p += sizeof(float);
+                }
+            }
+
+            /* Values: keyframe_count * value_components floats */
+            size_t val_count = (size_t)samp->keyframe_count
+                             * samp->value_components;
+            size_t val_bytes = val_count * sizeof(float);
+            if (p + val_bytes > end) {
+                SDL_Log("forge_pipeline_load_animation: '%s' truncated at "
+                        "clip %u sampler %u values", path, ci, si);
+                goto fail;
+            }
+
+            if (val_count > 0) {
+                samp->values = (float *)SDL_malloc(val_bytes);
+                if (!samp->values) {
+                    SDL_Log("forge_pipeline_load_animation: allocation "
+                            "failed for values");
+                    goto fail;
+                }
+                size_t vi;
+                for (vi = 0; vi < val_count; vi++) {
+                    samp->values[vi] = forge_pipeline__read_f32_le(p);
+                    p += sizeof(float);
+                }
+            }
+        }
+
+        /* ── Allocate and read channels ───────────────────────────────── */
+        if (clip->channel_count > 0) {
+            clip->channels = (ForgePipelineAnimChannel *)SDL_calloc(
+                clip->channel_count, sizeof(ForgePipelineAnimChannel));
+            if (!clip->channels) {
+                SDL_Log("forge_pipeline_load_animation: allocation failed "
+                        "for clip %u channels", ci);
+                goto fail;
+            }
+        }
+
+        uint32_t chi;
+        for (chi = 0; chi < clip->channel_count; chi++) {
+            /* Channel: i32 + u32 + u32 = 12 bytes */
+            if (p + 12 > end) {
+                SDL_Log("forge_pipeline_load_animation: '%s' truncated at "
+                        "clip %u channel %u", path, ci, chi);
+                goto fail;
+            }
+
+            clip->channels[chi].target_node =
+                forge_pipeline__read_i32_le(p);
+            p += sizeof(int32_t);
+            {
+                uint32_t path_raw = forge_pipeline__read_u32_le(p);
+                p += sizeof(uint32_t);
+                if (path_raw != FORGE_PIPELINE_ANIM_TRANSLATION &&
+                    path_raw != FORGE_PIPELINE_ANIM_ROTATION &&
+                    path_raw != FORGE_PIPELINE_ANIM_SCALE) {
+                    SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                            "channel %u has invalid target_path %u",
+                            path, ci, chi, path_raw);
+                    goto fail;
+                }
+                clip->channels[chi].target_path =
+                    (ForgePipelineAnimPath)path_raw;
+            }
+            clip->channels[chi].sampler_index =
+                forge_pipeline__read_u32_le(p);
+            p += sizeof(uint32_t);
+
+            /* Validate sampler_index is within this clip's sampler array */
+            if (clip->channels[chi].sampler_index >= clip->sampler_count) {
+                SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                        "channel %u sampler_index %u out of range "
+                        "(sampler_count %u)", path, ci, chi,
+                        clip->channels[chi].sampler_index,
+                        clip->sampler_count);
+                goto fail;
+            }
+
+            /* Validate sampler value_components matches target_path:
+             * rotation requires 4 (quaternion), translation/scale require 3 */
+            {
+                ForgePipelineAnimChannel *ch = &clip->channels[chi];
+                const ForgePipelineAnimSampler *samp =
+                    &clip->samplers[ch->sampler_index];
+                uint32_t expected = (ch->target_path ==
+                    FORGE_PIPELINE_ANIM_ROTATION) ? 4u : 3u;
+                if (samp->value_components != expected) {
+                    SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                            "channel %u target_path %u requires %u "
+                            "components, but sampler %u has %u",
+                            path, ci, chi, (uint32_t)ch->target_path,
+                            expected, ch->sampler_index,
+                            samp->value_components);
+                    goto fail;
+                }
+            }
+        }
+    }
+
+    /* ── Success ──────────────────────────────────────────────────────── */
+    file->clips      = clips;
+    file->clip_count  = clip_count;
+
+    SDL_free(file_data);
+    return true;
+
+fail:
+    /* Clean up all clips allocated so far (ci is the failing clip) */
+    {
+        uint32_t fi;
+        for (fi = 0; fi <= ci && fi < clip_count; fi++) {
+            forge_pipeline__free_clip(&clips[fi]);
+        }
+    }
+    SDL_free(clips);
+    SDL_free(file_data);
+    return false;
+}
+
+void forge_pipeline_free_animation(ForgePipelineAnimFile *file)
+{
+    if (!file) return;
+    if (file->clips) {
+        uint32_t ci;
+        for (ci = 0; ci < file->clip_count; ci++) {
+            forge_pipeline__free_clip(&file->clips[ci]);
+        }
+        SDL_free(file->clips);
+    }
+    SDL_memset(file, 0, sizeof(*file));
+}
+
+/* ── Skin (.fskin) loader ─────────────────────────────────────────────── */
+
+/* Helper: free one skin's arrays */
+static void forge_pipeline__free_skin(ForgePipelineSkin *skin)
+{
+    if (skin->joints) {
+        SDL_free(skin->joints);
+        skin->joints = NULL;
+    }
+    if (skin->inverse_bind_matrices) {
+        SDL_free(skin->inverse_bind_matrices);
+        skin->inverse_bind_matrices = NULL;
+    }
+}
+
+bool forge_pipeline_load_skins(const char *path,
+                                ForgePipelineSkinSet *skins)
+{
+    if (!path) {
+        SDL_Log("forge_pipeline_load_skins: path is NULL");
+        return false;
+    }
+    if (!skins) {
+        SDL_Log("forge_pipeline_load_skins: skins is NULL");
+        return false;
+    }
+    SDL_memset(skins, 0, sizeof(*skins));
+
+    /* Load file */
+    size_t file_size = 0;
+    uint8_t *file_data = (uint8_t *)SDL_LoadFile(path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_skins: failed to load '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+
+    /* Validate header size */
+    if (file_size < FORGE_PIPELINE_FSKIN_HEADER_SIZE) {
+        SDL_Log("forge_pipeline_load_skins: '%s' too small for header "
+                "(%zu bytes, need %d)", path, file_size,
+                FORGE_PIPELINE_FSKIN_HEADER_SIZE);
+        SDL_free(file_data);
+        return false;
+    }
+
+    const uint8_t *p = file_data;
+    const uint8_t *end = file_data + file_size;
+
+    /* Magic */
+    if (SDL_memcmp(p, FORGE_PIPELINE_FSKIN_MAGIC,
+                   FORGE_PIPELINE_FSKIN_MAGIC_SIZE) != 0) {
+        SDL_Log("forge_pipeline_load_skins: '%s' bad magic", path);
+        SDL_free(file_data);
+        return false;
+    }
+    p += FORGE_PIPELINE_FSKIN_MAGIC_SIZE;
+
+    /* Version */
+    uint32_t version = forge_pipeline__read_u32_le(p);
+    p += sizeof(uint32_t);
+    if (version != FORGE_PIPELINE_FSKIN_VERSION) {
+        SDL_Log("forge_pipeline_load_skins: '%s' unsupported version %u "
+                "(expected %u)", path, version, FORGE_PIPELINE_FSKIN_VERSION);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Skin count */
+    uint32_t skin_count = forge_pipeline__read_u32_le(p);
+    p += sizeof(uint32_t);
+    if (skin_count > FORGE_PIPELINE_MAX_SKINS) {
+        SDL_Log("forge_pipeline_load_skins: '%s' has %u skins (max %d)",
+                path, skin_count, FORGE_PIPELINE_MAX_SKINS);
+        SDL_free(file_data);
+        return false;
+    }
+
+    if (skin_count == 0) {
+        skins->skin_count = 0;
+        skins->skins = NULL;
+        SDL_free(file_data);
+        return true;
+    }
+
+    /* Allocate skins */
+    ForgePipelineSkin *skin_array = (ForgePipelineSkin *)SDL_calloc(
+        skin_count, sizeof(ForgePipelineSkin));
+    if (!skin_array) {
+        SDL_Log("forge_pipeline_load_skins: allocation failed");
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Parse each skin */
+    uint32_t si = 0;
+    for (si = 0; si < skin_count; si++) {
+        ForgePipelineSkin *skin = &skin_array[si];
+
+        /* Name: 64 bytes */
+        if (p + sizeof(skin->name) > end) {
+            SDL_Log("forge_pipeline_load_skins: '%s' truncated at skin %u name",
+                    path, si);
+            goto fail;
+        }
+        SDL_memcpy(skin->name, p, sizeof(skin->name));
+        skin->name[sizeof(skin->name) - 1] = '\0';
+        p += sizeof(skin->name);
+
+        /* Joint count */
+        if (p + sizeof(uint32_t) > end) {
+            SDL_Log("forge_pipeline_load_skins: '%s' truncated at skin %u "
+                    "joint_count", path, si);
+            goto fail;
+        }
+        skin->joint_count = forge_pipeline__read_u32_le(p);
+        p += sizeof(uint32_t);
+
+        if (skin->joint_count > FORGE_PIPELINE_MAX_SKIN_JOINTS) {
+            SDL_Log("forge_pipeline_load_skins: '%s' skin %u has %u joints "
+                    "(max %d)", path, si, skin->joint_count,
+                    FORGE_PIPELINE_MAX_SKIN_JOINTS);
+            goto fail;
+        }
+
+        /* Skeleton root */
+        if (p + sizeof(int32_t) > end) {
+            SDL_Log("forge_pipeline_load_skins: '%s' truncated at skin %u "
+                    "skeleton", path, si);
+            goto fail;
+        }
+        skin->skeleton = forge_pipeline__read_i32_le(p);
+        p += sizeof(int32_t);
+
+        /* Joints array: joint_count × i32 */
+        if (skin->joint_count > 0) {
+            size_t joints_bytes = (size_t)skin->joint_count * sizeof(int32_t);
+            if (p + joints_bytes > end) {
+                SDL_Log("forge_pipeline_load_skins: '%s' truncated at skin %u "
+                        "joints", path, si);
+                goto fail;
+            }
+            skin->joints = (int32_t *)SDL_malloc(joints_bytes);
+            if (!skin->joints) {
+                SDL_Log("forge_pipeline_load_skins: joint allocation failed");
+                goto fail;
+            }
+            uint32_t ji;
+            for (ji = 0; ji < skin->joint_count; ji++) {
+                skin->joints[ji] = forge_pipeline__read_i32_le(p);
+                p += sizeof(int32_t);
+            }
+        }
+
+        /* Inverse bind matrices: joint_count × 16 floats */
+        if (skin->joint_count > 0) {
+            size_t ibm_floats = (size_t)skin->joint_count * 16;
+            size_t ibm_bytes = ibm_floats * sizeof(float);
+            if (p + ibm_bytes > end) {
+                SDL_Log("forge_pipeline_load_skins: '%s' truncated at skin %u "
+                        "inverse bind matrices", path, si);
+                goto fail;
+            }
+            skin->inverse_bind_matrices = (float *)SDL_malloc(ibm_bytes);
+            if (!skin->inverse_bind_matrices) {
+                SDL_Log("forge_pipeline_load_skins: IBM allocation failed");
+                goto fail;
+            }
+            size_t fi;
+            for (fi = 0; fi < ibm_floats; fi++) {
+                skin->inverse_bind_matrices[fi] = forge_pipeline__read_f32_le(p);
+                p += sizeof(float);
+            }
+        }
+    }
+
+    skins->skins = skin_array;
+    skins->skin_count = skin_count;
+    SDL_free(file_data);
+    return true;
+
+fail:
+    {
+        uint32_t fi;
+        for (fi = 0; fi <= si && fi < skin_count; fi++) {
+            forge_pipeline__free_skin(&skin_array[fi]);
+        }
+    }
+    SDL_free(skin_array);
+    SDL_free(file_data);
+    return false;
+}
+
+void forge_pipeline_free_skins(ForgePipelineSkinSet *skins)
+{
+    if (!skins) return;
+    if (skins->skins) {
+        uint32_t i;
+        for (i = 0; i < skins->skin_count; i++) {
+            forge_pipeline__free_skin(&skins->skins[i]);
+        }
+        SDL_free(skins->skins);
+    }
+    SDL_memset(skins, 0, sizeof(*skins));
+}
+
+/* ── Animation manifest (.fanims) loader ──────────────────────────────── */
+
+bool forge_pipeline_load_anim_set(const char *path,
+                                   ForgePipelineAnimSet *set)
+{
+    if (!path) {
+        SDL_Log("forge_pipeline_load_anim_set: path is NULL");
+        return false;
+    }
+    if (!set) {
+        SDL_Log("forge_pipeline_load_anim_set: set is NULL");
+        return false;
+    }
+    SDL_memset(set, 0, sizeof(*set));
+
+    /* Load file */
+    size_t file_size = 0;
+    char *file_data = (char *)SDL_LoadFile(path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_anim_set: failed to load '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+
+    /* Parse JSON */
+    cJSON *root = cJSON_ParseWithLength(file_data, file_size);
+    SDL_free(file_data);
+    if (!root) {
+        SDL_Log("forge_pipeline_load_anim_set: failed to parse '%s'", path);
+        return false;
+    }
+
+    /* Validate version */
+    cJSON *j_version = cJSON_GetObjectItemCaseSensitive(root, "version");
+    if (!cJSON_IsNumber(j_version) ||
+        j_version->valueint != FORGE_PIPELINE_FANIMS_VERSION) {
+        SDL_Log("forge_pipeline_load_anim_set: '%s' has unsupported version "
+                "(expected %d)", path, FORGE_PIPELINE_FANIMS_VERSION);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Model name (optional) */
+    cJSON *j_model = cJSON_GetObjectItemCaseSensitive(root, "model");
+    if (cJSON_IsString(j_model) && j_model->valuestring) {
+        SDL_strlcpy(set->model, j_model->valuestring, sizeof(set->model));
+    }
+
+    /* Clips object */
+    cJSON *j_clips = cJSON_GetObjectItemCaseSensitive(root, "clips");
+    if (!j_clips || !cJSON_IsObject(j_clips)) {
+        SDL_Log("forge_pipeline_load_anim_set: '%s' missing 'clips' object",
+                path);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    uint32_t count = 0;
+    {
+        cJSON *item = NULL;
+        cJSON_ArrayForEach(item, j_clips) { count++; }
+    }
+
+    if (count == 0) {
+        /* Valid: model may have no animations. */
+        set->clip_count = 0;
+        set->clips      = NULL;
+        /* Compute base_dir */
+        SDL_strlcpy(set->base_dir, path, sizeof(set->base_dir));
+        {
+            char *sep = SDL_strrchr(set->base_dir, '/');
+            char *sep2 = SDL_strrchr(set->base_dir, '\\');
+            if (sep2 && (!sep || sep2 > sep)) sep = sep2;
+            if (sep) *(sep + 1) = '\0';
+            else set->base_dir[0] = '\0';
+        }
+        cJSON_Delete(root);
+        return true;
+    }
+
+    if (count > FORGE_PIPELINE_MAX_ANIM_SET_CLIPS) {
+        SDL_Log("forge_pipeline_load_anim_set: '%s' has %u clips (max %d)",
+                path, count, FORGE_PIPELINE_MAX_ANIM_SET_CLIPS);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Allocate clips */
+    ForgePipelineAnimClipInfo *clips = (ForgePipelineAnimClipInfo *)SDL_calloc(
+        count, sizeof(ForgePipelineAnimClipInfo));
+    if (!clips) {
+        SDL_Log("forge_pipeline_load_anim_set: allocation failed");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Parse each clip */
+    uint32_t ci = 0;
+    cJSON *j_clip = NULL;
+    cJSON_ArrayForEach(j_clip, j_clips) {
+        if (ci >= count) break;
+        ForgePipelineAnimClipInfo *info = &clips[ci];
+
+        /* Name is the key — reject empty or overlong keys */
+        if (!j_clip->string || j_clip->string[0] == '\0' ||
+            SDL_strlen(j_clip->string) >= sizeof(info->name)) {
+            SDL_Log("forge_pipeline_load_anim_set: '%s' has an invalid "
+                    "clip key", path);
+            SDL_free(clips);
+            cJSON_Delete(root);
+            return false;
+        }
+        SDL_strlcpy(info->name, j_clip->string, sizeof(info->name));
+
+        /* File (required — reject empty or overlong paths) */
+        cJSON *j_file = cJSON_GetObjectItemCaseSensitive(j_clip, "file");
+        if (!cJSON_IsString(j_file) || !j_file->valuestring ||
+            j_file->valuestring[0] == '\0' ||
+            SDL_strlen(j_file->valuestring) >= sizeof(info->file)) {
+            SDL_Log("forge_pipeline_load_anim_set: '%s' clip '%s' missing "
+                    "a valid 'file' string", path, info->name);
+            SDL_free(clips);
+            cJSON_Delete(root);
+            return false;
+        }
+        SDL_strlcpy(info->file, j_file->valuestring, sizeof(info->file));
+
+        /* Duration (optional, default 0) */
+        cJSON *j_dur = cJSON_GetObjectItemCaseSensitive(j_clip, "duration");
+        if (cJSON_IsNumber(j_dur)) {
+            info->duration = (float)j_dur->valuedouble;
+        }
+
+        /* Loop flag (optional, default false) */
+        cJSON *j_loop = cJSON_GetObjectItemCaseSensitive(j_clip, "loop");
+        if (cJSON_IsBool(j_loop)) {
+            info->loop = cJSON_IsTrue(j_loop) ? true : false;
+        }
+
+        /* Tags array (optional) */
+        cJSON *j_tags = cJSON_GetObjectItemCaseSensitive(j_clip, "tags");
+        if (cJSON_IsArray(j_tags)) {
+            int tag_total = cJSON_GetArraySize(j_tags);
+            if (tag_total > FORGE_PIPELINE_MAX_CLIP_TAGS) {
+                SDL_Log("forge_pipeline_load_anim_set: '%s' clip '%s' has "
+                        "%d tags (max %d)", path, info->name,
+                        tag_total, FORGE_PIPELINE_MAX_CLIP_TAGS);
+                SDL_free(clips);
+                cJSON_Delete(root);
+                return false;
+            }
+            uint32_t accepted = 0;
+            int ti;
+            for (ti = 0; ti < tag_total; ti++) {
+                cJSON *j_tag = cJSON_GetArrayItem(j_tags, ti);
+                if (!cJSON_IsString(j_tag) || !j_tag->valuestring ||
+                    j_tag->valuestring[0] == '\0' ||
+                    SDL_strlen(j_tag->valuestring) >= FORGE_PIPELINE_MAX_TAG_LEN) {
+                    SDL_Log("forge_pipeline_load_anim_set: '%s' clip '%s' "
+                            "has an invalid tag at index %d",
+                            path, info->name, ti);
+                    SDL_free(clips);
+                    cJSON_Delete(root);
+                    return false;
+                }
+                SDL_strlcpy(info->tags[accepted], j_tag->valuestring,
+                            FORGE_PIPELINE_MAX_TAG_LEN);
+                accepted++;
+            }
+            info->tag_count = accepted;
+        }
+
+        ci++;
+    }
+
+    /* Compute base_dir from the manifest path */
+    SDL_strlcpy(set->base_dir, path, sizeof(set->base_dir));
+    {
+        char *sep = SDL_strrchr(set->base_dir, '/');
+        char *sep2 = SDL_strrchr(set->base_dir, '\\');
+        if (sep2 && (!sep || sep2 > sep)) sep = sep2;
+        if (sep) *(sep + 1) = '\0';
+        else set->base_dir[0] = '\0';
+    }
+
+    set->clips      = clips;
+    set->clip_count  = ci;
+
+    cJSON_Delete(root);
+    return true;
+}
+
+void forge_pipeline_free_anim_set(ForgePipelineAnimSet *set)
+{
+    if (!set) return;
+    if (set->clips) {
+        SDL_free(set->clips);
+    }
+    SDL_memset(set, 0, sizeof(*set));
+}
+
+const ForgePipelineAnimClipInfo *forge_pipeline_find_clip(
+    const ForgePipelineAnimSet *set, const char *name)
+{
+    if (!set || !name) return NULL;
+    uint32_t i;
+    for (i = 0; i < set->clip_count; i++) {
+        if (SDL_strcmp(set->clips[i].name, name) == 0) {
+            return &set->clips[i];
+        }
+    }
+    return NULL;
+}
+
+bool forge_pipeline_load_clip(const ForgePipelineAnimSet *set,
+                               const char *name,
+                               ForgePipelineAnimFile *file)
+{
+    if (file) {
+        SDL_memset(file, 0, sizeof(*file));
+    }
+    if (!set || !name || !file) {
+        SDL_Log("forge_pipeline_load_clip: NULL argument");
+        return false;
+    }
+
+    const ForgePipelineAnimClipInfo *info = forge_pipeline_find_clip(set, name);
+    if (!info) {
+        SDL_Log("forge_pipeline_load_clip: clip '%s' not found", name);
+        return false;
+    }
+
+    /* Reject unsafe paths: absolute or with directory traversal sequences */
+    if (info->file[0] == '/' || info->file[0] == '\\' ||
+        (SDL_strlen(info->file) > 1 && info->file[1] == ':') ||
+        SDL_strstr(info->file, "..")) {
+        SDL_Log("forge_pipeline_load_clip: unsafe clip path '%s'", info->file);
+        return false;
+    }
+
+    /* Build full path: base_dir(512) + file(256) */
+    char full_path[768];
+    if (set->base_dir[0]) {
+        SDL_snprintf(full_path, sizeof(full_path), "%s%s",
+                     set->base_dir, info->file);
+    } else {
+        SDL_strlcpy(full_path, info->file, sizeof(full_path));
+    }
+
+    return forge_pipeline_load_animation(full_path, file);
 }
 
 #endif /* FORGE_PIPELINE_IMPLEMENTATION */

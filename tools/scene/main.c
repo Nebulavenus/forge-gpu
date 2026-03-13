@@ -64,36 +64,12 @@ typedef struct ToolOptions {
     const char *input_path;   /* source glTF/GLB file */
     const char *output_path;  /* destination .fscene file */
     bool        verbose;      /* print statistics to stdout */
+    bool        skins;        /* also write a .fskin file */
 } ToolOptions;
 
 /* ── Binary helpers ──────────────────────────────────────────────────────── */
 
-/* Write a uint32 in little-endian byte order to an SDL I/O stream. */
-static bool write_u32_le(SDL_IOStream *io, uint32_t val)
-{
-    uint8_t bytes[4];
-    bytes[0] = (uint8_t)(val);
-    bytes[1] = (uint8_t)(val >> 8);
-    bytes[2] = (uint8_t)(val >> 16);
-    bytes[3] = (uint8_t)(val >> 24);
-    return SDL_WriteIO(io, bytes, 4) == 4;
-}
-
-/* Write a signed int32 in little-endian byte order. */
-static bool write_i32_le(SDL_IOStream *io, int32_t val)
-{
-    uint32_t uval;
-    memcpy(&uval, &val, sizeof(uval));
-    return write_u32_le(io, uval);
-}
-
-/* Write a float in little-endian byte order. */
-static bool write_float_le(SDL_IOStream *io, float val)
-{
-    uint32_t bits;
-    memcpy(&bits, &val, sizeof(bits));
-    return write_u32_le(io, bits);
-}
+#include "../common/binary_io.h"
 
 /* ── Filename extraction helper ──────────────────────────────────────────── */
 
@@ -145,12 +121,15 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
     opts->input_path = NULL;
     opts->output_path = NULL;
     opts->verbose = false;
+    opts->skins = false;
 
     int positional = 0;
     int i;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
             opts->verbose = true;
+        } else if (strcmp(argv[i], "--skins") == 0) {
+            opts->skins = true;
         } else if (argv[i][0] == '-') {
             SDL_Log("Error: unknown option '%s'", argv[i]);
             return false;
@@ -168,7 +147,8 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
     }
 
     if (!opts->input_path || !opts->output_path) {
-        SDL_Log("Usage: forge-scene-tool <input.gltf> <output.fscene> [--verbose]");
+        SDL_Log("Usage: forge-scene-tool <input.gltf> <output.fscene> "
+               "[--verbose] [--skins]");
         return false;
     }
     return true;
@@ -456,6 +436,140 @@ static bool write_meta_json(const char *fscene_path,
     return true;
 }
 
+/* ── Write .fskin binary ─────────────────────────────────────────────────── */
+
+/* Build a .fskin path by replacing the .fscene extension. */
+static char *make_fskin_path(const char *fscene_path)
+{
+    const char *dot = strrchr(fscene_path, '.');
+    size_t stem_len = dot ? (size_t)(dot - fscene_path) : strlen(fscene_path);
+    size_t path_len = stem_len + 7; /* ".fskin\0" */
+    char *path = (char *)SDL_malloc(path_len);
+    if (!path) return NULL;
+    SDL_snprintf(path, path_len, "%.*s.fskin", (int)stem_len, fscene_path);
+    return path;
+}
+
+static bool write_fskin(const char *output_path,
+                        const ForgeGltfScene *scene,
+                        bool verbose)
+{
+    if (scene->skin_count == 0) {
+        if (verbose) {
+            SDL_Log("No skins found — skipping .fskin output");
+        }
+        return true;
+    }
+
+    if ((uint32_t)scene->skin_count > FORGE_PIPELINE_MAX_SKINS) {
+        SDL_Log("Error: %d skins exceeds max %u",
+                scene->skin_count, FORGE_PIPELINE_MAX_SKINS);
+        return false;
+    }
+
+    char *fskin_path = make_fskin_path(output_path);
+    if (!fskin_path) {
+        SDL_Log("Error: allocation failed for .fskin path");
+        return false;
+    }
+
+    SDL_IOStream *io = SDL_IOFromFile(fskin_path, "wb");
+    if (!io) {
+        SDL_Log("Error: failed to open '%s' for writing: %s",
+                fskin_path, SDL_GetError());
+        SDL_free(fskin_path);
+        return false;
+    }
+
+    bool ok = true;
+
+    /* Header (12 bytes): magic + version + skin_count */
+    ok = ok && (SDL_WriteIO(io, FORGE_PIPELINE_FSKIN_MAGIC,
+                            FORGE_PIPELINE_FSKIN_MAGIC_SIZE) ==
+                FORGE_PIPELINE_FSKIN_MAGIC_SIZE);
+    ok = ok && write_u32_le(io, FORGE_PIPELINE_FSKIN_VERSION);
+    ok = ok && write_u32_le(io, (uint32_t)scene->skin_count);
+
+    if (!ok) {
+        SDL_Log("Error: failed writing .fskin header");
+        SDL_CloseIO(io);
+        SDL_free(fskin_path);
+        return false;
+    }
+
+    /* Per-skin data */
+    int si;
+    for (si = 0; si < scene->skin_count; si++) {
+        const ForgeGltfSkin *skin = &scene->skins[si];
+
+        if ((uint32_t)skin->joint_count > FORGE_PIPELINE_MAX_SKIN_JOINTS) {
+            SDL_Log("Error: skin %d has %d joints (max %u)",
+                    si, skin->joint_count, FORGE_PIPELINE_MAX_SKIN_JOINTS);
+            SDL_CloseIO(io);
+            SDL_free(fskin_path);
+            return false;
+        }
+
+        /* Name: 64 bytes, null-terminated, zero-padded */
+        char name_buf[FORGE_GLTF_NAME_SIZE];
+        memset(name_buf, 0, sizeof(name_buf));
+        SDL_strlcpy(name_buf, skin->name, sizeof(name_buf));
+        ok = ok && (SDL_WriteIO(io, name_buf, sizeof(name_buf)) ==
+                    sizeof(name_buf));
+
+        /* Joint count */
+        ok = ok && write_u32_le(io, (uint32_t)skin->joint_count);
+
+        /* Skeleton root node index */
+        ok = ok && write_i32_le(io, (int32_t)skin->skeleton);
+
+        /* Joint node indices */
+        int ji;
+        for (ji = 0; ji < skin->joint_count; ji++) {
+            ok = ok && write_i32_le(io, (int32_t)skin->joints[ji]);
+        }
+
+        /* Inverse bind matrices (joint_count * 16 floats, column-major) */
+        int mi;
+        for (mi = 0; mi < skin->joint_count; mi++) {
+            const float *m = skin->inverse_bind_matrices[mi].m;
+            int fi;
+            for (fi = 0; fi < 16; fi++) {
+                ok = ok && write_float_le(io, m[fi]);
+            }
+        }
+
+        if (!ok) {
+            SDL_Log("Error: failed writing skin %d", si);
+            SDL_CloseIO(io);
+            SDL_free(fskin_path);
+            return false;
+        }
+
+        if (verbose) {
+            SDL_Log("  Skin %d: \"%s\" joints=%d skeleton=%d",
+                    si, skin->name, skin->joint_count, skin->skeleton);
+        }
+    }
+
+    /* Finalize */
+    if (SDL_GetIOStatus(io) == SDL_IO_STATUS_ERROR) {
+        SDL_Log("Error: write error on '%s': %s", fskin_path, SDL_GetError());
+        SDL_CloseIO(io);
+        SDL_free(fskin_path);
+        return false;
+    }
+    if (!SDL_CloseIO(io)) {
+        SDL_Log("Error: failed to close '%s': %s", fskin_path, SDL_GetError());
+        SDL_free(fskin_path);
+        return false;
+    }
+
+    SDL_Log("Wrote %d skin(s) to '%s'", scene->skin_count, fskin_path);
+    SDL_free(fskin_path);
+    return true;
+}
+
 /* ── Main processing ─────────────────────────────────────────────────────── */
 
 static bool process_scene(const ToolOptions *opts)
@@ -526,6 +640,15 @@ static bool process_scene(const ToolOptions *opts)
         SDL_free(mesh_table);
         forge_arena_destroy(&gltf_arena);
         return false;
+    }
+
+    /* ── Step 6: Write .fskin binary (optional) ────────────────────────── */
+    if (opts->skins) {
+        if (!write_fskin(opts->output_path, &scene, opts->verbose)) {
+            SDL_free(mesh_table);
+            forge_arena_destroy(&gltf_arena);
+            return false;
+        }
     }
 
     /* Print summary to stdout (captured by the Python pipeline plugin) */
