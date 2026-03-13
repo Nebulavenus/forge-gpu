@@ -150,7 +150,8 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
                             const Uint16 *skin_joints,
                             const float *skin_weights,
                             bool has_skin);
-static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene);
+static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene,
+                       const char *gltf_path);
 static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              unsigned int vertex_count, unsigned int vertex_stride,
                              bool has_tangents, int lod_count,
@@ -387,12 +388,65 @@ static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
  * directory separator).  Returns the original pointer if no separator. */
 static const char *basename_from_path(const char *path)
 {
+    if (!path) return "";
     const char *name = path;
     const char *slash = strrchr(path, '/');
     if (slash) name = slash + 1;
     const char *backslash = strrchr(name, '\\');
     if (backslash) name = backslash + 1;
     return name;
+}
+
+/* Compare two path characters treating '/' and '\\' as equivalent,
+ * and ignoring ASCII case (for Windows drive letters and paths). */
+static bool path_chars_equal(char a, char b)
+{
+    if (a == b) return true;
+    /* Treat both separators as equivalent */
+    if ((a == '/' || a == '\\') && (b == '/' || b == '\\')) return true;
+    /* Case-insensitive compare for A-Z / a-z */
+    if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+    if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+    return a == b;
+}
+
+/* Return the portion of `full_path` relative to the directory containing
+ * `base_path`.  For example, if base_path is "/a/b/model.gltf" and
+ * full_path is "/a/b/textures/albedo.png", returns "textures/albedo.png".
+ * Handles mixed '/' and '\\' separators on Windows.
+ * Falls back to basename if the path is not under the base directory. */
+static const char *path_relative_to_dir(const char *full_path,
+                                        const char *base_path)
+{
+    if (!full_path || !full_path[0]) return "";
+    if (!base_path) return basename_from_path(full_path);
+
+    /* Find the directory portion of base_path (up to last separator) */
+    const char *last_sep = strrchr(base_path, '/');
+    const char *last_bsep = strrchr(base_path, '\\');
+    if (last_bsep && (!last_sep || last_bsep > last_sep))
+        last_sep = last_bsep;
+
+    if (!last_sep) return basename_from_path(full_path);
+
+    size_t dir_len = (size_t)(last_sep - base_path) + 1; /* include separator */
+
+    /* Check if full_path starts with the same directory prefix,
+     * treating '/' and '\\' as equivalent for cross-platform paths */
+    if (strlen(full_path) > dir_len) {
+        size_t i;
+        bool match = true;
+        for (i = 0; i < dir_len; i++) {
+            if (!path_chars_equal(full_path[i], base_path[i])) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return full_path + dir_len;
+    }
+
+    /* Not under base directory — fall back to basename */
+    return basename_from_path(full_path);
 }
 
 /* ── Load OBJ into MeshVertex + index buffers ───────────────────────────── */
@@ -1182,7 +1236,7 @@ static bool process_mesh(const ToolOptions *opts)
 
     /* ── Step 9: Write .fmat material sidecar (glTF only) ────────────────*/
     if (has_gltf_scene && gltf_scene->material_count > 0) {
-        ok = write_fmat(opts->output_path, gltf_scene);
+        ok = write_fmat(opts->output_path, gltf_scene, opts->input_path);
         if (!ok) {
             SDL_Log("Error: failed to write .fmat sidecar");
             SDL_free(vertices);
@@ -1408,7 +1462,8 @@ static void write_json_string(SDL_IOStream *io, const char *s)
     SDL_WriteIO(io, "\"", 1);
 }
 
-static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene)
+static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene,
+                       const char *gltf_path)
 {
     /* Build the .fmat path by replacing the .fmesh extension */
     size_t path_len = strlen(fmesh_path);
@@ -1441,17 +1496,20 @@ static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene)
     for (m = 0; m < mat_count; m++) {
         const ForgeGltfMaterial *mat = &scene->materials[m];
 
-        /* Use full relative paths from glTF material */
+        /* Write texture paths relative to the source glTF directory.
+         * This preserves subdirectory structure (e.g. "textures/albedo.png")
+         * while stripping absolute prefixes for portability. Falls back to
+         * basename if the texture is not under the glTF directory. */
         const char *base_tex = mat->has_texture
-            ? mat->texture_path : NULL;
+            ? path_relative_to_dir(mat->texture_path, gltf_path) : NULL;
         const char *mr_tex = mat->has_metallic_roughness
-            ? mat->metallic_roughness_path : NULL;
+            ? path_relative_to_dir(mat->metallic_roughness_path, gltf_path) : NULL;
         const char *norm_tex = mat->has_normal_map
-            ? mat->normal_map_path : NULL;
+            ? path_relative_to_dir(mat->normal_map_path, gltf_path) : NULL;
         const char *occ_tex = mat->has_occlusion
-            ? mat->occlusion_path : NULL;
+            ? path_relative_to_dir(mat->occlusion_path, gltf_path) : NULL;
         const char *emis_tex = (mat->has_emissive && mat->emissive_path[0])
-            ? mat->emissive_path : NULL;
+            ? path_relative_to_dir(mat->emissive_path, gltf_path) : NULL;
 
         /* Alpha mode string */
         const char *alpha_str = "OPAQUE";

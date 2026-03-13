@@ -79,9 +79,26 @@ typedef struct {
     ForgeSceneModel duck;     /* Duck — single textured material, 3-node hierarchy */
 } app_state;
 
+/* Maximum path buffer for base_path + relative asset path */
+#define ASSET_PATH_SIZE 512
+
 /* ══════════════════════════════════════════════════════════════════════════
  *  SDL callbacks
  * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Build an absolute asset path: exe_dir + relative.
+ * `base` must end with a path separator (SDL_GetBasePath guarantees this).
+ * Returns a pointer to buf on success, NULL on overflow. */
+static const char *asset_path(char *buf, size_t buf_size,
+                              const char *base, const char *relative)
+{
+    int len = SDL_snprintf(buf, buf_size, "%s%s", base, relative);
+    if (len < 0 || (size_t)len >= buf_size) {
+        SDL_Log("asset_path: path too long: %s%s", base, relative);
+        return NULL;
+    }
+    return buf;
+}
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 {
@@ -89,11 +106,27 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     if (!state) return SDL_APP_FAILURE;
     *appstate = state;
 
+    /* Resolve asset paths relative to the executable directory so the
+     * lesson works regardless of the current working directory. */
+    const char *base = SDL_GetBasePath();
+    if (!base) {
+        SDL_Log("SDL_GetBasePath failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
     /* Configure the scene — override camera defaults for this lesson */
+    char font_buf[ASSET_PATH_SIZE];
+    const char *font = asset_path(font_buf, sizeof(font_buf), base,
+                        "assets/fonts/liberation_mono/LiberationMono-Regular.ttf");
+    if (!font) {
+        SDL_Log("Failed to build font path — base path too long");
+        return SDL_APP_FAILURE;
+    }
+
     ForgeSceneConfig cfg = forge_scene_default_config("Lesson 41 — Scene Model Loading");
     cfg.cam_start_pos   = vec3_create(0.0f, CAM_START_Y, CAM_START_Z);
     cfg.cam_start_pitch = CAM_START_PITCH;
-    cfg.font_path       = "assets/fonts/liberation_mono/LiberationMono-Regular.ttf";
+    cfg.font_path       = font;
 
     /* One call initialises SDL, window, GPU device, pipelines, shadow map,
      * grid, sky, camera, and UI font */
@@ -104,32 +137,41 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
     /* ── Load models ────────────────────────────────────────────────── */
 
+    char p1[ASSET_PATH_SIZE], p2[ASSET_PATH_SIZE];
+    char p3[ASSET_PATH_SIZE], p4[ASSET_PATH_SIZE];
+
     /* CesiumMilkTruck: 4 materials, mesh instancing (both wheel nodes share
      * the same mesh), 6-node scene hierarchy */
-    if (!forge_scene_load_model(&state->scene, &state->truck,
-                                "assets/CesiumMilkTruck/CesiumMilkTruck.fscene",
-                                "assets/CesiumMilkTruck/CesiumMilkTruck.fmesh",
-                                "assets/CesiumMilkTruck/CesiumMilkTruck.fmat",
-                                "assets/CesiumMilkTruck")) {
-        SDL_Log("Warning: failed to load CesiumMilkTruck — continuing without it");
+    if (asset_path(p1, sizeof(p1), base, "assets/CesiumMilkTruck/CesiumMilkTruck.fscene") &&
+        asset_path(p2, sizeof(p2), base, "assets/CesiumMilkTruck/CesiumMilkTruck.fmesh") &&
+        asset_path(p3, sizeof(p3), base, "assets/CesiumMilkTruck/CesiumMilkTruck.fmat") &&
+        asset_path(p4, sizeof(p4), base, "assets/CesiumMilkTruck")) {
+        if (!forge_scene_load_model(&state->scene, &state->truck,
+                                     p1, p2, p3, p4)) {
+            SDL_Log("Warning: failed to load CesiumMilkTruck — continuing without it");
+        }
     }
 
     /* Suzanne: demonstrates baseColor and metallicRoughness texture binding */
-    if (!forge_scene_load_model(&state->scene, &state->suzanne,
-                                "assets/Suzanne/Suzanne.fscene",
-                                "assets/Suzanne/Suzanne.fmesh",
-                                "assets/Suzanne/Suzanne.fmat",
-                                "assets/Suzanne")) {
-        SDL_Log("Warning: failed to load Suzanne — continuing without it");
+    if (asset_path(p1, sizeof(p1), base, "assets/Suzanne/Suzanne.fscene") &&
+        asset_path(p2, sizeof(p2), base, "assets/Suzanne/Suzanne.fmesh") &&
+        asset_path(p3, sizeof(p3), base, "assets/Suzanne/Suzanne.fmat") &&
+        asset_path(p4, sizeof(p4), base, "assets/Suzanne")) {
+        if (!forge_scene_load_model(&state->scene, &state->suzanne,
+                                     p1, p2, p3, p4)) {
+            SDL_Log("Warning: failed to load Suzanne — continuing without it");
+        }
     }
 
     /* Duck: single textured material, 3-node hierarchy */
-    if (!forge_scene_load_model(&state->scene, &state->duck,
-                                "assets/Duck/Duck.fscene",
-                                "assets/Duck/Duck.fmesh",
-                                "assets/Duck/Duck.fmat",
-                                "assets/Duck")) {
-        SDL_Log("Warning: failed to load Duck — continuing without it");
+    if (asset_path(p1, sizeof(p1), base, "assets/Duck/Duck.fscene") &&
+        asset_path(p2, sizeof(p2), base, "assets/Duck/Duck.fmesh") &&
+        asset_path(p3, sizeof(p3), base, "assets/Duck/Duck.fmat") &&
+        asset_path(p4, sizeof(p4), base, "assets/Duck")) {
+        if (!forge_scene_load_model(&state->scene, &state->duck,
+                                     p1, p2, p3, p4)) {
+            SDL_Log("Warning: failed to load Duck — continuing without it");
+        }
     }
 
     return SDL_APP_CONTINUE;

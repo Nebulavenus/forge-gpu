@@ -77,6 +77,7 @@ typedef struct ToolOptions {
  * directory separator).  Returns the original pointer if no separator. */
 static const char *basename_from_path(const char *path)
 {
+    if (!path) return "";
     const char *name = path;
     const char *slash = strrchr(path, '/');
     if (slash) name = slash + 1;
