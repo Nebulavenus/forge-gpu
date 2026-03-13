@@ -414,20 +414,23 @@ ForgeShape forge_shapes_cube(int slices, int stacks)
      * Face definitions: normal direction, and two tangent axes (u_axis, v_axis)
      * that define the face's local 2D coordinate system.
      * The face is generated at distance +1 along the normal axis.
+     *
+     * Tangent directions are chosen so that cross(u_axis, v_axis) == normal,
+     * giving counter-clockwise winding for outward-facing triangles.
      */
     struct { vec3 normal; vec3 u_axis; vec3 v_axis; } faces[6] = {
         /* +Y (top)    — U along +X, V along +Z */
         { {0, 1, 0},  {1, 0, 0},  {0, 0, 1} },
         /* -Y (bottom) — U along +X, V along -Z */
         { {0,-1, 0},  {1, 0, 0},  {0, 0,-1} },
-        /* +X (right)  — U along -Z, V along +Y */
-        { {1, 0, 0},  {0, 0,-1},  {0, 1, 0} },
-        /* -X (left)   — U along +Z, V along +Y */
-        { {-1, 0, 0}, {0, 0, 1},  {0, 1, 0} },
-        /* +Z (front)  — U along +X, V along +Y */
-        { {0, 0, 1},  {1, 0, 0},  {0, 1, 0} },
-        /* -Z (back)   — U along -X, V along +Y */
-        { {0, 0,-1},  {-1, 0, 0}, {0, 1, 0} },
+        /* +X (right)  — U along +Z, V along +Y */
+        { {1, 0, 0},  {0, 0, 1},  {0, 1, 0} },
+        /* -X (left)   — U along -Z, V along +Y */
+        { {-1, 0, 0}, {0, 0,-1},  {0, 1, 0} },
+        /* +Z (front)  — U along -X, V along +Y */
+        { {0, 0, 1},  {-1, 0, 0}, {0, 1, 0} },
+        /* -Z (back)   — U along +X, V along +Y */
+        { {0, 0,-1},  {1, 0, 0},  {0, 1, 0} },
     };
 
     int v_off = 0;

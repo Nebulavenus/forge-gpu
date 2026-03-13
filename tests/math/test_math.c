@@ -3131,6 +3131,204 @@ static void test_bezier_vec3_cubic(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * mat3_from_diagonal Tests (Physics Lesson 04)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_mat3_from_diagonal_basic(void)
+{
+    TEST("mat3_from_diagonal — basic");
+    mat3 m = mat3_from_diagonal(2.0f, 3.0f, 4.0f);
+    ASSERT_FLOAT_EQ(m.m[0], 2.0f);
+    ASSERT_FLOAT_EQ(m.m[4], 3.0f);
+    ASSERT_FLOAT_EQ(m.m[8], 4.0f);
+    /* Off-diagonals must be zero */
+    ASSERT_FLOAT_EQ(m.m[1], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[2], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[3], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[5], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[6], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[7], 0.0f);
+    END_TEST();
+}
+
+static void test_mat3_from_diagonal_identity(void)
+{
+    TEST("mat3_from_diagonal — identity");
+    mat3 m = mat3_from_diagonal(1.0f, 1.0f, 1.0f);
+    mat3 id = mat3_identity();
+    ASSERT_MAT3_EQ(m, id);
+    END_TEST();
+}
+
+static void test_mat3_from_diagonal_zero(void)
+{
+    TEST("mat3_from_diagonal — zero");
+    mat3 m = mat3_from_diagonal(0.0f, 0.0f, 0.0f);
+    for (int i = 0; i < 9; i++) {
+        ASSERT_FLOAT_EQ(m.m[i], 0.0f);
+    }
+    END_TEST();
+}
+
+static void test_mat3_from_diagonal_negative(void)
+{
+    TEST("mat3_from_diagonal — negative");
+    mat3 m = mat3_from_diagonal(-1.0f, -2.0f, -3.0f);
+    ASSERT_FLOAT_EQ(m.m[0], -1.0f);
+    ASSERT_FLOAT_EQ(m.m[4], -2.0f);
+    ASSERT_FLOAT_EQ(m.m[8], -3.0f);
+    END_TEST();
+}
+
+static void test_mat3_from_diagonal_single_nonzero(void)
+{
+    TEST("mat3_from_diagonal — single non-zero");
+    mat3 m = mat3_from_diagonal(5.0f, 0.0f, 0.0f);
+    ASSERT_FLOAT_EQ(m.m[0], 5.0f);
+    ASSERT_FLOAT_EQ(m.m[4], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[8], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[1], 0.0f);
+    ASSERT_FLOAT_EQ(m.m[3], 0.0f);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * quat_to_mat3 Tests (Physics Lesson 04)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_quat_to_mat3_identity(void)
+{
+    TEST("quat_to_mat3 — identity quaternion");
+    mat3 m = quat_to_mat3(quat_identity());
+    mat3 id = mat3_identity();
+    ASSERT_MAT3_EQ(m, id);
+    END_TEST();
+}
+
+static void test_quat_to_mat3_90_around_y(void)
+{
+    TEST("quat_to_mat3 — 90° around Y");
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI * 0.5f);
+    mat3 m = quat_to_mat3(q);
+    /* 90° Y rotation: X→-Z, Y→Y, Z→X
+     * Column 0 (rotated X): (0, 0, -1)
+     * Column 1 (rotated Y): (0, 1,  0)
+     * Column 2 (rotated Z): (1, 0,  0) */
+    ASSERT_FLOAT_EQ(m.m[0],  0.0f);  /* col0.x */
+    ASSERT_FLOAT_EQ(m.m[1],  0.0f);  /* col0.y */
+    ASSERT_FLOAT_EQ(m.m[2], -1.0f);  /* col0.z */
+    ASSERT_FLOAT_EQ(m.m[4],  1.0f);  /* col1.y */
+    ASSERT_FLOAT_EQ(m.m[6],  1.0f);  /* col2.x */
+    ASSERT_FLOAT_EQ(m.m[8],  0.0f);  /* col2.z */
+    END_TEST();
+}
+
+static void test_quat_to_mat3_90_around_x(void)
+{
+    TEST("quat_to_mat3 — 90° around X");
+    quat q = quat_from_axis_angle(vec3_create(1, 0, 0), FORGE_PI * 0.5f);
+    mat3 m = quat_to_mat3(q);
+    /* 90° X rotation: X→X, Y→Z, Z→-Y
+     * Column 0: (1, 0,  0)
+     * Column 1: (0, 0,  1)
+     * Column 2: (0, -1, 0) */
+    ASSERT_FLOAT_EQ(m.m[0],  1.0f);
+    ASSERT_FLOAT_EQ(m.m[1],  0.0f);
+    ASSERT_FLOAT_EQ(m.m[2],  0.0f);
+    ASSERT_FLOAT_EQ(m.m[3],  0.0f);
+    ASSERT_FLOAT_EQ(m.m[4],  0.0f);
+    ASSERT_FLOAT_EQ(m.m[5],  1.0f);
+    ASSERT_FLOAT_EQ(m.m[6],  0.0f);
+    ASSERT_FLOAT_EQ(m.m[7], -1.0f);
+    ASSERT_FLOAT_EQ(m.m[8],  0.0f);
+    END_TEST();
+}
+
+static void test_quat_to_mat3_180_around_y(void)
+{
+    TEST("quat_to_mat3 — 180° around Y");
+    quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI);
+    mat3 m = quat_to_mat3(q);
+    /* 180° Y: X→-X, Y→Y, Z→-Z */
+    ASSERT_FLOAT_EQ(m.m[0], -1.0f);
+    ASSERT_FLOAT_EQ(m.m[4],  1.0f);
+    ASSERT_FLOAT_EQ(m.m[8], -1.0f);
+    END_TEST();
+}
+
+static void test_quat_to_mat3_consistency_with_mat4(void)
+{
+    TEST("quat_to_mat3 — consistency with quat_to_mat4");
+    /* Arbitrary rotation */
+    quat q = quat_from_axis_angle(
+        vec3_normalize(vec3_create(1.0f, 2.0f, 3.0f)), 1.23f);
+    mat3 m3 = quat_to_mat3(q);
+    mat4 m4 = quat_to_mat4(q);
+    /* Upper-left 3×3 of mat4 should match mat3 */
+    ASSERT_FLOAT_EQ(m3.m[0], m4.m[0]);
+    ASSERT_FLOAT_EQ(m3.m[1], m4.m[1]);
+    ASSERT_FLOAT_EQ(m3.m[2], m4.m[2]);
+    ASSERT_FLOAT_EQ(m3.m[3], m4.m[4]);
+    ASSERT_FLOAT_EQ(m3.m[4], m4.m[5]);
+    ASSERT_FLOAT_EQ(m3.m[5], m4.m[6]);
+    ASSERT_FLOAT_EQ(m3.m[6], m4.m[8]);
+    ASSERT_FLOAT_EQ(m3.m[7], m4.m[9]);
+    ASSERT_FLOAT_EQ(m3.m[8], m4.m[10]);
+    END_TEST();
+}
+
+static void test_quat_to_mat3_consistency_with_rotate_vec3(void)
+{
+    TEST("quat_to_mat3 — consistency with quat_rotate_vec3");
+    quat q = quat_from_axis_angle(
+        vec3_normalize(vec3_create(1.0f, -1.0f, 0.5f)), 0.75f);
+    vec3 test_vectors[3];
+    test_vectors[0] = vec3_create(1.0f, 0.0f, 0.0f);
+    test_vectors[1] = vec3_create(0.0f, 3.0f, -2.0f);
+    test_vectors[2] = vec3_create(1.5f, 2.5f, 3.5f);
+
+    mat3 m = quat_to_mat3(q);
+    for (int i = 0; i < 3; i++) {
+        vec3 mat_result  = mat3_multiply_vec3(m, test_vectors[i]);
+        vec3 quat_result = quat_rotate_vec3(q, test_vectors[i]);
+        ASSERT_VEC3_EQ(mat_result, quat_result);
+    }
+    END_TEST();
+}
+
+static void test_quat_to_mat3_orthonormality(void)
+{
+    TEST("quat_to_mat3 — orthonormality");
+    quat q = quat_from_axis_angle(
+        vec3_normalize(vec3_create(2.0f, 1.0f, 3.0f)), 2.1f);
+    mat3 m = quat_to_mat3(q);
+    /* Extract columns */
+    vec3 c0 = vec3_create(m.m[0], m.m[1], m.m[2]);
+    vec3 c1 = vec3_create(m.m[3], m.m[4], m.m[5]);
+    vec3 c2 = vec3_create(m.m[6], m.m[7], m.m[8]);
+    /* Unit length */
+    ASSERT_FLOAT_EQ(vec3_length(c0), 1.0f);
+    ASSERT_FLOAT_EQ(vec3_length(c1), 1.0f);
+    ASSERT_FLOAT_EQ(vec3_length(c2), 1.0f);
+    /* Mutually orthogonal */
+    ASSERT_FLOAT_EQ(vec3_dot(c0, c1), 0.0f);
+    ASSERT_FLOAT_EQ(vec3_dot(c0, c2), 0.0f);
+    ASSERT_FLOAT_EQ(vec3_dot(c1, c2), 0.0f);
+    END_TEST();
+}
+
+static void test_quat_to_mat3_determinant(void)
+{
+    TEST("quat_to_mat3 — determinant is 1.0");
+    quat q = quat_from_axis_angle(
+        vec3_normalize(vec3_create(1.0f, 0.5f, -0.3f)), 1.5f);
+    mat3 m = quat_to_mat3(q);
+    float det = mat3_determinant(m);
+    ASSERT_FLOAT_EQ(det, 1.0f);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -3363,6 +3561,25 @@ int main(int argc, char *argv[])
     test_bezier_cubic_flatten_line();
     test_bezier_vec3_quadratic();
     test_bezier_vec3_cubic();
+
+    /* mat3_from_diagonal tests (Physics Lesson 04) */
+    SDL_Log("\nmat3_from_diagonal tests:");
+    test_mat3_from_diagonal_basic();
+    test_mat3_from_diagonal_identity();
+    test_mat3_from_diagonal_zero();
+    test_mat3_from_diagonal_negative();
+    test_mat3_from_diagonal_single_nonzero();
+
+    /* quat_to_mat3 tests (Physics Lesson 04) */
+    SDL_Log("\nquat_to_mat3 tests:");
+    test_quat_to_mat3_identity();
+    test_quat_to_mat3_90_around_y();
+    test_quat_to_mat3_90_around_x();
+    test_quat_to_mat3_180_around_y();
+    test_quat_to_mat3_consistency_with_mat4();
+    test_quat_to_mat3_consistency_with_rotate_vec3();
+    test_quat_to_mat3_orthonormality();
+    test_quat_to_mat3_determinant();
 
     /* Summary */
     SDL_Log("\n=== Test Summary ===");

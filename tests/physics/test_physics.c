@@ -3228,6 +3228,1070 @@ static void test_step_multiple_contacts(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Lesson 04 — Rigid Body State and Orientation
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Rigid body test constants ─────────────────────────────────────────── */
+
+#define RB_MASS            5.0f
+#define RB_INV_MASS        0.2f    /* 1 / RB_MASS */
+#define RB_DAMPING         0.99f
+#define RB_ANG_DAMPING     0.99f
+#define RB_RESTIT          0.5f
+
+/* Box inertia: unit cube (half=1,1,1), mass=12
+ * I = (1/12)*12*((2)²+(2)²) = 8 for each axis */
+#define BOX_MASS           12.0f
+#define BOX_HALF           1.0f
+#define BOX_I              8.0f
+#define BOX_INV_I          0.125f  /* 1/8 */
+
+/* Sphere inertia: radius=1, mass=10
+ * I = (2/5)*10*1² = 4 */
+#define SPHERE_MASS        10.0f
+#define SPHERE_RADIUS      1.0f
+#define SPHERE_I           4.0f
+#define SPHERE_INV_I       0.25f   /* 1/4 */
+
+/* Cylinder inertia: radius=1, half_h=1, mass=12
+ * Iyy = (1/2)*12*1 = 6
+ * Ixx = Izz = (1/12)*12*(3+4) = 7 */
+#define CYL_MASS           12.0f
+#define CYL_RADIUS         1.0f
+#define CYL_HALF_H         1.0f
+#define CYL_IYY            6.0f
+#define CYL_IXX            7.0f
+
+/* Creation test inputs */
+#define RB_POS_X            1.0f
+#define RB_POS_Y            2.0f
+#define RB_POS_Z            3.0f
+#define RB_PREV_POS_X       5.0f
+#define RB_PREV_POS_Y       10.0f
+#define RB_PREV_POS_Z       15.0f
+#define RB_UNIT_MASS        1.0f
+#define RB_NEG_MASS         -5.0f
+#define RB_LARGE_MASS       1e6f
+#define RB_LARGE_INV_MASS   1e-6f
+
+/* Clamping test inputs */
+#define RB_OVER_DAMP        5.0f
+#define RB_NEG_ANG_DAMP     -2.0f
+#define RB_OVER_RESTIT      3.0f
+
+/* Non-uniform box (used in inertia, symmetry, world inertia tests) */
+#define RB_BOX2_MASS        6.0f
+#define RB_BOX2_HX          2.0f
+#define RB_BOX2_HY          1.0f
+#define RB_BOX2_HZ          0.5f
+#define RB_BOX2_IXX         2.5f
+#define RB_BOX2_IYY         8.5f
+#define RB_BOX2_IZZ         10.0f
+
+/* Sphere radius=2 test */
+#define RB_SPHERE2_RADIUS   2.0f
+#define RB_SPHERE2_INV_I    0.125f
+
+/* Force / torque test values */
+#define RB_FORCE_X          10.0f
+#define RB_FORCE2_X         5.0f
+#define RB_FORCE2_Y         3.0f
+#define RB_FORCE_ACCUM_X    15.0f
+#define RB_POINT_FORCE      10.0f
+#define RB_TORQUE_Y         5.0f
+#define RB_LARGE_FORCE      100.0f
+#define RB_HUGE_FORCE       1e10f
+
+/* Clear-forces test vectors */
+#define RB_CF_FORCE_X       10.0f
+#define RB_CF_FORCE_Y       20.0f
+#define RB_CF_FORCE_Z       30.0f
+#define RB_CF_TORQUE_X      5.0f
+#define RB_CF_TORQUE_Y      10.0f
+#define RB_CF_TORQUE_Z      15.0f
+
+/* Integrate-clears torque */
+#define RB_IC_TORQUE_X      1.0f
+#define RB_IC_TORQUE_Y      2.0f
+#define RB_IC_TORQUE_Z      3.0f
+
+/* Integration tests */
+#define RB_INT_MASS         2.0f
+#define RB_INT_ANG_VEL      5.0f
+#define RB_INT_ROT_TOL      0.01f
+#define RB_STATIC_POS       5.0f
+
+/* Quaternion stability */
+#define RB_QUAT_AV_X        3.0f
+#define RB_QUAT_AV_Y        5.0f
+#define RB_QUAT_AV_Z        2.0f
+#define RB_QUAT_STEPS       10000
+#define RB_QUAT_TOL         0.001f
+
+/* Damping tests */
+#define RB_HALF_DAMP        0.5f
+#define RB_DAMP_VEL         10.0f
+#define RB_DAMP_DT          1.0f
+#define RB_DAMP_VEL_AFTER   5.0f
+#define RB_DAMP_TOL         0.1f
+
+/* Transform tests */
+#define RB_XFORM_POS_X      3.0f
+#define RB_XFORM_POS_Y      4.0f
+#define RB_XFORM_POS_Z      5.0f
+
+/* Stability / determinism tests */
+#define RB_STAB_POS_Y       10.0f
+#define RB_STAB_HX          1.0f
+#define RB_STAB_HY          0.5f
+#define RB_STAB_HZ          0.25f
+#define RB_DET_STEPS        1000
+
+/* ── 43. Rigid body create ─────────────────────────────────────────────── */
+
+static void test_rb_create_defaults(void)
+{
+    TEST("rigid_body_create — default values");
+    vec3 pos = vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z);
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        pos, RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    ASSERT_NEAR(rb.mass, RB_MASS, EPSILON);
+    ASSERT_NEAR(rb.inv_mass, RB_INV_MASS, EPSILON);
+    ASSERT_NEAR(rb.damping, RB_DAMPING, EPSILON);
+    ASSERT_NEAR(rb.angular_damping, RB_ANG_DAMPING, EPSILON);
+    ASSERT_NEAR(rb.restitution, RB_RESTIT, EPSILON);
+    ASSERT_NEAR(rb.position.x, RB_POS_X, EPSILON);
+    ASSERT_NEAR(rb.position.y, RB_POS_Y, EPSILON);
+    ASSERT_NEAR(rb.position.z, RB_POS_Z, EPSILON);
+    /* Identity orientation */
+    ASSERT_NEAR(rb.orientation.w, 1.0f, EPSILON);
+    ASSERT_NEAR(rb.orientation.x, 0.0f, EPSILON);
+    /* Zero velocities */
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.angular_velocity.x, 0.0f, EPSILON);
+    /* Zero accumulators */
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_static(void)
+{
+    TEST("rigid_body_create — static body (mass=0)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, RB_HALF_DAMP, RB_HALF_DAMP, RB_RESTIT);
+    ASSERT_NEAR(rb.mass, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.inv_mass, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_negative_mass(void)
+{
+    TEST("rigid_body_create — negative mass treated as static");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_NEG_MASS, RB_HALF_DAMP, RB_HALF_DAMP, RB_RESTIT);
+    ASSERT_NEAR(rb.mass, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.inv_mass, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_clamping(void)
+{
+    TEST("rigid_body_create — damping/restitution clamped to [0..1]");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_UNIT_MASS, RB_OVER_DAMP, RB_NEG_ANG_DAMP, RB_OVER_RESTIT);
+    ASSERT_NEAR(rb.damping, 1.0f, EPSILON);
+    ASSERT_NEAR(rb.angular_damping, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.restitution, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_prev_fields(void)
+{
+    TEST("rigid_body_create — prev fields match initial");
+    vec3 pos = vec3_create(RB_PREV_POS_X, RB_PREV_POS_Y, RB_PREV_POS_Z);
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        pos, RB_UNIT_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    ASSERT_NEAR(rb.prev_position.x, pos.x, EPSILON);
+    ASSERT_NEAR(rb.prev_position.y, pos.y, EPSILON);
+    ASSERT_NEAR(rb.prev_position.z, pos.z, EPSILON);
+    ASSERT_NEAR(rb.prev_orientation.w, 1.0f, EPSILON);
+    ASSERT_NEAR(rb.prev_orientation.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_large_mass(void)
+{
+    TEST("rigid_body_create — very large mass");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_LARGE_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    ASSERT_NEAR(rb.mass, RB_LARGE_MASS, 1.0f);
+    ASSERT_TRUE(rb.inv_mass > 0.0f);
+    ASSERT_NEAR(rb.inv_mass, RB_LARGE_INV_MASS, 1e-8f);
+    END_TEST();
+}
+
+/* ── 44. Inertia tensor ────────────────────────────────────────────────── */
+
+static void test_rb_inertia_box_unit_cube(void)
+{
+    TEST("inertia_box — unit cube (half=1,1,1), mass=12");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), BOX_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(BOX_HALF, BOX_HALF, BOX_HALF));
+    /* All three moments equal for a cube */
+    ASSERT_NEAR(rb.inv_inertia_local.m[0], BOX_INV_I, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_local.m[4], BOX_INV_I, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_local.m[8], BOX_INV_I, EPSILON);
+    /* Off-diagonals zero */
+    ASSERT_NEAR(rb.inv_inertia_local.m[1], 0.0f, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_local.m[3], 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_inertia_box_nonuniform(void)
+{
+    TEST("inertia_box — non-uniform box");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_BOX2_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(RB_BOX2_HX, RB_BOX2_HY, RB_BOX2_HZ));
+    /* Full extents: 4, 2, 1. Squared: 16, 4, 1
+     * Ixx = (1/12)*6*(4+1) = 2.5
+     * Iyy = (1/12)*6*(16+1) = 8.5
+     * Izz = (1/12)*6*(16+4) = 10.0 */
+    ASSERT_NEAR(1.0f / rb.inv_inertia_local.m[0], RB_BOX2_IXX, EPSILON);
+    ASSERT_NEAR(1.0f / rb.inv_inertia_local.m[4], RB_BOX2_IYY, EPSILON);
+    ASSERT_NEAR(1.0f / rb.inv_inertia_local.m[8], RB_BOX2_IZZ, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_inertia_sphere(void)
+{
+    TEST("inertia_sphere — radius=1, mass=10");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), SPHERE_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    /* I = (2/5)*10*1 = 4, I_inv = 0.25 */
+    ASSERT_NEAR(rb.inv_inertia_local.m[0], SPHERE_INV_I, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_local.m[4], SPHERE_INV_I, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_local.m[8], SPHERE_INV_I, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_inertia_sphere_r2(void)
+{
+    TEST("inertia_sphere — radius=2, mass=5");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, RB_SPHERE2_RADIUS);
+    /* I = (2/5)*5*4 = 8, I_inv = 0.125 */
+    ASSERT_NEAR(rb.inv_inertia_local.m[0], RB_SPHERE2_INV_I, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_inertia_cylinder(void)
+{
+    TEST("inertia_cylinder — r=1, half_h=1, mass=12");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), CYL_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_cylinder(&rb, CYL_RADIUS, CYL_HALF_H);
+    /* Iyy = 6, Ixx = Izz = 7 */
+    ASSERT_NEAR(1.0f / rb.inv_inertia_local.m[0], CYL_IXX, EPSILON);
+    ASSERT_NEAR(1.0f / rb.inv_inertia_local.m[4], CYL_IYY, EPSILON);
+    ASSERT_NEAR(1.0f / rb.inv_inertia_local.m[8], CYL_IXX, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_inertia_static_body(void)
+{
+    TEST("inertia — static body remains identity");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(1.0f, 1.0f, 1.0f));
+    /* Static body: inertia unchanged (still identity) */
+    ASSERT_NEAR(rb.inv_inertia_local.m[0], 1.0f, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_local.m[4], 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_inertia_symmetry(void)
+{
+    TEST("inertia — diagonal tensor is symmetric");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(RB_BOX2_HX, RB_BOX2_HY, RB_BOX2_HZ));
+    mat3 t = mat3_transpose(rb.inv_inertia_local);
+    for (int i = 0; i < 9; i++) {
+        ASSERT_NEAR(rb.inv_inertia_local.m[i], t.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+/* ── 45. Force / torque application ────────────────────────────────────── */
+
+static void test_rb_force_at_center(void)
+{
+    TEST("apply_force — accumulates at center (no torque)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_FORCE_X, 0.0f, 0.0f));
+    ASSERT_NEAR(rb.force_accum.x, RB_FORCE_X, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_force_accumulates(void)
+{
+    TEST("apply_force — multiple calls accumulate");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_FORCE_X, 0.0f, 0.0f));
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_FORCE2_X, RB_FORCE2_Y, 0.0f));
+    ASSERT_NEAR(rb.force_accum.x, RB_FORCE_ACCUM_X, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, RB_FORCE2_Y, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_force_at_point_torque(void)
+{
+    TEST("apply_force_at_point — cross(+X, +Y) = +Z torque");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    /* Force +Y at point +X from COM: torque = cross(+X, +Y) = +Z */
+    forge_physics_rigid_body_apply_force_at_point(&rb,
+        vec3_create(0, RB_POINT_FORCE, 0),   /* force */
+        vec3_create(1, 0, 0));               /* world point */
+    ASSERT_NEAR(rb.force_accum.y, RB_POINT_FORCE, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.z, RB_POINT_FORCE, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_force_at_point_nonorigin_com(void)
+{
+    TEST("apply_force_at_point — non-origin COM produces same torque");
+    /* Body at (1,0,0) with force +Y at world point (2,0,0):
+     * offset = (2,0,0) - (1,0,0) = (1,0,0)
+     * torque = cross((1,0,0), (0,F,0)) = (0,0,F) — same as origin case */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING,
+        RB_RESTIT);
+    forge_physics_rigid_body_apply_force_at_point(&rb,
+        vec3_create(0, RB_POINT_FORCE, 0),         /* force */
+        vec3_create(RB_POS_X + 1.0f, 0, 0));       /* world point */
+    ASSERT_NEAR(rb.force_accum.y, RB_POINT_FORCE, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.z, RB_POINT_FORCE, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_torque_angular_acceleration_magnitude(void)
+{
+    TEST("torque produces correct angular acceleration magnitude");
+    /* Sphere: I = (2/5)*m*r^2 = (2/5)*5.0*1.0 = 2.0
+     * I_inv = 0.5.  Torque = (0, 10, 0).
+     * alpha = I_inv * torque = (0, 5, 0).
+     * After one step with dt and damping=1.0:
+     * omega = alpha * dt = (0, 5*dt, 0) */
+#define TAA_MASS    5.0f
+#define TAA_RADIUS  1.0f
+#define TAA_TORQUE  10.0f
+#define TAA_DT      0.01f
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), TAA_MASS, 1.0f, 1.0f, 0.0f);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, TAA_RADIUS);
+    forge_physics_rigid_body_apply_torque(&rb,
+        vec3_create(0, TAA_TORQUE, 0));
+    forge_physics_rigid_body_integrate(&rb, TAA_DT);
+
+    /* I_inv = 1 / ((2/5)*5*1) = 0.5, alpha_y = 0.5 * 10 = 5.0 */
+    float expected_omega_y = 5.0f * TAA_DT;
+    ASSERT_NEAR(rb.angular_velocity.y, expected_omega_y, EPSILON);
+    ASSERT_NEAR(rb.angular_velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.angular_velocity.z, 0.0f, EPSILON);
+#undef TAA_MASS
+#undef TAA_RADIUS
+#undef TAA_TORQUE
+#undef TAA_DT
+    END_TEST();
+}
+
+static void test_rb_apply_torque_direct(void)
+{
+    TEST("apply_torque — only torque changes");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_torque(&rb, vec3_create(0, RB_TORQUE_Y, 0));
+    ASSERT_NEAR(rb.torque_accum.y, RB_TORQUE_Y, EPSILON);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_force_static_noop(void)
+{
+    TEST("apply_force — static body is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_LARGE_FORCE, 0, 0));
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_force_zero(void)
+{
+    TEST("apply_force — zero force no change");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(0, 0, 0));
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_clear_forces(void)
+{
+    TEST("clear_forces — zeroes both accumulators");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_force(&rb,
+        vec3_create(RB_CF_FORCE_X, RB_CF_FORCE_Y, RB_CF_FORCE_Z));
+    forge_physics_rigid_body_apply_torque(&rb,
+        vec3_create(RB_CF_TORQUE_X, RB_CF_TORQUE_Y, RB_CF_TORQUE_Z));
+    forge_physics_rigid_body_clear_forces(&rb);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── 46. Integration ───────────────────────────────────────────────────── */
+
+static void test_rb_integrate_pure_linear(void)
+{
+    TEST("integrate — pure linear (gravity, no rotation)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, RB_STAB_POS_Y, 0), RB_INT_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    /* Apply gravity: F = m*g = 2 * -9.81 */
+    forge_physics_rigid_body_apply_force(&rb,
+        vec3_create(0.0f, -9.81f * RB_INT_MASS, 0.0f));
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    /* v = g * dt = -9.81 * (1/60) = -0.1635 */
+    ASSERT_NEAR(rb.velocity.y, -9.81f * PHYSICS_DT, RB_INT_ROT_TOL);
+    /* No angular velocity */
+    ASSERT_NEAR(rb.angular_velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_pure_rotation(void)
+{
+    TEST("integrate — pure rotation (no forces)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    /* Set initial angular velocity around Y */
+    rb.angular_velocity = vec3_create(0.0f, RB_INT_ANG_VEL, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    /* With damping=1.0, velocity preserved */
+    ASSERT_NEAR(rb.angular_velocity.y, RB_INT_ANG_VEL, RB_INT_ROT_TOL);
+    /* Quaternion should have changed */
+    ASSERT_TRUE(fabsf(rb.orientation.w - 1.0f) > EPSILON ||
+                fabsf(rb.orientation.y) > EPSILON);
+    /* Position unchanged (no forces) */
+    ASSERT_NEAR(rb.position.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_quat_stays_unit(void)
+{
+    TEST("integrate — quaternion stays unit after many steps");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.angular_velocity = vec3_create(RB_QUAT_AV_X, RB_QUAT_AV_Y, RB_QUAT_AV_Z);
+    for (int i = 0; i < RB_QUAT_STEPS; i++) {
+        forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    }
+    float q_len = quat_length(rb.orientation);
+    ASSERT_NEAR(q_len, 1.0f, RB_QUAT_TOL);
+    END_TEST();
+}
+
+static void test_rb_integrate_static_noop(void)
+{
+    TEST("integrate — static body unchanged");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_STATIC_POS, RB_STATIC_POS, RB_STATIC_POS),
+        0.0f, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    rb.force_accum = vec3_create(RB_LARGE_FORCE, RB_LARGE_FORCE, RB_LARGE_FORCE);
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    ASSERT_NEAR(rb.position.x, RB_STATIC_POS, EPSILON);
+    ASSERT_NEAR(rb.position.y, RB_STATIC_POS, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_zero_dt(void)
+{
+    TEST("integrate — zero dt no change");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_LARGE_FORCE, 0, 0));
+    forge_physics_rigid_body_integrate(&rb, 0.0f);
+    ASSERT_NEAR(rb.position.x, RB_POS_X, EPSILON);
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_velocity_clamp(void)
+{
+    TEST("integrate — large force clamps velocity");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_UNIT_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_HUGE_FORCE, 0, 0));
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    float v_len = vec3_length(rb.velocity);
+    ASSERT_TRUE(v_len <= FORGE_PHYSICS_MAX_VELOCITY + EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_angular_velocity_clamp(void)
+{
+    TEST("integrate — large torque clamps angular velocity");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_UNIT_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_torque(&rb, vec3_create(RB_HUGE_FORCE, 0, 0));
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    float w_len = vec3_length(rb.angular_velocity);
+    ASSERT_TRUE(w_len <= FORGE_PHYSICS_MAX_ANGULAR_VELOCITY + EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_prev_saved(void)
+{
+    TEST("integrate — prev state saved");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_force(&rb, vec3_create(RB_LARGE_FORCE, 0, 0));
+    rb.angular_velocity = vec3_create(0, RB_INT_ANG_VEL, 0);
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    /* prev_position should be original (0,0,0) */
+    ASSERT_NEAR(rb.prev_position.x, 0.0f, EPSILON);
+    /* current position should have moved */
+    ASSERT_TRUE(fabsf(rb.position.x) > EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_clears_accumulators(void)
+{
+    TEST("integrate — clears accumulators");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_force(&rb,
+        vec3_create(RB_CF_FORCE_X, RB_CF_FORCE_Y, RB_CF_FORCE_Z));
+    forge_physics_rigid_body_apply_torque(&rb,
+        vec3_create(RB_IC_TORQUE_X, RB_IC_TORQUE_Y, RB_IC_TORQUE_Z));
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── 47. Damping ───────────────────────────────────────────────────────── */
+
+static void test_rb_damping_linear(void)
+{
+    TEST("damping — linear velocity reduced");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_HALF_DAMP, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.velocity = vec3_create(RB_DAMP_VEL, 0.0f, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, RB_DAMP_DT);
+    /* v *= pow(0.5, 1.0) = 0.5, so v ≈ 5.0 */
+    ASSERT_NEAR(vec3_length(rb.velocity), RB_DAMP_VEL_AFTER, RB_DAMP_TOL);
+    END_TEST();
+}
+
+static void test_rb_damping_angular(void)
+{
+    TEST("damping — angular velocity reduced");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 1.0f, RB_HALF_DAMP, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.angular_velocity = vec3_create(0.0f, RB_DAMP_VEL, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, RB_DAMP_DT);
+    /* omega *= pow(0.5, 1.0) = 0.5, so omega ≈ 5.0 */
+    ASSERT_NEAR(vec3_length(rb.angular_velocity), RB_DAMP_VEL_AFTER, RB_DAMP_TOL);
+    END_TEST();
+}
+
+static void test_rb_damping_one_preserves(void)
+{
+    TEST("damping — damping=1.0 preserves velocity");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.velocity = vec3_create(RB_DAMP_VEL, 0.0f, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, RB_DAMP_DT);
+    ASSERT_NEAR(vec3_length(rb.velocity), RB_DAMP_VEL, RB_DAMP_TOL);
+    END_TEST();
+}
+
+static void test_rb_damping_zero_zeroes(void)
+{
+    TEST("damping — damping=0.0 zeroes velocity");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 0.0f, 0.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.velocity = vec3_create(RB_DAMP_VEL, 0.0f, 0.0f);
+    rb.angular_velocity = vec3_create(0.0f, RB_DAMP_VEL, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, RB_DAMP_DT);
+    ASSERT_NEAR(vec3_length(rb.velocity), 0.0f, EPSILON);
+    ASSERT_NEAR(vec3_length(rb.angular_velocity), 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── 48. World-space inertia ───────────────────────────────────────────── */
+
+static void test_rb_world_inertia_identity_orient(void)
+{
+    TEST("world inertia — identity orientation matches local");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(RB_BOX2_HX, RB_BOX2_HY, RB_BOX2_HZ));
+    forge_physics_rigid_body_update_derived(&rb);
+    for (int i = 0; i < 9; i++) {
+        ASSERT_NEAR(rb.inv_inertia_world.m[i],
+                     rb.inv_inertia_local.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+static void test_rb_world_inertia_sphere_invariant(void)
+{
+    TEST("world inertia — sphere invariant under rotation");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), SPHERE_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.orientation = quat_from_axis_angle(
+        vec3_normalize(vec3_create(1, 1, 1)), 1.23f);
+    forge_physics_rigid_body_update_derived(&rb);
+    /* Sphere inertia is I_inv = 0.25 * I₃, invariant under rotation */
+    ASSERT_NEAR(rb.inv_inertia_world.m[0], SPHERE_INV_I, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_world.m[4], SPHERE_INV_I, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_world.m[8], SPHERE_INV_I, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_world_inertia_90_rotation(void)
+{
+    TEST("world inertia — 90° Y rotation swaps X/Z axes");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(RB_BOX2_HX, RB_BOX2_HY, RB_BOX2_HZ));
+    float local_xx = rb.inv_inertia_local.m[0];
+    float local_yy = rb.inv_inertia_local.m[4];
+    float local_zz = rb.inv_inertia_local.m[8];
+    /* 90° rotation around Y: X axis → -Z, Z axis → X */
+    rb.orientation = quat_from_axis_angle(vec3_create(0, 1, 0),
+                                           FORGE_PI * 0.5f);
+    forge_physics_rigid_body_update_derived(&rb);
+    /* After 90° Y: world_xx should be local_zz, world_zz should be local_xx */
+    ASSERT_NEAR(rb.inv_inertia_world.m[0], local_zz, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_world.m[4], local_yy, EPSILON);
+    ASSERT_NEAR(rb.inv_inertia_world.m[8], local_xx, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_world_inertia_after_integration(void)
+{
+    TEST("world inertia — updated after integration");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, 1.0f, 1.0f, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(RB_BOX2_HX, RB_BOX2_HY, RB_BOX2_HZ));
+    rb.angular_velocity = vec3_create(0, RB_INT_ANG_VEL, 0);
+    mat3 before = rb.inv_inertia_world;
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    /* Non-uniform inertia + rotation → world inertia should change */
+    /* (Except if rotation is exactly around a principal axis with
+     *  equal perpendicular moments, which is not the case here) */
+    /* At least one element should differ */
+    bool changed = false;
+    for (int i = 0; i < 9; i++) {
+        if (fabsf(rb.inv_inertia_world.m[i] - before.m[i]) > EPSILON) {
+            changed = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(changed);
+    END_TEST();
+}
+
+/* ── 49. Transform ─────────────────────────────────────────────────────── */
+
+static void test_rb_transform_identity(void)
+{
+    TEST("get_transform — identity at origin");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_UNIT_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    mat4 m = forge_physics_rigid_body_get_transform(&rb);
+    mat4 id = mat4_identity();
+    for (int i = 0; i < 16; i++) {
+        ASSERT_NEAR(m.m[i], id.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+static void test_rb_transform_translation_only(void)
+{
+    TEST("get_transform — translation only");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_XFORM_POS_X, RB_XFORM_POS_Y, RB_XFORM_POS_Z),
+        RB_UNIT_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    mat4 m = forge_physics_rigid_body_get_transform(&rb);
+    ASSERT_NEAR(m.m[12], RB_XFORM_POS_X, EPSILON);
+    ASSERT_NEAR(m.m[13], RB_XFORM_POS_Y, EPSILON);
+    ASSERT_NEAR(m.m[14], RB_XFORM_POS_Z, EPSILON);
+    /* Rotation part should be identity */
+    ASSERT_NEAR(m.m[0], 1.0f, EPSILON);
+    ASSERT_NEAR(m.m[5], 1.0f, EPSILON);
+    ASSERT_NEAR(m.m[10], 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_transform_combined(void)
+{
+    TEST("get_transform — translation + rotation");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_XFORM_POS_X, RB_XFORM_POS_Y, RB_XFORM_POS_Z),
+        RB_UNIT_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    rb.orientation = quat_from_axis_angle(vec3_create(0, 1, 0),
+                                           FORGE_PI * 0.5f);
+    mat4 m = forge_physics_rigid_body_get_transform(&rb);
+    /* Compare with manual: translate(3,4,5) * rotate_y(90°) */
+    mat4 expected = mat4_multiply(
+        mat4_translate(vec3_create(RB_XFORM_POS_X, RB_XFORM_POS_Y, RB_XFORM_POS_Z)),
+        quat_to_mat4(rb.orientation));
+    for (int i = 0; i < 16; i++) {
+        ASSERT_NEAR(m.m[i], expected.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+/* ── 50. Conservation and stability ────────────────────────────────────── */
+
+static void test_rb_no_nan_after_many_steps(void)
+{
+    TEST("stability — no NaN/inf after 10000 steps");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, RB_STAB_POS_Y, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(RB_STAB_HX, RB_STAB_HY, RB_STAB_HZ));
+    rb.angular_velocity = vec3_create(RB_QUAT_AV_X, RB_QUAT_AV_Y, RB_QUAT_AV_Z);
+    for (int i = 0; i < RB_QUAT_STEPS; i++) {
+        forge_physics_rigid_body_apply_force(&rb,
+            vec3_create(0, -9.81f * rb.mass, 0));
+        forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    }
+    ASSERT_TRUE(isfinite(rb.position.x));
+    ASSERT_TRUE(isfinite(rb.position.y));
+    ASSERT_TRUE(isfinite(rb.position.z));
+    ASSERT_TRUE(isfinite(rb.velocity.x));
+    ASSERT_TRUE(isfinite(rb.angular_velocity.x));
+    ASSERT_TRUE(isfinite(rb.orientation.w));
+    END_TEST();
+}
+
+static void test_rb_determinism(void)
+{
+    TEST("stability — deterministic integration");
+    ForgePhysicsRigidBody rb1 = forge_physics_rigid_body_create(
+        vec3_create(0, RB_STAB_POS_Y, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb1,
+        vec3_create(RB_STAB_HX, RB_STAB_HY, RB_STAB_HZ));
+    rb1.angular_velocity = vec3_create(RB_QUAT_AV_X, RB_QUAT_AV_Y, RB_QUAT_AV_Z);
+    ForgePhysicsRigidBody rb2 = rb1;  /* copy after full setup */
+    for (int i = 0; i < RB_DET_STEPS; i++) {
+        forge_physics_rigid_body_apply_force(&rb1,
+            vec3_create(0, -9.81f * rb1.mass, 0));
+        forge_physics_rigid_body_apply_force(&rb2,
+            vec3_create(0, -9.81f * rb2.mass, 0));
+        forge_physics_rigid_body_integrate(&rb1, PHYSICS_DT);
+        forge_physics_rigid_body_integrate(&rb2, PHYSICS_DT);
+    }
+    ASSERT_NEAR(rb1.position.x, rb2.position.x, EPSILON);
+    ASSERT_NEAR(rb1.position.y, rb2.position.y, EPSILON);
+    ASSERT_NEAR(rb1.position.z, rb2.position.z, EPSILON);
+    ASSERT_NEAR(rb1.orientation.w, rb2.orientation.w, EPSILON);
+    END_TEST();
+}
+
+/* ── 51. Gyroscopic term ───────────────────────────────────────────────── */
+
+/* Test constants for gyroscopic tests */
+#define GYRO_MASS      5.0f
+#define GYRO_DT        (1.0f / 60.0f)
+#define GYRO_OMEGA     10.0f
+#define GYRO_STEPS     60
+#define GYRO_TOL       0.05f
+
+static void test_rb_gyro_sphere_no_effect(void)
+{
+    TEST("gyroscopic — sphere: no gyroscopic coupling (I is scalar)");
+    /* For a sphere, I is a scalar multiple of identity, so ω × (Iω) = 0.
+     * Integration with and without the gyroscopic term should be identical. */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), GYRO_MASS, 1.0f, 1.0f, 0.5f);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    rb.angular_velocity = vec3_create(GYRO_OMEGA, 0.0f, 0.0f);
+    /* With no torque, sphere should maintain angular velocity direction */
+    for (int i = 0; i < GYRO_STEPS; i++) {
+        forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    }
+    /* Direction should be unchanged (still along X) */
+    float total = vec3_length(rb.angular_velocity);
+    ASSERT_TRUE(total > 0.1f);
+    ASSERT_NEAR(rb.angular_velocity.y / total, 0.0f, GYRO_TOL);
+    ASSERT_NEAR(rb.angular_velocity.z / total, 0.0f, GYRO_TOL);
+    END_TEST();
+}
+
+static void test_rb_gyro_box_coupling(void)
+{
+    TEST("gyroscopic — non-spherical box: off-axis spin produces coupling");
+    /* A box with asymmetric inertia spinning around a non-principal axis
+     * will experience gyroscopic torque that changes the angular velocity
+     * direction. This is the "intermediate axis theorem" (tennis racket). */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), GYRO_MASS, 1.0f, 1.0f, 0.5f);
+    /* Box with well-separated principal moments (half-extents 2, 1, 0.2):
+     * Ixx ≈ 1.73, Iyy ≈ 6.73, Izz ≈ 8.33
+     * Y is the intermediate axis — rotation around it is unstable. */
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(2.0f, 1.0f, 0.2f));
+    /* Spin around intermediate axis (Y) with perturbation along X.
+     * The intermediate axis theorem predicts unstable rotation here. */
+    rb.angular_velocity = vec3_create(3.0f, GYRO_OMEGA, 0.0f);
+    vec3 initial_omega = rb.angular_velocity;
+    /* Run for 5 seconds to let the instability develop */
+    for (int i = 0; i < GYRO_STEPS * 5; i++) {
+        forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    }
+    /* The gyroscopic effect should cause angular velocity to change direction.
+     * Without the gyroscopic term, ω would be constant (no torque applied). */
+    float dot = vec3_dot(vec3_normalize(rb.angular_velocity),
+                         vec3_normalize(initial_omega));
+    /* Direction should have changed noticeably (dot < 1) */
+    ASSERT_TRUE(dot < 0.98f);
+    END_TEST();
+}
+
+static void test_rb_gyro_angular_momentum_conservation(void)
+{
+    TEST("gyroscopic — angular momentum magnitude conserved (no torque)");
+    /* With no external torque and damping = 1.0, the angular momentum
+     * magnitude |L| = |I·ω| should be approximately conserved. */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), GYRO_MASS, 1.0f, 1.0f, 0.5f);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(2.0f, 0.5f, 1.0f));
+    rb.angular_velocity = vec3_create(3.0f, 5.0f, 2.0f);
+    forge_physics_rigid_body_update_derived(&rb);
+    vec3 L0 = mat3_multiply_vec3(rb.inertia_world, rb.angular_velocity);
+    float L0_mag = vec3_length(L0);
+    for (int i = 0; i < GYRO_STEPS; i++) {
+        forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    }
+    vec3 L1 = mat3_multiply_vec3(rb.inertia_world, rb.angular_velocity);
+    float L1_mag = vec3_length(L1);
+    /* Allow ~5% drift from integration error over 60 steps */
+    ASSERT_NEAR(L1_mag, L0_mag, L0_mag * 0.05f);
+    END_TEST();
+}
+
+static void test_rb_gyro_inertia_world_field(void)
+{
+    TEST("gyroscopic — inertia_world field computed correctly");
+    /* Verify that inertia_world = R * I_local * R^T and that it equals
+     * the inverse of inv_inertia_world (within tolerance). */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), GYRO_MASS, 1.0f, 1.0f, 0.5f);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(2.0f, 0.5f, 1.0f));
+    rb.orientation = quat_from_axis_angle(
+        vec3_normalize(vec3_create(1, 1, 0)), 0.7f);
+    forge_physics_rigid_body_update_derived(&rb);
+    /* I_world * I_world_inv should approximate identity */
+    mat3 product = mat3_multiply(rb.inertia_world, rb.inv_inertia_world);
+    mat3 id = mat3_identity();
+    for (int i = 0; i < 9; i++) {
+        ASSERT_NEAR(product.m[i], id.m[i], 1e-4f);
+    }
+    END_TEST();
+}
+
+static void test_rb_gyro_stability_asymmetric(void)
+{
+    TEST("gyroscopic — stability with asymmetric inertia over 600 steps");
+    /* A long-running test: asymmetric body spinning freely should not
+     * produce NaN or explode. */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), GYRO_MASS, 1.0f, 0.999f, 0.5f);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(3.0f, 0.2f, 1.0f));
+    rb.angular_velocity = vec3_create(2.0f, 8.0f, 1.0f);
+    for (int i = 0; i < 600; i++) {
+        forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    }
+    ASSERT_TRUE(isfinite(rb.angular_velocity.x));
+    ASSERT_TRUE(isfinite(rb.angular_velocity.y));
+    ASSERT_TRUE(isfinite(rb.angular_velocity.z));
+    ASSERT_TRUE(isfinite(rb.orientation.w));
+    float q_len = quat_length(rb.orientation);
+    ASSERT_NEAR(q_len, 1.0f, 0.01f);
+    END_TEST();
+}
+
+/* ── 52. NULL safety for rigid body functions ──────────────────────────── */
+
+static void test_rb_get_transform_null(void)
+{
+    TEST("get_transform — NULL returns identity");
+    mat4 m = forge_physics_rigid_body_get_transform(NULL);
+    mat4 id = mat4_identity();
+    for (int i = 0; i < 16; i++) {
+        ASSERT_NEAR(m.m[i], id.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+static void test_rb_clear_forces_null(void)
+{
+    TEST("clear_forces — NULL does not crash");
+    forge_physics_rigid_body_clear_forces(NULL);
+    ASSERT_TRUE(1);  /* survived */
+    END_TEST();
+}
+
+/* ── 53. Inertia setter edge cases ─────────────────────────────────────── */
+
+static void test_rb_inertia_box_nan_rejected(void)
+{
+    TEST("inertia box — NaN half-extents rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    /* Set valid inertia first */
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(1.0f, 1.0f, 1.0f));
+    mat3 before = rb.inv_inertia_local;
+    /* Attempt NaN — should be rejected */
+    float nan_val = nanf("");
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(nan_val, 1.0f, 1.0f));
+    /* Inertia should be unchanged */
+    for (int i = 0; i < 9; i++) {
+        ASSERT_NEAR(rb.inv_inertia_local.m[i], before.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+static void test_rb_inertia_sphere_inf_rejected(void)
+{
+    TEST("inertia sphere — Inf radius rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    mat3 before = rb.inv_inertia_local;
+    float inf_val = INFINITY;
+    forge_physics_rigid_body_set_inertia_sphere(&rb, inf_val);
+    for (int i = 0; i < 9; i++) {
+        ASSERT_NEAR(rb.inv_inertia_local.m[i], before.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+static void test_rb_inertia_cylinder_nan_rejected(void)
+{
+    TEST("inertia cylinder — NaN dimensions rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_cylinder(&rb, 1.0f, 2.0f);
+    mat3 before = rb.inv_inertia_local;
+    float nan_val = nanf("");
+    forge_physics_rigid_body_set_inertia_cylinder(&rb, nan_val, 2.0f);
+    for (int i = 0; i < 9; i++) {
+        ASSERT_NEAR(rb.inv_inertia_local.m[i], before.m[i], EPSILON);
+    }
+    END_TEST();
+}
+
+/* ── 54. Rigid body integrator edge cases ──────────────────────────────── */
+
+static void test_rb_integrate_negative_dt(void)
+{
+    TEST("integrate — negative dt is rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_force(&rb,
+        vec3_create(RB_LARGE_FORCE, 0, 0));
+    rb.angular_velocity = vec3_create(5.0f, 0.0f, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, -0.016f);
+    ASSERT_NEAR(rb.position.x, RB_POS_X, EPSILON);
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_nan_dt(void)
+{
+    TEST("integrate — NaN dt is rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_force(&rb,
+        vec3_create(RB_LARGE_FORCE, 0, 0));
+    float nan_val = nanf("");
+    forge_physics_rigid_body_integrate(&rb, nan_val);
+    ASSERT_NEAR(rb.position.x, RB_POS_X, EPSILON);
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_inf_dt(void)
+{
+    TEST("integrate — +Inf dt is rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    forge_physics_rigid_body_apply_force(&rb,
+        vec3_create(RB_LARGE_FORCE, 0, 0));
+    float inf_val = INFINITY;
+    forge_physics_rigid_body_integrate(&rb, inf_val);
+    ASSERT_NEAR(rb.position.x, RB_POS_X, EPSILON);
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main — run all tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -3479,6 +4543,101 @@ int main(int argc, char *argv[])
     test_step_detects_and_resolves();
     test_step_no_collisions();
     test_step_multiple_contacts();
+
+    /* ── Lesson 04: Rigid Body State and Orientation ──────────────────── */
+
+    /* 43. Rigid body create */
+    SDL_Log("--- rigid body create ---");
+    test_rb_create_defaults();
+    test_rb_create_static();
+    test_rb_create_negative_mass();
+    test_rb_create_clamping();
+    test_rb_create_prev_fields();
+    test_rb_create_large_mass();
+
+    /* 44. Inertia tensor */
+    SDL_Log("--- inertia tensor ---");
+    test_rb_inertia_box_unit_cube();
+    test_rb_inertia_box_nonuniform();
+    test_rb_inertia_sphere();
+    test_rb_inertia_sphere_r2();
+    test_rb_inertia_cylinder();
+    test_rb_inertia_static_body();
+    test_rb_inertia_symmetry();
+
+    /* 45. Force / torque */
+    SDL_Log("--- force / torque ---");
+    test_rb_force_at_center();
+    test_rb_force_accumulates();
+    test_rb_force_at_point_torque();
+    test_rb_force_at_point_nonorigin_com();
+    test_rb_torque_angular_acceleration_magnitude();
+    test_rb_apply_torque_direct();
+    test_rb_force_static_noop();
+    test_rb_force_zero();
+    test_rb_clear_forces();
+
+    /* 46. Integration */
+    SDL_Log("--- integration ---");
+    test_rb_integrate_pure_linear();
+    test_rb_integrate_pure_rotation();
+    test_rb_integrate_quat_stays_unit();
+    test_rb_integrate_static_noop();
+    test_rb_integrate_zero_dt();
+    test_rb_integrate_velocity_clamp();
+    test_rb_integrate_angular_velocity_clamp();
+    test_rb_integrate_prev_saved();
+    test_rb_integrate_clears_accumulators();
+
+    /* 47. Damping */
+    SDL_Log("--- damping ---");
+    test_rb_damping_linear();
+    test_rb_damping_angular();
+    test_rb_damping_one_preserves();
+    test_rb_damping_zero_zeroes();
+
+    /* 48. World-space inertia */
+    SDL_Log("--- world-space inertia ---");
+    test_rb_world_inertia_identity_orient();
+    test_rb_world_inertia_sphere_invariant();
+    test_rb_world_inertia_90_rotation();
+    test_rb_world_inertia_after_integration();
+
+    /* 49. Transform */
+    SDL_Log("--- transform ---");
+    test_rb_transform_identity();
+    test_rb_transform_translation_only();
+    test_rb_transform_combined();
+
+    /* 50. Conservation and stability */
+    SDL_Log("--- conservation and stability ---");
+    test_rb_no_nan_after_many_steps();
+    test_rb_determinism();
+
+    /* 51. Gyroscopic term */
+    SDL_Log("--- gyroscopic term ---");
+    test_rb_gyro_sphere_no_effect();
+    test_rb_gyro_box_coupling();
+    test_rb_gyro_angular_momentum_conservation();
+    test_rb_gyro_inertia_world_field();
+    test_rb_gyro_stability_asymmetric();
+
+    /* 52. NULL safety for rigid body functions */
+    SDL_Log("--- NULL safety (rigid body) ---");
+    test_rb_get_transform_null();
+    test_rb_clear_forces_null();
+
+    /* 53. Inertia setter edge cases */
+    SDL_Log("--- inertia edge cases ---");
+    test_rb_inertia_box_nan_rejected();
+    test_rb_inertia_sphere_inf_rejected();
+    test_rb_inertia_cylinder_nan_rejected();
+
+    /* 54. Rigid body integrator edge cases */
+    SDL_Log("--- rigid body integrate edge cases ---");
+    test_rb_integrate_negative_dt();
+    test_rb_integrate_nan_dt();
+    test_rb_integrate_inf_dt();
 
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

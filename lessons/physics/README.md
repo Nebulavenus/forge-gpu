@@ -42,6 +42,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="01-point-particles/assets/screenshot.png" width="480" alt="Point Particles"/>](01-point-particles/) | [**01 — Point Particles**](01-point-particles/) | Symplectic Euler integration, gravity, drag, sphere-plane collision, fixed timestep |
 | [<img src="02-springs-and-constraints/assets/screenshot.png" width="480" alt="Springs and Constraints"/>](02-springs-and-constraints/) | [**02 — Springs and Constraints**](02-springs-and-constraints/) | Hooke's law springs, damped oscillation, distance constraints, Gauss-Seidel solver, cloth simulation |
 | [<img src="03-particle-collisions/assets/screenshot.png" width="480" alt="Particle Collisions"/>](03-particle-collisions/) | [**03 — Particle Collisions**](03-particle-collisions/) | Sphere-sphere detection, impulse-based response, coefficient of restitution, momentum conservation |
+| [<img src="04-rigid-body-state/assets/screenshot.png" width="480" alt="Rigid Body State"/>](04-rigid-body-state/) | [**04 — Rigid Body State**](04-rigid-body-state/) | Rigid body mass properties, inertia tensors, quaternion orientation, angular velocity, torque, integration |
 
 ## Shared library
 

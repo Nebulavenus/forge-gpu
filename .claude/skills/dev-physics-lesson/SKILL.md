@@ -437,7 +437,7 @@ forge_shapes_free(&box);
  *   WASD / Arrow keys — move camera
  *   Mouse             — look around
  *   R                 — reset simulation
- *   Space             — pause / resume
+ *   P                 — pause / resume
  *   T                 — toggle slow motion
  *   Escape            — release mouse / quit
  *
@@ -754,7 +754,7 @@ Verify:
 - Camera controls work (WASD + mouse)
 - Physics simulation runs (objects move, interact)
 - R resets the simulation
-- Space pauses/resumes
+- P pauses/resumes
 - T toggles slow motion
 
 ### 11. Capture screenshots and GIF

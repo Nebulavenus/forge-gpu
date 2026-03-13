@@ -272,7 +272,7 @@ any are missing:
 **Simulation controls (all required):**
 
 - **R key** — resets simulation to initial state
-- **Space key** — pauses/resumes physics (camera still works while paused)
+- **P key** — pauses/resumes physics (camera still works while paused)
 - **T key** — toggles slow motion
 
 **Deliverables (all required):**

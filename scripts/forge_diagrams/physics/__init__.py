@@ -17,6 +17,16 @@ __all__ = [
     "diagram_restitution_comparison",
     "diagram_collision_pipeline",
     "diagram_momentum_conservation",
+    "diagram_rigid_body_state",
+    "diagram_inertia_tensor",
+    "diagram_inertia_shapes",
+    "diagram_quaternion_rotation",
+    "diagram_angular_velocity",
+    "diagram_torque_force_at_point",
+    "diagram_world_space_inertia",
+    "diagram_integration_flowchart",
+    "diagram_precession",
+    "diagram_kinetic_energy",
 ]
 
 from .lesson_01 import (
@@ -40,4 +50,16 @@ from .lesson_03 import (
     diagram_momentum_conservation,
     diagram_restitution_comparison,
     diagram_sphere_sphere_collision,
+)
+from .lesson_04 import (
+    diagram_angular_velocity,
+    diagram_inertia_shapes,
+    diagram_inertia_tensor,
+    diagram_integration_flowchart,
+    diagram_kinetic_energy,
+    diagram_precession,
+    diagram_quaternion_rotation,
+    diagram_rigid_body_state,
+    diagram_torque_force_at_point,
+    diagram_world_space_inertia,
 )

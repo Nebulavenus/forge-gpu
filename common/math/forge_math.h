@@ -1193,6 +1193,31 @@ static inline mat3 mat3_identity(void)
     return m;
 }
 
+/* Create a diagonal 3×3 matrix with specified diagonal values.
+ *
+ * A diagonal matrix has non-zero values only on the main diagonal:
+ *   | d0  0   0  |
+ *   |  0  d1  0  |
+ *   |  0   0  d2 |
+ *
+ * In physics, inertia tensors for axis-aligned primitives (box, sphere,
+ * cylinder) are diagonal in body space — each diagonal element represents
+ * resistance to rotation around that axis.
+ *
+ * Usage:
+ *   mat3 I = mat3_from_diagonal(4.0f, 4.0f, 4.0f);  // sphere inertia
+ *
+ * See: lessons/physics/04-rigid-body-state
+ */
+static inline mat3 mat3_from_diagonal(float d0, float d1, float d2)
+{
+    mat3 m = mat3_identity();
+    m.m[0] = d0;   /* column 0, row 0 */
+    m.m[4] = d1;   /* column 1, row 1 */
+    m.m[8] = d2;   /* column 2, row 2 */
+    return m;
+}
+
 /* Multiply two 3×3 matrices: result = a * b
  *
  * Each column of the result is: a * (column of b).
@@ -2549,6 +2574,59 @@ static inline mat4 quat_to_mat4(quat q)
     m.m[8]  = 2.0f * (xz + wy);
     m.m[9]  = 2.0f * (yz - wx);
     m.m[10] = 1.0f - 2.0f * (xx + yy);
+
+    return m;
+}
+
+/* Convert a unit quaternion to a 3×3 rotation matrix.
+ *
+ * Same math as quat_to_mat4 but returns a mat3 (no translation row/column).
+ * The input quaternion must be unit-length; results are undefined otherwise.
+ *
+ * This is needed for operations that require a 3×3 rotation matrix, such as
+ * transforming the inertia tensor to world space: I_world = R * I_local * R^T
+ *
+ * Formula (from expanding q * v * q*):
+ *   | 1-2(y²+z²)  2(xy-wz)    2(xz+wy)  |
+ *   | 2(xy+wz)    1-2(x²+z²)  2(yz-wx)  |
+ *   | 2(xz-wy)    2(yz+wx)    1-2(x²+y²) |
+ *
+ * Usage:
+ *   quat q = quat_from_axis_angle(axis, angle);
+ *   mat3 R = quat_to_mat3(q);
+ *   mat3 I_world = mat3_multiply(mat3_multiply(R, I_local), mat3_transpose(R));
+ *
+ * See: lessons/physics/04-rigid-body-state
+ */
+static inline mat3 quat_to_mat3(quat q)
+{
+    /* Pre-compute products (each used twice) */
+    float xx = q.x * q.x;
+    float yy = q.y * q.y;
+    float zz = q.z * q.z;
+    float xy = q.x * q.y;
+    float xz = q.x * q.z;
+    float yz = q.y * q.z;
+    float wx = q.w * q.x;
+    float wy = q.w * q.y;
+    float wz = q.w * q.z;
+
+    mat3 m;
+
+    /* Column 0 (X axis) */
+    m.m[0] = 1.0f - 2.0f * (yy + zz);
+    m.m[1] = 2.0f * (xy + wz);
+    m.m[2] = 2.0f * (xz - wy);
+
+    /* Column 1 (Y axis) */
+    m.m[3] = 2.0f * (xy - wz);
+    m.m[4] = 1.0f - 2.0f * (xx + zz);
+    m.m[5] = 2.0f * (yz + wx);
+
+    /* Column 2 (Z axis) */
+    m.m[6] = 2.0f * (xz + wy);
+    m.m[7] = 2.0f * (yz - wx);
+    m.m[8] = 1.0f - 2.0f * (xx + yy);
 
     return m;
 }

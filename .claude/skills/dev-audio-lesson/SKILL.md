@@ -302,7 +302,7 @@ focus on audio. See the `forge-scene-renderer` skill for the full API.
 | Key | Action |
 |---|---|
 | R | Reset / replay audio from start |
-| Space | Pause / resume audio playback |
+| P | Pause / resume audio playback |
 | 1–9 | Trigger sound effects (where applicable) |
 | +/- | Adjust master volume |
 
@@ -324,7 +324,7 @@ sources. Never write inline geometry generation functions.
  *   WASD / Arrow keys — move camera (listener position)
  *   Mouse             — look around
  *   R                 — reset / replay audio
- *   Space             — pause / resume
+ *   P                 — pause / resume
  *   1–9               — trigger sound effects
  *   +/-               — adjust master volume
  *   Escape            — release mouse / quit
@@ -693,7 +693,7 @@ Structure:
 | WASD / Arrows | Move camera (listener position) |
 | Mouse | Look around |
 | R | Reset / replay audio |
-| Space | Pause / resume |
+| P | Pause / resume |
 | 1–9 | Trigger sound effects |
 | +/- | Adjust master volume |
 | Escape | Release mouse / quit |
@@ -852,7 +852,7 @@ Verify:
 - UI panel is visible and interactive
 - Volume sliders change audio volume in real time
 - R resets/replays the audio
-- Space pauses/resumes audio
+- P pauses/resumes audio
 
 ### 12. Capture screenshots
 

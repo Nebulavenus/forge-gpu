@@ -59,7 +59,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 ### Rigid Body Foundations
 
-- [ ] **Physics Lesson 04 — Rigid Body State and Orientation** — Mass, center of mass, inertia tensor; quaternion orientation; linear and angular velocity; state representation and integration; inertia tensor rotation to world space
+- [x] **Physics Lesson 04 — Rigid Body State and Orientation** — Mass, center of mass, inertia tensor; quaternion orientation; linear and angular velocity; state representation and integration; inertia tensor rotation to world space
 - [ ] **Physics Lesson 05 — Forces and Torques** — Applying forces at arbitrary points; gravity, drag, and friction as force generators; torque and angular acceleration; force accumulator pattern; combining linear and angular effects; gyroscopic stability
 - [ ] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; static and dynamic friction (Coulomb model); resting contact resolution; stacking preview with simple shapes; **first lesson with forge UI overlay** — sliders for friction/restitution, contact normal visualization toggle, energy and contact count readouts
 

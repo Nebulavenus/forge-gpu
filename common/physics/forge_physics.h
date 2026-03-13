@@ -47,6 +47,18 @@
  */
 #define FORGE_PHYSICS_EPSILON       1e-6f
 
+/* ── Standard inertia tensor coefficients ─────────────────────────────────
+ * Named constants for the well-known moment-of-inertia formulas.
+ * Box:      I = (1/12) * m * (a² + b²)
+ * Sphere:   I = (2/5)  * m * r²
+ * Cylinder: I_axial = (1/2) * m * r²
+ * Quaternion derivative: dq/dt = (1/2) * ω * q
+ */
+#define FORGE_PHYSICS_INERTIA_BOX_COEFF      (1.0f / 12.0f)
+#define FORGE_PHYSICS_INERTIA_SPHERE_COEFF   (2.0f / 5.0f)
+#define FORGE_PHYSICS_INERTIA_CYLINDER_COEFF 0.5f
+#define FORGE_PHYSICS_QUAT_DERIV_COEFF       0.5f
+
 /* Solver iteration bounds for forge_physics_constraints_solve().
  *
  * At least 1 iteration is needed to make any progress; above 100 the
@@ -376,7 +388,7 @@ static inline void forge_physics_integrate(ForgePhysicsParticle *p, float dt)
 {
     /* Reject non-positive or non-finite timesteps.
      * NaN fails all comparisons, so check explicitly. */
-    if (!(dt > 0.0f)) {
+    if (!(dt > 0.0f) || !isfinite(dt)) {
         return;
     }
 
@@ -1294,6 +1306,614 @@ static inline int forge_physics_collide_particles_step(
     }
 
     return num_contacts;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Lesson 04 — Rigid Body State and Orientation
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Constants ─────────────────────────────────────────────────────────────── */
+
+/* Maximum angular velocity magnitude (radians per second).
+ *
+ * Angular velocities beyond this threshold indicate a numerical explosion.
+ * 100 rad/s is roughly 16 revolutions per second — well beyond any
+ * reasonable game-object spin rate.
+ */
+#define FORGE_PHYSICS_MAX_ANGULAR_VELOCITY  100.0f
+
+/* Quaternion renormalization threshold.
+ *
+ * After each integration step, quaternion drift accumulates. If the
+ * quaternion length deviates from 1.0 by more than this threshold,
+ * we renormalize. Chosen to be large enough that we skip the sqrt
+ * on frames with negligible drift, but small enough that the
+ * orientation never visibly distorts.
+ */
+#define FORGE_PHYSICS_QUAT_RENORM_THRESHOLD  1e-4f
+
+/* ── Types ─────────────────────────────────────────────────────────────────── */
+
+/* A rigid body with position, orientation, and angular dynamics.
+ *
+ * Extends the particle model with rotation: a rigid body has both linear
+ * motion (position, velocity, force) and angular motion (orientation,
+ * angular velocity, torque). The shape of the body affects how it responds
+ * to off-center forces via its inertia tensor.
+ *
+ * Static bodies (mass == 0, inv_mass == 0) are unaffected by forces and
+ * integration — they act as immovable obstacles.
+ *
+ * The prev_position and prev_orientation fields store the state before the
+ * last integration step, enabling smooth rendering via interpolation
+ * between physics ticks (lerp for position, slerp for orientation).
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 9–10 —
+ * rigid body state representation, inertia tensor, integration.
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+typedef struct ForgePhysicsRigidBody {
+    vec3  position;           /* center of mass, world space (m)            */
+    vec3  prev_position;      /* previous position for render interpolation */
+    quat  orientation;        /* rotation body→world (unit quaternion)      */
+    quat  prev_orientation;   /* previous orientation for interpolation     */
+    vec3  velocity;           /* linear velocity (m/s)                      */
+    vec3  angular_velocity;   /* angular velocity omega (rad/s, world)      */
+    vec3  force_accum;        /* accumulated forces this step (N)           */
+    vec3  torque_accum;       /* accumulated torques this step (N·m)        */
+    float mass;               /* kg — 0 means static/infinite mass          */
+    float inv_mass;           /* 1/mass — 0 for static bodies               */
+    float damping;            /* linear velocity damping [0..1]             */
+    float angular_damping;    /* angular velocity damping [0..1]            */
+    float restitution;        /* coefficient of restitution [0..1]          */
+    mat3  inertia_local;      /* inertia tensor, body space (const)           */
+    mat3  inv_inertia_local;  /* inverse inertia tensor, body space (const)   */
+    mat3  inertia_world;      /* inertia tensor, world space (for gyroscopic) */
+    mat3  inv_inertia_world;  /* inverse inertia tensor, world space        */
+} ForgePhysicsRigidBody;
+
+/* ── Rigid Body Functions ──────────────────────────────────────────────────── */
+
+/* Create a rigid body with sensible defaults.
+ *
+ * Sets identity orientation, zero velocities, zero accumulators, and
+ * identity inertia (uniform resistance to rotation). Mass of zero creates
+ * a static (immovable) body.
+ *
+ * Parameters:
+ *   position    — initial center-of-mass position in world space (m)
+ *   mass        — mass in kg; 0 or negative = static body
+ *   damping     — linear velocity damping [0..1], clamped
+ *   angular_damping — angular velocity damping [0..1], clamped
+ *   restitution — coefficient of restitution [0..1], clamped
+ *
+ * Returns: a fully initialized ForgePhysicsRigidBody with identity
+ *   orientation, zero velocities, and identity inertia tensor.
+ *
+ * Usage:
+ *   ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+ *       vec3_create(0, 2, 0), 5.0f, 0.01f, 0.01f, 0.5f);
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline ForgePhysicsRigidBody forge_physics_rigid_body_create(
+    vec3 position, float mass, float damping, float angular_damping,
+    float restitution)
+{
+    ForgePhysicsRigidBody rb;
+
+    rb.position         = position;
+    rb.prev_position    = position;
+    rb.orientation      = quat_identity();
+    rb.prev_orientation = quat_identity();
+    rb.velocity         = vec3_create(0.0f, 0.0f, 0.0f);
+    rb.angular_velocity = vec3_create(0.0f, 0.0f, 0.0f);
+    rb.force_accum      = vec3_create(0.0f, 0.0f, 0.0f);
+    rb.torque_accum     = vec3_create(0.0f, 0.0f, 0.0f);
+
+    /* Mass: zero, negative, or sub-epsilon = static (matches particle API) */
+    if (mass > FORGE_PHYSICS_EPSILON) {
+        rb.mass     = mass;
+        rb.inv_mass = 1.0f / mass;
+    } else {
+        rb.mass     = 0.0f;
+        rb.inv_mass = 0.0f;
+    }
+
+    /* Clamp damping and restitution to [0..1] */
+    if (damping < 0.0f) damping = 0.0f;
+    if (damping > 1.0f) damping = 1.0f;
+    rb.damping = damping;
+
+    if (angular_damping < 0.0f) angular_damping = 0.0f;
+    if (angular_damping > 1.0f) angular_damping = 1.0f;
+    rb.angular_damping = angular_damping;
+
+    if (restitution < 0.0f) restitution = 0.0f;
+    if (restitution > 1.0f) restitution = 1.0f;
+    rb.restitution = restitution;
+
+    /* Default: identity inertia (uniform sphere-like response) */
+    rb.inertia_local     = mat3_identity();
+    rb.inv_inertia_local = mat3_identity();
+    rb.inertia_world     = mat3_identity();
+    rb.inv_inertia_world = mat3_identity();
+
+    return rb;
+}
+
+/* Set the inertia tensor for a solid box (cuboid).
+ *
+ * For a uniform-density box with half-extents (hw, hh, hd) and mass m,
+ * the principal moments of inertia are:
+ *   Ixx = (1/12) * m * ((2*hh)² + (2*hd)²)  = (1/3) * m * (hh² + hd²)
+ *   Iyy = (1/12) * m * ((2*hw)² + (2*hd)²)  = (1/3) * m * (hw² + hd²)
+ *   Izz = (1/12) * m * ((2*hw)² + (2*hh)²)  = (1/3) * m * (hw² + hh²)
+ *
+ * The function stores both I and I_inv. The integrator uses I_inv for
+ * angular acceleration and I for the gyroscopic term omega x (I * omega).
+ *
+ * Parameters:
+ *   rb           — rigid body (mass must be set first)
+ *   half_extents — half-width, half-height, half-depth (m)
+ *
+ * Usage:
+ *   forge_physics_rigid_body_set_inertia_box(&rb,
+ *       vec3_create(1.0f, 0.5f, 0.25f));
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 10 —
+ * inertia tensor computation for primitive shapes.
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_set_inertia_box(
+    ForgePhysicsRigidBody *rb, vec3 half_extents)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!isfinite(half_extents.x) || !isfinite(half_extents.y) ||
+        !isfinite(half_extents.z)) return;
+
+    float hw = fabsf(half_extents.x);
+    float hh = fabsf(half_extents.y);
+    float hd = fabsf(half_extents.z);
+    float m  = rb->mass;
+
+    /* Full extents squared */
+    float w2 = 4.0f * hw * hw;  /* (2*hw)² */
+    float h2 = 4.0f * hh * hh;  /* (2*hh)² */
+    float d2 = 4.0f * hd * hd;  /* (2*hd)² */
+
+    float c = FORGE_PHYSICS_INERTIA_BOX_COEFF;
+    float Ixx = c * m * (h2 + d2);
+    float Iyy = c * m * (w2 + d2);
+    float Izz = c * m * (w2 + h2);
+
+    /* Guard against degenerate (zero) inertia */
+    if (Ixx < FORGE_PHYSICS_EPSILON) Ixx = FORGE_PHYSICS_EPSILON;
+    if (Iyy < FORGE_PHYSICS_EPSILON) Iyy = FORGE_PHYSICS_EPSILON;
+    if (Izz < FORGE_PHYSICS_EPSILON) Izz = FORGE_PHYSICS_EPSILON;
+
+    rb->inertia_local     = mat3_from_diagonal(Ixx, Iyy, Izz);
+    rb->inv_inertia_local = mat3_from_diagonal(1.0f / Ixx, 1.0f / Iyy, 1.0f / Izz);
+
+    /* Transform to world space using current orientation */
+    mat3 R  = quat_to_mat3(rb->orientation);
+    mat3 Rt = mat3_transpose(R);
+    rb->inertia_world     = mat3_multiply(mat3_multiply(R, rb->inertia_local), Rt);
+    rb->inv_inertia_world = mat3_multiply(mat3_multiply(R, rb->inv_inertia_local), Rt);
+}
+
+/* Set the inertia tensor for a solid sphere.
+ *
+ * For a uniform-density sphere of radius r and mass m:
+ *   I = (2/5) * m * r² * I₃   (all three principal moments equal)
+ *
+ * A sphere has the same resistance to rotation around any axis, so the
+ * inertia tensor is a scalar multiple of the identity matrix. This means
+ * the world-space tensor equals the local-space tensor regardless of
+ * orientation — a useful property for debugging.
+ *
+ * Parameters:
+ *   rb     — rigid body (mass must be set first)
+ *   radius — sphere radius (m)
+ *
+ * Usage:
+ *   forge_physics_rigid_body_set_inertia_sphere(&rb, 0.5f);
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_set_inertia_sphere(
+    ForgePhysicsRigidBody *rb, float radius)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!isfinite(radius)) return;
+    radius = fabsf(radius);
+
+    float I = FORGE_PHYSICS_INERTIA_SPHERE_COEFF * rb->mass * radius * radius;
+    if (I < FORGE_PHYSICS_EPSILON) I = FORGE_PHYSICS_EPSILON;
+
+    float inv_I = 1.0f / I;
+    rb->inertia_local     = mat3_from_diagonal(I, I, I);
+    rb->inv_inertia_local = mat3_from_diagonal(inv_I, inv_I, inv_I);
+
+    /* Transform to world space using current orientation */
+    mat3 R  = quat_to_mat3(rb->orientation);
+    mat3 Rt = mat3_transpose(R);
+    rb->inertia_world     = mat3_multiply(mat3_multiply(R, rb->inertia_local), Rt);
+    rb->inv_inertia_world = mat3_multiply(mat3_multiply(R, rb->inv_inertia_local), Rt);
+}
+
+/* Set the inertia tensor for a solid cylinder (Y-axis aligned).
+ *
+ * For a uniform-density cylinder of radius r, half-height h, and mass m:
+ *   Iyy = (1/2) * m * r²                 (around the symmetry axis)
+ *   Ixx = Izz = (1/12) * m * (3*r² + (2*h)²)  (around perpendicular axes)
+ *
+ * The cylinder is easier to spin around its symmetry axis (Y) than around
+ * the perpendicular axes, because mass is concentrated closer to Y.
+ *
+ * Parameters:
+ *   rb     — rigid body (mass must be set first)
+ *   radius — cylinder radius (m)
+ *   half_h — half-height (m), cylinder extends from -half_h to +half_h on Y
+ *
+ * Usage:
+ *   forge_physics_rigid_body_set_inertia_cylinder(&rb, 1.0f, 0.5f);
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_set_inertia_cylinder(
+    ForgePhysicsRigidBody *rb, float radius, float half_h)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!isfinite(radius) || !isfinite(half_h)) return;
+    radius = fabsf(radius);
+    half_h = fabsf(half_h);
+
+    float m  = rb->mass;
+    float r2 = radius * radius;
+    float h2 = 4.0f * half_h * half_h;  /* full height squared */
+
+    float Iyy = FORGE_PHYSICS_INERTIA_CYLINDER_COEFF * m * r2;
+    float Ixx = FORGE_PHYSICS_INERTIA_BOX_COEFF * m * (3.0f * r2 + h2);
+    float Izz = Ixx;  /* same as Ixx by symmetry */
+
+    if (Ixx < FORGE_PHYSICS_EPSILON) Ixx = FORGE_PHYSICS_EPSILON;
+    if (Iyy < FORGE_PHYSICS_EPSILON) Iyy = FORGE_PHYSICS_EPSILON;
+    if (Izz < FORGE_PHYSICS_EPSILON) Izz = FORGE_PHYSICS_EPSILON;
+
+    rb->inertia_local     = mat3_from_diagonal(Ixx, Iyy, Izz);
+    rb->inv_inertia_local = mat3_from_diagonal(1.0f / Ixx, 1.0f / Iyy, 1.0f / Izz);
+
+    /* Transform to world space using current orientation */
+    mat3 R  = quat_to_mat3(rb->orientation);
+    mat3 Rt = mat3_transpose(R);
+    rb->inertia_world     = mat3_multiply(mat3_multiply(R, rb->inertia_local), Rt);
+    rb->inv_inertia_world = mat3_multiply(mat3_multiply(R, rb->inv_inertia_local), Rt);
+}
+
+/* Accumulate a force applied at the center of mass.
+ *
+ * Forces at the center of mass produce only linear acceleration (no torque).
+ * Gravity is a common example: it acts uniformly on the entire body, which
+ * is equivalent to applying it at the center of mass.
+ *
+ * Forces are accumulated, not applied immediately. Call integrate() to
+ * process all accumulated forces, then clear_forces() resets the accumulators.
+ *
+ * Parameters:
+ *   rb    — rigid body (static bodies are skipped)
+ *   force — force vector in world space (N)
+ *
+ * Usage:
+ *   vec3 gravity = vec3_create(0, -9.81f * rb.mass, 0);
+ *   forge_physics_rigid_body_apply_force(&rb, gravity);
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_apply_force(
+    ForgePhysicsRigidBody *rb, vec3 force)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    rb->force_accum = vec3_add(rb->force_accum, force);
+}
+
+/* Accumulate a force applied at a world-space point.
+ *
+ * When a force is applied off-center, it produces both linear force and
+ * torque. The torque is τ = r × F, where r is the vector from the center
+ * of mass to the application point.
+ *
+ * This is the general-case force application: collisions, explosions,
+ * thrusters, and contact forces all use this form because they act at
+ * specific surface points, not at the center of mass.
+ *
+ * Parameters:
+ *   rb       — rigid body (static bodies are skipped)
+ *   force    — force vector in world space (N)
+ *   world_pt — point of application in world space (m)
+ *
+ * Usage:
+ *   vec3 impact_point = vec3_create(1, 0, 0);
+ *   vec3 impact_force = vec3_create(0, 100, 0);
+ *   forge_physics_rigid_body_apply_force_at_point(&rb,
+ *       impact_force, impact_point);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 10 —
+ * force and torque from off-center application.
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_apply_force_at_point(
+    ForgePhysicsRigidBody *rb, vec3 force, vec3 world_pt)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+
+    /* Offset from center of mass to application point */
+    vec3 offset = vec3_sub(world_pt, rb->position);
+
+    /* Accumulate force (linear) */
+    rb->force_accum = vec3_add(rb->force_accum, force);
+
+    /* Accumulate torque: τ = r × F */
+    rb->torque_accum = vec3_add(rb->torque_accum, vec3_cross(offset, force));
+}
+
+/* Accumulate a torque (moment of force) directly.
+ *
+ * Torque causes angular acceleration without any linear acceleration.
+ * Use this for abstract rotational effects (motors, gyroscopic precession)
+ * that don't correspond to a specific surface force.
+ *
+ * Parameters:
+ *   rb     — rigid body (static bodies are skipped)
+ *   torque — torque vector in world space (N·m)
+ *
+ * Usage:
+ *   vec3 motor_torque = vec3_create(0, 10, 0);
+ *   forge_physics_rigid_body_apply_torque(&rb, motor_torque);
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_apply_torque(
+    ForgePhysicsRigidBody *rb, vec3 torque)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    rb->torque_accum = vec3_add(rb->torque_accum, torque);
+}
+
+/* Update derived data: normalize orientation and recompute world-space
+ * inverse inertia tensor.
+ *
+ * Two operations are performed:
+ *   1. Normalize rb->orientation to counteract floating-point drift.
+ *   2. Rotate the body-space inverse inertia tensor to world space:
+ *
+ *        I_world_inv = R * I_local_inv * R^T
+ *
+ * The inertia tensor is stored in body (local) space because it is constant
+ * for a rigid body — it only depends on shape and mass distribution, not
+ * orientation. R is the 3×3 rotation matrix from the current orientation
+ * quaternion. Because R is orthonormal, R^T = R^-1, so this is a similarity
+ * transform that preserves the tensor's eigenvalues (principal moments)
+ * while rotating the principal axes to match the body's current orientation.
+ *
+ * Parameters:
+ *   rb — rigid body to update (orientation is normalized as a side effect)
+ *
+ * Note: called automatically at the end of forge_physics_rigid_body_integrate().
+ * Manual calls are only needed if you modify orientation or inertia directly.
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 10 —
+ * computing the world-space inertia tensor.
+ *
+ * See: Physics Lesson 04 - Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_update_derived(
+    ForgePhysicsRigidBody *rb)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+
+    /* Ensure unit quaternion — the integrator normalizes conditionally,
+     * but update_derived() may also be called after manual orientation
+     * changes, so normalize unconditionally here for safety. */
+    rb->orientation = quat_normalize(rb->orientation);
+
+    /* Rotation matrix from current orientation */
+    mat3 R  = quat_to_mat3(rb->orientation);
+    mat3 Rt = mat3_transpose(R);
+
+    /* I_world_inv = R * I_local_inv * R^T */
+    rb->inv_inertia_world = mat3_multiply(
+        mat3_multiply(R, rb->inv_inertia_local), Rt);
+
+    /* I_world = R * I_local * R^T   (needed for gyroscopic term omega x (I*omega)) */
+    rb->inertia_world = mat3_multiply(
+        mat3_multiply(R, rb->inertia_local), Rt);
+}
+
+/* Integrate rigid body state forward by dt seconds.
+ *
+ * Full symplectic Euler integration for rigid bodies:
+ *
+ *   1. Guard: skip static bodies (inv_mass == 0)
+ *   2. Save prev_position and prev_orientation (for render interpolation)
+ *   3. Linear acceleration:  a = F * inv_mass
+ *   4. Angular acceleration: alpha = I_world_inv * (tau - omega x (I_world * omega))
+ *   5. Update velocity:      v += a * dt
+ *   6. Update omega:         omega += alpha * dt
+ *   7. Apply damping:        v *= damping^dt,  omega *= angular_damping^dt
+ *   8. Clamp velocities to prevent numerical explosion
+ *   9. Update position:      pos += v * dt
+ *  10. Update orientation:   q += 0.5 * dt * (omega_quat * q), renormalize
+ *      if drift exceeds threshold
+ *  11. Update derived data (normalize orientation, recompute world-space
+ *      inertia)
+ *  12. Clear accumulators
+ *
+ * The quaternion derivative uses the kinematic equation:
+ *   dq/dt = 0.5 * omega_quat * q
+ * where omega_quat is the quaternion (0, omega_x, omega_y, omega_z). We use first-order
+ * Euler integration: q_new = q + dq/dt * dt, then renormalize.
+ *
+ * Damping uses exponential decay: v *= damping^dt. This is frame-rate
+ * independent - a damping value of 0.99 means "retain 99% of velocity
+ * per second," regardless of timestep size.
+ *
+ * Parameters:
+ *   rb - rigid body to integrate
+ *   dt - timestep in seconds (should be fixed, e.g. 1/60)
+ *
+ * Usage:
+ *   const float FIXED_DT = 1.0f / 60.0f;
+ *   forge_physics_rigid_body_apply_force(&rb, gravity);
+ *   forge_physics_rigid_body_integrate(&rb, FIXED_DT);
+ *   (force/torque accumulators are cleared automatically)
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 10 -
+ * rigid body integration loop.
+ *
+ * See: Physics Lesson 04 - Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_integrate(
+    ForgePhysicsRigidBody *rb, float dt)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!(dt > 0.0f) || !isfinite(dt)) return;  /* rejects <= 0, NaN, +inf */
+
+    /* ── Save previous state for render interpolation ─────────────────── */
+    rb->prev_position    = rb->position;
+    rb->prev_orientation = rb->orientation;
+
+    /* ── Linear acceleration: a = F / m ───────────────────────────────── */
+    vec3 linear_acc = vec3_scale(rb->force_accum, rb->inv_mass);
+
+    /* ── Angular acceleration: Euler's equation ────────────────────────── */
+    /* α = I_world_inv * (τ - ω × (I_world * ω))
+     * The gyroscopic term ω × (Iω) accounts for the coupling between
+     * angular velocity and the inertia tensor. Without it, non-spherical
+     * bodies precess and tumble incorrectly. */
+    vec3 Iw = mat3_multiply_vec3(rb->inertia_world, rb->angular_velocity);
+    vec3 gyro = vec3_cross(rb->angular_velocity, Iw);
+    vec3 angular_acc = mat3_multiply_vec3(rb->inv_inertia_world,
+        vec3_sub(rb->torque_accum, gyro));
+
+    /* ── Update velocities ────────────────────────────────────────────── */
+    rb->velocity = vec3_add(rb->velocity, vec3_scale(linear_acc, dt));
+    rb->angular_velocity = vec3_add(rb->angular_velocity, vec3_scale(angular_acc, dt));
+
+    /* ── Apply exponential damping (frame-rate independent) ───────────── */
+    /* Retention semantics: v *= pow(damping, dt).
+     *   damping = 1.0 → no damping (retain 100% per second)
+     *   damping = 0.99 → light damping (retain 99% per second)
+     *   damping = 0.0 → instant stop
+     * Note: this differs from the particle system which uses removal
+     * semantics (v *= 1 - drag).  Here, higher values mean less damping. */
+    /* Clamp damping to [0..1] in case fields were modified after create */
+    float damp     = rb->damping;
+    float ang_damp = rb->angular_damping;
+    if (damp < 0.0f)     damp = 0.0f;
+    if (damp > 1.0f)     damp = 1.0f;
+    if (ang_damp < 0.0f) ang_damp = 0.0f;
+    if (ang_damp > 1.0f) ang_damp = 1.0f;
+
+    rb->velocity = vec3_scale(rb->velocity, powf(damp, dt));
+    rb->angular_velocity = vec3_scale(rb->angular_velocity,
+                                       powf(ang_damp, dt));
+
+    /* ── Clamp velocities to prevent numerical explosion ──────────────── */
+    float v_len = vec3_length(rb->velocity);
+    if (v_len > FORGE_PHYSICS_MAX_VELOCITY) {
+        rb->velocity = vec3_scale(
+            vec3_normalize(rb->velocity),
+            FORGE_PHYSICS_MAX_VELOCITY);
+    }
+
+    float w_len = vec3_length(rb->angular_velocity);
+    if (w_len > FORGE_PHYSICS_MAX_ANGULAR_VELOCITY) {
+        rb->angular_velocity = vec3_scale(
+            vec3_normalize(rb->angular_velocity),
+            FORGE_PHYSICS_MAX_ANGULAR_VELOCITY);
+    }
+
+    /* ── Update position: x += v * dt ─────────────────────────────────── */
+    rb->position = vec3_add(rb->position, vec3_scale(rb->velocity, dt));
+
+    /* ── Update orientation: q += 0.5 * dt * (ω_quat * q) ────────────── */
+    if (w_len > FORGE_PHYSICS_EPSILON) {
+        quat omega_quat = quat_create(
+            0.0f, rb->angular_velocity.x,
+            rb->angular_velocity.y, rb->angular_velocity.z);
+        quat dq = quat_multiply(omega_quat, rb->orientation);
+
+        float half_dt = FORGE_PHYSICS_QUAT_DERIV_COEFF * dt;
+        rb->orientation.w += half_dt * dq.w;
+        rb->orientation.x += half_dt * dq.x;
+        rb->orientation.y += half_dt * dq.y;
+        rb->orientation.z += half_dt * dq.z;
+
+        /* Renormalize to prevent quaternion drift */
+        float q_len_sq = quat_length_sq(rb->orientation);
+        if (fabsf(q_len_sq - 1.0f) > FORGE_PHYSICS_QUAT_RENORM_THRESHOLD) {
+            rb->orientation = quat_normalize(rb->orientation);
+        }
+    }
+
+    /* ── Update derived data (world-space inertia tensor) ─────────────── */
+    forge_physics_rigid_body_update_derived(rb);
+
+    /* ── Clear force and torque accumulators ───────────────────────────── */
+    rb->force_accum  = vec3_create(0.0f, 0.0f, 0.0f);
+    rb->torque_accum = vec3_create(0.0f, 0.0f, 0.0f);
+}
+
+/* Clear force and torque accumulators.
+ *
+ * Call this at the start of each physics step before applying forces,
+ * or rely on integrate() which clears accumulators automatically.
+ *
+ * Parameters:
+ *   rb — rigid body to clear
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline void forge_physics_rigid_body_clear_forces(
+    ForgePhysicsRigidBody *rb)
+{
+    if (!rb) return;
+    rb->force_accum  = vec3_create(0.0f, 0.0f, 0.0f);
+    rb->torque_accum = vec3_create(0.0f, 0.0f, 0.0f);
+}
+
+/* Get the 4×4 world transform matrix for rendering.
+ *
+ * Combines position (translation) and orientation (rotation) into a
+ * single model matrix: M = T(pos) * R(orient)
+ *
+ * This is the matrix you pass to the vertex shader as the model transform.
+ * It does not include scale — rigid bodies do not change shape.
+ *
+ * Parameters:
+ *   rb — rigid body
+ *
+ * Returns:
+ *   4×4 model matrix (column-major, suitable for upload to GPU)
+ *
+ * Usage:
+ *   mat4 model = forge_physics_rigid_body_get_transform(&rb);
+ *   // upload model to vertex shader as uniform
+ *
+ * See: Physics Lesson 04 — Rigid Body State and Orientation
+ */
+static inline mat4 forge_physics_rigid_body_get_transform(
+    const ForgePhysicsRigidBody *rb)
+{
+    if (!rb) return mat4_identity();
+
+    mat4 rotation    = quat_to_mat4(rb->orientation);
+    mat4 translation = mat4_translate(rb->position);
+    return mat4_multiply(translation, rotation);
 }
 
 #endif /* FORGE_PHYSICS_H */

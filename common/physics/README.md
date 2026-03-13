@@ -55,12 +55,33 @@ Types: `ForgePhysicsContact` — contact normal, point, penetration, particle in
 
 Constants: `FORGE_PHYSICS_MAX_CONTACTS` (256), `FORGE_PHYSICS_RESTING_THRESHOLD` (0.5 m/s).
 
+### Lesson 04 — Rigid Body State and Orientation
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_rigid_body_create()` | Create a rigid body with position, mass, damping, angular damping, restitution |
+| `forge_physics_rigid_body_set_inertia_box()` | Set inertia tensor for a solid box (cuboid) |
+| `forge_physics_rigid_body_set_inertia_sphere()` | Set inertia tensor for a solid sphere |
+| `forge_physics_rigid_body_set_inertia_cylinder()` | Set inertia tensor for a solid cylinder (Y-axis) |
+| `forge_physics_rigid_body_apply_force()` | Accumulate force at center of mass |
+| `forge_physics_rigid_body_apply_force_at_point()` | Accumulate force at world point (generates torque) |
+| `forge_physics_rigid_body_apply_torque()` | Accumulate torque directly |
+| `forge_physics_rigid_body_update_derived()` | Recompute world-space inertia tensor from orientation |
+| `forge_physics_rigid_body_integrate()` | Full symplectic Euler integration (linear + angular, with gyroscopic term) |
+| `forge_physics_rigid_body_clear_forces()` | Zero force and torque accumulators |
+| `forge_physics_rigid_body_get_transform()` | Get 4×4 model matrix for rendering |
+
+Types: `ForgePhysicsRigidBody` — position, orientation (quaternion), velocities, inertia tensors,
+force/torque accumulators, mass properties.
+
+Constants: `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` (100 rad/s),
+`FORGE_PHYSICS_QUAT_RENORM_THRESHOLD` (1e-4).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 04 — Rigid Body State | `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()` | Rigid body state, inertia, orientation |
-| 05 — Forces and Torques | `forge_physics_apply_force_at_point()`, `forge_physics_apply_torque()` | Force application, angular dynamics |
+| 05 — Rigid Body Collisions | Rigid body contact detection, collision response | Contact points, angular impulse, friction |
 | 06–14 | *See [PLAN.md](../../PLAN.md)* | Contacts, GJK/EPA, constraints, solver |
 
 ## Design
@@ -83,3 +104,4 @@ Constants: `FORGE_PHYSICS_MAX_CONTACTS` (256), `FORGE_PHYSICS_RESTING_THRESHOLD`
 | [Physics L01](../../lessons/physics/01-point-particles/) | `ForgePhysicsParticle`, integrate, gravity, drag, collide_plane |
 | [Physics L02](../../lessons/physics/02-springs-and-constraints/) | `ForgePhysicsSpring`, `ForgePhysicsDistanceConstraint`, `forge_physics_spring_apply()`, `forge_physics_constraint_solve_distance()`, `forge_physics_constraints_solve()` |
 | [Physics L03](../../lessons/physics/03-particle-collisions/) | `ForgePhysicsContact`, `forge_physics_collide_sphere_sphere()`, `forge_physics_resolve_contact()`, `forge_physics_collide_particles_step()` |
+| [Physics L04](../../lessons/physics/04-rigid-body-state/) | `ForgePhysicsRigidBody`, `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()`, inertia setters, force/torque application |

@@ -278,7 +278,7 @@ after any HLSL change — the C build does not auto-detect shader changes.
   camera controls as a rendering baseline
 - Use simple shapes (spheres, cubes, capsules) — the physics is the focus
 - Fixed timestep with accumulator pattern — physics must be frame-rate independent
-- Support pause (Space), reset (R), and slow motion (T) in every lesson
+- Support pause (P), reset (R), and slow motion (T) in every lesson
 - Add reusable physics code to `common/physics/` as the track grows
 - Capture both screenshots AND animated GIFs (physics is dynamic)
 - Cross-reference math lessons for vectors, quaternions, and integration theory
