@@ -69,8 +69,9 @@ lessons/audio/NN-topic-name/
   main.c
   CMakeLists.txt
   README.md
+  audio.conf           (gitignored — local path to audio files)
   assets/
-    *.wav              (audio samples for the lesson)
+    screenshot.png     (lesson screenshot — checked in)
 ```
 
 Baseline rendering shaders (shadow, scene, grid, sky, UI) are provided by
@@ -154,7 +155,7 @@ never the reverse.
  *   on failure (check .data != NULL).
  *
  * Usage:
- *   ForgeAudioBuffer buf = forge_audio_load_wav("assets/click.wav", spec);
+ *   ForgeAudioBuffer buf = forge_audio_load_wav("/path/to/audio/click.wav", spec);
  *   if (!buf.data) { SDL_Log("Failed to load WAV"); return; }
  *
  * See: Audio Lesson 01 — Audio Basics
@@ -288,9 +289,10 @@ focus on audio. See the `forge-scene-renderer` skill for the full API.
 - **SDL audio stream** — All audio output goes through `SDL_AudioStream`.
   Create the stream at init, feed samples in the iterate callback or via
   SDL's audio device callback.
-- **WAV assets** — Audio samples are `.wav` files in the lesson's `assets/`
-  directory. Use short, clear sounds (clicks, tones, impacts) that
-  demonstrate the concept without requiring large files.
+- **User-supplied audio files** — Audio files are **not** checked into the
+  repository. Each lesson has an `audio.conf` file (gitignored) that points
+  to a local directory containing the user's audio files. See step 7 for the
+  full config workflow.
 - **Real-time parameter control** — UI sliders and keys should change audio
   parameters (volume, pan, effect intensity) in real time with audible
   results.
@@ -382,7 +384,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
     state->master_volume = 1.0f;
 
-    /* Set up SDL audio stream, load WAV assets, upload shapes ... */
+    /* Read audio directory from audio.conf */
+    char audio_dir[512];
+    if (!read_audio_conf("audio.conf", audio_dir, sizeof(audio_dir))) {
+        SDL_Log("audio.conf not found or not configured.");
+        SDL_Log("See the lesson README for setup instructions.");
+        return SDL_APP_FAILURE;
+    }
+
+    /* Load audio files from user's directory, set up SDL audio stream,
+     * upload shapes ... */
     return SDL_APP_CONTINUE;
 }
 ```
@@ -466,25 +477,193 @@ add_custom_command(TARGET NN-topic-name POST_BUILD
         $<TARGET_FILE_DIR:NN-topic-name>/assets/fonts/liberation_mono/
 )
 
-# Copy WAV assets next to executable
-add_custom_command(TARGET NN-topic-name POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:NN-topic-name>/assets
-)
+# Copy audio.conf next to executable (user-local audio file paths)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/audio.conf)
+    add_custom_command(TARGET NN-topic-name POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/audio.conf
+            $<TARGET_FILE_DIR:NN-topic-name>/audio.conf
+    )
+endif()
 ```
 
-### 7. Prepare WAV assets
+### 7. Set up audio file configuration
 
-Audio lessons need `.wav` files in `assets/`. Keep them small and purposeful:
+Audio files are **not** checked into the repository. Each lesson uses a
+gitignored `audio.conf` file that points to a local directory containing the
+user's own audio files. This avoids distributing copyrighted or large binary
+assets.
 
-- **Mono, 16-bit, 44100 or 48000 Hz** — standard format for all assets
-- **Short sounds** (< 2 seconds) for effects: clicks, tones, impacts
-- **Looping sounds** (2–5 seconds) for ambient or continuous sources
-- **Generate programmatically** if possible — a Python script that produces
-  sine waves, white noise, or simple tones avoids large binary assets in
-  the repository
-- Include a `generate_assets.py` script if assets are procedurally generated
+#### 7a. Create the `audio.conf` file
+
+Create `lessons/audio/NN-topic-name/audio.conf`:
+
+```ini
+# Audio file configuration for Audio Lesson NN — Topic Name
+#
+# This file is gitignored. Point audio_dir to a local directory containing
+# audio files for this lesson. See README.md for what types of files work
+# best.
+#
+# Royalty-free audio files can be obtained from sites like:
+#   freesound.org, pixabay.com/music, opengameart.org, incompetech.com
+#
+audio_dir = /path/to/your/audio/files
+```
+
+This bare-bones config is created by the developer scaffolding the lesson.
+It ships with a placeholder path that the user replaces with their own.
+
+#### 7b. Add `audio.conf` to `.gitignore`
+
+Ensure the root `.gitignore` contains:
+
+```text
+# Audio lesson config — local paths to user-supplied audio files
+lessons/**/audio.conf
+```
+
+Add this entry if it does not already exist.
+
+#### 7c. Document audio file requirements in the README
+
+Every audio lesson README must have an **"Audio files"** section (see step 8)
+that explains:
+
+1. **What types of audio files** the lesson needs — be specific about content,
+   not just format. Examples:
+   - "A short percussive sound (click, snap, or drum hit) for one-shot
+     playback"
+   - "A looping ambient sound (rain, wind, or drone) for continuous playback"
+   - "Two distinct sounds for mixing (e.g. a melody and a rhythm track)"
+   - "A mono sound effect for spatial positioning (footstep, ping, or alarm)"
+
+2. **Format requirements** — WAV preferred, mono or stereo, 16-bit or 32-bit
+   float, 44100 or 48000 Hz. Note any specific requirements (e.g. "must be
+   mono for spatial audio").
+
+3. **Where to find royalty-free audio** — Point readers to sources:
+   - freesound.org (CC0 and CC-BY samples)
+   - pixabay.com/sound-effects (royalty-free)
+   - opengameart.org (game-oriented audio)
+   - incompetech.com (Kevin MacLeod music, CC-BY)
+
+4. **How to configure** — Tell the reader to edit `audio.conf` and set
+   `audio_dir` to the directory containing their files.
+
+#### 7d. Load audio files at runtime via `audio.conf`
+
+The lesson's `main.c` reads `audio.conf` at startup to find the audio
+directory, then loads files from that directory. Add a config-reading helper
+to `forge_audio.h` (or use a local helper if it's lesson-specific):
+
+```c
+/* Read the audio_dir path from audio.conf.
+ * Returns true on success, false if the file is missing or
+ * the path is the unedited placeholder. */
+static bool read_audio_conf(const char *conf_path, char *out_dir, int max_len)
+{
+    SDL_IOStream *io = SDL_IOFromFile(conf_path, "r");
+    if (!io) return false;
+
+    char line[1024];
+    bool found = false;
+    Sint64 size = SDL_GetIOSize(io);
+    if (size > 0 && size < (Sint64)sizeof(line)) {
+        /* Read entire small file */
+        size_t bytes_read = SDL_ReadIO(io, line, (size_t)size);
+        if (bytes_read != (size_t)size) { SDL_CloseIO(io); return false; }
+        line[bytes_read] = '\0';
+        /* Parse audio_dir = <path> */
+        const char *key = "audio_dir";
+        char *pos = strstr(line, key);
+        if (pos) {
+            pos += strlen(key);
+            while (*pos == ' ' || *pos == '=') pos++;
+            /* Trim trailing whitespace / newline */
+            char *end = pos + strlen(pos) - 1;
+            while (end > pos && (*end == '\n' || *end == '\r' || *end == ' '))
+                *end-- = '\0';
+            /* Reject placeholder or empty path */
+            if (*pos == '\0' || strstr(pos, "/path/to/") || strstr(pos, "\\path\\to\\")) {
+                SDL_CloseIO(io);
+                return false;
+            }
+            SDL_snprintf(out_dir, max_len, "%s", pos);
+            found = true;
+        }
+    }
+    SDL_CloseIO(io);
+    return found;
+}
+```
+
+At init time:
+
+```c
+char audio_dir[512];
+if (!read_audio_conf("audio.conf", audio_dir, sizeof(audio_dir))) {
+    SDL_Log("audio.conf not found or not configured.");
+    SDL_Log("Create lessons/audio/NN-topic-name/audio.conf with:");
+    SDL_Log("  audio_dir = /path/to/your/audio/files");
+    SDL_Log("See the lesson README for what audio files are needed.");
+    return SDL_APP_FAILURE;
+}
+
+/* Build full paths to specific audio files */
+char wav_path[512];
+SDL_snprintf(wav_path, sizeof(wav_path), "%s/click.wav", audio_dir);
+ForgeAudioBuffer click = forge_audio_load_wav(wav_path, spec);
+```
+
+#### 7e. Assist the user with audio file selection
+
+When creating a lesson, **if `audio.conf` already exists** with a valid
+`audio_dir`, scan that directory and help the user choose appropriate files:
+
+1. List all `.wav`, `.ogg`, `.mp3`, and `.flac` files in the directory
+2. For each file, report: filename, duration, channels, sample rate (use
+   `ffprobe` or `soxi` if available, otherwise just list filenames)
+3. Based on the lesson's audio requirements, suggest which files would work
+   best. For example:
+   - For a one-shot effect lesson: suggest short files (< 2 seconds)
+   - For a spatial audio lesson: suggest mono files
+   - For a mixing lesson: suggest 2-3 files with different character
+4. Present recommendations to the user and let them confirm or choose
+   differently
+
+**If `audio.conf` does not exist or has the placeholder path**, ask the user:
+
+```text
+This lesson needs audio files. Please provide a path to a directory
+containing audio files (WAV, OGG, MP3, or FLAC).
+
+This lesson needs:
+- [specific audio requirements from the lesson design]
+
+Royalty-free audio can be found at freesound.org, pixabay.com, or
+opengameart.org.
+
+What is the path to your audio directory?
+```
+
+Then create `audio.conf` with their answer and proceed with file selection.
+
+#### 7f. Reference audio files by name in the code
+
+The lesson code should reference audio files by well-known names that
+correspond to their purpose, not opaque filenames. Define constants:
+
+```c
+/* Audio file names — the user places files with these names in their
+ * audio directory, or the lesson maps their chosen files to these names. */
+#define AUDIO_FILE_CLICK   "click.wav"
+#define AUDIO_FILE_AMBIENT "ambient.wav"
+#define AUDIO_FILE_MUSIC   "music.wav"
+```
+
+The README should list these expected filenames and what each one is for,
+so the user knows which of their files to use (or rename).
 
 ### 8. Create `README.md`
 
@@ -518,6 +697,29 @@ Structure:
 | 1–9 | Trigger sound effects |
 | +/- | Adjust master volume |
 | Escape | Release mouse / quit |
+
+## Audio files
+
+This lesson needs the following audio files. Audio is not included in the
+repository — you supply your own files via `audio.conf`.
+
+| Name | Purpose | Requirements |
+|---|---|---|
+| `click.wav` | One-shot playback demo | Short percussive sound (< 1 s), mono or stereo |
+| `ambient.wav` | Looping playback demo | 2–5 s ambient loop, mono or stereo |
+
+**Format:** WAV, 16-bit or 32-bit float, 44100 or 48000 Hz.
+
+**Where to find royalty-free audio:**
+
+- [freesound.org](https://freesound.org) — CC0 and CC-BY samples
+- [pixabay.com/sound-effects](https://pixabay.com/sound-effects) — royalty-free
+- [opengameart.org](https://opengameart.org) — game-oriented sounds
+- [incompetech.com](https://incompetech.com) — Kevin MacLeod music (CC-BY)
+
+**Setup:** Edit `audio.conf` in this lesson directory and set `audio_dir` to
+the directory containing your audio files. The program loads files by the
+names listed above from that directory.
 
 ## The audio
 
@@ -808,8 +1010,9 @@ In these cases, update existing documentation or plan for later.
   visuals is better than a beautiful scene with broken sound.
 - **Use headphones** — Spatial audio and stereo effects are best evaluated
   with headphones. Note this in the README.
-- **Keep WAV files small** — Short, focused sounds demonstrate concepts better
-  than long recordings. Generate tones programmatically when possible.
+- **Audio files are user-supplied** — The repo does not distribute audio. Each
+  lesson's `audio.conf` (gitignored) points to a local directory. The README
+  describes what types of files work best and where to find royalty-free audio.
 - **Show state** — Use forge UI to display volume levels, cursor positions,
   buffer states, and other audio internals. Audio is easier to learn when
   you can see the numbers alongside hearing the results.

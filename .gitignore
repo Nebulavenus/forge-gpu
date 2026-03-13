@@ -79,5 +79,8 @@ dist/
 .venv/
 venv/
 
+# Audio lesson config — local paths to user-supplied audio files
+lessons/**/audio.conf
+
 # Asset pipeline cache (generated at runtime)
 .forge-cache/
