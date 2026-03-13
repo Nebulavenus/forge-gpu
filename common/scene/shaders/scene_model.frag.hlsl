@@ -21,10 +21,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Shadow comparison bias — applied before hardware depth comparison.
- * Uses a comparison sampler (SampleCmpLevelZero) rather than the manual
- * compare in scene.frag.hlsl and grid.frag.hlsl.  Kept as a define so
- * the bias can be tuned without touching the cbuffer layout. */
+/* Shadow bias — prevents self-shadowing (shadow acne). */
 #define SHADOW_BIAS 0.005
 
 Texture2D    base_color_tex : register(t0, space2);
@@ -144,12 +141,15 @@ float4 main(PSInput input) : SV_Target {
     /* Metallic darkens diffuse (metals absorb light, reflect specularly) */
     float3 diffuse_color = base.rgb * (1.0 - metallic * 0.7);
 
-    /* Roughness modulates specular exponent: rougher = wider highlight */
-    float spec_exp = shininess * max(1.0 - roughness, 0.05);
+    /* Roughness modulates specular: rougher = wider, dimmer highlight.
+     * smoothness fades both the exponent and the intensity so that
+     * roughness=1 (e.g. rubber) produces zero specular. */
+    float smoothness = 1.0 - roughness;
+    float spec_exp = shininess * max(smoothness, 0.04);
 
     float3 ambient_term  = ambient * diffuse_color * ao;
     float3 diffuse_term  = NdotL * diffuse_color;
-    float3 specular_term = specular_str * pow(NdotH, spec_exp)
+    float3 specular_term = specular_str * smoothness * pow(NdotH, spec_exp)
                          * lerp(float3(1, 1, 1), base.rgb, metallic);
 
     /* ── Shadow ──────────────────────────────────────────────────── */

@@ -74,6 +74,25 @@ Call `forge_scene_destroy()` after a failed init to clean up any partially
 created resources. `forge_scene_destroy()` is idempotent — it zeros the struct
 after cleanup, so calling it multiple times is safe.
 
+## Shader compilation
+
+The scene shaders live in `common/scene/shaders/` as HLSL source files. After
+editing any `.vert.hlsl`, `.frag.hlsl`, or `.comp.hlsl` file, recompile to regenerate the
+SPIRV + DXIL bytecode and C headers in `shaders/compiled/`:
+
+```bash
+python scripts/compile_scene_shaders.py              # all scene shaders
+python scripts/compile_scene_shaders.py scene_model   # by name fragment
+python scripts/compile_scene_shaders.py -v            # verbose (show dxc commands)
+```
+
+The script auto-detects `dxc` from `VULKAN_SDK` or the system PATH. Override
+with `--dxc PATH` if needed.
+
+Pre-compiled headers are committed so that consumers of `forge_scene.h` do not
+need a shader compiler. The C build does not auto-detect shader changes —
+always recompile after editing HLSL source.
+
 ## Dependencies
 
 - SDL3 (GPU API, windowing, input)

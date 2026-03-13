@@ -50,8 +50,10 @@ VSOutput main(VSInput input) {
     float4 wp = mul(model, float4(input.position, 1.0));
     output.world_pos = wp.xyz;
 
-    /* Light-space position for shadow mapping. */
-    output.shadow_pos = mul(light_vp, wp);
+    /* Light-space position for shadow mapping.
+     * light_vp already contains the model matrix (light_vp = lightVP * model),
+     * so we use object-space position here — not world-space wp. */
+    output.shadow_pos = mul(light_vp, float4(input.position, 1.0));
 
     /* Normal transformation via adjugate transpose — preserves
      * perpendicularity under non-uniform scale. */
