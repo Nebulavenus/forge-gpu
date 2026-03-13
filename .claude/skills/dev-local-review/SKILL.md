@@ -88,26 +88,33 @@ Compare against a different base branch:
   before the first review
 - Any time you want a quick code quality check without pushing
 
+## Important: local and PR reviews differ
+
+PR reviews and CLI reviews will differ, even if run on the same code. CLI
+reviews optimize for immediate feedback during active development, while PR
+reviews provide comprehensive team collaboration context and broader
+repository analysis.
+
+**A clean local review does not guarantee a clean PR review.** Use the local
+review as a pre-filter to catch obvious issues (unchecked returns, doc/code
+mismatches, style problems) before pushing — but always request a full
+`@coderabbitai review` on the PR afterward.
+
 ## After a clean local review
 
-When the local review returns **no findings**, the code matches what
-CodeRabbit would see on GitHub. In this case:
+A clean local review means the obvious issues are handled. Push and request
+a full PR review:
 
 1. **Push** the commits
-2. **Request a resolve** — comment `@coderabbitai resolve` on the PR to
-   dismiss the old feedback threads
-3. **Do NOT request a new review** — the local review already confirmed the
-   code is clean, so `@coderabbitai review` would just repeat that work
-4. **Wait for merge** — the resolved state plus passing CI should be
-   sufficient for merge
-
-This only applies when the local review is clean and no additional code
-changes were made after the review. If you changed code after the local
-review, run the local review again before pushing.
+2. **Request a PR review** — comment `@coderabbitai review` on the PR
+3. **Wait for the PR review** — it may find additional issues the local
+   review missed (repo-wide patterns, learnings from past PRs, cross-file
+   architectural concerns)
 
 ## What it cannot do
 
 - Interact with existing PR feedback threads
 - Resolve or dismiss CodeRabbit conversations on a PR
 - Update the GitHub approval state
-- Replace the `@coderabbitai review` request after pushing
+- Access CodeRabbit's learnings from past PR interactions
+- Perform the broader repository analysis that PR reviews include
