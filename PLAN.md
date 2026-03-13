@@ -5,7 +5,7 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–39** — From Hello Window through Pipeline-Processed Assets
+- **GPU Lessons 01–41** — From Hello Window through Scene Model Loading
 - **Math Lessons 01–16** — From Vectors through Density Functions
 - **Engine Lessons 01–12** — From Intro to C through Memory Arenas
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
@@ -20,24 +20,33 @@ The following foundations, tooling, and lesson ranges are complete:
 
 ### Scene Model Loading
 
-- [ ] **Lesson 41 — Scene Model Loading** — Extends `forge_scene.h` with pipeline asset integration: `ForgeSceneModel` struct holding uploaded GPU buffers and the loaded `ForgePipelineScene` node hierarchy; `forge_scene_load_model()` loads an `.fscene` + its `.fmesh` files, uploads vertex/index buffers, and returns a ready-to-draw handle; `forge_scene_draw_model()` traverses the node tree, multiplies each node's `world_transform` by a caller-supplied placement matrix, and issues `forge_scene_draw_mesh()` per primitive; matching `forge_scene_draw_model_shadows()` for the shadow pass; `forge_scene_free_model()` releases GPU buffers and pipeline data. The lesson demonstrates by loading the CesiumMilkTruck (wheels correctly placed via node hierarchy transforms) and a second model side by side, with a UI panel showing node count and draw call stats. Validates that `forge_pipeline.h` world transforms propagate correctly through the scene renderer. (depends on GPU Lessons 39, 40 and Asset Lesson 09)
+- [x] **Lesson 41 — Scene Model Loading** — Extends `forge_scene.h` with pipeline model rendering: `ForgeSceneModel` struct with GPU buffers, per-material textures, and `ForgePipelineScene` node hierarchy; `forge_scene_load_model()` loads `.fscene` + `.fmesh` + `.fmat`, uploads buffers, loads textures with fallbacks; `forge_scene_draw_model()` traverses nodes, binds per-primitive materials, selects pipeline variant (opaque/blend/double-sided); `forge_scene_draw_model_shadows()` for depth-only pass; three models (CesiumMilkTruck with mesh instancing, Suzanne with PBR textures, Duck). (depends on GPU Lessons 39, 40 and Asset Lesson 09)
+
+### Pipeline Texture & Animation
+
+- [ ] **Lesson 42 — Pipeline Texture Compression** — Adds GPU block-compressed texture loading to `forge_scene.h`: processes model textures through the Python pipeline's texture plugin (BC7 for color/emissive via Basis Universal, BC5 for normal maps); loads KTX2 containers with pre-computed mip chains; uploads compressed blocks directly to GPU without CPU decoding; `forge_scene_load_pipeline_texture()` detects `.meta.json` sidecars and uses pre-made mips instead of GPU blit chain; compares VRAM usage and load times between raw PNG and compressed paths. (depends on GPU Lesson 41 and Asset Lesson 02)
+- [ ] **Lesson 43 — Pipeline Skinned Animations** — Extends `forge_scene.h` with skeletal animation support through pipeline assets: loads `.fskin` (joint hierarchy + inverse bind matrices), `.fanim` (keyframe data), and `.fanims` (animation manifest); computes joint matrices per frame; adds a skinned vertex shader (48-byte + joints/weights); `ForgeSceneSkinnedModel` struct with joint buffer and animation state; `forge_scene_draw_skinned_model()` and `forge_scene_update_animation()`; demonstrates with CesiumMan walking in a scene. (depends on GPU Lesson 41, Asset Lessons 10–12)
+
+### Scene Transparency
+
+- [ ] **Lesson 44 — Scene Transparency Sorting** — Extends `forge_scene.h` with correct transparent rendering: two-pass draw splitting opaque and blend submeshes; back-to-front depth sorting for transparent draws; alpha-tested shadow pass that skips `ALPHA_MASK` materials (and optionally uses a mask-aware shadow shader with `alpha_cutoff`); `ForgeSceneTransparentDraw` queue with centroid depth; integrates with `forge_scene_draw_model()` / `forge_scene_draw_model_shadows()`; demonstrates order-dependent vs order-independent results with CesiumMilkTruck windshield and foliage test assets. (depends on GPU Lessons 16, 41)
 
 ### Advanced Rendering
 
-- [ ] **Lesson 42 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
-- [ ] **Lesson 43 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
+- [ ] **Lesson 45 — Particle Animations** — Billboard quad particles facing the camera; GPU particle buffer updated via compute shader; spawn, simulate (gravity, drag, lifetime), and render loop; atlas-based animated particles; additive and soft-particle blending (depends on GPU Lessons 11, 16 and Physics Lesson 01)
+- [ ] **Lesson 46 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles); selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 
 ### Advanced Materials & Effects
 
-- [ ] **Lesson 44 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
-- [ ] **Lesson 45 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
-- [ ] **Lesson 46 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
+- [ ] **Lesson 47 — Translucent Materials** — Approximating light transmission through thin and thick surfaces; wrap lighting for subsurface scattering approximation; thickness maps; back-face lighting contribution; application to foliage, wax, skin, and fabric
+- [ ] **Lesson 48 — Water Caustics** — Projecting animated caustic patterns onto underwater surfaces; caustic texture animation (scrolling, distortion); light attenuation with water depth; combining with existing lighting and shadow systems
+- [ ] **Lesson 49 — IBL with Probes** — Image-based lighting using irradiance maps (diffuse) and pre-filtered environment maps (specular); split-sum approximation with a BRDF LUT; placing reflection probes in a scene; blending between probes; integrating IBL as ambient lighting replacement
 
 ### Volumetric & Terrain
 
-- [ ] **Lesson 47 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
-- [ ] **Lesson 48 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 44)
-- [ ] **Lesson 49 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
+- [ ] **Lesson 50 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with scene rendering
+- [ ] **Lesson 51 — Grass with Animations & Imposters** — Dense grass field rendering; geometry instancing or compute-generated grass blades; wind animation using noise-based displacement; LOD transition from full blades to imposter cards at distance; terrain integration (depends on Lessons 13, 25, 45)
+- [ ] **Lesson 52 — Height Map Terrain** — GPU terrain from height map; LOD with distance-based tessellation or geo-clipmaps; normal computation from height samples; texture splatting with blend maps; integrating with grass rendering
 
 ## Physics Lessons — New Track
 

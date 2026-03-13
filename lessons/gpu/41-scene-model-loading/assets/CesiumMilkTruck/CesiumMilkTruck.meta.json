@@ -1,0 +1,59 @@
+{
+  "source": "CesiumMilkTruck.gltf",
+  "format_version": 1,
+  "node_count": 6,
+  "mesh_count": 2,
+  "root_count": 1,
+  "mesh_node_count": 3,
+  "total_children": 5,
+  "meshes": [
+    {
+      "name": "Wheels",
+      "first_submesh": 0,
+      "submesh_count": 1
+    },
+    {
+      "name": "Cesium_Milk_Truck",
+      "first_submesh": 1,
+      "submesh_count": 3
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Wheels",
+      "parent": 1,
+      "mesh_index": 0,
+      "child_count": 0
+    },
+    {
+      "name": "Node",
+      "parent": 4,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Wheels.001",
+      "parent": 3,
+      "mesh_index": 0,
+      "child_count": 0
+    },
+    {
+      "name": "Node.001",
+      "parent": 4,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Cesium_Milk_Truck",
+      "parent": 5,
+      "mesh_index": 1,
+      "child_count": 2
+    },
+    {
+      "name": "Yup2Zup",
+      "parent": -1,
+      "mesh_index": -1,
+      "child_count": 1
+    }
+  ]
+}

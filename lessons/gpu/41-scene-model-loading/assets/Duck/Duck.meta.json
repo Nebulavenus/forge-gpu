@@ -1,0 +1,36 @@
+{
+  "source": "Duck.gltf",
+  "format_version": 1,
+  "node_count": 3,
+  "mesh_count": 1,
+  "root_count": 1,
+  "mesh_node_count": 1,
+  "total_children": 2,
+  "meshes": [
+    {
+      "name": "LOD3spShape",
+      "first_submesh": 0,
+      "submesh_count": 1
+    }
+  ],
+  "nodes": [
+    {
+      "name": "",
+      "parent": -1,
+      "mesh_index": -1,
+      "child_count": 2
+    },
+    {
+      "name": "",
+      "parent": 0,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 0,
+      "mesh_index": 0,
+      "child_count": 0
+    }
+  ]
+}

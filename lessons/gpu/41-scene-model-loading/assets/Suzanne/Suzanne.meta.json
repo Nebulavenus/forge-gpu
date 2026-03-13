@@ -1,0 +1,24 @@
+{
+  "source": "Suzanne.gltf",
+  "format_version": 1,
+  "node_count": 1,
+  "mesh_count": 1,
+  "root_count": 1,
+  "mesh_node_count": 1,
+  "total_children": 0,
+  "meshes": [
+    {
+      "name": "Suzanne",
+      "first_submesh": 0,
+      "submesh_count": 1
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Suzanne",
+      "parent": -1,
+      "mesh_index": 0,
+      "child_count": 0
+    }
+  ]
+}

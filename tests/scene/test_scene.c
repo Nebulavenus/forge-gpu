@@ -1,10 +1,12 @@
 /*
- * Scene Renderer Library Tests
+ * Scene Renderer Library Tests (Groups 1–9)
  *
  * Automated tests for common/scene/forge_scene.h
  * Verifies correctness of configuration defaults, light view-projection
  * computation, camera math, inline accessors, struct layout sizes, and
  * error handling for invalid configurations.
+ *
+ * Model-specific tests (Groups 10–17) are in test_scene_model.c.
  *
  * Most tests exercise the pure-math / configuration layer that does NOT
  * require a GPU device.  GPU-integration tests (group 9) require a
@@ -16,119 +18,23 @@
  * SPDX-License-Identifier: Zlib
  */
 
-#include <SDL3/SDL.h>
-#include <math.h>
-#include <stddef.h>
-
-#include "math/forge_math.h"
-
-/* Include the scene header (declaration-only — no IMPLEMENTATION here).
- * We test the inline accessors, config defaults, and struct layouts
- * without needing the full GPU implementation for most tests.
- *
- * GPU-integration tests that call forge_scene_init need the
- * implementation, so we conditionally compile it. */
+/* Define implementation macros before including the common header so that
+ * forge_scene.h and forge_pipeline.h emit their function bodies in this
+ * translation unit only. test_scene_model.c gets declarations only. */
+#define FORGE_PIPELINE_IMPLEMENTATION
 #define FORGE_SCENE_IMPLEMENTATION
-#include "scene/forge_scene.h"
+#include "test_scene_common.h"
 
-/* ── Test Framework ──────────────────────────────────────────────────────── */
+/* ── Shared state (extern'd in test_scene_common.h) ─────────────────────── */
 
-static int test_count = 0;
-static int pass_count = 0;
-static int fail_count = 0;
+int test_count = 0;
+int pass_count = 0;
+int fail_count = 0;
+int skip_count = 0;
+bool gpu_available = false;
 
-#define EPSILON 0.001f
-
-#define TEST(name) \
-    do { \
-        test_count++; \
-        SDL_Log("  Testing: %s", name);
-
-#define ASSERT_NEAR(a, b, eps) \
-    do { \
-        float _an = (a), _bn = (b); \
-        if (!isfinite(_an) || !isfinite(_bn)) { \
-            SDL_Log("    FAIL: Non-finite operand: got %.6f, expected %.6f", \
-                    (double)_an, (double)_bn); \
-            fail_count++; \
-            return; \
-        } \
-        if (fabsf(_an - _bn) > (eps)) { \
-            SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
-                    (double)_bn, (double)_an, (double)(eps)); \
-            fail_count++; \
-            return; \
-        } \
-    } while (0);
-
-#define ASSERT_TRUE(cond) \
-    if (!(cond)) { \
-        SDL_Log("    FAIL: Condition false: %s", #cond); \
-        fail_count++; \
-        return; \
-    }
-
-#define ASSERT_INT_EQ(a, b) \
-    if ((a) != (b)) { \
-        SDL_Log("    FAIL: Expected %d, got %d", (b), (a)); \
-        fail_count++; \
-        return; \
-    }
-
-#define END_TEST() \
-        SDL_Log("    PASS"); \
-        pass_count++; \
-    } while (0)
-
-static int skip_count = 0;
-
-#define SKIP_TEST() \
-        SDL_Log("    SKIP"); \
-        skip_count++; \
-    } while (0)
-
-/* Cleanup-aware variants for tests that allocate resources.
- * Uses a local _test_failed flag so END_TEST_C only counts a pass
- * when no assertion jumped to cleanup. */
-#define TEST_C(name) \
-    do { \
-        int _test_failed = 0; \
-        test_count++; \
-        SDL_Log("  Testing: %s", name);
-
-#define ASSERT_TRUE_C(cond) \
-    if (!(cond)) { \
-        SDL_Log("    FAIL: Condition false: %s", #cond); \
-        fail_count++; \
-        _test_failed = 1; \
-        goto cleanup; \
-    }
-
-#define ASSERT_NEAR_C(a, b, eps) \
-    do { \
-        float _anc = (a), _bnc = (b); \
-        if (!isfinite(_anc) || !isfinite(_bnc)) { \
-            SDL_Log("    FAIL: Non-finite operand: got %.6f, expected %.6f", \
-                    (double)_anc, (double)_bnc); \
-            fail_count++; \
-            _test_failed = 1; \
-            goto cleanup; \
-        } \
-        if (fabsf(_anc - _bnc) > (eps)) { \
-            SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
-                    (double)_bnc, (double)_anc, (double)(eps)); \
-            fail_count++; \
-            _test_failed = 1; \
-            goto cleanup; \
-        } \
-    } while (0);
-
-#define END_TEST_C() \
-        if (!_test_failed) { \
-            SDL_Log("    PASS"); \
-            pass_count++; \
-        } \
-    } while (0)
+/* ── Model tests (Groups 10–17) ─────────────────────────────────────────── */
+#include "test_scene_model.c"
 
 /* ── Shared constants ────────────────────────────────────────────────────── */
 
@@ -616,8 +522,6 @@ static void test_struct_vertex_offsets(void)
 /* ══════════════════════════════════════════════════════════════════════════
  * 9. GPU Integration Tests (require a Vulkan device)
  * ══════════════════════════════════════════════════════════════════════════ */
-
-static bool gpu_available = false;
 
 /* Check if a GPU device can be created — sets gpu_available flag */
 static void check_gpu_availability(void)
@@ -1468,8 +1372,12 @@ int main(int argc, char **argv)
         test_gpu_accessors();
         test_gpu_light_vp_matches_manual();
         test_gpu_destroy_is_idempotent();
+        run_model_gpu_tests();
         SDL_Quit();
     }
+
+    /* ── Groups 10–17: Model tests (in test_scene_model.c) ──── */
+    run_model_tests();
 
     /* ── Summary ─────────────────────────────────────────────── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed, %d skipped ===",

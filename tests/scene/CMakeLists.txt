@@ -1,5 +1,8 @@
-add_executable(test_scene test_scene.c)
-target_include_directories(test_scene PRIVATE ${FORGE_COMMON_DIR})
+add_executable(test_scene test_scene.c
+    ${CMAKE_SOURCE_DIR}/third_party/cJSON/cJSON.c)
+target_include_directories(test_scene PRIVATE
+    ${FORGE_COMMON_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/cJSON)
 target_link_libraries(test_scene PRIVATE SDL3::SDL3 $<$<NOT:$<C_COMPILER_ID:MSVC>>:m>)
 
 # Provide the path to a TTF font for UI-integration tests.

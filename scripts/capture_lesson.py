@@ -160,7 +160,11 @@ def capture_screenshot(
 ):
     """Run the lesson and capture a single frame."""
     exe_path = os.path.abspath(exe_path)
+    output_bmp = os.path.abspath(output_bmp)
     headless = _should_use_headless(headless)
+
+    # Run from the executable's directory so asset paths resolve correctly.
+    exe_dir = os.path.dirname(exe_path)
 
     cmd = [exe_path, "--screenshot", output_bmp, "--capture-frame", str(capture_frame)]
     if extra_args:
@@ -189,6 +193,7 @@ def capture_screenshot(
             text=True,
             timeout=120,
             env=env,
+            cwd=exe_dir,
         )
     except subprocess.TimeoutExpired:
         print("Capture timed out after 120 seconds")
@@ -210,7 +215,11 @@ def capture_gif_frames(
         return False
 
     exe_path = os.path.abspath(exe_path)
+    output_dir = os.path.abspath(output_dir)
     headless = _should_use_headless(headless)
+
+    # Run from the executable's directory so asset paths resolve correctly.
+    exe_dir = os.path.dirname(exe_path)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -259,6 +268,7 @@ def capture_gif_frames(
             text=True,
             timeout=300,
             env=env,
+            cwd=exe_dir,
         )
     except subprocess.TimeoutExpired:
         print("GIF capture timed out after 300 seconds")

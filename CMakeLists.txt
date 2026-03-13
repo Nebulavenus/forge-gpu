@@ -130,6 +130,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/38-indirect-drawing)
     add_subdirectory(lessons/gpu/39-pipeline-processed-assets)
     add_subdirectory(lessons/gpu/40-scene-renderer)
+    add_subdirectory(lessons/gpu/41-scene-model-loading)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────

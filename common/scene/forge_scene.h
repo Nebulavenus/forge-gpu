@@ -46,6 +46,10 @@
 #include "capture/forge_capture.h"
 #endif
 
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+#include "pipeline/forge_pipeline.h"
+#endif
+
 /* ── Constants ──────────────────────────────────────────────────────────── */
 
 /* Default window dimensions (16:9).  All lessons use this size. */
@@ -97,6 +101,12 @@
 #define FORGE_SCENE_UI_VB_CAPACITY     4096
 #define FORGE_SCENE_UI_IB_CAPACITY     8192
 
+/* Maximum materials per loaded model */
+#define FORGE_SCENE_MODEL_MAX_MATERIALS 32
+
+/* Maximum path buffer size for texture path resolution */
+#define FORGE_SCENE_PATH_BUF_SIZE 1024
+
 /* ── Vertex types ───────────────────────────────────────────────────────── */
 
 /* Interleaved vertex for scene geometry: position + normal.
@@ -110,6 +120,18 @@ typedef struct ForgeSceneVertex {
 typedef struct ForgeSceneGridVertex {
     float position[3]; /* world-space position (12 bytes) */
 } ForgeSceneGridVertex;
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+/* Interleaved vertex for pipeline-processed model geometry:
+ * position + normal + UV + tangent (48 bytes).
+ * Matches ForgeSceneModelVertex layout expected by scene_model.vert.hlsl. */
+typedef struct ForgeSceneModelVertex {
+    float position[3];  /* 12 bytes — object-space position */
+    float normal[3];    /* 12 bytes — object-space normal   */
+    float uv[2];        /* 8 bytes  — texture coordinates   */
+    float tangent[4];   /* 16 bytes — xyz=tangent, w=bitangent sign */
+} ForgeSceneModelVertex;
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
 
 /* ── Uniform structures ─────────────────────────────────────────────────── */
 
@@ -167,6 +189,54 @@ typedef struct ForgeSceneShadowVertUniforms {
 typedef struct ForgeSceneUiUniforms {
     mat4 projection;
 } ForgeSceneUiUniforms;
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+/* Model fragment uniforms — per-draw-call material + lighting (96 bytes).
+ * Must match scene_model.frag.hlsl cbuffer FragUniforms. */
+typedef struct ForgeSceneModelFragUniforms {
+    float light_dir[4];         /* xyz = direction toward light              */
+    float eye_pos[4];           /* xyz = camera position                     */
+    float base_color_factor[4]; /* RGBA multiplier from material             */
+    float emissive_factor[3];   /* RGB emission multiplier                   */
+    float shadow_texel;         /* 1.0 / shadow_map_resolution              */
+    float metallic_factor;      /* 0 = dielectric, 1 = metal                */
+    float roughness_factor;     /* 0 = mirror, 1 = rough                    */
+    float normal_scale;         /* normal map XY intensity                   */
+    float occlusion_strength;   /* AO blend: 0 = none, 1 = full             */
+    float shininess;            /* Blinn-Phong specular exponent             */
+    float specular_str;         /* specular intensity multiplier             */
+    float alpha_cutoff;         /* MASK mode threshold                       */
+    float ambient;              /* ambient light intensity [0..1]            */
+} ForgeSceneModelFragUniforms;
+
+/* Per-material GPU textures for a loaded model. */
+typedef struct ForgeSceneModelTextures {
+    SDL_GPUTexture *base_color;          /* NULL -> white fallback          */
+    SDL_GPUTexture *normal;              /* NULL -> flat normal fallback    */
+    SDL_GPUTexture *metallic_roughness;  /* NULL -> white fallback (1.0)   */
+    SDL_GPUTexture *occlusion;           /* NULL -> white fallback (1.0)   */
+    SDL_GPUTexture *emissive;            /* NULL -> black fallback (0.0)   */
+} ForgeSceneModelTextures;
+
+/* A loaded pipeline model with GPU resources. */
+typedef struct ForgeSceneModel {
+    /* Pipeline data (owns memory — freed by forge_scene_free_model) */
+    ForgePipelineScene       scene_data;  /* node hierarchy + world transforms */
+    ForgePipelineMesh        mesh;        /* vertex/index data + submeshes     */
+    ForgePipelineMaterialSet materials;   /* PBR material descriptions         */
+
+    /* GPU resources */
+    SDL_GPUBuffer *vertex_buffer;   /* uploaded 48-byte vertices */
+    SDL_GPUBuffer *index_buffer;    /* uploaded uint32 indices   */
+
+    /* Per-material textures (indexed by material_index from submesh) */
+    ForgeSceneModelTextures mat_textures[FORGE_SCENE_MODEL_MAX_MATERIALS];
+    uint32_t                mat_texture_count;
+
+    /* Stats (updated per draw_model call) */
+    uint32_t draw_calls;
+} ForgeSceneModel;
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
 
 /* ── Configuration ──────────────────────────────────────────────────────── */
 
@@ -285,6 +355,22 @@ typedef struct ForgeScene {
 #ifdef FORGE_CAPTURE
     ForgeCapture capture;
 #endif
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+    /* Model rendering pipelines (lazy-initialized on first load) */
+    SDL_GPUGraphicsPipeline *model_pipeline;             /* textured Blinn-Phong, cull back       */
+    SDL_GPUGraphicsPipeline *model_pipeline_blend;       /* alpha blend, no depth write           */
+    SDL_GPUGraphicsPipeline *model_pipeline_double;      /* cull none for double_sided            */
+    SDL_GPUGraphicsPipeline *model_pipeline_blend_double; /* alpha blend + cull none              */
+    SDL_GPUGraphicsPipeline *model_shadow_pipeline;      /* depth-only, 48-byte stride           */
+    SDL_GPUSampler          *model_tex_sampler;      /* linear wrap for diffuse/emissive */
+    SDL_GPUSampler          *model_normal_sampler;   /* linear wrap for normal maps      */
+    SDL_GPUSampler          *model_shadow_cmp_sampler; /* comparison sampler for PCF     */
+    SDL_GPUTexture          *model_white_texture;    /* 1x1 white (255,255,255,255)     */
+    SDL_GPUTexture          *model_flat_normal;      /* 1x1 (128,128,255,255)           */
+    SDL_GPUTexture          *model_black_texture;    /* 1x1 black (0,0,0,255)           */
+    bool                     model_pipelines_ready;  /* lazy init flag                   */
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
 } ForgeScene;
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
@@ -388,6 +474,35 @@ static inline SDL_GPURenderPass   *forge_scene_main_pass(const ForgeScene *s);
 static inline SDL_GPUTextureFormat forge_scene_swapchain_format(const ForgeScene *s);
 static inline SDL_Window          *forge_scene_window(const ForgeScene *s);
 
+/* ── Model loading (requires FORGE_SCENE_MODEL_SUPPORT) ────── */
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+/* Load a pipeline-processed model (.fscene + .fmesh + .fmat).
+ * base_dir is the directory containing model files — texture paths in
+ * .fmat are resolved relative to this. */
+static bool forge_scene_load_model(ForgeScene *scene,
+                                    ForgeSceneModel *model,
+                                    const char *fscene_path,
+                                    const char *fmesh_path,
+                                    const char *fmat_path,
+                                    const char *base_dir);
+
+/* Draw all visible nodes of a loaded model in the main pass.
+ * placement is the world-space transform for the entire model. */
+static void forge_scene_draw_model(ForgeScene *scene,
+                                    ForgeSceneModel *model,
+                                    mat4 placement);
+
+/* Draw model into the shadow map (depth-only, no materials). */
+static void forge_scene_draw_model_shadows(ForgeScene *scene,
+                                            ForgeSceneModel *model,
+                                            mat4 placement);
+
+/* Release all GPU and CPU resources for a model. */
+static void forge_scene_free_model(ForgeScene *scene,
+                                    ForgeSceneModel *model);
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
+
 /* ── Utility functions ──────────────────────────────────────── */
 
 /* Create a GPU shader from pre-compiled SPIRV and DXIL bytecode. */
@@ -441,6 +556,13 @@ static SDL_GPUTexture *forge_scene_upload_texture(
 #include "scene/shaders/compiled/ui_vert_dxil.h"
 #include "scene/shaders/compiled/ui_frag_spirv.h"
 #include "scene/shaders/compiled/ui_frag_dxil.h"
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+#include "scene/shaders/compiled/scene_model_vert_spirv.h"
+#include "scene/shaders/compiled/scene_model_vert_dxil.h"
+#include "scene/shaders/compiled/scene_model_frag_spirv.h"
+#include "scene/shaders/compiled/scene_model_frag_dxil.h"
+#endif
 
 /* ── Inline accessors ───────────────────────────────────────────────────── */
 
@@ -2463,6 +2585,32 @@ static void forge_scene_destroy(ForgeScene *scene)
     if (scene->shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->shadow_pipeline);
 
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+    /* Model pipelines and resources */
+    if (scene->model_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline);
+    if (scene->model_pipeline_blend)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_blend);
+    if (scene->model_pipeline_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_double);
+    if (scene->model_pipeline_blend_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_blend_double);
+    if (scene->model_shadow_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_shadow_pipeline);
+    if (scene->model_tex_sampler)
+        SDL_ReleaseGPUSampler(scene->device, scene->model_tex_sampler);
+    if (scene->model_normal_sampler)
+        SDL_ReleaseGPUSampler(scene->device, scene->model_normal_sampler);
+    if (scene->model_shadow_cmp_sampler)
+        SDL_ReleaseGPUSampler(scene->device, scene->model_shadow_cmp_sampler);
+    if (scene->model_white_texture)
+        SDL_ReleaseGPUTexture(scene->device, scene->model_white_texture);
+    if (scene->model_flat_normal)
+        SDL_ReleaseGPUTexture(scene->device, scene->model_flat_normal);
+    if (scene->model_black_texture)
+        SDL_ReleaseGPUTexture(scene->device, scene->model_black_texture);
+#endif
+
     /* Window — release claim first, then destroy.
      * Use locals because we zero the struct below. */
     if (scene->window_claimed)
@@ -2473,6 +2621,882 @@ static void forge_scene_destroy(ForgeScene *scene)
     /* Zero the entire struct so a second call is a safe no-op */
     SDL_memset(scene, 0, sizeof(*scene));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ *  Model loading and rendering (requires FORGE_SCENE_MODEL_SUPPORT)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+
+/* ── Internal: create a 1x1 RGBA texture ────────────────────────────────── */
+
+static SDL_GPUTexture *forge_scene__create_1x1(SDL_GPUDevice *device,
+                                                 Uint8 r, Uint8 g,
+                                                 Uint8 b, Uint8 a,
+                                                 bool srgb)
+{
+    SDL_GPUTextureCreateInfo ti;
+    SDL_zero(ti);
+    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+    ti.format               = srgb ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB
+                                   : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    ti.width                = 1;
+    ti.height               = 1;
+    ti.layer_count_or_depth = 1;
+    ti.num_levels           = 1;
+
+    SDL_GPUTexture *tex = SDL_CreateGPUTexture(device, &ti);
+    if (!tex) {
+        SDL_Log("forge_scene: SDL_CreateGPUTexture (1x1) failed: %s",
+                SDL_GetError());
+        return NULL;
+    }
+
+    SDL_GPUTransferBufferCreateInfo xfer_info;
+    SDL_zero(xfer_info);
+    xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    xfer_info.size  = 4;
+
+    SDL_GPUTransferBuffer *xfer = SDL_CreateGPUTransferBuffer(device, &xfer_info);
+    if (!xfer) { SDL_ReleaseGPUTexture(device, tex); return NULL; }
+
+    void *mapped = SDL_MapGPUTransferBuffer(device, xfer, false);
+    if (!mapped) {
+        SDL_ReleaseGPUTransferBuffer(device, xfer);
+        SDL_ReleaseGPUTexture(device, tex);
+        return NULL;
+    }
+    Uint8 *p = (Uint8 *)mapped;
+    p[0] = r; p[1] = g; p[2] = b; p[3] = a;
+    SDL_UnmapGPUTransferBuffer(device, xfer);
+
+    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
+    if (!cmd) {
+        SDL_ReleaseGPUTransferBuffer(device, xfer);
+        SDL_ReleaseGPUTexture(device, tex);
+        return NULL;
+    }
+
+    SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+    if (!copy) {
+        if (!SDL_CancelGPUCommandBuffer(cmd)) {
+            SDL_Log("forge_scene: SDL_CancelGPUCommandBuffer failed: %s",
+                    SDL_GetError());
+        }
+        SDL_ReleaseGPUTransferBuffer(device, xfer);
+        SDL_ReleaseGPUTexture(device, tex);
+        return NULL;
+    }
+
+    SDL_GPUTextureTransferInfo src;
+    SDL_zero(src);
+    src.transfer_buffer = xfer;
+    src.pixels_per_row  = 1;
+    src.rows_per_layer  = 1;
+
+    SDL_GPUTextureRegion dst;
+    SDL_zero(dst);
+    dst.texture = tex;
+    dst.w = 1; dst.h = 1; dst.d = 1;
+
+    SDL_UploadToGPUTexture(copy, &src, &dst, false);
+    SDL_EndGPUCopyPass(copy);
+
+    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+        SDL_Log("forge_scene: 1x1 texture submit failed: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(device, xfer);
+        SDL_ReleaseGPUTexture(device, tex);
+        return NULL;
+    }
+    SDL_ReleaseGPUTransferBuffer(device, xfer);
+    return tex;
+}
+
+/* ── Internal: load a texture from disk and upload to GPU ───────────────── */
+
+static SDL_GPUTexture *forge_scene_load_texture(ForgeScene *scene,
+                                                 const char *path,
+                                                 bool srgb)
+{
+    if (!path || path[0] == '\0') return NULL;
+
+    SDL_Surface *surface = SDL_LoadSurface(path);
+    if (!surface) {
+        SDL_Log("forge_scene: failed to load texture '%s': %s",
+                path, SDL_GetError());
+        return NULL;
+    }
+
+    SDL_GPUTexture *tex = forge_scene_upload_texture(scene, surface, srgb);
+    SDL_DestroySurface(surface);
+    return tex;
+}
+
+/* ── Init model pipelines (lazy, called on first load) ──────────────────── */
+
+static bool forge_scene_init_model_pipelines(ForgeScene *scene)
+{
+    if (scene->model_pipelines_ready) return true;
+
+    /* Create model shaders */
+    SDL_GPUShader *model_vs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_model_vert_spirv, sizeof(scene_model_vert_spirv),
+        scene_model_vert_dxil,  sizeof(scene_model_vert_dxil),
+        0, 0, 0, 1);  /* 0 samplers, 0 storage, 0 storage_buf, 1 uniform */
+
+    SDL_GPUShader *model_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        scene_model_frag_spirv, sizeof(scene_model_frag_spirv),
+        scene_model_frag_dxil,  sizeof(scene_model_frag_dxil),
+        6, 0, 0, 1);  /* 6 samplers (5 texture + 1 shadow cmp), 1 uniform */
+
+    /* Shadow uses existing shadow shader but with 48-byte stride */
+    SDL_GPUShader *mshadow_vs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_VERTEX,
+        shadow_vert_spirv, sizeof(shadow_vert_spirv),
+        shadow_vert_dxil,  sizeof(shadow_vert_dxil),
+        0, 0, 0, 1);
+
+    SDL_GPUShader *mshadow_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        shadow_frag_spirv, sizeof(shadow_frag_spirv),
+        shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        0, 0, 0, 0);
+
+    if (!model_vs || !model_fs || !mshadow_vs || !mshadow_fs) {
+        SDL_Log("forge_scene: model shader creation failed");
+        if (model_vs)   SDL_ReleaseGPUShader(scene->device, model_vs);
+        if (model_fs)   SDL_ReleaseGPUShader(scene->device, model_fs);
+        if (mshadow_vs) SDL_ReleaseGPUShader(scene->device, mshadow_vs);
+        if (mshadow_fs) SDL_ReleaseGPUShader(scene->device, mshadow_fs);
+        return false;
+    }
+
+    /* 48-byte vertex input: position + normal + uv + tangent */
+    SDL_GPUVertexBufferDescription model_vbd;
+    SDL_zero(model_vbd);
+    model_vbd.slot       = 0;
+    model_vbd.pitch      = sizeof(ForgeSceneModelVertex);
+    model_vbd.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+    SDL_GPUVertexAttribute model_attrs[4];
+    SDL_zero(model_attrs);
+    model_attrs[0].location = 0; model_attrs[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; model_attrs[0].offset = 0;
+    model_attrs[1].location = 1; model_attrs[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; model_attrs[1].offset = 12;
+    model_attrs[2].location = 2; model_attrs[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2; model_attrs[2].offset = 24;
+    model_attrs[3].location = 3; model_attrs[3].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4; model_attrs[3].offset = 32;
+
+    SDL_GPUVertexInputState model_input;
+    SDL_zero(model_input);
+    model_input.vertex_buffer_descriptions = &model_vbd;
+    model_input.num_vertex_buffers         = 1;
+    model_input.vertex_attributes          = model_attrs;
+    model_input.num_vertex_attributes      = 4;
+
+    /* Position-only input for shadow pipeline (48-byte stride, pos at offset 0) */
+    SDL_GPUVertexAttribute shadow_pos_attr;
+    SDL_zero(shadow_pos_attr);
+    shadow_pos_attr.location = 0;
+    shadow_pos_attr.format   = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    shadow_pos_attr.offset   = 0;
+
+    SDL_GPUVertexInputState shadow_input;
+    SDL_zero(shadow_input);
+    shadow_input.vertex_buffer_descriptions = &model_vbd;
+    shadow_input.num_vertex_buffers         = 1;
+    shadow_input.vertex_attributes          = &shadow_pos_attr;
+    shadow_input.num_vertex_attributes      = 1;
+
+    SDL_GPUColorTargetDescription ctd;
+    SDL_zero(ctd);
+    ctd.format = scene->swapchain_fmt;
+
+    /* Opaque pipeline: cull back, depth test+write */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = model_vs;
+        pi.fragment_shader    = model_fs;
+        pi.vertex_input_state = model_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.color_target_descriptions = &ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->model_pipeline = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Blend pipeline: alpha blend, no depth write */
+    {
+        SDL_GPUColorTargetDescription blend_ctd;
+        SDL_zero(blend_ctd);
+        blend_ctd.format = scene->swapchain_fmt;
+        blend_ctd.blend_state.enable_blend = true;
+        blend_ctd.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        blend_ctd.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_ctd.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        blend_ctd.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        blend_ctd.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_ctd.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = model_vs;
+        pi.fragment_shader    = model_fs;
+        pi.vertex_input_state = model_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = false;
+        pi.target_info.color_target_descriptions = &blend_ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->model_pipeline_blend = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Double-sided pipeline: cull none, depth test+write */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = model_vs;
+        pi.fragment_shader    = model_fs;
+        pi.vertex_input_state = model_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.color_target_descriptions = &ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->model_pipeline_double = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Blend + double-sided pipeline: alpha blend, cull none, no depth write */
+    {
+        SDL_GPUColorTargetDescription blend_double_ctd;
+        SDL_zero(blend_double_ctd);
+        blend_double_ctd.format = scene->swapchain_fmt;
+        blend_double_ctd.blend_state.enable_blend = true;
+        blend_double_ctd.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        blend_double_ctd.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_double_ctd.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        blend_double_ctd.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        blend_double_ctd.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_double_ctd.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = model_vs;
+        pi.fragment_shader    = model_fs;
+        pi.vertex_input_state = model_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = false;
+        pi.target_info.color_target_descriptions = &blend_double_ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->model_pipeline_blend_double = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Shadow pipeline: depth-only, 48-byte stride, cull none, depth bias */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = mshadow_vs;
+        pi.fragment_shader    = mshadow_fs;
+        pi.vertex_input_state = shadow_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.enable_depth_bias = true;
+        pi.rasterizer_state.depth_bias_constant_factor = FORGE_SCENE_SHADOW_BIAS_CONST;
+        pi.rasterizer_state.depth_bias_slope_factor    = FORGE_SCENE_SHADOW_BIAS_SLOPE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.num_color_targets        = 0;
+        pi.target_info.depth_stencil_format     = scene->shadow_fmt;
+        pi.target_info.has_depth_stencil_target = true;
+        scene->model_shadow_pipeline = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Release shaders */
+    SDL_ReleaseGPUShader(scene->device, model_vs);
+    SDL_ReleaseGPUShader(scene->device, model_fs);
+    SDL_ReleaseGPUShader(scene->device, mshadow_vs);
+    SDL_ReleaseGPUShader(scene->device, mshadow_fs);
+
+    if (!scene->model_pipeline || !scene->model_pipeline_blend ||
+        !scene->model_pipeline_double || !scene->model_pipeline_blend_double ||
+        !scene->model_shadow_pipeline) {
+        SDL_Log("forge_scene: model pipeline creation failed: %s", SDL_GetError());
+        goto init_model_fail;
+    }
+
+    /* Texture sampler: linear, wrap (for diffuse/emissive/mr/occlusion) */
+    {
+        SDL_GPUSamplerCreateInfo si;
+        SDL_zero(si);
+        si.min_filter     = SDL_GPU_FILTER_LINEAR;
+        si.mag_filter     = SDL_GPU_FILTER_LINEAR;
+        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        si.max_anisotropy = 1;
+        scene->model_tex_sampler = SDL_CreateGPUSampler(scene->device, &si);
+        /* Same settings for normal maps */
+        scene->model_normal_sampler = SDL_CreateGPUSampler(scene->device, &si);
+    }
+
+    /* Shadow comparison sampler for PCF */
+    {
+        SDL_GPUSamplerCreateInfo si;
+        SDL_zero(si);
+        si.min_filter     = SDL_GPU_FILTER_LINEAR;
+        si.mag_filter     = SDL_GPU_FILTER_LINEAR;
+        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.enable_compare = true;
+        si.compare_op     = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+        scene->model_shadow_cmp_sampler = SDL_CreateGPUSampler(scene->device, &si);
+    }
+
+    if (!scene->model_tex_sampler || !scene->model_normal_sampler ||
+        !scene->model_shadow_cmp_sampler) {
+        SDL_Log("forge_scene: model sampler creation failed: %s", SDL_GetError());
+        goto init_model_fail;
+    }
+
+    /* Fallback textures */
+    scene->model_white_texture = forge_scene__create_1x1(
+        scene->device, 255, 255, 255, 255, true);
+    scene->model_flat_normal = forge_scene__create_1x1(
+        scene->device, 128, 128, 255, 255, false);
+    scene->model_black_texture = forge_scene__create_1x1(
+        scene->device, 0, 0, 0, 255, true);
+
+    if (!scene->model_white_texture || !scene->model_flat_normal ||
+        !scene->model_black_texture) {
+        SDL_Log("forge_scene: fallback texture creation failed");
+        goto init_model_fail;
+    }
+
+    scene->model_pipelines_ready = true;
+    return true;
+
+init_model_fail:
+    /* Release any partially-created resources so a retry does not leak */
+    if (scene->model_pipeline)
+        { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline); scene->model_pipeline = NULL; }
+    if (scene->model_pipeline_blend)
+        { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_blend); scene->model_pipeline_blend = NULL; }
+    if (scene->model_pipeline_double)
+        { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_double); scene->model_pipeline_double = NULL; }
+    if (scene->model_pipeline_blend_double)
+        { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_blend_double); scene->model_pipeline_blend_double = NULL; }
+    if (scene->model_shadow_pipeline)
+        { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_shadow_pipeline); scene->model_shadow_pipeline = NULL; }
+    if (scene->model_tex_sampler)
+        { SDL_ReleaseGPUSampler(scene->device, scene->model_tex_sampler); scene->model_tex_sampler = NULL; }
+    if (scene->model_normal_sampler)
+        { SDL_ReleaseGPUSampler(scene->device, scene->model_normal_sampler); scene->model_normal_sampler = NULL; }
+    if (scene->model_shadow_cmp_sampler)
+        { SDL_ReleaseGPUSampler(scene->device, scene->model_shadow_cmp_sampler); scene->model_shadow_cmp_sampler = NULL; }
+    if (scene->model_white_texture)
+        { SDL_ReleaseGPUTexture(scene->device, scene->model_white_texture); scene->model_white_texture = NULL; }
+    if (scene->model_flat_normal)
+        { SDL_ReleaseGPUTexture(scene->device, scene->model_flat_normal); scene->model_flat_normal = NULL; }
+    if (scene->model_black_texture)
+        { SDL_ReleaseGPUTexture(scene->device, scene->model_black_texture); scene->model_black_texture = NULL; }
+    return false;
+}
+
+/* ── Load model ─────────────────────────────────────────────────────────── */
+
+/* Extract just the filename from a path (everything after the last / or \). */
+static const char *forge_scene__basename(const char *path)
+{
+    const char *last = path;
+    for (const char *p = path; *p; p++) {
+        if (*p == '/' || *p == '\\') last = p + 1;
+    }
+    return last;
+}
+
+static bool forge_scene_load_model(ForgeScene *scene,
+                                    ForgeSceneModel *model,
+                                    const char *fscene_path,
+                                    const char *fmesh_path,
+                                    const char *fmat_path,
+                                    const char *base_dir)
+{
+    if (!scene || !model) {
+        SDL_Log("forge_scene: load_model: NULL scene or model");
+        return false;
+    }
+    if (!fscene_path || !fmesh_path || !fmat_path || !base_dir) {
+        SDL_Log("forge_scene: load_model: NULL path argument");
+        return false;
+    }
+    if (base_dir[0] == '\0') {
+        SDL_Log("forge_scene: load_model: empty base_dir");
+        return false;
+    }
+
+    SDL_memset(model, 0, sizeof(*model));
+
+    /* Lazy-init model pipelines */
+    if (!forge_scene_init_model_pipelines(scene)) return false;
+
+    /* Load pipeline data */
+    if (!forge_pipeline_load_scene(fscene_path, &model->scene_data)) {
+        SDL_Log("forge_scene: load_model: failed to load scene '%s'", fscene_path);
+        return false;
+    }
+    if (!forge_pipeline_load_mesh(fmesh_path, &model->mesh)) {
+        SDL_Log("forge_scene: load_model: failed to load mesh '%s'", fmesh_path);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+    if (!forge_pipeline_load_materials(fmat_path, &model->materials)) {
+        SDL_Log("forge_scene: load_model: failed to load materials '%s'", fmat_path);
+        forge_pipeline_free_mesh(&model->mesh);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+
+    /* Validate asset compatibility — reject early rather than drawing
+     * with a mismatched vertex layout or too many materials. */
+    if (model->mesh.vertex_stride != sizeof(ForgeSceneModelVertex) ||
+        (model->mesh.flags & FORGE_PIPELINE_FLAG_TANGENTS) == 0 ||
+        (model->mesh.flags & FORGE_PIPELINE_FLAG_SKINNED) != 0) {
+        SDL_Log("forge_scene: load_model: '%s' has unsupported vertex layout "
+                "(stride=%u, flags=0x%x)", fmesh_path,
+                model->mesh.vertex_stride, model->mesh.flags);
+        forge_pipeline_free_materials(&model->materials);
+        forge_pipeline_free_mesh(&model->mesh);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+    if (model->materials.material_count > FORGE_SCENE_MODEL_MAX_MATERIALS) {
+        SDL_Log("forge_scene: load_model: '%s' has %u materials; max supported is %u",
+                fmat_path, model->materials.material_count,
+                (unsigned)FORGE_SCENE_MODEL_MAX_MATERIALS);
+        forge_pipeline_free_materials(&model->materials);
+        forge_pipeline_free_mesh(&model->mesh);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+
+    /* Upload vertex buffer */
+    {
+        Uint32 vb_size = model->mesh.vertex_count * model->mesh.vertex_stride;
+        model->vertex_buffer = forge_scene_upload_buffer(scene,
+            SDL_GPU_BUFFERUSAGE_VERTEX, model->mesh.vertices, vb_size);
+        if (!model->vertex_buffer) {
+            SDL_Log("forge_scene: load_model: vertex buffer upload failed");
+            goto fail;
+        }
+    }
+
+    /* Upload index buffer (LOD 0 — all indices) */
+    {
+        uint32_t total_indices = 0;
+        for (uint32_t s = 0; s < model->mesh.submesh_count; s++) {
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, s);
+            if (sub) total_indices += sub->index_count;
+        }
+        if (total_indices > 0 && model->mesh.indices &&
+            model->mesh.lod_count > 0) {
+            /* Use the LOD 0 index data — starts at lods[0].index_offset */
+            Uint32 lod0_offset = model->mesh.lods[0].index_offset;
+            const uint8_t *idx_start =
+                (const uint8_t *)model->mesh.indices + lod0_offset;
+            Uint32 ib_size = total_indices * sizeof(uint32_t);
+            model->index_buffer = forge_scene_upload_buffer(scene,
+                SDL_GPU_BUFFERUSAGE_INDEX, idx_start, ib_size);
+        }
+        if (!model->index_buffer) {
+            SDL_Log("forge_scene: load_model: index buffer upload failed");
+            goto fail;
+        }
+    }
+
+    /* Load per-material textures */
+    {
+        uint32_t mat_count = model->materials.material_count;
+        /* mat_count is guaranteed <= FORGE_SCENE_MODEL_MAX_MATERIALS
+         * by the validation check above. */
+        model->mat_texture_count = mat_count;
+
+        for (uint32_t i = 0; i < mat_count; i++) {
+            const ForgePipelineMaterial *mat = &model->materials.materials[i];
+            char path_buf[FORGE_SCENE_PATH_BUF_SIZE];
+
+            /* Base color texture — .fmat stores a relative path; join
+             * with base_dir to preserve subdirectory structure. */
+            if (mat->base_color_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->base_color_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].base_color =
+                        forge_scene_load_texture(scene, path_buf, true);
+            }
+
+            /* Normal texture */
+            if (mat->normal_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->normal_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].normal =
+                        forge_scene_load_texture(scene, path_buf, false);
+            }
+
+            /* Metallic-roughness texture */
+            if (mat->metallic_roughness_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir,
+                                       mat->metallic_roughness_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].metallic_roughness =
+                        forge_scene_load_texture(scene, path_buf, false);
+            }
+
+            /* Occlusion texture */
+            if (mat->occlusion_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->occlusion_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].occlusion =
+                        forge_scene_load_texture(scene, path_buf, false);
+            }
+
+            /* Emissive texture */
+            if (mat->emissive_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->emissive_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].emissive =
+                        forge_scene_load_texture(scene, path_buf, true);
+            }
+        }
+    }
+
+    SDL_Log("forge_scene: loaded model: %u nodes, %u meshes, %u materials, "
+            "%u vertices, %u submeshes",
+            model->scene_data.node_count, model->scene_data.mesh_count,
+            model->materials.material_count, model->mesh.vertex_count,
+            model->mesh.submesh_count);
+    return true;
+
+fail:
+    forge_scene_free_model(scene, model);
+    return false;
+}
+
+/* ── Draw model ─────────────────────────────────────────────────────────── */
+
+static void forge_scene_draw_model(ForgeScene *scene,
+                                    ForgeSceneModel *model,
+                                    mat4 placement)
+{
+    if (!scene || !model || !scene->pass) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0) return;
+
+    model->draw_calls = 0;
+
+    /* LOD 0 base index offset (in bytes) — we uploaded from this offset,
+     * so GPU-side indices start at 0 relative to our uploaded buffer. */
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    /* Bind vertex + index buffers once for all submeshes */
+    SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    SDL_GPUGraphicsPipeline *last_pipeline = NULL; /* track to skip redundant binds */
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;  /* transform-only node */
+
+        /* Compose placement × node world transform */
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+        mat4 final_world = mat4_multiply(placement, node_world);
+
+        /* Look up submesh range for this mesh */
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            /* Select material */
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count &&
+                (uint32_t)sub->material_index < model->mat_texture_count) {
+                mat = &model->materials.materials[sub->material_index];
+                textures = &model->mat_textures[sub->material_index];
+            }
+
+            /* Select pipeline variant */
+            SDL_GPUGraphicsPipeline *pipeline;
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND && mat->double_sided)
+                pipeline = scene->model_pipeline_blend_double;
+            else if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND)
+                pipeline = scene->model_pipeline_blend;
+            else if (mat && mat->double_sided)
+                pipeline = scene->model_pipeline_double;
+            else
+                pipeline = scene->model_pipeline;
+
+            if (pipeline != last_pipeline) {
+                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
+                last_pipeline = pipeline;
+            }
+
+            /* Bind 6 texture+sampler slots */
+            SDL_GPUTextureSamplerBinding tex_bindings[6];
+
+            /* Slot 0: base color */
+            tex_bindings[0].texture = (textures && textures->base_color)
+                ? textures->base_color : scene->model_white_texture;
+            tex_bindings[0].sampler = scene->model_tex_sampler;
+
+            /* Slot 1: normal map */
+            tex_bindings[1].texture = (textures && textures->normal)
+                ? textures->normal : scene->model_flat_normal;
+            tex_bindings[1].sampler = scene->model_normal_sampler;
+
+            /* Slot 2: metallic-roughness */
+            tex_bindings[2].texture = (textures && textures->metallic_roughness)
+                ? textures->metallic_roughness : scene->model_white_texture;
+            tex_bindings[2].sampler = scene->model_tex_sampler;
+
+            /* Slot 3: occlusion */
+            tex_bindings[3].texture = (textures && textures->occlusion)
+                ? textures->occlusion : scene->model_white_texture;
+            tex_bindings[3].sampler = scene->model_tex_sampler;
+
+            /* Slot 4: emissive */
+            tex_bindings[4].texture = (textures && textures->emissive)
+                ? textures->emissive : scene->model_black_texture;
+            tex_bindings[4].sampler = scene->model_tex_sampler;
+
+            /* Slot 5: shadow map (comparison sampler) */
+            tex_bindings[5].texture = scene->shadow_map;
+            tex_bindings[5].sampler = scene->model_shadow_cmp_sampler;
+
+            SDL_BindGPUFragmentSamplers(scene->pass, 0, tex_bindings, 6);
+
+            /* Vertex uniforms (reuse ForgeSceneVertUniforms) */
+            ForgeSceneVertUniforms vu;
+            vu.mvp      = mat4_multiply(scene->cam_vp, final_world);
+            vu.model    = final_world;
+            vu.light_vp = mat4_multiply(scene->light_vp, final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+            /* Fragment uniforms */
+            ForgeSceneModelFragUniforms fu;
+            SDL_memset(&fu, 0, sizeof(fu));
+            fu.light_dir[0] = scene->light_dir.x;
+            fu.light_dir[1] = scene->light_dir.y;
+            fu.light_dir[2] = scene->light_dir.z;
+            fu.eye_pos[0]   = scene->cam_position.x;
+            fu.eye_pos[1]   = scene->cam_position.y;
+            fu.eye_pos[2]   = scene->cam_position.z;
+
+            if (mat) {
+                fu.base_color_factor[0] = mat->base_color_factor[0];
+                fu.base_color_factor[1] = mat->base_color_factor[1];
+                fu.base_color_factor[2] = mat->base_color_factor[2];
+                fu.base_color_factor[3] = mat->base_color_factor[3];
+                fu.emissive_factor[0]   = mat->emissive_factor[0];
+                fu.emissive_factor[1]   = mat->emissive_factor[1];
+                fu.emissive_factor[2]   = mat->emissive_factor[2];
+                fu.metallic_factor      = mat->metallic_factor;
+                fu.roughness_factor     = mat->roughness_factor;
+                fu.normal_scale         = mat->normal_scale;
+                fu.occlusion_strength   = mat->occlusion_strength;
+                fu.alpha_cutoff = (mat->alpha_mode == FORGE_PIPELINE_ALPHA_MASK)
+                    ? mat->alpha_cutoff : 0.0f;
+            } else {
+                /* Default material: white, fully rough, no metal */
+                fu.base_color_factor[0] = 1.0f;
+                fu.base_color_factor[1] = 1.0f;
+                fu.base_color_factor[2] = 1.0f;
+                fu.base_color_factor[3] = 1.0f;
+                fu.metallic_factor  = 0.0f;
+                fu.roughness_factor = 1.0f;
+                fu.normal_scale     = 1.0f;
+                fu.occlusion_strength = 1.0f;
+            }
+            fu.shadow_texel = 1.0f / (float)scene->config.shadow_map_size;
+            fu.shininess    = scene->config.shininess;
+            fu.specular_str = scene->config.specular_str;
+            fu.ambient      = scene->config.ambient;
+
+            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+            /* Draw indexed: offset into our uploaded index buffer */
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+            model->draw_calls++;
+        }
+    }
+}
+
+/* ── Draw model shadows ─────────────────────────────────────────────────── */
+
+static void forge_scene_draw_model_shadows(ForgeScene *scene,
+                                            ForgeSceneModel *model,
+                                            mat4 placement)
+{
+    if (!scene || !model || !scene->pass) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0) return;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->model_shadow_pipeline);
+
+    /* Bind vertex + index buffers */
+    SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;
+
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+        mat4 final_world = mat4_multiply(placement, node_world);
+
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            /* Skip non-opaque submeshes — transparent materials should not
+             * cast shadows, and alpha-masked materials need a mask-aware
+             * shadow shader (planned for Lesson 44). */
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count) {
+                int amode = model->materials.materials[sub->material_index].alpha_mode;
+                if (amode == FORGE_PIPELINE_ALPHA_BLEND ||
+                    amode == FORGE_PIPELINE_ALPHA_MASK)
+                    continue;
+            }
+
+            ForgeSceneShadowVertUniforms su;
+            su.light_vp = mat4_multiply(scene->light_vp, final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+        }
+    }
+}
+
+/* ── Free model ─────────────────────────────────────────────────────────── */
+
+static void forge_scene_free_model(ForgeScene *scene,
+                                    ForgeSceneModel *model)
+{
+    if (!model) return;
+    if (!scene || !scene->device) {
+        /* Can't release GPU resources without a device */
+        forge_pipeline_free_scene(&model->scene_data);
+        forge_pipeline_free_mesh(&model->mesh);
+        forge_pipeline_free_materials(&model->materials);
+        SDL_memset(model, 0, sizeof(*model));
+        return;
+    }
+
+    /* Release GPU buffers */
+    if (model->vertex_buffer)
+        SDL_ReleaseGPUBuffer(scene->device, model->vertex_buffer);
+    if (model->index_buffer)
+        SDL_ReleaseGPUBuffer(scene->device, model->index_buffer);
+
+    /* Release per-material textures (skip fallbacks owned by scene) */
+    for (uint32_t i = 0; i < model->mat_texture_count; i++) {
+        ForgeSceneModelTextures *t = &model->mat_textures[i];
+        if (t->base_color && t->base_color != scene->model_white_texture)
+            SDL_ReleaseGPUTexture(scene->device, t->base_color);
+        if (t->normal && t->normal != scene->model_flat_normal)
+            SDL_ReleaseGPUTexture(scene->device, t->normal);
+        if (t->metallic_roughness && t->metallic_roughness != scene->model_white_texture)
+            SDL_ReleaseGPUTexture(scene->device, t->metallic_roughness);
+        if (t->occlusion && t->occlusion != scene->model_white_texture)
+            SDL_ReleaseGPUTexture(scene->device, t->occlusion);
+        if (t->emissive && t->emissive != scene->model_black_texture)
+            SDL_ReleaseGPUTexture(scene->device, t->emissive);
+    }
+
+    /* Free pipeline data */
+    forge_pipeline_free_scene(&model->scene_data);
+    forge_pipeline_free_mesh(&model->mesh);
+    forge_pipeline_free_materials(&model->materials);
+
+    SDL_memset(model, 0, sizeof(*model));
+}
+
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
 
 #endif /* FORGE_SCENE_IMPLEMENTATION */
 #endif /* FORGE_SCENE_H */
