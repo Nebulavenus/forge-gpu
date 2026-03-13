@@ -51,6 +51,10 @@ reviews:
           GridVertUniforms, ModelData) and snake_case only for local variables
           and the app_state struct. This is intentional and consistent across
           all lessons.
+        - Physics and audio lessons use P for pause, NOT Space. Space is
+          reserved for camera fly-up in forge_scene.h. This is intentional
+          and consistent across all physics and audio lessons. Do NOT flag
+          P-for-pause as an inconsistency or suggest changing it to Space.
 
     - path: "lessons/**/*.hlsl"
       instructions: |

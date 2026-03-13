@@ -47,6 +47,15 @@
  */
 #define FORGE_PHYSICS_EPSILON       1e-6f
 
+/* Solver iteration bounds for forge_physics_constraints_solve().
+ *
+ * At least 1 iteration is needed to make any progress; above 100 the
+ * per-frame cost dominates without meaningful convergence gain for
+ * real-time use.
+ */
+#define FORGE_PHYSICS_SOLVER_MIN_ITERATIONS  1
+#define FORGE_PHYSICS_SOLVER_MAX_ITERATIONS  100
+
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 /* A point particle with position, velocity, and physical properties.
@@ -77,6 +86,58 @@ typedef struct ForgePhysicsParticle {
     float restitution;    /* coefficient of restitution [0..1], 0 = inelastic, 1 = perfectly elastic */
     float radius;         /* collision radius for sphere-plane tests (meters) */
 } ForgePhysicsParticle;
+
+/* A spring connecting two particles with Hooke's law and velocity damping.
+ *
+ * Models an elastic connection that resists changes in distance from its
+ * rest length. The spring exerts a restoring force proportional to
+ * displacement (Hooke's law) and a damping force proportional to relative
+ * velocity along the spring axis.
+ *
+ * Fields:
+ *   a, b        — indices into a particle array
+ *   rest_length — natural (equilibrium) length in meters
+ *   stiffness   — spring constant k in N/m (higher = stiffer)
+ *   damping     — damping coefficient b in Ns/m (higher = more energy loss)
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 6 —
+ * "Springs and spring-like things".
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+typedef struct ForgePhysicsSpring {
+    int   a;            /* index of first particle */
+    int   b;            /* index of second particle */
+    float rest_length;  /* natural length (meters); >= 0 */
+    float stiffness;    /* spring constant k (N/m); >= 0 */
+    float damping;      /* damping coefficient b (Ns/m); >= 0 */
+} ForgePhysicsSpring;
+
+/* A distance constraint that projects particles to maintain a target distance.
+ *
+ * Unlike springs, distance constraints use position-based dynamics (PBD)
+ * to directly move particles toward the target distance. This produces
+ * stiffer, more stable connections — well suited for ropes, chains, and
+ * cloth where oscillation is undesirable.
+ *
+ * Fields:
+ *   a, b       — indices into a particle array
+ *   distance   — target distance in meters
+ *   stiffness  — constraint stiffness [0..1]; 1 = fully rigid
+ *
+ * Reference: Müller et al., "Position Based Dynamics" (2006) — Section 3,
+ * constraint projection.
+ * See also: Jakobsen, "Advanced Character Physics" (GDC 2001) — Verlet
+ * integration with distance constraints.
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+typedef struct ForgePhysicsDistanceConstraint {
+    int   a;            /* index of first particle */
+    int   b;            /* index of second particle */
+    float distance;     /* target distance (meters); >= 0 */
+    float stiffness;    /* constraint stiffness [0..1]; 1 = rigid */
+} ForgePhysicsDistanceConstraint;
 
 /* ── Particle creation ─────────────────────────────────────────────────────── */
 
@@ -490,6 +551,323 @@ static inline bool forge_physics_collide_plane(
 static inline void forge_physics_clear_forces(ForgePhysicsParticle *p)
 {
     p->force_accum = vec3_create(0.0f, 0.0f, 0.0f);
+}
+
+/* ── Spring creation and application ───────────────────────────────────────── */
+
+/* Create a spring connecting two particles.
+ *
+ * Initializes a spring with the given parameters, clamping rest_length,
+ * stiffness, and damping to non-negative values. The indices a and b
+ * refer to positions in a particle array managed by the caller.
+ *
+ * Parameters:
+ *   a           (int)   — index of the first particle
+ *   b           (int)   — index of the second particle
+ *   rest_length (float) — natural spring length in meters; clamped >= 0
+ *   stiffness   (float) — spring constant k in N/m; clamped >= 0
+ *   damping     (float) — damping coefficient b in Ns/m; clamped >= 0
+ *
+ * Returns:
+ *   A fully initialized ForgePhysicsSpring.
+ *
+ * Algorithm:
+ *   rest_length = max(rest_length, 0)
+ *   stiffness   = max(stiffness, 0)
+ *   damping     = max(damping, 0)
+ *
+ * Usage:
+ *   ForgePhysicsSpring s = forge_physics_spring_create(0, 1, 2.0f, 50.0f, 1.0f);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 6 —
+ * "Springs and spring-like things" (spring representation).
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+static inline ForgePhysicsSpring forge_physics_spring_create(
+    int a, int b, float rest_length, float stiffness, float damping)
+{
+    ForgePhysicsSpring s;
+    s.a = a;
+    s.b = b;
+    s.rest_length = (rest_length > 0.0f) ? rest_length : 0.0f;
+    s.stiffness   = (stiffness > 0.0f)   ? stiffness   : 0.0f;
+    s.damping     = (damping > 0.0f)     ? damping     : 0.0f;
+    return s;
+}
+
+/* Apply spring force (Hooke's law + velocity damping) to two particles.
+ *
+ * Computes the spring force along the axis between particles a and b:
+ *
+ *   F_spring = k * (|d| - rest_length) * n̂
+ *   F_damp   = b * dot(v_rel, n̂) * n̂
+ *   F_total  = F_spring + F_damp
+ *
+ * where d = pos_b - pos_a, n̂ = normalize(d), and v_rel = vel_b - vel_a.
+ *
+ * The spring force is applied equally and oppositely to both particles
+ * (Newton's third law). Static particles (inv_mass == 0) do not
+ * accumulate forces but still participate in distance/direction
+ * calculations — this lets you anchor a spring to a fixed point.
+ *
+ * Degenerate cases:
+ *   - Coincident particles (|d| < epsilon): no force applied (direction
+ *     is undefined)
+ *   - Out-of-bounds indices: no force applied
+ *
+ * Parameters:
+ *   spring    (const ForgePhysicsSpring*)    — spring to apply
+ *   particles (ForgePhysicsParticle*)        — particle array
+ *   count     (int)                          — number of particles
+ *
+ * Reference: Hooke, "De Potentia Restitutiva" (1678) — F = kx.
+ * See also: Millington, "Game Physics Engine Development", Ch. 6 —
+ * "The Basic Spring Generator".
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+static inline void forge_physics_spring_apply(
+    const ForgePhysicsSpring *spring,
+    ForgePhysicsParticle *particles, int count)
+{
+    if (!spring || !particles || count <= 0) {
+        return;
+    }
+
+    /* Bounds-check indices. */
+    if (spring->a < 0 || spring->a >= count ||
+        spring->b < 0 || spring->b >= count) {
+        return;
+    }
+
+    ForgePhysicsParticle *pa = &particles[spring->a];
+    ForgePhysicsParticle *pb = &particles[spring->b];
+
+    /* Both static — no force accumulation possible. */
+    if (pa->inv_mass == 0.0f && pb->inv_mass == 0.0f) {
+        return;
+    }
+
+    /* Direction vector from a to b. */
+    vec3 d = vec3_sub(pb->position, pa->position);
+    float dist = vec3_length(d);
+
+    /* Skip coincident particles — direction is undefined. */
+    if (dist < FORGE_PHYSICS_EPSILON) {
+        return;
+    }
+
+    /* Unit direction from a toward b. */
+    vec3 n = vec3_scale(d, 1.0f / dist);
+
+    /* Hooke's law: F = k * (current_length - rest_length).
+     * Positive displacement = extension → force pulls particles together.
+     * Negative displacement = compression → force pushes particles apart. */
+    float displacement = dist - spring->rest_length;
+    float f_spring = spring->stiffness * displacement;
+
+    /* Velocity damping along the spring axis.
+     * v_rel = v_b - v_a projected onto the spring direction.
+     * Damping opposes relative motion along the spring. */
+    vec3 v_rel = vec3_sub(pb->velocity, pa->velocity);
+    float f_damp = spring->damping * vec3_dot(v_rel, n);
+
+    /* Total force magnitude along the spring axis. */
+    float f_total = f_spring + f_damp;
+    vec3 force = vec3_scale(n, f_total);
+
+    /* Apply force to particle a (toward b) if dynamic. */
+    if (pa->inv_mass > 0.0f) {
+        pa->force_accum = vec3_add(pa->force_accum, force);
+    }
+
+    /* Apply equal and opposite force to particle b (toward a) if dynamic. */
+    if (pb->inv_mass > 0.0f) {
+        pb->force_accum = vec3_sub(pb->force_accum, force);
+    }
+}
+
+/* ── Distance constraint creation and solving ──────────────────────────────── */
+
+/* Create a distance constraint between two particles.
+ *
+ * Parameters:
+ *   a         (int)   — index of the first particle
+ *   b         (int)   — index of the second particle
+ *   distance  (float) — target distance in meters; clamped >= 0
+ *   stiffness (float) — constraint stiffness [0..1]; clamped to range
+ *
+ * Returns:
+ *   A fully initialized ForgePhysicsDistanceConstraint.
+ *
+ * Algorithm:
+ *   distance  = max(distance, 0)
+ *   stiffness = clamp(stiffness, 0, 1)
+ *
+ * Usage:
+ *   ForgePhysicsDistanceConstraint c =
+ *       forge_physics_constraint_distance_create(0, 1, 2.0f, 1.0f);
+ *
+ * Reference: Müller et al., "Position Based Dynamics" (2006) — Section 3,
+ * constraint definition and parameterization.
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+static inline ForgePhysicsDistanceConstraint
+forge_physics_constraint_distance_create(
+    int a, int b, float distance, float stiffness)
+{
+    ForgePhysicsDistanceConstraint c;
+    c.a = a;
+    c.b = b;
+    c.distance  = (distance > 0.0f) ? distance : 0.0f;
+
+    if (!(stiffness >= 0.0f))  stiffness = 0.0f;   /* catches NaN */
+    else if (stiffness > 1.0f) stiffness = 1.0f;
+    c.stiffness = stiffness;
+
+    return c;
+}
+
+/* Solve a single distance constraint by projecting particle positions.
+ *
+ * Computes the position correction needed to satisfy the distance
+ * constraint and distributes it between the two particles proportionally
+ * to their inverse masses (lighter particles move more).
+ *
+ * Algorithm (position-based dynamics):
+ *   d = pos_b - pos_a
+ *   dist = |d|
+ *   error = dist - target_distance
+ *   correction = stiffness * error * n̂
+ *   w_total = inv_mass_a + inv_mass_b
+ *   pos_a += (inv_mass_a / w_total) * correction
+ *   pos_b -= (inv_mass_b / w_total) * correction
+ *
+ * Static particles (inv_mass == 0) are immovable. If both particles
+ * are static, no correction is applied. Coincident particles are
+ * skipped (direction is undefined).
+ *
+ * IMPORTANT — position-only projection:
+ *   This function modifies particle positions but does NOT update
+ *   velocity. This is the standard PBD contract: the caller's
+ *   simulation loop is responsible for the velocity/position
+ *   relationship through the integration step. This matches the
+ *   Millington two-phase pattern where position correction and
+ *   velocity correction are independent passes.
+ *
+ * Parameters:
+ *   constraint (const ForgePhysicsDistanceConstraint*) — constraint to solve
+ *   particles  (ForgePhysicsParticle*)                 — particle array
+ *   count      (int)                                   — number of particles
+ *
+ * Reference: Müller et al., "Position Based Dynamics" (2006) — Section 3.3,
+ * distance constraint projection.
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+static inline void forge_physics_constraint_solve_distance(
+    const ForgePhysicsDistanceConstraint *constraint,
+    ForgePhysicsParticle *particles, int count)
+{
+    if (!constraint || !particles || count <= 0) {
+        return;
+    }
+
+    /* Bounds-check indices. */
+    if (constraint->a < 0 || constraint->a >= count ||
+        constraint->b < 0 || constraint->b >= count) {
+        return;
+    }
+
+    ForgePhysicsParticle *pa = &particles[constraint->a];
+    ForgePhysicsParticle *pb = &particles[constraint->b];
+
+    /* Both static — nothing to do. */
+    float w_total = pa->inv_mass + pb->inv_mass;
+    if (!(w_total > 0.0f)) {   /* both static, or NaN */
+        return;
+    }
+
+    /* Direction vector from a to b. */
+    vec3 d = vec3_sub(pb->position, pa->position);
+    float dist = vec3_length(d);
+
+    /* Skip coincident particles — direction is undefined. */
+    if (dist < FORGE_PHYSICS_EPSILON) {
+        return;
+    }
+
+    /* Unit direction from a toward b. */
+    vec3 n = vec3_scale(d, 1.0f / dist);
+
+    /* Position error: how far off we are from the target distance. */
+    float error = dist - constraint->distance;
+
+    /* Scaled correction along the spring axis. */
+    vec3 correction = vec3_scale(n, constraint->stiffness * error);
+
+    /* Mass-weighted distribution: lighter particles move more. */
+    float w_a = pa->inv_mass / w_total;
+    float w_b = pb->inv_mass / w_total;
+
+    pa->position = vec3_add(pa->position, vec3_scale(correction, w_a));
+    pb->position = vec3_sub(pb->position, vec3_scale(correction, w_b));
+}
+
+/* Solve multiple distance constraints iteratively (Gauss-Seidel).
+ *
+ * Applies all constraints repeatedly for the given number of iterations.
+ * More iterations produce results closer to the exact solution. Each
+ * pass uses the updated positions from the previous pass (Gauss-Seidel
+ * style), which converges faster than Jacobi iteration.
+ *
+ * Parameters:
+ *   constraints     (const ForgePhysicsDistanceConstraint*) — constraint array
+ *   num_constraints (int) — number of constraints
+ *   particles       (ForgePhysicsParticle*) — particle array
+ *   num_particles   (int) — number of particles
+ *   iterations      (int) — solver iterations; clamped to [1, 100]
+ *
+ * Usage:
+ *   // Solve all constraints with 10 iterations
+ *   forge_physics_constraints_solve(constraints, num_constraints,
+ *                                   particles, num_particles, 10);
+ *
+ * Reference: Müller et al., "Position Based Dynamics" (2006) — Section 3.2,
+ * Gauss-Seidel iteration for constraint projection.
+ *
+ * See: Physics Lesson 02 — Springs and Constraints
+ */
+static inline void forge_physics_constraints_solve(
+    const ForgePhysicsDistanceConstraint *constraints, int num_constraints,
+    ForgePhysicsParticle *particles, int num_particles,
+    int iterations)
+{
+    if (!constraints || !particles) {
+        return;
+    }
+
+    /* Nothing to solve. */
+    if (num_constraints <= 0 || num_particles <= 0) {
+        return;
+    }
+
+    /* Clamp iterations to a safe range. */
+    if (iterations < FORGE_PHYSICS_SOLVER_MIN_ITERATIONS) {
+        iterations = FORGE_PHYSICS_SOLVER_MIN_ITERATIONS;
+    }
+    if (iterations > FORGE_PHYSICS_SOLVER_MAX_ITERATIONS) {
+        iterations = FORGE_PHYSICS_SOLVER_MAX_ITERATIONS;
+    }
+
+    for (int iter = 0; iter < iterations; iter++) {
+        for (int i = 0; i < num_constraints; i++) {
+            forge_physics_constraint_solve_distance(
+                &constraints[i], particles, num_particles);
+        }
+    }
 }
 
 #endif /* FORGE_PHYSICS_H */

@@ -152,6 +152,7 @@ add_subdirectory(lessons/ui/15-dev-ui)
 # ── Physics Lessons ────────────────────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/physics/01-point-particles)
+    add_subdirectory(lessons/physics/02-springs-and-constraints)
 endif()
 
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────

@@ -232,9 +232,17 @@ from .math import (
     diagram_view_transform,
     diagram_white_noise_comparison,
 )
-from .physics import (
+from .physics import (  # pyright: ignore[reportUnusedImport]
+    diagram_cloth_topology,
+    diagram_constraint_mass_weighting,
+    diagram_damped_spring_comparison,
+    diagram_distance_constraint_projection,
     diagram_force_accumulator_pattern,
+    diagram_gauss_seidel_convergence,
+    diagram_hookes_law,
     diagram_sphere_plane_collision,
+    diagram_spring_damping_components,
+    diagram_spring_vs_constraint,
     diagram_symplectic_vs_explicit_euler,
 )
 from .ui import (
@@ -448,6 +456,16 @@ DIAGRAMS = {
         ("euler_comparison.png", diagram_symplectic_vs_explicit_euler),
         ("sphere_plane_collision.png", diagram_sphere_plane_collision),
         ("force_accumulator.png", diagram_force_accumulator_pattern),
+    ],
+    "physics/02": [
+        ("hookes_law.png", diagram_hookes_law),
+        ("damped_spring_comparison.png", diagram_damped_spring_comparison),
+        ("spring_damping_components.png", diagram_spring_damping_components),
+        ("distance_constraint_projection.png", diagram_distance_constraint_projection),
+        ("constraint_mass_weighting.png", diagram_constraint_mass_weighting),
+        ("gauss_seidel_convergence.png", diagram_gauss_seidel_convergence),
+        ("cloth_topology.png", diagram_cloth_topology),
+        ("spring_vs_constraint.png", diagram_spring_vs_constraint),
     ],
     "gpu/03": [
         ("unit_circle.png", diagram_unit_circle),
@@ -743,6 +761,7 @@ LESSON_NAMES = {
     "math/15": "math/15-bezier-curves",
     "math/16": "math/16-density-functions",
     "physics/01": "physics/01-point-particles",
+    "physics/02": "physics/02-springs-and-constraints",
     "gpu/03": "gpu/03-uniforms-and-motion",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",

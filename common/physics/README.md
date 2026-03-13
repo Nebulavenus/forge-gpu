@@ -31,11 +31,20 @@ quaternion operations.
 | `forge_physics_collide_plane()` | Sphere-plane collision detection and response |
 | `forge_physics_clear_forces()` | Reset force accumulator to zero |
 
+### Lesson 02 — Springs and Constraints
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_spring_create()` | Create a spring with rest length, stiffness, and damping |
+| `forge_physics_spring_apply()` | Apply Hooke's law + velocity damping between two particles |
+| `forge_physics_constraint_distance_create()` | Create a distance constraint with target distance and stiffness |
+| `forge_physics_constraint_solve_distance()` | Solve a single distance constraint via position projection |
+| `forge_physics_constraints_solve()` | Gauss-Seidel multi-pass solver for multiple distance constraints |
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 02 — Springs | `forge_physics_spring_force()`, `forge_physics_constraint_distance()` | Hooke's law, distance constraints |
 | 03 — Particle Collisions | `forge_physics_collide_sphere_sphere()`, `forge_physics_collide_sphere_plane()` | Collision detection and impulse response |
 | 04 — Rigid Body State | `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()` | Rigid body state, inertia, orientation |
 | 05 — Forces and Torques | `forge_physics_apply_force_at_point()`, `forge_physics_apply_torque()` | Force application, angular dynamics |
@@ -59,3 +68,4 @@ quaternion operations.
 | Lesson | What it uses |
 |---|---|
 | [Physics L01](../../lessons/physics/01-point-particles/) | `ForgePhysicsParticle`, integrate, gravity, drag, collide_plane |
+| [Physics L02](../../lessons/physics/02-springs-and-constraints/) | `ForgePhysicsSpring`, `ForgePhysicsDistanceConstraint`, `forge_physics_spring_apply()`, `forge_physics_constraint_solve_distance()`, `forge_physics_constraints_solve()` |

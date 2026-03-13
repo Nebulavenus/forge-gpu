@@ -28,7 +28,7 @@ capsules) so the simulation behavior is front and center.
 - **Fixed timestep** — Physics runs at a fixed rate (60 Hz) decoupled from
   rendering. The accumulator pattern ensures identical behavior regardless of
   frame rate.
-- **Interactive** — Every lesson supports pause (Space), reset (R), and slow
+- **Interactive** — Every lesson supports pause (P), reset (R), and slow
   motion (T) so learners can observe and experiment with the simulation.
 - **Library-driven** — `forge_physics.h` is the primary deliverable of every
   lesson. The lessons teach; the library is what remains. It must be robust,
@@ -40,6 +40,7 @@ capsules) so the simulation behavior is front and center.
 | | Lesson | About |
 |---|--------|-------|
 | [<img src="01-point-particles/assets/screenshot.png" width="480" alt="Point Particles"/>](01-point-particles/) | [**01 — Point Particles**](01-point-particles/) | Symplectic Euler integration, gravity, drag, sphere-plane collision, fixed timestep |
+| | [**02 — Springs and Constraints**](02-springs-and-constraints/) | Hooke's law springs, damped oscillation, distance constraints, Gauss-Seidel solver, cloth simulation |
 
 ## Shared library
 
@@ -57,7 +58,7 @@ Every physics lesson uses the same control scheme:
 | WASD / Arrows | Move camera |
 | Mouse | Look around |
 | R | Reset simulation |
-| Space | Pause / resume |
+| P | Pause / resume |
 | T | Toggle slow motion |
 | Escape | Release mouse / quit |
 
