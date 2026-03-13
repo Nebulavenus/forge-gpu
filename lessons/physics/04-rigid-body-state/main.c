@@ -15,7 +15,7 @@
  * camera, grid, shadow map, sky, UI) — this file focuses on physics.
  *
  * Controls:
- *   WASD / Arrow keys — move camera
+ *   WASD              — move camera
  *   Mouse             — look around (click to capture, Escape to release)
  *   Space / Shift     — fly up / down
  *   P                 — pause / resume simulation
@@ -84,6 +84,8 @@
 #define S3_HALF_H            0.5f
 #define S3_HALF_D            0.25f
 #define S3_DEFAULT_TORQUE    20.0f
+#define S3_INIT_SPIN_Y       3.0f   /* initial angular velocity around Y */
+#define S3_INIT_SPIN_Z       1.0f   /* initial angular velocity around Z */
 
 /* Scene 4: Gyroscopic Precession */
 #define S4_NUM_BODIES        1
@@ -352,6 +354,10 @@ static void init_scene_3(app_state *state)
         S3_MASS, DEFAULT_DAMPING, state->ui_angular_damping, DEFAULT_RESTIT);
     forge_physics_rigid_body_set_inertia_box(&state->bodies[0],
         vec3_create(S3_HALF_W, S3_HALF_H, S3_HALF_D));
+
+    /* Start with a gentle spin so the demo shows rotation immediately */
+    state->bodies[0].angular_velocity = vec3_create(0.0f,
+        S3_INIT_SPIN_Y, S3_INIT_SPIN_Z);
 
     state->body_info[0].shape_type = SHAPE_CUBE;
     state->body_info[0].render_scale =
@@ -842,7 +848,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                   state->body_info[i].color);
             break;
         case SHAPE_CYLINDER:
-            forge_scene_draw_mesh(s, state->cylinder_vb, state->cylinder_ib,
+            forge_scene_draw_mesh_double_sided(s, state->cylinder_vb,
+                                  state->cylinder_ib,
                                   state->cylinder_index_count, model,
                                   state->body_info[i].color);
             break;
@@ -966,6 +973,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                                &state->ui_torque_strength,
                                                TORQUE_MIN, TORQUE_MAX,
                                                SLIDER_HEIGHT);
+
+                    /* Arrow key control hints */
+                    forge_ui_ctx_label_layout(ui, "", LABEL_HEIGHT * 0.25f);
+                    forge_ui_ctx_label_layout(ui, "Arrow keys: torque",
+                                              LABEL_HEIGHT);
+                    forge_ui_ctx_label_layout(ui,
+                        "Left/Right: yaw  Up/Down: pitch",
+                        LABEL_HEIGHT);
                 }
 
                 /* Separator */

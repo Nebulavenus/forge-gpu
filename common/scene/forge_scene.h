@@ -295,6 +295,7 @@ typedef struct ForgeScene {
 
     /* ── Internal pipelines ─────────────────────────────────────────── */
     SDL_GPUGraphicsPipeline *scene_pipeline;   /* Blinn-Phong (pos+normal)   */
+    SDL_GPUGraphicsPipeline *scene_pipeline_double; /* same, cull none        */
     SDL_GPUGraphicsPipeline *shadow_pipeline;  /* depth-only shadow pass     */
     SDL_GPUGraphicsPipeline *grid_pipeline;    /* procedural grid floor      */
     SDL_GPUGraphicsPipeline *sky_pipeline;     /* fullscreen sky gradient    */
@@ -432,6 +433,15 @@ static void forge_scene_draw_mesh(ForgeScene *scene,
                                    Uint32 index_count,
                                    mat4 model,
                                    const float base_color[4]);
+
+/* Draw a lit mesh with both faces visible (no back-face culling).
+ * Use for open geometry like uncapped cylinders or discs. */
+static void forge_scene_draw_mesh_double_sided(ForgeScene *scene,
+                                                SDL_GPUBuffer *vb,
+                                                SDL_GPUBuffer *ib,
+                                                Uint32 index_count,
+                                                mat4 model,
+                                                const float base_color[4]);
 
 /* Draw the procedural grid floor. */
 static void forge_scene_draw_grid(ForgeScene *scene);
@@ -1151,6 +1161,39 @@ static bool forge_scene__validate_config(const ForgeSceneConfig *config)
     return true;
 }
 
+/* Internal: create a scene (Blinn-Phong + shadow) pipeline with the given
+ * cull mode.  All other state is identical between the normal and double-
+ * sided variants, so this helper prevents drift if the layout changes. */
+static SDL_GPUGraphicsPipeline *forge_scene__create_scene_pipeline(
+    ForgeScene *scene,
+    SDL_GPUShader *vs, SDL_GPUShader *fs,
+    SDL_GPUVertexInputState vertex_input,
+    SDL_GPUCullMode cull_mode)
+{
+    SDL_GPUColorTargetDescription ctd;
+    SDL_zero(ctd);
+    ctd.format = scene->swapchain_fmt;
+
+    SDL_GPUGraphicsPipelineCreateInfo pi;
+    SDL_zero(pi);
+    pi.vertex_shader   = vs;
+    pi.fragment_shader = fs;
+    pi.vertex_input_state = vertex_input;
+    pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+    pi.rasterizer_state.cull_mode  = cull_mode;
+    pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+    pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
+    pi.depth_stencil_state.enable_depth_test  = true;
+    pi.depth_stencil_state.enable_depth_write = true;
+    pi.depth_stencil_state.enable_stencil_test = false;
+    pi.target_info.color_target_descriptions  = &ctd;
+    pi.target_info.num_color_targets          = 1;
+    pi.target_info.depth_stencil_format       = scene->depth_fmt;
+    pi.target_info.has_depth_stencil_target   = true;
+    return SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  *  forge_scene_init — Initialize the entire rendering stack
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -1406,32 +1449,12 @@ static bool forge_scene_init(ForgeScene *scene,
             SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
     }
 
-    /* Scene pipeline: Blinn-Phong with shadow map. */
-    {
-        SDL_GPUColorTargetDescription ctd;
-        SDL_zero(ctd);
-        ctd.format = scene->swapchain_fmt;
-
-        SDL_GPUGraphicsPipelineCreateInfo pi;
-        SDL_zero(pi);
-        pi.vertex_shader   = scene_vs;
-        pi.fragment_shader = scene_fs;
-        pi.vertex_input_state = full_input;
-        pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
-        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
-        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
-        pi.depth_stencil_state.enable_depth_test  = true;
-        pi.depth_stencil_state.enable_depth_write = true;
-        pi.depth_stencil_state.enable_stencil_test = false;
-        pi.target_info.color_target_descriptions = &ctd;
-        pi.target_info.num_color_targets         = 1;
-        pi.target_info.depth_stencil_format      = scene->depth_fmt;
-        pi.target_info.has_depth_stencil_target  = true;
-        scene->scene_pipeline =
-            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
-    }
+    /* Scene pipelines: Blinn-Phong with shadow map.
+     * Both variants share identical state except cull mode. */
+    scene->scene_pipeline = forge_scene__create_scene_pipeline(
+        scene, scene_vs, scene_fs, full_input, SDL_GPU_CULLMODE_BACK);
+    scene->scene_pipeline_double = forge_scene__create_scene_pipeline(
+        scene, scene_vs, scene_fs, full_input, SDL_GPU_CULLMODE_NONE);
 
     /* Grid pipeline: procedural grid with alpha blending for distance fade.
      * LESS_OR_EQUAL prevents z-fighting at Y=0. */
@@ -1512,6 +1535,7 @@ static bool forge_scene_init(ForgeScene *scene,
     SDL_ReleaseGPUShader(scene->device, sky_fs);
 
     if (!scene->shadow_pipeline || !scene->scene_pipeline ||
+        !scene->scene_pipeline_double ||
         !scene->grid_pipeline || !scene->sky_pipeline) {
         SDL_Log("forge_scene: one or more pipelines failed: %s",
                 SDL_GetError());
@@ -2133,16 +2157,18 @@ static void forge_scene_begin_main_pass(ForgeScene *scene)
     SDL_DrawGPUPrimitives(scene->pass, 3, 1, 0, 0);
 }
 
-static void forge_scene_draw_mesh(ForgeScene *scene,
-                                   SDL_GPUBuffer *vb,
-                                   SDL_GPUBuffer *ib,
-                                   Uint32 index_count,
-                                   mat4 model,
-                                   const float base_color[4])
+/* Internal: shared draw logic for scene meshes (pipeline varies) */
+static void forge_scene__draw_mesh_internal(ForgeScene *scene,
+                                             SDL_GPUGraphicsPipeline *pipeline,
+                                             SDL_GPUBuffer *vb,
+                                             SDL_GPUBuffer *ib,
+                                             Uint32 index_count,
+                                             mat4 model,
+                                             const float base_color[4])
 {
-    if (!scene->pass || !vb || !ib || index_count == 0) return;
+    if (!scene->pass || !pipeline || !vb || !ib || index_count == 0) return;
 
-    SDL_BindGPUGraphicsPipeline(scene->pass, scene->scene_pipeline);
+    SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
 
     /* Shadow map bound at fragment sampler slot 0 */
     SDL_GPUTextureSamplerBinding shadow_bind = {
@@ -2187,6 +2213,30 @@ static void forge_scene_draw_mesh(ForgeScene *scene,
     SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
 
     SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, 1, 0, 0, 0);
+}
+
+static void forge_scene_draw_mesh(ForgeScene *scene,
+                                   SDL_GPUBuffer *vb,
+                                   SDL_GPUBuffer *ib,
+                                   Uint32 index_count,
+                                   mat4 model,
+                                   const float base_color[4])
+{
+    forge_scene__draw_mesh_internal(scene, scene->scene_pipeline,
+                                    vb, ib, index_count, model, base_color);
+}
+
+/* ── Double-sided mesh (cull none) ─────────────────────────────────────── */
+
+static void forge_scene_draw_mesh_double_sided(ForgeScene *scene,
+                                                SDL_GPUBuffer *vb,
+                                                SDL_GPUBuffer *ib,
+                                                Uint32 index_count,
+                                                mat4 model,
+                                                const float base_color[4])
+{
+    forge_scene__draw_mesh_internal(scene, scene->scene_pipeline_double,
+                                    vb, ib, index_count, model, base_color);
 }
 
 /* ── Grid floor ────────────────────────────────────────────────────────── */
@@ -2582,6 +2632,8 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->grid_pipeline);
     if (scene->scene_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->scene_pipeline);
+    if (scene->scene_pipeline_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->scene_pipeline_double);
     if (scene->shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->shadow_pipeline);
 
