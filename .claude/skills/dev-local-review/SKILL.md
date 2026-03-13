@@ -1,120 +1,127 @@
 ---
 name: dev-local-review
-description: Run a local CodeRabbit review before pushing to catch issues early
+description: Run a local code review using the CodeRabbit agent before pushing to catch issues early
 argument-hint: "[--base branch]"
 disable-model-invocation: false
 ---
 
-Run a local CodeRabbit code review via the Claude Code plugin. Use this
-as a pre-push gate to catch issues before they hit the PR and burn a
-review round.
+Run a local code review before pushing to catch issues before they hit the PR
+and burn a review round. Uses the built-in CodeRabbit code-reviewer agent
+(`subagent_type: "coderabbit:code-reviewer"`) which runs entirely locally at
+zero cost.
 
-**This is not a substitute for the GitHub PR review.** The local review
-runs the same analysis but cannot interact with PR feedback threads,
-resolve conversations, or update approval state. It is a fast, local
-check only.
+**This is not a substitute for the GitHub PR review.** The local review cannot
+access CodeRabbit's learnings from past PRs or perform repo-wide architectural
+analysis. It is a fast, free pre-push gate that catches the obvious issues.
 
-## Prerequisites
+## How it works
 
-### 1. Install the CodeRabbit CLI
-
-```bash
-curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-```
-
-### 2. Authenticate
-
-Interactive OAuth (opens browser):
-
-```bash
-coderabbit auth login
-```
-
-Verify:
-
-```bash
-coderabbit auth status
-```
-
-### 3. Install the Claude Code plugin
-
-In Claude Code:
-
-```text
-/plugin install coderabbit
-```
-
-### 4. Verify
-
-```text
-/coderabbit:review --base main
-```
-
-If this returns findings or "No findings", the setup is complete.
+The skill uses Claude Code's built-in `coderabbit:code-reviewer` agent type.
+This agent reads the diff locally and performs a thorough code review covering
+correctness, style, documentation accuracy, and common issues. No external
+service, CLI tool, or API key required.
 
 ## Usage
 
-Run a review against main (default):
+Invoke the skill before pushing:
 
 ```text
-/coderabbit:review --base main
+/dev-local-review
 ```
 
-**Important:** Always pass the project's `.coderabbit.yaml` config so the
-local review applies the same rules as the GitHub bot:
+Or with a specific base branch:
 
 ```text
-/coderabbit:review --base main -c .coderabbit.yaml
-```
-
-Review only committed or uncommitted changes:
-
-```text
-/coderabbit:review committed
-/coderabbit:review uncommitted
-```
-
-Compare against a different base branch:
-
-```text
-/coderabbit:review --base develop
+/dev-local-review --base develop
 ```
 
 ## When to use
 
 - Before pushing fixes during `/dev-review-pr` — catch new issues locally
   instead of waiting for the GitHub bot
-- Before creating a PR with `/dev-create-pr` — clean up obvious issues
+- Before creating a PR with `/dev-publish-lesson` — clean up obvious issues
   before the first review
 - Any time you want a quick code quality check without pushing
+- After `/dev-final-pass` for a second opinion from a different reviewer
 
-## Important: local and PR reviews differ
+## Workflow
 
-PR reviews and CLI reviews will differ, even if run on the same code. CLI
-reviews optimize for immediate feedback during active development, while PR
-reviews provide comprehensive team collaboration context and broader
-repository analysis.
+### 1. Determine what to review
 
-**A clean local review does not guarantee a clean PR review.** Use the local
-review as a pre-filter to catch obvious issues (unchecked returns, doc/code
-mismatches, style problems) before pushing — but always request a full
-`@coderabbitai review` on the PR afterward.
+Check `git status` and `git diff --stat` to understand the scope of changes.
+Use the base branch from the argument (default: `main`).
+
+### 2. Run the CodeRabbit code-reviewer agent
+
+Launch a single agent with `subagent_type: "coderabbit:code-reviewer"`. The
+prompt must include:
+
+- The list of modified and new files (from `git diff --stat` and `git status`)
+- A summary of what the changes are about (infer from file paths and recent
+  context)
+- Instructions to be thorough and report specific file paths and line numbers
+- The project's code quality requirements (C99, SDL3 GPU, CLAUDE.md conventions)
+
+```text
+Agent(
+  subagent_type="coderabbit:code-reviewer",
+  prompt="Review all changes compared to <base-branch>. [file list, context, instructions]"
+)
+```
+
+### 3. Triage findings
+
+When the agent returns, present findings sorted by severity (Major, Medium,
+Low, Informational). For each finding, determine:
+
+- **Actionable:** A real issue that should be fixed before pushing
+- **Intentional:** Code that is correct as-is (e.g., strict `0.0f` epsilon
+  for determinism tests)
+- **Out of scope:** Suggestions about code not changed in this PR
+
+### 4. Fix actionable findings
+
+Implement all actionable fixes. Do not ask about each one individually —
+fix them all, then report what was changed.
+
+### 5. Re-run review
+
+After fixing, run the agent again to verify no new issues were introduced.
+The re-run prompt should note which issues were already addressed so the
+agent focuses on finding new problems.
+
+### 6. Repeat until clean
+
+Continue the fix-and-review cycle until the agent reports no new actionable
+issues. Typically takes 2-3 rounds.
+
+## What it catches
+
+Based on project experience, this review reliably catches:
+
+- Missing bounds checks and safety guards
+- Stale comments (e.g., `<math.h>` comment listing `fabsf, sqrtf` but code
+  also uses `fminf`)
+- Documentation/code mismatches (README describes N phases but code has M)
+- Missing inline comments on struct fields
+- Resource cleanup gaps on error paths
+- Magic numbers that should be named constants
+- Naming convention violations
+
+## What it cannot do
+
+- Access CodeRabbit's learnings from past PR interactions
+- Perform repo-wide architectural analysis beyond the changed files
+- Interact with PR feedback threads or resolve conversations
+- Update GitHub approval state
+- Guarantee a clean PR review (the GitHub bot may find additional issues)
 
 ## After a clean local review
 
 A clean local review means the obvious issues are handled. Push and request
 a full PR review:
 
-1. **Push** the commits
-2. **Request a PR review** — comment `@coderabbitai review` on the PR
-3. **Wait for the PR review** — it may find additional issues the local
-   review missed (repo-wide patterns, learnings from past PRs, cross-file
-   architectural concerns)
-
-## What it cannot do
-
-- Interact with existing PR feedback threads
-- Resolve or dismiss CodeRabbit conversations on a PR
-- Update the GitHub approval state
-- Access CodeRabbit's learnings from past PR interactions
-- Perform the broader repository analysis that PR reviews include
+1. **Push** the commits (single push, never piecemeal)
+2. **Wait for CodeRabbit's PR review** — it may find additional issues the
+   local review missed
+3. If the PR review finds issues, use `/dev-review-pr` to handle them
