@@ -12,6 +12,11 @@ __all__ = [
     "diagram_gauss_seidel_convergence",
     "diagram_cloth_topology",
     "diagram_spring_vs_constraint",
+    "diagram_sphere_sphere_collision",
+    "diagram_impulse_response",
+    "diagram_restitution_comparison",
+    "diagram_collision_pipeline",
+    "diagram_momentum_conservation",
 ]
 
 from .lesson_01 import (
@@ -28,4 +33,11 @@ from .lesson_02 import (
     diagram_hookes_law,
     diagram_spring_damping_components,
     diagram_spring_vs_constraint,
+)
+from .lesson_03 import (
+    diagram_collision_pipeline,
+    diagram_impulse_response,
+    diagram_momentum_conservation,
+    diagram_restitution_comparison,
+    diagram_sphere_sphere_collision,
 )

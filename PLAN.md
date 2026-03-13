@@ -55,7 +55,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 - [x] **Physics Lesson 01 — Point Particles** — Position, velocity, acceleration; symplectic Euler integration; gravity and drag forces; `forge_physics_` API scaffolding in `common/physics/forge_physics.h`
 - [x] **Physics Lesson 02 — Springs and Constraints** — Hooke's law spring forces; damped springs; distance constraints with projection; chain and cloth-like particle systems
-- [ ] **Physics Lesson 03 — Particle Collisions** — Sphere-sphere and sphere-plane collision detection; impulse-based response; coefficient of restitution; simple O(n²) all-pairs (broadphase deferred to Lesson 07)
+- [x] **Physics Lesson 03 — Particle Collisions** — Sphere-sphere and sphere-plane collision detection; impulse-based response; coefficient of restitution; simple O(n²) all-pairs (broadphase deferred to Lesson 07)
 
 ### Rigid Body Foundations
 

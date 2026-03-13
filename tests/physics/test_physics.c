@@ -1886,6 +1886,1348 @@ static void test_constraints_solve_negative_iterations(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * 32. Sphere-sphere detection
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Overlapping spheres test */
+#define SS_OVERLAP_A_X        0.0f
+#define SS_OVERLAP_B_X        0.8f
+#define SS_OVERLAP_RADIUS     0.5f
+#define SS_OVERLAP_PEN        0.2f       /* sum_radii(1.0) - dist(0.8) */
+#define SS_OVERLAP_CONTACT_X  0.4f       /* midpoint along contact axis */
+#define SS_OVERLAP_NORMAL_X   (-1.0f)    /* from B toward A */
+#define SS_OVERLAP_MASS       1.0f
+
+/* Touching spheres test */
+#define SS_TOUCH_A_X          0.0f
+#define SS_TOUCH_B_X          1.0f       /* exactly sum of radii */
+#define SS_TOUCH_RADIUS       0.5f
+#define SS_TOUCH_MASS         1.0f
+
+/* Separated spheres test */
+#define SS_SEP_A_X            0.0f
+#define SS_SEP_B_X            5.0f
+#define SS_SEP_RADIUS         0.5f
+#define SS_SEP_MASS           1.0f
+
+/* Coincident spheres test */
+#define SS_COIN_RADIUS        0.5f
+#define SS_COIN_MASS          1.0f
+#define SS_COIN_PEN           1.0f       /* sum_radii when dist=0 */
+#define SS_COIN_NORMAL_Y      1.0f       /* arbitrary fallback normal */
+
+/* Zero radius test */
+#define SS_ZERO_R_A_X         0.0f
+#define SS_ZERO_R_B_X         0.3f
+#define SS_ZERO_R_RADIUS_A    0.0f
+#define SS_ZERO_R_RADIUS_B    0.5f
+#define SS_ZERO_R_MASS        1.0f
+
+/* Both static test */
+#define SS_BSTAT_A_X          0.0f
+#define SS_BSTAT_B_X          0.5f
+#define SS_BSTAT_RADIUS       0.5f
+
+/* One static test */
+#define SS_OSTAT_A_X          0.0f
+#define SS_OSTAT_B_X          0.8f
+#define SS_OSTAT_RADIUS       0.5f
+#define SS_OSTAT_MASS         1.0f
+
+/* Asymmetric radii test */
+#define SS_ASYM_A_X           0.0f
+#define SS_ASYM_B_X           0.8f
+#define SS_ASYM_RADIUS_A      0.3f
+#define SS_ASYM_RADIUS_B      0.7f
+#define SS_ASYM_MASS          1.0f
+#define SS_ASYM_PEN           0.2f       /* sum_radii(1.0) - dist(0.8) */
+/* Contact point: b_pos + normal * (r_b - pen/2) = 0.8 + (-1)(0.7 - 0.1) = 0.2 */
+#define SS_ASYM_CONTACT_X     0.2f       /* b_x + normal * (r_b - pen/2) */
+
+static void test_collide_sphere_overlapping(void)
+{
+    TEST("collide_sphere_sphere — overlapping spheres");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_OVERLAP_A_X, 0.0f, 0.0f),
+        SS_OVERLAP_MASS, 0.0f, DEFAULT_RESTIT, SS_OVERLAP_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_OVERLAP_B_X, 0.0f, 0.0f),
+        SS_OVERLAP_MASS, 0.0f, DEFAULT_RESTIT, SS_OVERLAP_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    ASSERT_NEAR(contact.penetration, SS_OVERLAP_PEN, EPSILON);
+    ASSERT_NEAR(contact.normal.x, SS_OVERLAP_NORMAL_X, EPSILON);
+    ASSERT_NEAR(contact.normal.y, 0.0f, EPSILON);
+    ASSERT_NEAR(contact.normal.z, 0.0f, EPSILON);
+    ASSERT_NEAR(contact.point.x, SS_OVERLAP_CONTACT_X, EPSILON);
+    ASSERT_NEAR(contact.point.y, 0.0f, EPSILON);
+    ASSERT_NEAR(contact.point.z, 0.0f, EPSILON);
+    ASSERT_TRUE(contact.particle_a == 0);
+    ASSERT_TRUE(contact.particle_b == 1);
+    END_TEST();
+}
+
+static void test_collide_sphere_touching(void)
+{
+    TEST("collide_sphere_sphere — exactly touching (no overlap)");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_TOUCH_A_X, 0.0f, 0.0f),
+        SS_TOUCH_MASS, 0.0f, DEFAULT_RESTIT, SS_TOUCH_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_TOUCH_B_X, 0.0f, 0.0f),
+        SS_TOUCH_MASS, 0.0f, DEFAULT_RESTIT, SS_TOUCH_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_separated(void)
+{
+    TEST("collide_sphere_sphere — separated spheres");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_SEP_A_X, 0.0f, 0.0f),
+        SS_SEP_MASS, 0.0f, DEFAULT_RESTIT, SS_SEP_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_SEP_B_X, 0.0f, 0.0f),
+        SS_SEP_MASS, 0.0f, DEFAULT_RESTIT, SS_SEP_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_coincident(void)
+{
+    TEST("collide_sphere_sphere — coincident (same position)");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        SS_COIN_MASS, 0.0f, DEFAULT_RESTIT, SS_COIN_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        SS_COIN_MASS, 0.0f, DEFAULT_RESTIT, SS_COIN_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    ASSERT_NEAR(contact.penetration, SS_COIN_PEN, EPSILON);
+    /* Arbitrary fallback normal — expect (0,1,0) */
+    ASSERT_NEAR(contact.normal.y, SS_COIN_NORMAL_Y, EPSILON);
+    END_TEST();
+}
+
+static void test_collide_sphere_zero_radius(void)
+{
+    TEST("collide_sphere_sphere — one sphere has zero radius");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_ZERO_R_A_X, 0.0f, 0.0f),
+        SS_ZERO_R_MASS, 0.0f, DEFAULT_RESTIT, SS_ZERO_R_RADIUS_A);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_ZERO_R_B_X, 0.0f, 0.0f),
+        SS_ZERO_R_MASS, 0.0f, DEFAULT_RESTIT, SS_ZERO_R_RADIUS_B);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_both_static(void)
+{
+    TEST("collide_sphere_sphere — both static (mass=0)");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_BSTAT_A_X, 0.0f, 0.0f),
+        0.0f, 0.0f, DEFAULT_RESTIT, SS_BSTAT_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_BSTAT_B_X, 0.0f, 0.0f),
+        0.0f, 0.0f, DEFAULT_RESTIT, SS_BSTAT_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_one_static(void)
+{
+    TEST("collide_sphere_sphere — one static, one dynamic");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_OSTAT_A_X, 0.0f, 0.0f),
+        0.0f, 0.0f, DEFAULT_RESTIT, SS_OSTAT_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_OSTAT_B_X, 0.0f, 0.0f),
+        SS_OSTAT_MASS, 0.0f, DEFAULT_RESTIT, SS_OSTAT_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_asymmetric_radii(void)
+{
+    TEST("collide_sphere_sphere — asymmetric radii");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(SS_ASYM_A_X, 0.0f, 0.0f),
+        SS_ASYM_MASS, 0.0f, DEFAULT_RESTIT, SS_ASYM_RADIUS_A);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS_ASYM_B_X, 0.0f, 0.0f),
+        SS_ASYM_MASS, 0.0f, DEFAULT_RESTIT, SS_ASYM_RADIUS_B);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    ASSERT_NEAR(contact.penetration, SS_ASYM_PEN, EPSILON);
+    /* Contact point lies on the line between centers */
+    ASSERT_NEAR(contact.point.x, SS_ASYM_CONTACT_X, EPSILON);
+    ASSERT_NEAR(contact.point.y, 0.0f, EPSILON);
+    ASSERT_NEAR(contact.point.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 33. Impulse response
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Equal mass elastic test */
+#define IR_EQUAL_MASS         1.0f
+#define IR_EQUAL_VEL          1.0f       /* ±1 m/s head-on */
+#define IR_EQUAL_RESTIT       1.0f
+#define IR_EQUAL_RADIUS       0.5f
+#define IR_EQUAL_OFFSET       0.8f       /* < sum_radii so they overlap */
+
+/* Unequal mass test */
+#define IR_UNEQ_MASS_A        1.0f
+#define IR_UNEQ_MASS_B        3.0f
+#define IR_UNEQ_VEL_A         2.0f
+#define IR_UNEQ_RESTIT        1.0f
+#define IR_UNEQ_RADIUS        0.5f
+#define IR_UNEQ_OFFSET        0.8f
+/* Momentum: 1*2 + 3*0 = 2. Post: v_a = (m_a-m_b)/(m_a+m_b)*v_a = -1, v_b = 2*m_a/(m_a+m_b)*v_a = 1 */
+#define IR_UNEQ_EXPECTED_VA   (-1.0f)
+#define IR_UNEQ_EXPECTED_VB   1.0f
+
+/* One static test */
+#define IR_STAT_MASS          1.0f
+#define IR_STAT_VEL           (-2.0f)
+#define IR_STAT_RESTIT        1.0f
+#define IR_STAT_RADIUS        0.5f
+#define IR_STAT_OFFSET        0.8f
+
+/* Zero restitution test */
+#define IR_INELASTIC_MASS     1.0f
+#define IR_INELASTIC_VEL      2.0f
+#define IR_INELASTIC_RESTIT   0.0f
+#define IR_INELASTIC_RADIUS   0.5f
+#define IR_INELASTIC_OFFSET   0.8f
+
+/* Separating pair test */
+#define IR_SEP_MASS           1.0f
+#define IR_SEP_VEL            1.0f       /* moving apart */
+#define IR_SEP_RESTIT         1.0f
+#define IR_SEP_RADIUS         0.5f
+#define IR_SEP_OFFSET         0.8f
+
+static void test_resolve_equal_mass_elastic(void)
+{
+    TEST("resolve_contact — equal mass elastic, velocities swap");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        IR_EQUAL_MASS, 0.0f, IR_EQUAL_RESTIT, IR_EQUAL_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(IR_EQUAL_OFFSET, 0.0f, 0.0f),
+        IR_EQUAL_MASS, 0.0f, IR_EQUAL_RESTIT, IR_EQUAL_RADIUS);
+
+    particles[0].velocity = vec3_create(IR_EQUAL_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-IR_EQUAL_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Velocities should swap after elastic collision */
+    ASSERT_NEAR(particles[0].velocity.x, -IR_EQUAL_VEL, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, IR_EQUAL_VEL, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_unequal_mass(void)
+{
+    TEST("resolve_contact — unequal mass, momentum conserved");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        IR_UNEQ_MASS_A, 0.0f, IR_UNEQ_RESTIT, IR_UNEQ_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(IR_UNEQ_OFFSET, 0.0f, 0.0f),
+        IR_UNEQ_MASS_B, 0.0f, IR_UNEQ_RESTIT, IR_UNEQ_RADIUS);
+
+    particles[0].velocity = vec3_create(IR_UNEQ_VEL_A, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(0.0f, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    float mom_before = IR_UNEQ_MASS_A * particles[0].velocity.x
+                     + IR_UNEQ_MASS_B * particles[1].velocity.x;
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    float mom_after = IR_UNEQ_MASS_A * particles[0].velocity.x
+                    + IR_UNEQ_MASS_B * particles[1].velocity.x;
+
+    ASSERT_NEAR(mom_after, mom_before, EPSILON);
+    ASSERT_NEAR(particles[0].velocity.x, IR_UNEQ_EXPECTED_VA, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, IR_UNEQ_EXPECTED_VB, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_one_static(void)
+{
+    TEST("resolve_contact — static particle, dynamic bounces");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        0.0f, 0.0f, IR_STAT_RESTIT, IR_STAT_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(IR_STAT_OFFSET, 0.0f, 0.0f),
+        IR_STAT_MASS, 0.0f, IR_STAT_RESTIT, IR_STAT_RADIUS);
+
+    particles[1].velocity = vec3_create(IR_STAT_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Dynamic particle should bounce away (positive x after hitting static at origin) */
+    ASSERT_TRUE(particles[1].velocity.x > 0.0f);
+    /* Static particle velocity unchanged */
+    ASSERT_NEAR(particles[0].velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_zero_restitution(void)
+{
+    TEST("resolve_contact — zero restitution, no relative velocity after");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        IR_INELASTIC_MASS, 0.0f, IR_INELASTIC_RESTIT, IR_INELASTIC_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(IR_INELASTIC_OFFSET, 0.0f, 0.0f),
+        IR_INELASTIC_MASS, 0.0f, IR_INELASTIC_RESTIT, IR_INELASTIC_RADIUS);
+
+    particles[0].velocity = vec3_create(IR_INELASTIC_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-IR_INELASTIC_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* No relative velocity along normal after perfectly inelastic collision */
+    float rel_vel = particles[0].velocity.x - particles[1].velocity.x;
+    ASSERT_NEAR(rel_vel, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_separating_pair(void)
+{
+    TEST("resolve_contact — already separating, velocities unchanged");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        IR_SEP_MASS, 0.0f, IR_SEP_RESTIT, IR_SEP_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(IR_SEP_OFFSET, 0.0f, 0.0f),
+        IR_SEP_MASS, 0.0f, IR_SEP_RESTIT, IR_SEP_RADIUS);
+
+    /* Moving apart: a goes left, b goes right */
+    particles[0].velocity = vec3_create(-IR_SEP_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(IR_SEP_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    float va_before = particles[0].velocity.x;
+    float vb_before = particles[1].velocity.x;
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Already separating — no impulse applied */
+    ASSERT_NEAR(particles[0].velocity.x, va_before, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, vb_before, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 34. Conservation laws
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define CL_MASS               1.0f
+#define CL_VEL                3.0f
+#define CL_RESTIT_ELASTIC     1.0f
+#define CL_RESTIT_PARTIAL     0.5f
+#define CL_RADIUS             0.5f
+#define CL_OFFSET             0.8f
+
+static void test_collision_momentum_conservation(void)
+{
+    TEST("conservation — total momentum preserved");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        CL_MASS, 0.0f, CL_RESTIT_ELASTIC, CL_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(CL_OFFSET, 0.0f, 0.0f),
+        CL_MASS, 0.0f, CL_RESTIT_ELASTIC, CL_RADIUS);
+
+    particles[0].velocity = vec3_create(CL_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-CL_VEL, 0.0f, 0.0f);
+
+    float mom_before = CL_MASS * particles[0].velocity.x
+                     + CL_MASS * particles[1].velocity.x;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    float mom_after = CL_MASS * particles[0].velocity.x
+                    + CL_MASS * particles[1].velocity.x;
+
+    ASSERT_NEAR(mom_after, mom_before, EPSILON);
+    END_TEST();
+}
+
+static void test_collision_energy_elastic(void)
+{
+    TEST("conservation — kinetic energy preserved (e=1.0)");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        CL_MASS, 0.0f, CL_RESTIT_ELASTIC, CL_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(CL_OFFSET, 0.0f, 0.0f),
+        CL_MASS, 0.0f, CL_RESTIT_ELASTIC, CL_RADIUS);
+
+    particles[0].velocity = vec3_create(CL_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(0.0f, 0.0f, 0.0f);
+
+    float ke_before = 0.5f * CL_MASS * CL_VEL * CL_VEL;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    float v0 = vec3_length(particles[0].velocity);
+    float v1 = vec3_length(particles[1].velocity);
+    float ke_after = 0.5f * CL_MASS * v0 * v0
+                   + 0.5f * CL_MASS * v1 * v1;
+
+    ASSERT_NEAR(ke_after, ke_before, EPSILON);
+    END_TEST();
+}
+
+static void test_collision_energy_inelastic(void)
+{
+    TEST("conservation — kinetic energy decreases (e=0.5)");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        CL_MASS, 0.0f, CL_RESTIT_PARTIAL, CL_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(CL_OFFSET, 0.0f, 0.0f),
+        CL_MASS, 0.0f, CL_RESTIT_PARTIAL, CL_RADIUS);
+
+    particles[0].velocity = vec3_create(CL_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(0.0f, 0.0f, 0.0f);
+
+    float v0_pre = vec3_length(particles[0].velocity);
+    float v1_pre = vec3_length(particles[1].velocity);
+    float ke_before = 0.5f * CL_MASS * v0_pre * v0_pre
+                    + 0.5f * CL_MASS * v1_pre * v1_pre;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    float v0_post = vec3_length(particles[0].velocity);
+    float v1_post = vec3_length(particles[1].velocity);
+    float ke_after = 0.5f * CL_MASS * v0_post * v0_post
+                   + 0.5f * CL_MASS * v1_post * v1_post;
+
+    ASSERT_TRUE(ke_after < ke_before);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 35. All-pairs detection
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define AP_MASS               1.0f
+#define AP_RADIUS             0.5f
+#define AP_NUM_PARTICLES      4
+#define AP_EXPECTED_PAIRS     2
+/* Particle positions: (0,0,0), (0.8,0,0), (5,0,0), (5.8,0,0)
+ * Pairs 0-1 and 2-3 overlap; all others are separated */
+#define AP_POS_0_X            0.0f
+#define AP_POS_1_X            0.8f
+#define AP_POS_2_X            5.0f
+#define AP_POS_3_X            5.8f
+
+static void test_all_pairs_correct_count(void)
+{
+    TEST("collide_particles_all — correct contact count");
+    ForgePhysicsParticle particles[AP_NUM_PARTICLES];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(AP_POS_0_X, 0.0f, 0.0f),
+        AP_MASS, 0.0f, DEFAULT_RESTIT, AP_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(AP_POS_1_X, 0.0f, 0.0f),
+        AP_MASS, 0.0f, DEFAULT_RESTIT, AP_RADIUS);
+    particles[2] = forge_physics_particle_create(
+        vec3_create(AP_POS_2_X, 0.0f, 0.0f),
+        AP_MASS, 0.0f, DEFAULT_RESTIT, AP_RADIUS);
+    particles[3] = forge_physics_particle_create(
+        vec3_create(AP_POS_3_X, 0.0f, 0.0f),
+        AP_MASS, 0.0f, DEFAULT_RESTIT, AP_RADIUS);
+
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_all(
+        particles, AP_NUM_PARTICLES,
+        contacts, FORGE_PHYSICS_MAX_CONTACTS);
+
+    ASSERT_TRUE(count == AP_EXPECTED_PAIRS);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 36. Determinism
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define CD_MASS               1.0f
+#define CD_VEL                2.0f
+#define CD_RESTIT             0.8f
+#define CD_RADIUS             0.5f
+#define CD_OFFSET             0.8f
+
+static void test_collision_determinism(void)
+{
+    TEST("collision determinism — identical results on repeat");
+
+    /* First run */
+    ForgePhysicsParticle p1[2];
+    p1[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        CD_MASS, 0.0f, CD_RESTIT, CD_RADIUS);
+    p1[1] = forge_physics_particle_create(
+        vec3_create(CD_OFFSET, 0.0f, 0.0f),
+        CD_MASS, 0.0f, CD_RESTIT, CD_RADIUS);
+    p1[0].velocity = vec3_create(CD_VEL, 0.0f, 0.0f);
+    p1[1].velocity = vec3_create(-CD_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact c1;
+    bool hit1 = forge_physics_collide_sphere_sphere(&p1[0], &p1[1], 0, 1, &c1);
+    ASSERT_TRUE(hit1);
+    forge_physics_resolve_contact(&c1, p1, 2);
+
+    /* Second run — identical setup */
+    ForgePhysicsParticle p2[2];
+    p2[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        CD_MASS, 0.0f, CD_RESTIT, CD_RADIUS);
+    p2[1] = forge_physics_particle_create(
+        vec3_create(CD_OFFSET, 0.0f, 0.0f),
+        CD_MASS, 0.0f, CD_RESTIT, CD_RADIUS);
+    p2[0].velocity = vec3_create(CD_VEL, 0.0f, 0.0f);
+    p2[1].velocity = vec3_create(-CD_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact c2;
+    bool hit2 = forge_physics_collide_sphere_sphere(&p2[0], &p2[1], 0, 1, &c2);
+    ASSERT_TRUE(hit2);
+    forge_physics_resolve_contact(&c2, p2, 2);
+
+    /* Results must match exactly */
+    ASSERT_NEAR(p1[0].velocity.x, p2[0].velocity.x, 0.0f);
+    ASSERT_NEAR(p1[0].velocity.y, p2[0].velocity.y, 0.0f);
+    ASSERT_NEAR(p1[0].velocity.z, p2[0].velocity.z, 0.0f);
+    ASSERT_NEAR(p1[1].velocity.x, p2[1].velocity.x, 0.0f);
+    ASSERT_NEAR(p1[1].velocity.y, p2[1].velocity.y, 0.0f);
+    ASSERT_NEAR(p1[1].velocity.z, p2[1].velocity.z, 0.0f);
+    ASSERT_NEAR(c1.penetration, c2.penetration, 0.0f);
+    ASSERT_NEAR(c1.normal.x, c2.normal.x, 0.0f);
+    ASSERT_NEAR(c1.normal.y, c2.normal.y, 0.0f);
+    ASSERT_NEAR(c1.normal.z, c2.normal.z, 0.0f);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 37. All-pairs boundary conditions
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Cluster of 3 particles all within overlap distance */
+#define AP_CLUSTER_RADIUS       0.5f
+#define AP_CLUSTER_MASS         1.0f
+#define AP_CLUSTER_OFFSET       0.4f   /* < 2 * radius, so all pairs overlap */
+#define AP_CLUSTER_NUM          3
+#define AP_CLUSTER_PAIRS        3      /* C(3,2) = 3 */
+
+/* Well-separated positions for no-overlap test */
+#define AP_NOSEP_RADIUS         0.5f
+#define AP_NOSEP_MASS           1.0f
+#define AP_NOSEP_NUM            4
+#define AP_NOSEP_SPACING        5.0f   /* >> 2 * radius */
+
+/* Max contacts clamping test — 5 particles in a cluster yields C(5,2)=10 pairs */
+#define AP_CLAMP_NUM            5
+#define AP_CLAMP_OFFSET         0.1f   /* all overlapping */
+#define AP_CLAMP_RADIUS         0.5f
+#define AP_CLAMP_MASS           1.0f
+#define AP_CLAMP_MAX            2      /* artificially low limit */
+
+static void test_all_pairs_zero_particles(void)
+{
+    TEST("collide_particles_all — 0 particles returns 0");
+    ForgePhysicsContact contacts[1];
+    int count = forge_physics_collide_particles_all(NULL, 0, contacts, 1);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+static void test_all_pairs_single_particle(void)
+{
+    TEST("collide_particles_all — 1 particle returns 0 (no pairs)");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        AP_CLUSTER_MASS, 0.0f, DEFAULT_RESTIT, AP_CLUSTER_RADIUS);
+    ForgePhysicsContact contacts[1];
+    int count = forge_physics_collide_particles_all(&p, 1, contacts, 1);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+static void test_all_pairs_no_overlaps(void)
+{
+    TEST("collide_particles_all — 4 separated particles returns 0");
+    ForgePhysicsParticle particles[AP_NOSEP_NUM];
+    for (int i = 0; i < AP_NOSEP_NUM; i++) {
+        particles[i] = forge_physics_particle_create(
+            vec3_create((float)i * AP_NOSEP_SPACING, 0.0f, 0.0f),
+            AP_NOSEP_MASS, 0.0f, DEFAULT_RESTIT, AP_NOSEP_RADIUS);
+    }
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_all(
+        particles, AP_NOSEP_NUM, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+static void test_all_pairs_all_overlap(void)
+{
+    TEST("collide_particles_all — 3 close particles returns 3 contacts");
+    ForgePhysicsParticle particles[AP_CLUSTER_NUM];
+    for (int i = 0; i < AP_CLUSTER_NUM; i++) {
+        particles[i] = forge_physics_particle_create(
+            vec3_create((float)i * AP_CLUSTER_OFFSET, 0.0f, 0.0f),
+            AP_CLUSTER_MASS, 0.0f, DEFAULT_RESTIT, AP_CLUSTER_RADIUS);
+    }
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_all(
+        particles, AP_CLUSTER_NUM, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+    ASSERT_TRUE(count == AP_CLUSTER_PAIRS);
+    END_TEST();
+}
+
+static void test_all_pairs_exceeds_max_contacts(void)
+{
+    TEST("collide_particles_all — max_contacts caps output");
+    ForgePhysicsParticle particles[AP_CLAMP_NUM];
+    for (int i = 0; i < AP_CLAMP_NUM; i++) {
+        particles[i] = forge_physics_particle_create(
+            vec3_create((float)i * AP_CLAMP_OFFSET, 0.0f, 0.0f),
+            AP_CLAMP_MASS, 0.0f, DEFAULT_RESTIT, AP_CLAMP_RADIUS);
+    }
+    ForgePhysicsContact contacts[AP_CLAMP_MAX];
+    int count = forge_physics_collide_particles_all(
+        particles, AP_CLAMP_NUM, contacts, AP_CLAMP_MAX);
+    ASSERT_TRUE(count == AP_CLAMP_MAX);
+    END_TEST();
+}
+
+static void test_all_pairs_contact_ordering(void)
+{
+    TEST("collide_particles_all — contacts in pair order (0,1),(0,2),(1,2)");
+    ForgePhysicsParticle particles[AP_CLUSTER_NUM];
+    for (int i = 0; i < AP_CLUSTER_NUM; i++) {
+        particles[i] = forge_physics_particle_create(
+            vec3_create((float)i * AP_CLUSTER_OFFSET, 0.0f, 0.0f),
+            AP_CLUSTER_MASS, 0.0f, DEFAULT_RESTIT, AP_CLUSTER_RADIUS);
+    }
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_all(
+        particles, AP_CLUSTER_NUM, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+    ASSERT_TRUE(count == AP_CLUSTER_PAIRS);
+    /* Order must follow the nested i,j loop: (0,1), (0,2), (1,2) */
+    ASSERT_TRUE(contacts[0].particle_a == 0 && contacts[0].particle_b == 1);
+    ASSERT_TRUE(contacts[1].particle_a == 0 && contacts[1].particle_b == 2);
+    ASSERT_TRUE(contacts[2].particle_a == 1 && contacts[2].particle_b == 2);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 38. 3D geometry (non-axis-aligned)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Diagonal overlap: (0,0,0) and (0.5,0.5,0), radii 0.5 each.
+ * Distance = sqrt(0.25+0.25) ≈ 0.7071. Sum radii = 1.0.
+ * Penetration = 1.0 - 0.7071 ≈ 0.2929.
+ * Normal from B toward A = (-0.5, -0.5, 0) / 0.7071 ≈ (-0.7071, -0.7071, 0). */
+#define SS3D_DIAG_B_X          0.5f
+#define SS3D_DIAG_B_Y          0.5f
+#define SS3D_DIAG_RADIUS       0.5f
+#define SS3D_DIAG_MASS         1.0f
+#define SS3D_DIAG_DIST         0.70710678f  /* sqrt(0.5) */
+#define SS3D_DIAG_PEN          0.29289322f  /* 1.0 - sqrt(0.5) */
+#define SS3D_DIAG_NORM         (-0.70710678f) /* each component of normal */
+#define SS3D_DIAG_TOL          0.01f
+
+/* Z-axis overlap: (0,0,0) and (0,0,0.8), radii 0.5 each.
+ * Distance = 0.8. Penetration = 0.2. Normal = (0,0,-1). */
+#define SS3D_Z_B_Z             0.8f
+#define SS3D_Z_RADIUS          0.5f
+#define SS3D_Z_MASS            1.0f
+#define SS3D_Z_PEN             0.2f
+#define SS3D_Z_NORM_Z          (-1.0f)
+
+/* 3D momentum: two particles approaching along the XY diagonal */
+#define SS3D_MOM_MASS          1.0f
+#define SS3D_MOM_RADIUS        0.5f
+#define SS3D_MOM_RESTIT        1.0f
+#define SS3D_MOM_VEL           2.0f  /* each component */
+
+/* 3D contact point midpoint test */
+#define SS3D_MID_RADIUS_A      0.5f
+#define SS3D_MID_RADIUS_B      0.5f
+#define SS3D_MID_MASS          1.0f
+#define SS3D_MID_B_X           0.5f
+#define SS3D_MID_B_Y           0.5f
+
+static void test_collide_sphere_diagonal(void)
+{
+    TEST("collide_sphere_sphere — diagonal overlap, 3D normal correct");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        SS3D_DIAG_MASS, 0.0f, DEFAULT_RESTIT, SS3D_DIAG_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS3D_DIAG_B_X, SS3D_DIAG_B_Y, 0.0f),
+        SS3D_DIAG_MASS, 0.0f, DEFAULT_RESTIT, SS3D_DIAG_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    ASSERT_NEAR(contact.penetration, SS3D_DIAG_PEN, SS3D_DIAG_TOL);
+    /* Normal from B toward A: (-0.7071, -0.7071, 0) */
+    ASSERT_NEAR(contact.normal.x, SS3D_DIAG_NORM, SS3D_DIAG_TOL);
+    ASSERT_NEAR(contact.normal.y, SS3D_DIAG_NORM, SS3D_DIAG_TOL);
+    ASSERT_NEAR(contact.normal.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_collide_sphere_z_axis(void)
+{
+    TEST("collide_sphere_sphere — Z-axis overlap, normal.z correct");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        SS3D_Z_MASS, 0.0f, DEFAULT_RESTIT, SS3D_Z_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, SS3D_Z_B_Z),
+        SS3D_Z_MASS, 0.0f, DEFAULT_RESTIT, SS3D_Z_RADIUS);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    ASSERT_NEAR(contact.penetration, SS3D_Z_PEN, EPSILON);
+    ASSERT_NEAR(contact.normal.x, 0.0f, EPSILON);
+    ASSERT_NEAR(contact.normal.y, 0.0f, EPSILON);
+    ASSERT_NEAR(contact.normal.z, SS3D_Z_NORM_Z, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_contact_3d(void)
+{
+    TEST("resolve_contact — 3D diagonal, momentum conserved in all components");
+    ForgePhysicsParticle particles[2];
+    /* Overlapping along the XY diagonal */
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        SS3D_MOM_MASS, 0.0f, SS3D_MOM_RESTIT, SS3D_MOM_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(SS3D_DIAG_B_X, SS3D_DIAG_B_Y, 0.0f),
+        SS3D_MOM_MASS, 0.0f, SS3D_MOM_RESTIT, SS3D_MOM_RADIUS);
+
+    /* Approaching head-on along the diagonal */
+    particles[0].velocity = vec3_create(SS3D_MOM_VEL, SS3D_MOM_VEL, 0.0f);
+    particles[1].velocity = vec3_create(-SS3D_MOM_VEL, -SS3D_MOM_VEL, 0.0f);
+
+    float mom_x_before = SS3D_MOM_MASS * particles[0].velocity.x
+                       + SS3D_MOM_MASS * particles[1].velocity.x;
+    float mom_y_before = SS3D_MOM_MASS * particles[0].velocity.y
+                       + SS3D_MOM_MASS * particles[1].velocity.y;
+    float mom_z_before = SS3D_MOM_MASS * particles[0].velocity.z
+                       + SS3D_MOM_MASS * particles[1].velocity.z;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    float mom_x_after = SS3D_MOM_MASS * particles[0].velocity.x
+                      + SS3D_MOM_MASS * particles[1].velocity.x;
+    float mom_y_after = SS3D_MOM_MASS * particles[0].velocity.y
+                      + SS3D_MOM_MASS * particles[1].velocity.y;
+    float mom_z_after = SS3D_MOM_MASS * particles[0].velocity.z
+                      + SS3D_MOM_MASS * particles[1].velocity.z;
+
+    ASSERT_NEAR(mom_x_after, mom_x_before, EPSILON);
+    ASSERT_NEAR(mom_y_after, mom_y_before, EPSILON);
+    ASSERT_NEAR(mom_z_after, mom_z_before, EPSILON);
+    END_TEST();
+}
+
+static void test_contact_point_midpoint_3d(void)
+{
+    TEST("collide_sphere_sphere — 3D contact point geometrically correct");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        SS3D_MID_MASS, 0.0f, DEFAULT_RESTIT, SS3D_MID_RADIUS_A);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(SS3D_MID_B_X, SS3D_MID_B_Y, 0.0f),
+        SS3D_MID_MASS, 0.0f, DEFAULT_RESTIT, SS3D_MID_RADIUS_B);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    /* Contact point should lie on the line between centers.
+     * Point = b.pos + normal * (r_b - pen/2).
+     * Verify it lies between the two centers. */
+    float cp_dist_from_a = vec3_length(vec3_sub(contact.point, a.position));
+    float cp_dist_from_b = vec3_length(vec3_sub(contact.point, b.position));
+    float center_dist = vec3_length(vec3_sub(a.position, b.position));
+
+    /* Contact point must be between the two centers */
+    ASSERT_TRUE(cp_dist_from_a <= center_dist + EPSILON);
+    ASSERT_TRUE(cp_dist_from_b <= center_dist + EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 39. Positional correction
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define PC_CORR_RADIUS         0.5f
+#define PC_CORR_MASS           1.0f
+#define PC_CORR_OFFSET         0.8f    /* overlap = 1.0 - 0.8 = 0.2 */
+#define PC_CORR_PEN            0.2f    /* sum_radii - dist */
+#define PC_CORR_HALF_PEN       0.1f    /* pen / 2 for equal mass */
+#define PC_CORR_RESTIT         1.0f
+
+/* Unequal mass: 1kg vs 3kg. inv_mass_sum = 1 + 1/3 = 4/3.
+ * ratio_a = (1) / (4/3) = 3/4. ratio_b = (1/3) / (4/3) = 1/4.
+ * Correction A = pen * 3/4 = 0.15. Correction B = pen * 1/4 = 0.05. */
+#define PC_CORR_MASS_A         1.0f
+#define PC_CORR_MASS_B         3.0f
+#define PC_CORR_A_MOVE         0.15f   /* pen * 3/4 */
+#define PC_CORR_B_MOVE         0.05f   /* pen * 1/4 */
+#define PC_CORR_APPROACH_VEL   1.0f    /* approach speed to ensure collision */
+
+static void test_resolve_position_correction_equal_mass(void)
+{
+    TEST("resolve_contact — equal mass: both move by penetration/2");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        PC_CORR_MASS, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(PC_CORR_OFFSET, 0.0f, 0.0f),
+        PC_CORR_MASS, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+
+    /* Head-on approach so impulse is applied (not separating) */
+    particles[0].velocity = vec3_create(PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+
+    float pos_a_before = particles[0].position.x;
+    float pos_b_before = particles[1].position.x;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* A moves away from B (negative x direction) by pen/2 */
+    float a_moved = fabsf(particles[0].position.x - pos_a_before);
+    float b_moved = fabsf(particles[1].position.x - pos_b_before);
+    ASSERT_NEAR(a_moved, PC_CORR_HALF_PEN, EPSILON);
+    ASSERT_NEAR(b_moved, PC_CORR_HALF_PEN, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_position_correction_one_static(void)
+{
+    TEST("resolve_contact — static + dynamic: only dynamic moves");
+    ForgePhysicsParticle particles[2];
+    /* Static particle at origin */
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        0.0f, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+    /* Dynamic particle overlapping */
+    particles[1] = forge_physics_particle_create(
+        vec3_create(PC_CORR_OFFSET, 0.0f, 0.0f),
+        PC_CORR_MASS, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+
+    particles[1].velocity = vec3_create(-PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+
+    float pos_static_before = particles[0].position.x;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Static particle must not move */
+    ASSERT_NEAR(particles[0].position.x, pos_static_before, EPSILON);
+    /* Dynamic particle moves by the full penetration */
+    float b_moved = fabsf(particles[1].position.x - PC_CORR_OFFSET);
+    ASSERT_NEAR(b_moved, PC_CORR_PEN, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_position_correction_unequal_mass(void)
+{
+    TEST("resolve_contact — unequal mass: mass-proportional correction");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        PC_CORR_MASS_A, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(PC_CORR_OFFSET, 0.0f, 0.0f),
+        PC_CORR_MASS_B, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+
+    particles[0].velocity = vec3_create(PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+
+    float pos_a_before = particles[0].position.x;
+    float pos_b_before = particles[1].position.x;
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Lighter (A, 1kg) should move more, heavier (B, 3kg) moves less */
+    float a_moved = fabsf(particles[0].position.x - pos_a_before);
+    float b_moved = fabsf(particles[1].position.x - pos_b_before);
+    ASSERT_NEAR(a_moved, PC_CORR_A_MOVE, EPSILON);
+    ASSERT_NEAR(b_moved, PC_CORR_B_MOVE, EPSILON);
+    END_TEST();
+}
+
+#define PC_ZERO_OFFSET         1.0f    /* exactly touching, no overlap */
+#define PC_ZERO_MIDPOINT       0.5f    /* midpoint between 0 and 1 */
+
+static void test_resolve_no_overlap_no_correction(void)
+{
+    TEST("resolve_contact — zero penetration: no position change");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        PC_CORR_MASS, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(PC_ZERO_OFFSET, 0.0f, 0.0f),
+        PC_CORR_MASS, 0.0f, PC_CORR_RESTIT, PC_CORR_RADIUS);
+
+    /* Manually create a contact with zero penetration */
+    ForgePhysicsContact contact;
+    contact.particle_a  = 0;
+    contact.particle_b  = 1;
+    contact.normal      = vec3_create(-1.0f, 0.0f, 0.0f);
+    contact.penetration = 0.0f;
+    contact.point       = vec3_create(PC_ZERO_MIDPOINT, 0.0f, 0.0f);
+
+    /* Approaching so impulse fires, but no positional correction */
+    particles[0].velocity = vec3_create(PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-PC_CORR_APPROACH_VEL, 0.0f, 0.0f);
+
+    float pos_a_before = particles[0].position.x;
+    float pos_b_before = particles[1].position.x;
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Position must be unchanged (only velocities change) */
+    ASSERT_NEAR(particles[0].position.x, pos_a_before, EPSILON);
+    ASSERT_NEAR(particles[1].position.x, pos_b_before, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 40. Resting threshold
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Low velocity: v_closing must be below FORGE_PHYSICS_RESTING_THRESHOLD (0.5) */
+#define RT_LOW_VEL             0.2f    /* well below 0.5 threshold */
+#define RT_LOW_MASS            1.0f
+#define RT_LOW_RADIUS          0.5f
+#define RT_LOW_RESTIT          1.0f    /* would bounce if threshold not applied */
+#define RT_LOW_OFFSET          0.8f
+
+/* High velocity: v_closing well above threshold */
+#define RT_HIGH_VEL            5.0f
+#define RT_HIGH_MASS           1.0f
+#define RT_HIGH_RADIUS         0.5f
+#define RT_HIGH_RESTIT         1.0f
+#define RT_HIGH_OFFSET         0.8f
+
+static void test_resolve_low_velocity_no_bounce(void)
+{
+    TEST("resolve_contact — low velocity: restitution killed, no bounce");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        RT_LOW_MASS, 0.0f, RT_LOW_RESTIT, RT_LOW_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(RT_LOW_OFFSET, 0.0f, 0.0f),
+        RT_LOW_MASS, 0.0f, RT_LOW_RESTIT, RT_LOW_RADIUS);
+
+    /* Slowly approaching */
+    particles[0].velocity = vec3_create(RT_LOW_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-RT_LOW_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* With e killed to 0, relative normal velocity after should be ~0
+     * (perfectly inelastic). Particles should not bounce apart. */
+    float v_rel_after = particles[0].velocity.x - particles[1].velocity.x;
+    float v_normal_after = v_rel_after * contact.normal.x;
+    ASSERT_NEAR(v_normal_after, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_above_threshold_bounces(void)
+{
+    TEST("resolve_contact — above threshold: e=1.0 causes velocity reversal");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        RT_HIGH_MASS, 0.0f, RT_HIGH_RESTIT, RT_HIGH_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(RT_HIGH_OFFSET, 0.0f, 0.0f),
+        RT_HIGH_MASS, 0.0f, RT_HIGH_RESTIT, RT_HIGH_RADIUS);
+
+    /* Fast head-on approach */
+    particles[0].velocity = vec3_create(RT_HIGH_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-RT_HIGH_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contact;
+    bool hit = forge_physics_collide_sphere_sphere(
+        &particles[0], &particles[1], 0, 1, &contact);
+    ASSERT_TRUE(hit);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* With elastic collision (e=1), equal mass: velocities swap.
+     * Particle 0 was moving +x, should now move -x. */
+    ASSERT_NEAR(particles[0].velocity.x, -RT_HIGH_VEL, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, RT_HIGH_VEL, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 41. NULL safety for collision functions
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define NS_MASS                1.0f    /* mass for NULL safety tests */
+#define NS_OFFSET              1.0f    /* separation between particles */
+#define NS_PEN                 0.1f    /* penetration for manual contact */
+#define NS_VEL                 1.0f    /* velocity for unchanged checks */
+
+static void test_resolve_contact_out_of_bounds(void)
+{
+    TEST("resolve_contact — out-of-bounds indices: no crash, no change");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(NS_OFFSET, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+
+    particles[0].velocity = vec3_create(NS_VEL, 0.0f, 0.0f);
+
+    /* Contact with particle_a out of range */
+    ForgePhysicsContact contact;
+    contact.particle_a  = 5;  /* out of bounds */
+    contact.particle_b  = 0;
+    contact.normal      = vec3_create(NS_OFFSET, 0.0f, 0.0f);
+    contact.penetration = NS_PEN;
+    contact.point       = vec3_create(0.0f, 0.0f, 0.0f);
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    /* Velocity unchanged — bounds check prevented resolution */
+    ASSERT_NEAR(particles[0].velocity.x, NS_VEL, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, 0.0f, EPSILON);
+
+    /* Also test negative index */
+    contact.particle_a = -1;
+    contact.particle_b = 0;
+
+    forge_physics_resolve_contact(&contact, particles, 2);
+
+    ASSERT_NEAR(particles[0].velocity.x, NS_VEL, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_contact_null_contact(void)
+{
+    TEST("resolve_contact — NULL contact: no crash");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(NS_OFFSET, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+
+    forge_physics_resolve_contact(NULL, particles, 2);
+
+    /* Velocities unchanged */
+    ASSERT_NEAR(particles[0].velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_contact_null_particles(void)
+{
+    TEST("resolve_contact — NULL particles: no crash");
+    ForgePhysicsContact contact;
+    contact.particle_a  = 0;
+    contact.particle_b  = 1;
+    contact.normal      = vec3_create(NS_OFFSET, 0.0f, 0.0f);
+    contact.penetration = NS_PEN;
+    contact.point       = vec3_create(0.0f, 0.0f, 0.0f);
+
+    forge_physics_resolve_contact(&contact, NULL, 2);
+    /* Reached — no crash */
+    END_TEST();
+}
+
+static void test_resolve_contacts_null_contacts(void)
+{
+    TEST("resolve_contacts — NULL contacts array: no crash");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(NS_OFFSET, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+
+    forge_physics_resolve_contacts(NULL, 5, particles, 2);
+
+    /* No crash, no change */
+    ASSERT_NEAR(particles[0].velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_resolve_contacts_zero_count(void)
+{
+    TEST("resolve_contacts — 0 contacts: no crash, no change");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(NS_OFFSET, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+
+    particles[0].velocity = vec3_create(NS_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contacts[1];
+    forge_physics_resolve_contacts(contacts, 0, particles, 2);
+
+    /* Velocity unchanged */
+    ASSERT_NEAR(particles[0].velocity.x, NS_VEL, EPSILON);
+    END_TEST();
+}
+
+static void test_all_pairs_null_particles(void)
+{
+    TEST("collide_particles_all — NULL particles: returns 0");
+    ForgePhysicsContact contacts[1];
+    int count = forge_physics_collide_particles_all(NULL, 5, contacts, 1);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+static void test_all_pairs_null_contacts(void)
+{
+    TEST("collide_particles_all — NULL contacts buffer: returns 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    int count = forge_physics_collide_particles_all(&p, 1, NULL, 10);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+static void test_step_null_particles(void)
+{
+    TEST("collide_particles_step — NULL particles: returns 0");
+    ForgePhysicsContact contacts[1];
+    int count = forge_physics_collide_particles_step(NULL, 5, contacts, 1);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+static void test_step_null_contacts(void)
+{
+    TEST("collide_particles_step — NULL contacts: returns 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    int count = forge_physics_collide_particles_step(&p, 1, NULL, 10);
+    ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 42. Convenience function (collide_particles_step)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define STEP_RADIUS            0.5f
+#define STEP_MASS              1.0f
+#define STEP_RESTIT            1.0f
+#define STEP_OVERLAP_OFFSET    0.8f    /* < 2 * radius */
+#define STEP_SEP_OFFSET        5.0f    /* >> 2 * radius */
+#define STEP_VEL               2.0f
+#define STEP_CLUSTER_OFFSET    0.4f    /* all 3 overlap */
+#define STEP_CLUSTER_PAIRS     3       /* C(3,2) = 3 */
+
+static void test_step_detects_and_resolves(void)
+{
+    TEST("collide_particles_step — 2 overlapping: returns 1, velocities changed");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        STEP_MASS, 0.0f, STEP_RESTIT, STEP_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(STEP_OVERLAP_OFFSET, 0.0f, 0.0f),
+        STEP_MASS, 0.0f, STEP_RESTIT, STEP_RADIUS);
+
+    /* Head-on approach */
+    particles[0].velocity = vec3_create(STEP_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(-STEP_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_step(
+        particles, 2, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+
+    ASSERT_TRUE(count == 1);
+    /* Velocities should have changed (elastic swap for equal mass) */
+    ASSERT_NEAR(particles[0].velocity.x, -STEP_VEL, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, STEP_VEL, EPSILON);
+    END_TEST();
+}
+
+static void test_step_no_collisions(void)
+{
+    TEST("collide_particles_step — 2 separated: returns 0, velocities unchanged");
+    ForgePhysicsParticle particles[2];
+    particles[0] = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        STEP_MASS, 0.0f, STEP_RESTIT, STEP_RADIUS);
+    particles[1] = forge_physics_particle_create(
+        vec3_create(STEP_SEP_OFFSET, 0.0f, 0.0f),
+        STEP_MASS, 0.0f, STEP_RESTIT, STEP_RADIUS);
+
+    particles[0].velocity = vec3_create(STEP_VEL, 0.0f, 0.0f);
+    particles[1].velocity = vec3_create(0.0f, 0.0f, 0.0f);
+
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_step(
+        particles, 2, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+
+    ASSERT_TRUE(count == 0);
+    /* Velocities unchanged */
+    ASSERT_NEAR(particles[0].velocity.x, STEP_VEL, EPSILON);
+    ASSERT_NEAR(particles[1].velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_step_multiple_contacts(void)
+{
+    TEST("collide_particles_step — 3 overlapping: returns 3, all resolved");
+    ForgePhysicsParticle particles[3];
+    for (int i = 0; i < 3; i++) {
+        particles[i] = forge_physics_particle_create(
+            vec3_create((float)i * STEP_CLUSTER_OFFSET, 0.0f, 0.0f),
+            STEP_MASS, 0.0f, STEP_RESTIT, STEP_RADIUS);
+    }
+
+    /* Give them approaching velocities */
+    particles[0].velocity = vec3_create(STEP_VEL, 0.0f, 0.0f);
+    particles[2].velocity = vec3_create(-STEP_VEL, 0.0f, 0.0f);
+
+    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    int count = forge_physics_collide_particles_step(
+        particles, 3, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+
+    ASSERT_TRUE(count == STEP_CLUSTER_PAIRS);
+
+    /* All velocities should have been modified by resolution */
+    /* At minimum, outer particles should no longer be approaching */
+    ASSERT_TRUE(particles[0].velocity.x < STEP_VEL);
+    ASSERT_TRUE(particles[2].velocity.x > -STEP_VEL);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main — run all tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -2058,6 +3400,85 @@ int main(int argc, char *argv[])
     test_constraints_solve_zero_constraints();
     test_constraints_solve_zero_particles();
     test_constraints_solve_negative_iterations();
+
+    /* 32. Sphere-sphere detection */
+    SDL_Log("--- collide_sphere_sphere ---");
+    test_collide_sphere_overlapping();
+    test_collide_sphere_touching();
+    test_collide_sphere_separated();
+    test_collide_sphere_coincident();
+    test_collide_sphere_zero_radius();
+    test_collide_sphere_both_static();
+    test_collide_sphere_one_static();
+    test_collide_sphere_asymmetric_radii();
+
+    /* 33. Impulse response */
+    SDL_Log("--- resolve_contact ---");
+    test_resolve_equal_mass_elastic();
+    test_resolve_unequal_mass();
+    test_resolve_one_static();
+    test_resolve_zero_restitution();
+    test_resolve_separating_pair();
+
+    /* 34. Conservation laws */
+    SDL_Log("--- conservation laws ---");
+    test_collision_momentum_conservation();
+    test_collision_energy_elastic();
+    test_collision_energy_inelastic();
+
+    /* 35. All-pairs detection */
+    SDL_Log("--- collide_particles_all ---");
+    test_all_pairs_correct_count();
+
+    /* 36. Determinism */
+    SDL_Log("--- collision determinism ---");
+    test_collision_determinism();
+
+    /* 37. All-pairs boundary conditions */
+    SDL_Log("--- all-pairs boundary conditions ---");
+    test_all_pairs_zero_particles();
+    test_all_pairs_single_particle();
+    test_all_pairs_no_overlaps();
+    test_all_pairs_all_overlap();
+    test_all_pairs_exceeds_max_contacts();
+    test_all_pairs_contact_ordering();
+
+    /* 38. 3D geometry (non-axis-aligned) */
+    SDL_Log("--- 3D geometry ---");
+    test_collide_sphere_diagonal();
+    test_collide_sphere_z_axis();
+    test_resolve_contact_3d();
+    test_contact_point_midpoint_3d();
+
+    /* 39. Positional correction */
+    SDL_Log("--- positional correction ---");
+    test_resolve_position_correction_equal_mass();
+    test_resolve_position_correction_one_static();
+    test_resolve_position_correction_unequal_mass();
+    test_resolve_no_overlap_no_correction();
+
+    /* 40. Resting threshold */
+    SDL_Log("--- resting threshold ---");
+    test_resolve_low_velocity_no_bounce();
+    test_resolve_above_threshold_bounces();
+
+    /* 41. NULL safety and bounds checking for collision functions */
+    SDL_Log("--- NULL safety (collision functions) ---");
+    test_resolve_contact_out_of_bounds();
+    test_resolve_contact_null_contact();
+    test_resolve_contact_null_particles();
+    test_resolve_contacts_null_contacts();
+    test_resolve_contacts_zero_count();
+    test_all_pairs_null_particles();
+    test_all_pairs_null_contacts();
+    test_step_null_particles();
+    test_step_null_contacts();
+
+    /* 42. Convenience function (collide_particles_step) */
+    SDL_Log("--- collide_particles_step ---");
+    test_step_detects_and_resolves();
+    test_step_no_collisions();
+    test_step_multiple_contacts();
 
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

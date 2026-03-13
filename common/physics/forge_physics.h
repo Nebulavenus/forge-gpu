@@ -22,7 +22,7 @@
 #define FORGE_PHYSICS_H
 
 #include "math/forge_math.h"
-#include <math.h>      /* fabsf, sqrtf */
+#include <math.h>      /* fabsf, sqrtf, fminf */
 #include <stdbool.h>   /* bool */
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
@@ -868,6 +868,432 @@ static inline void forge_physics_constraints_solve(
                 &constraints[i], particles, num_particles);
         }
     }
+}
+
+/* ── Collision detection and response ──────────────────────────────────────── */
+
+/* A contact point between two colliding particles.
+ *
+ * Stores the geometric and physical information needed to resolve a
+ * sphere-sphere collision: the contact normal, contact point, penetration
+ * depth, and the indices of the two particles involved.
+ *
+ * Fields:
+ *   normal      — unit direction from particle B toward particle A
+ *   point       — contact point (midpoint of the overlap region)
+ *   penetration — overlap depth >= 0
+ *   particle_a  — index of the first particle in the pair
+ *   particle_b  — index of the second particle in the pair
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 7 —
+ * contact data representation.
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+typedef struct ForgePhysicsContact {
+    vec3  normal;       /* unit direction from B toward A — determines impulse sign */
+    vec3  point;        /* contact point [m] — midpoint of overlap region           */
+    float penetration;  /* overlap depth [m], >= 0                                  */
+    int   particle_a;   /* index of first particle, must be in [0, count)           */
+    int   particle_b;   /* index of second particle, must be in [0, count)          */
+} ForgePhysicsContact;
+
+/* Maximum number of contacts returned by forge_physics_collide_particles_all().
+ *
+ * For N particles the theoretical maximum is N*(N-1)/2 contacts. This
+ * limit caps the contact buffer at 256 entries, which is sufficient for
+ * ~23 mutually-colliding particles. If the scene exceeds this limit,
+ * additional contacts are silently dropped — increase this constant or
+ * implement spatial partitioning (see Physics Lesson 07).
+ */
+#define FORGE_PHYSICS_MAX_CONTACTS 256
+
+/* Closing velocity threshold below which restitution is zeroed.
+ *
+ * When two particles collide with a relative closing velocity below
+ * this threshold, the coefficient of restitution is set to zero to
+ * prevent micro-bouncing (jitter). This is standard practice in
+ * real-time physics engines.
+ *
+ * 0.5 m/s is a reasonable default — slow enough that visible bouncing
+ * would look like noise, fast enough not to swallow real bounces.
+ */
+#define FORGE_PHYSICS_RESTING_THRESHOLD 0.5f
+
+/* Detect a sphere-sphere collision between two particles.
+ *
+ * Tests whether the bounding spheres of particles a and b overlap.
+ * If they do, fills out a ForgePhysicsContact with the collision
+ * geometry: normal (from B toward A), contact point (midpoint of the
+ * overlap region), and penetration depth.
+ *
+ * Algorithm:
+ *   d = pos_a - pos_b
+ *   dist = |d|
+ *   sum_radii = radius_a + radius_b
+ *   if dist < sum_radii:
+ *     normal = normalize(d)           (from B toward A)
+ *     penetration = sum_radii - dist
+ *     point = pos_b + normal * (radius_b - penetration / 2)
+ *
+ * Edge cases:
+ *   - Either radius is non-positive: no collision possible, returns false
+ *   - Both particles are static (inv_mass == 0): skip, returns false
+ *   - Coincident centers (dist < epsilon): uses arbitrary normal (0, 1, 0)
+ *     to resolve the degenerate case deterministically
+ *
+ * Parameters:
+ *   a     (const ForgePhysicsParticle*) — first particle; must not be NULL
+ *   b     (const ForgePhysicsParticle*) — second particle; must not be NULL
+ *   idx_a (int)                         — index of particle a; must be in
+ *                                         [0, num_particles) for resolve calls
+ *   idx_b (int)                         — index of particle b; must be in
+ *                                         [0, num_particles) for resolve calls
+ *   out   (ForgePhysicsContact*)        — output contact; filled on collision;
+ *                                         must not be NULL
+ *
+ * Returns:
+ *   true if a collision was detected and out was filled, false otherwise.
+ *
+ * Usage:
+ *   ForgePhysicsContact contact;
+ *   if (forge_physics_collide_sphere_sphere(&pa, &pb, 0, 1, &contact)) {
+ *       // handle collision
+ *   }
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Ch. 4.3 —
+ * sphere-sphere intersection test.
+ * See also: Millington, "Game Physics Engine Development", Ch. 7 —
+ * "Generating contacts".
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline bool forge_physics_collide_sphere_sphere(
+    const ForgePhysicsParticle *a, const ForgePhysicsParticle *b,
+    int idx_a, int idx_b, ForgePhysicsContact *out)
+{
+    /* Zero-radius particles cannot collide. */
+    if (a->radius <= 0.0f || b->radius <= 0.0f) {
+        return false;
+    }
+
+    /* Two static particles cannot move apart — skip. */
+    if (a->inv_mass == 0.0f && b->inv_mass == 0.0f) {
+        return false;
+    }
+
+    /* Vector from B toward A. */
+    vec3 d = vec3_sub(a->position, b->position);
+    float dist_sq = vec3_dot(d, d);
+    float sum_radii = a->radius + b->radius;
+
+    /* No overlap — spheres are separated. */
+    if (dist_sq >= sum_radii * sum_radii) {
+        return false;
+    }
+
+    float dist = sqrtf(dist_sq);
+    vec3 normal;
+
+    if (dist < FORGE_PHYSICS_EPSILON) {
+        /* Coincident centers — use arbitrary upward normal. */
+        normal = vec3_create(0.0f, 1.0f, 0.0f);
+        dist = 0.0f;
+    } else {
+        /* Normal from B toward A. */
+        normal = vec3_scale(d, 1.0f / dist);
+    }
+
+    out->normal      = normal;
+    out->penetration = sum_radii - dist;
+    out->particle_a  = idx_a;
+    out->particle_b  = idx_b;
+
+    /* Contact point: midpoint of the overlap region.
+     * Located along the line from B toward A, at B's surface minus
+     * half the penetration depth. */
+    out->point = vec3_add(b->position,
+        vec3_scale(normal, b->radius - out->penetration * 0.5f));
+
+    return true;
+}
+
+/* Resolve a single contact by applying impulse-based velocity response
+ * and positional correction.
+ *
+ * Computes the closing velocity along the contact normal, determines the
+ * impulse magnitude using the coefficient of restitution, and distributes
+ * velocity and position changes proportional to each particle's inverse
+ * mass.
+ *
+ * Algorithm:
+ *   v_rel     = v_a - v_b
+ *   v_closing = dot(v_rel, normal)
+ *   if v_closing > 0: return                (already separating)
+ *   e = min(restitution_a, restitution_b)
+ *   if |v_closing| < RESTING_THRESHOLD: e = 0
+ *   j = -(1 + e) * v_closing / (inv_mass_a + inv_mass_b)
+ *   v_a += j * inv_mass_a * normal
+ *   v_b -= j * inv_mass_b * normal
+ *   // Positional correction: distribute penetration by inverse mass ratio
+ *   total_inv = inv_mass_a + inv_mass_b
+ *   pos_a += (inv_mass_a / total_inv) * penetration * normal
+ *   pos_b -= (inv_mass_b / total_inv) * penetration * normal
+ *
+ * Parameters:
+ *   contact   (const ForgePhysicsContact*) — the contact to resolve;
+ *                                            must not be NULL
+ *   particles (ForgePhysicsParticle*)      — particle array; must not be NULL
+ *   count     (int)                        — number of particles in the array;
+ *                                            contact indices must be in bounds
+ *
+ * Usage:
+ *   forge_physics_resolve_contact(&contact, particles, num_particles);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 7 —
+ * "Resolving contacts" (impulse-based response with positional projection).
+ * See also: Baraff & Witkin, "Physically Based Modeling" (SIGGRAPH 1997) —
+ * impulse derivation for frictionless collisions.
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline void forge_physics_resolve_contact(
+    const ForgePhysicsContact *contact,
+    ForgePhysicsParticle *particles, int count)
+{
+    if (!contact || !particles || count <= 0) {
+        return;
+    }
+
+    /* Bounds-check indices. */
+    if (contact->particle_a < 0 || contact->particle_a >= count ||
+        contact->particle_b < 0 || contact->particle_b >= count) {
+        return;
+    }
+
+    ForgePhysicsParticle *pa = &particles[contact->particle_a];
+    ForgePhysicsParticle *pb = &particles[contact->particle_b];
+
+    float inv_mass_sum = pa->inv_mass + pb->inv_mass;
+
+    /* Both static — nothing to resolve. */
+    if (inv_mass_sum < FORGE_PHYSICS_EPSILON) {
+        return;
+    }
+
+    /* ── Velocity resolution ──────────────────────────────────────── */
+
+    /* Relative velocity of A with respect to B. */
+    vec3 v_rel = vec3_sub(pa->velocity, pb->velocity);
+
+    /* Closing velocity along the contact normal.
+     * Negative means approaching, positive means separating. */
+    float v_closing = vec3_dot(v_rel, contact->normal);
+
+    /* Already separating — no impulse needed. */
+    if (v_closing > 0.0f) {
+        /* Still apply positional correction if penetrating. */
+        if (contact->penetration > FORGE_PHYSICS_EPSILON) {
+            float ratio_a = pa->inv_mass / inv_mass_sum;
+            float ratio_b = pb->inv_mass / inv_mass_sum;
+            pa->position = vec3_add(pa->position,
+                vec3_scale(contact->normal, contact->penetration * ratio_a));
+            pb->position = vec3_sub(pb->position,
+                vec3_scale(contact->normal, contact->penetration * ratio_b));
+        }
+        return;
+    }
+
+    /* Combined restitution: use the minimum of the two particles.
+     * This ensures that a perfectly inelastic object (e=0) dominates. */
+    float e = fminf(pa->restitution, pb->restitution);
+
+    /* Kill restitution for low-velocity contacts to prevent jitter. */
+    if (fabsf(v_closing) < FORGE_PHYSICS_RESTING_THRESHOLD) {
+        e = 0.0f;
+    }
+
+    /* Impulse magnitude: j = -(1 + e) * v_closing / (inv_mass_a + inv_mass_b)
+     *
+     * Derivation: conservation of momentum with Newton's restitution law
+     * gives the impulse that produces the desired post-collision closing
+     * velocity of -e * v_closing. */
+    float j = -(1.0f + e) * v_closing / inv_mass_sum;
+
+    /* Apply impulse to velocities — proportional to inverse mass. */
+    vec3 impulse = vec3_scale(contact->normal, j);
+    pa->velocity = vec3_add(pa->velocity, vec3_scale(impulse, pa->inv_mass));
+    pb->velocity = vec3_sub(pb->velocity, vec3_scale(impulse, pb->inv_mass));
+
+    /* ── Positional correction ────────────────────────────────────── */
+
+    /* Push particles apart to eliminate overlap.
+     * Correction is distributed proportional to inverse mass so that
+     * heavier (lower inv_mass) particles move less. */
+    if (contact->penetration > FORGE_PHYSICS_EPSILON) {
+        float ratio_a = pa->inv_mass / inv_mass_sum;
+        float ratio_b = pb->inv_mass / inv_mass_sum;
+        pa->position = vec3_add(pa->position,
+            vec3_scale(contact->normal, contact->penetration * ratio_a));
+        pb->position = vec3_sub(pb->position,
+            vec3_scale(contact->normal, contact->penetration * ratio_b));
+    }
+}
+
+/* Resolve an array of contacts in a single pass.
+ *
+ * Iterates over the contact array and resolves each contact individually
+ * by applying impulse-based velocity response and positional correction.
+ * A single pass is sufficient for scenes with few simultaneous contacts;
+ * for dense stacking scenarios, multiple solver iterations improve
+ * convergence (see Physics Lesson 07).
+ *
+ * Algorithm:
+ *   for each contact in [0, num_contacts):
+ *     forge_physics_resolve_contact(contact, particles, num_particles)
+ *
+ * Parameters:
+ *   contacts      (const ForgePhysicsContact*) — array of contacts to resolve;
+ *                                                must not be NULL if num_contacts > 0
+ *   num_contacts  (int)                        — number of contacts in the array
+ *   particles     (ForgePhysicsParticle*)      — particle array; must not be NULL
+ *   num_particles (int)                        — number of particles in the array
+ *
+ * Usage:
+ *   forge_physics_resolve_contacts(contacts, num_contacts,
+ *                                  particles, num_particles);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 7 —
+ * "The Contact Resolver" (iterative resolution loop).
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline void forge_physics_resolve_contacts(
+    const ForgePhysicsContact *contacts, int num_contacts,
+    ForgePhysicsParticle *particles, int num_particles)
+{
+    if (!contacts || num_contacts <= 0 || !particles || num_particles <= 0) {
+        return;
+    }
+
+    for (int i = 0; i < num_contacts; i++) {
+        forge_physics_resolve_contact(&contacts[i], particles, num_particles);
+    }
+}
+
+/* Detect all sphere-sphere collisions among an array of particles.
+ *
+ * Performs an O(n^2) all-pairs test, checking every unique particle pair
+ * for overlap. Detected contacts are written into the caller-provided
+ * contacts array up to max_contacts. If more collisions exist than
+ * max_contacts allows, additional contacts are silently dropped.
+ *
+ * For large particle counts, replace this brute-force approach with
+ * spatial partitioning (grid, octree) — see Physics Lesson 07.
+ *
+ * Algorithm:
+ *   count = 0
+ *   for i in [0, n-1):
+ *     for j in [i+1, n):
+ *       if collide_sphere_sphere(i, j):
+ *         contacts[count++] = result
+ *         if count == max_contacts: return count
+ *   return count
+ *
+ * Parameters:
+ *   particles     (const ForgePhysicsParticle*) — particle array; must not be NULL
+ *   num_particles (int)                         — number of particles
+ *   contacts      (ForgePhysicsContact*)        — output contact buffer; must not
+ *                                                 be NULL and have room for at least
+ *                                                 max_contacts entries
+ *   max_contacts  (int)                         — capacity of the contacts buffer
+ *
+ * Returns:
+ *   The number of contacts detected and written into the buffer.
+ *
+ * Usage:
+ *   ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+ *   int n = forge_physics_collide_particles_all(
+ *       particles, num_particles, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Ch. 11 —
+ * brute-force collision detection and the need for broad-phase pruning.
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline int forge_physics_collide_particles_all(
+    const ForgePhysicsParticle *particles, int num_particles,
+    ForgePhysicsContact *contacts, int max_contacts)
+{
+    if (!particles || num_particles <= 1 || !contacts || max_contacts <= 0) {
+        return 0;
+    }
+
+    int count = 0;
+
+    for (int i = 0; i < num_particles - 1; i++) {
+        for (int j = i + 1; j < num_particles; j++) {
+            if (count >= max_contacts) {
+                return count;
+            }
+            if (forge_physics_collide_sphere_sphere(
+                    &particles[i], &particles[j], i, j, &contacts[count])) {
+                count++;
+            }
+        }
+    }
+
+    return count;
+}
+
+/* Detect and resolve all particle collisions in one step.
+ *
+ * Convenience function that performs both the detection and resolution
+ * phases: first runs O(n^2) all-pairs sphere-sphere detection, then
+ * resolves all detected contacts with impulse-based response and
+ * positional correction.
+ *
+ * Algorithm:
+ *   num_contacts = collide_particles_all(particles, contacts)
+ *   resolve_contacts(contacts, num_contacts, particles)
+ *   return num_contacts
+ *
+ * Parameters:
+ *   particles     (ForgePhysicsParticle*) — particle array; must not be NULL.
+ *                                           Velocities and positions are modified
+ *                                           in place during resolution.
+ *   num_particles (int)                   — number of particles
+ *   contacts      (ForgePhysicsContact*) — scratch buffer for detected contacts;
+ *                                           must have room for max_contacts entries
+ *   max_contacts  (int)                  — capacity of the contacts buffer
+ *
+ * Returns:
+ *   The number of contacts detected and resolved.
+ *
+ * Usage:
+ *   ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+ *   int n = forge_physics_collide_particles_step(
+ *       particles, num_particles, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+ *   SDL_Log("Resolved %d collisions this frame", n);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 7 —
+ * the complete contact resolution pipeline (detect → resolve).
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline int forge_physics_collide_particles_step(
+    ForgePhysicsParticle *particles, int num_particles,
+    ForgePhysicsContact *contacts, int max_contacts)
+{
+    int num_contacts = forge_physics_collide_particles_all(
+        particles, num_particles, contacts, max_contacts);
+
+    if (num_contacts > 0) {
+        forge_physics_resolve_contacts(
+            contacts, num_contacts, particles, num_particles);
+    }
+
+    return num_contacts;
 }
 
 #endif /* FORGE_PHYSICS_H */
