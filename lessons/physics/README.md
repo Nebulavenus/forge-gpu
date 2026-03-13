@@ -40,7 +40,7 @@ capsules) so the simulation behavior is front and center.
 | | Lesson | About |
 |---|--------|-------|
 | [<img src="01-point-particles/assets/screenshot.png" width="480" alt="Point Particles"/>](01-point-particles/) | [**01 — Point Particles**](01-point-particles/) | Symplectic Euler integration, gravity, drag, sphere-plane collision, fixed timestep |
-| | [**02 — Springs and Constraints**](02-springs-and-constraints/) | Hooke's law springs, damped oscillation, distance constraints, Gauss-Seidel solver, cloth simulation |
+| [<img src="02-springs-and-constraints/assets/screenshot.png" width="480" alt="Springs and Constraints"/>](02-springs-and-constraints/) | [**02 — Springs and Constraints**](02-springs-and-constraints/) | Hooke's law springs, damped oscillation, distance constraints, Gauss-Seidel solver, cloth simulation |
 
 ## Shared library
 
