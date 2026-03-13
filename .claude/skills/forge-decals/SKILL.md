@@ -356,7 +356,7 @@ SDL_EndGPURenderPass(decal_pass);
   for depth buffer fundamentals
 - [GPU Lesson 15 -- Shadow Maps](../../../lessons/gpu/15-cascaded-shadow-maps/)
   for depth-only render passes and shadow mapping
-- [GPU Lesson 34 -- Portals & Outlines](../../../lessons/gpu/34-stencil-testing/)
+- [GPU Lesson 34 — Stencil Testing](../../../lessons/gpu/34-stencil-testing/)
   for stencil-based per-pixel masking techniques
 - [Math Library](../../../common/math/)
   for `mat4_inverse`, `mat4_multiply`, and other transform utilities

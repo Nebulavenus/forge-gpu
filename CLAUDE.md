@@ -155,7 +155,7 @@ forge-gpu/
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
 │   ├── physics/           # Physics simulation (particles, rigid bodies, collisions)
-│   ├── audio/             # Audio programming (playback, mixing, spatial, DSP)
+│   ├── audio/             # Audio programming (planned — coming soon)
 │   ├── assets/            # Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── pipeline/              # Asset pipeline library (Python, pip-installable)
@@ -191,6 +191,7 @@ forge-gpu/
 │       ├── assets/        # Asset pipeline lesson diagrams
 │       └── physics/       # Physics lesson diagrams
 ├── tools/
+│   ├── common/            # Shared binary I/O helpers (header-only)
 │   ├── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
 │   ├── anim/              # C animation processing tool (glTF animation extraction)
 │   └── scene/             # C scene hierarchy extraction tool (glTF to .fscene)

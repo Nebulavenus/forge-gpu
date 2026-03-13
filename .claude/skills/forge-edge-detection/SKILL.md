@@ -185,7 +185,7 @@ SDL_GPUDepthStencilTargetInfo ds_target = {
 
 - [GPU Lesson 36 — Edge Detection](../../../lessons/gpu/36-edge-detection/)
   for the full walkthrough
-- [GPU Lesson 34 — Portals & Outlines](../../../lessons/gpu/34-stencil-testing/)
+- [GPU Lesson 34 — Stencil Testing](../../../lessons/gpu/34-stencil-testing/)
   for stencil buffer fundamentals and stencil-expansion outlines
 - [GPU Lesson 27 — SSAO](../../../lessons/gpu/27-ssao/)
   for G-buffer and view-space normal techniques
