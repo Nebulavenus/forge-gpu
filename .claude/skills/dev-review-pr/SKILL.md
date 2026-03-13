@@ -413,6 +413,18 @@ After all theme fixes are applied, run a final verification:
 If any check fails, fix the issue before proceeding. Do NOT push code that
 fails tests or lint.
 
+#### 4e. Run local review before committing (MANDATORY)
+
+After all cross-verification checks pass, run `/dev-local-review` to catch
+any issues the theme-based fixes may have introduced. This is a mandatory
+gate — do NOT proceed to step 5 (commit and push) until the local review
+completes with zero findings.
+
+This prevents burning a GitHub review round on issues that could have been
+caught locally for free. The local review loop follows its own strict rules
+(see `/dev-local-review` skill) — it must run until zero findings or until
+the user explicitly agrees to stop.
+
 ### 5. Commit, push, and request re-review
 
 After ALL themes are resolved and ALL checks pass:

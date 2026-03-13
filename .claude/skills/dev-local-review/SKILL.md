@@ -84,16 +84,47 @@ Low, Informational). For each finding, determine:
 Implement all actionable fixes. Do not ask about each one individually —
 fix them all, then report what was changed.
 
-### 5. Re-run review
+### 5. Re-run review (MANDATORY — cannot skip)
 
 After fixing, run the agent again to verify no new issues were introduced.
 The re-run prompt should note which issues were already addressed so the
 agent focuses on finding new problems.
 
-### 6. Repeat until clean
+### 6. Repeat until zero feedback (MANDATORY — strict rule)
 
-Continue the fix-and-review cycle until the agent reports no new actionable
-issues. Typically takes 2-3 rounds.
+**This is an absolute rule with no exceptions.** The review loop MUST
+continue until the CodeRabbit agent returns with **zero findings**. The
+agent executing this skill is **not allowed** to decide on its own that
+remaining feedback is "just a nitpick" or "informational" and stop the
+loop early.
+
+**The only two valid exit conditions are:**
+
+1. **The review agent reports zero findings.** The loop ends. Proceed to
+   "After a clean local review."
+2. **The agent explicitly asks the user** whether to stop (presenting the
+   remaining findings), **and the user agrees** to stop. Without user
+   confirmation, the loop continues.
+
+**Prohibited behaviors:**
+
+- Deciding that remaining findings are "low severity" and stopping
+- Classifying all remaining findings as "intentional" without user input
+- Stopping after a fixed number of rounds (e.g., "typically 2-3 rounds")
+- Summarizing remaining findings and moving on without fixing or asking
+- Treating nitpicks, style suggestions, or informational comments as
+  automatic reasons to exit the loop
+
+**Each round of the loop:**
+
+1. Run the CodeRabbit review agent
+2. If zero findings → exit loop (clean)
+3. If findings exist → fix actionable ones, ask user about ambiguous ones
+4. Go to step 1
+
+If the same finding keeps reappearing after being fixed, investigate the
+root cause rather than stopping the loop. If genuinely stuck, ask the user
+for guidance — do not silently exit.
 
 ## What it catches
 
