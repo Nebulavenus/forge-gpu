@@ -138,6 +138,9 @@ Key rules — violating any of these produces a backwards or broken camera:
 
 ## Git workflow
 
+- **Run `/dev-local-review` before every commit.** No exceptions — this catches
+  issues before they reach the PR. Do not `git commit` until the local review
+  completes with zero findings.
 - **Never commit directly to `main`.** All changes go through pull requests.
 - Create a feature branch, commit there, push, and open a PR with `gh pr create`.
 - Use the **/dev-publish-lesson** skill for lesson PRs — it handles branch + PR creation.

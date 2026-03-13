@@ -209,7 +209,14 @@ Common fixes:
 
 If linting fails, the markdown MUST be fixed. Quality checks are non-negotiable.
 
-### 5. Write a descriptive commit message
+### 5. Run `/dev-local-review` (MANDATORY)
+
+> **STOP. You MUST run `/dev-local-review` here.** This is not optional.
+> Do NOT proceed to step 6 until the local review completes with zero
+> findings. This catches issues before they reach the PR and burn a
+> GitHub review round.
+
+### 6. Write a descriptive commit message
 
 Format:
 
@@ -236,17 +243,17 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 
 Present the commit message to the user for approval before committing.
 
-### 6. Commit and push
+### 7. Commit and push
 
 ```bash
 git commit -m "$(cat <<'EOF'
-[commit message from step 4]
+[commit message from step 6]
 EOF
 )"
 git push -u origin lesson-NN-name
 ```
 
-### 7. Create a pull request
+### 8. Create a pull request
 
 Use `gh pr create` with a structured description:
 

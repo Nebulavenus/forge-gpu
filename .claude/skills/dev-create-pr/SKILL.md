@@ -191,7 +191,10 @@ omissions.
 
 ---
 
-### Phase 4 — Stage and review
+### Phase 4 — Stage, review, and local review
+
+> **MANDATORY: Run `/dev-local-review` before committing.** No exceptions.
+> Do NOT proceed to Phase 5 until the local review passes with zero findings.
 
 1. **Stage all relevant files** (those classified as Relevant in Phase 2, plus
    any Unclear files the user chose to include):
@@ -240,6 +243,13 @@ omissions.
    ```
 
    Report the file count and total lines changed.
+
+4. **Run `/dev-local-review`.**
+
+   This is a mandatory gate. Run the local review skill and fix any findings
+   it reports. Do NOT proceed to Phase 5 until it completes with zero findings.
+   This catches problems before they reach the PR and burn a GitHub review
+   round.
 
 ---
 

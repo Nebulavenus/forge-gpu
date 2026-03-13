@@ -9,6 +9,12 @@ Check GitHub Actions status, review feedback from automated reviewers (Code Rabb
 Claude), implement or respond to feedback, and merge the PR when all feedback is
 resolved.
 
+> **MANDATORY: Run `/dev-local-review` before every commit and push.**
+> This applies to step 5 (commit and push fixes) and any other commit made
+> during this workflow. Do NOT push code that has not passed a local review.
+> Skipping this step wastes a GitHub review round on issues that could have
+> been caught locally for free.
+
 The user provides:
 
 - **PR number**: the pull request number to review (optional - infers from current branch)
@@ -413,7 +419,11 @@ After all theme fixes are applied, run a final verification:
 If any check fails, fix the issue before proceeding. Do NOT push code that
 fails tests or lint.
 
-#### 4e. Run local review before committing (MANDATORY)
+#### 4e. Run local review before committing (MANDATORY — DO NOT SKIP)
+
+> **STOP. You MUST run `/dev-local-review` here.** This is not optional.
+> If you skip this step, the push will contain avoidable issues that
+> waste a GitHub review round. No exceptions.
 
 After all cross-verification checks pass, run `/dev-local-review` to catch
 any issues the theme-based fixes may have introduced. This is a mandatory
