@@ -37,6 +37,7 @@ implementations for your projects.
 | 14 | [Blue Noise & Low-Discrepancy Sequences](14-blue-noise-sequences/) | Halton, R2, Sobol sequences; blue noise (Mitchell's best candidate); discrepancy; dithering, sampling, stippling |
 | 15 | [Bézier Curves](15-bezier-curves/) | Quadratic and cubic Bézier curves, De Casteljau's algorithm, tangent vectors, arc length, curve splitting, degree elevation, adaptive flattening |
 | 16 | [Density Functions](16-density-functions/) | Extensive vs intensive quantities, density as ratio, histograms, probability density functions, integration, radiometry, importance sampling |
+| 17 | [Implicit 2D Curves](17-implicit-curves/) | Implicit vs parametric, signed distance functions, SDF primitives, gradient/normals, CSG booleans, smooth blending, marching squares, isolines |
 
 ## How Math Lessons Work
 

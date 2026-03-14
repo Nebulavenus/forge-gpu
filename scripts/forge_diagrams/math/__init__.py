@@ -53,6 +53,11 @@ __all__ = [
     "diagram_pdf_curves",
     "diagram_integration_area",
     "diagram_histogram_to_density",
+    "diagram_sdf_distance_field",
+    "diagram_csg_operations",
+    "diagram_smooth_blend",
+    "diagram_gradient_field",
+    "diagram_marching_squares",
 ]
 
 from .lesson_01 import diagram_dot_product, diagram_vector_addition
@@ -119,4 +124,11 @@ from .lesson_16 import (
     diagram_histogram_to_density,
     diagram_integration_area,
     diagram_pdf_curves,
+)
+from .lesson_17 import (
+    diagram_csg_operations,
+    diagram_gradient_field,
+    diagram_marching_squares,
+    diagram_sdf_distance_field,
+    diagram_smooth_blend,
 )

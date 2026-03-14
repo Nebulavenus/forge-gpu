@@ -5302,4 +5302,268 @@ static inline void vec2_bezier_cubic_flatten(vec2 p0, vec2 p1, vec2 p2,
                               tolerance, out, max_out, count);
 }
 
+/* ── Signed Distance Functions (2D) ─────────────────────────────────────── */
+
+/* Squared-length threshold for treating a segment as degenerate.
+ * Equal to (1e-8)^2 so segments down to ~1e-8 units still work. */
+#define FORGE_SDF_SEGMENT_DEGEN_SQ 1e-16f
+
+/* Signed distance from a point to a circle centered at the origin.
+ *
+ * Returns negative values inside, zero on the boundary, positive outside.
+ * The magnitude equals the Euclidean distance to the nearest point on the
+ * circle.  This is the simplest and most common 2D SDF primitive.
+ *
+ *   f(p) = |p| - r
+ *
+ * To center the circle at an arbitrary point c, pass (p - c):
+ *   sdf2_circle(vec2_sub(p, center), radius)
+ *
+ * Parameters:
+ *   p      — point to evaluate (relative to circle center)
+ *   radius — circle radius (should be >= 0; negative values are clamped to 0)
+ *
+ * Returns: signed distance (negative inside, positive outside)
+ *
+ * Usage:
+ *   vec2 p = vec2_create(1.5f, 0.0f);
+ *   float d = sdf2_circle(p, 1.0f);  // 0.5 — outside by 0.5 units
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf2_circle(vec2 p, float radius)
+{
+    if (radius < 0.0f) radius = 0.0f;
+    return vec2_length(p) - radius;
+}
+
+/* Signed distance from a point to an axis-aligned box centered at the origin.
+ *
+ * Returns negative inside, zero on the boundary, positive outside.
+ * The box extends from -half_extents to +half_extents on each axis.
+ *
+ * The algorithm works in two regions:
+ * - Outside: distance = length of the vector from p to the nearest corner,
+ *   clamped so only positive components contribute (Euclidean distance to
+ *   the nearest edge or corner).
+ * - Inside: distance = negative of the shortest axis-aligned distance to
+ *   any face (Chebyshev-like).
+ *
+ * Parameters:
+ *   p            — point to evaluate (relative to box center)
+ *   half_extents — half-width and half-height of the box (both components
+ *                  should be >= 0; negative values produce undefined results)
+ *
+ * Returns: signed distance
+ *
+ * Usage:
+ *   vec2 p = vec2_create(2.0f, 0.0f);
+ *   vec2 half = vec2_create(1.0f, 0.5f);
+ *   float d = sdf2_box(p, half);  // 1.0 — outside by 1 unit
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf2_box(vec2 p, vec2 half_extents)
+{
+    /* Work in the positive quadrant (box is symmetric) */
+    float dx = fabsf(p.x) - half_extents.x;
+    float dy = fabsf(p.y) - half_extents.y;
+
+    /* Outside: Euclidean distance from nearest edge/corner */
+    float ox = dx > 0.0f ? dx : 0.0f;
+    float oy = dy > 0.0f ? dy : 0.0f;
+    float outside = sqrtf(ox * ox + oy * oy);
+
+    /* Inside: negative distance to nearest face */
+    float inside = dx > dy ? dx : dy;
+    if (inside > 0.0f) inside = 0.0f;
+
+    return outside + inside;
+}
+
+/* Signed distance from a point to a rounded box centered at the origin.
+ *
+ * A rounded box is a box with its corners replaced by quarter-circles of
+ * the given radius.  Equivalent to the Minkowski sum of a smaller box and
+ * a disk.  The total dimensions are unchanged — the rounding eats into the
+ * box rather than expanding it.
+ *
+ * Parameters:
+ *   p            — point to evaluate (relative to box center)
+ *   half_extents — half-width and half-height of the OUTER box
+ *   radius       — corner rounding radius (clamped to half of smallest extent)
+ *
+ * Returns: signed distance
+ *
+ * Usage:
+ *   vec2 p = vec2_create(1.0f, 0.5f);
+ *   vec2 half = vec2_create(1.0f, 0.6f);
+ *   float d = sdf2_rounded_box(p, half, 0.2f);
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf2_rounded_box(vec2 p, vec2 half_extents, float radius)
+{
+    /* Clamp radius to [0, min(half_extents)].  Negative half_extents produce
+     * undefined results (same precondition as sdf2_box). */
+    if (radius < 0.0f) radius = 0.0f;
+    float max_r = half_extents.x < half_extents.y
+                      ? half_extents.x : half_extents.y;
+    if (max_r < 0.0f) max_r = 0.0f;
+    if (radius > max_r) radius = max_r;
+
+    /* Shrink box by radius, compute box SDF, then subtract radius */
+    vec2 shrunk = { half_extents.x - radius, half_extents.y - radius };
+    return sdf2_box(p, shrunk) - radius;
+}
+
+/* Distance from a point to a line segment (unsigned — NOT a signed distance).
+ *
+ * Despite the sdf2_ prefix (used for consistency with the other 2D distance
+ * primitives), this function returns an UNSIGNED distance.  A line segment
+ * has no well-defined interior, so there is no meaningful sign.  The result
+ * is always >= 0.
+ *
+ * The algorithm projects p onto the infinite line through A and B,
+ * clamps the parameter t to [0,1], and returns the distance to the
+ * clamped point.
+ *
+ * Parameters:
+ *   p — point to evaluate
+ *   a — segment start
+ *   b — segment end
+ *
+ * Returns: unsigned distance to segment (always >= 0)
+ *
+ * Usage:
+ *   vec2 p = vec2_create(0.0f, 1.0f);
+ *   vec2 a = vec2_create(-1.0f, 0.0f);
+ *   vec2 b = vec2_create( 1.0f, 0.0f);
+ *   float d = sdf2_segment(p, a, b);  // 1.0
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf2_segment(vec2 p, vec2 a, vec2 b)
+{
+    vec2 ab = vec2_sub(b, a);
+    vec2 ap = vec2_sub(p, a);
+    float denom = vec2_dot(ab, ab);
+
+    /* Degenerate segment (a ≈ b): return distance to the point. */
+    if (denom < FORGE_SDF_SEGMENT_DEGEN_SQ) return vec2_length(ap);
+
+    float t = vec2_dot(ap, ab) / denom;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    vec2 nearest = { a.x + t * ab.x, a.y + t * ab.y };
+    return vec2_length(vec2_sub(p, nearest));
+}
+
+/* Boolean union of two SDFs (combine shapes).
+ *
+ * Returns min(d1, d2).  The resulting surface is the outer boundary of both
+ * shapes combined.  This produces a sharp crease where the two surfaces
+ * meet — use sdf_smooth_union for organic blending.
+ *
+ * Parameters:
+ *   d1, d2 — signed distances from two SDF primitives
+ *
+ * Returns: signed distance to the union
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf_union(float d1, float d2)
+{
+    return d1 < d2 ? d1 : d2;
+}
+
+/* Boolean intersection of two SDFs (keep overlap only).
+ *
+ * Returns max(d1, d2).  A point is inside the result only if it is inside
+ * BOTH shapes.
+ *
+ * Parameters:
+ *   d1, d2 — signed distances from two SDF primitives
+ *
+ * Returns: signed distance to the intersection
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf_intersection(float d1, float d2)
+{
+    return d1 > d2 ? d1 : d2;
+}
+
+/* Boolean subtraction: shape A minus shape B.
+ *
+ * Returns max(d1, -d2).  Removes the region inside shape B from shape A.
+ * The order matters: sdf_subtraction(A, B) != sdf_subtraction(B, A).
+ *
+ * Parameters:
+ *   d1 — signed distance to shape A (the shape to keep)
+ *   d2 — signed distance to shape B (the shape to subtract)
+ *
+ * Returns: signed distance to A minus B
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf_subtraction(float d1, float d2)
+{
+    return d1 > -d2 ? d1 : -d2;
+}
+
+/* Smooth union of two SDFs with blending factor k.
+ *
+ * Produces an organic blend between two shapes instead of a sharp crease.
+ * The parameter k controls the blend radius: k=0 reduces to hard union,
+ * larger k values create wider, smoother transitions.  This is the
+ * polynomial smooth-min function:
+ *
+ *   h = clamp(0.5 + 0.5*(d2-d1)/k, 0, 1)
+ *   result = lerp(d2, d1, h) - k*h*(1-h)
+ *
+ * Parameters:
+ *   d1, d2 — signed distances from two SDF primitives
+ *   k      — blend radius (>= 0; 0 = hard union)
+ *
+ * Returns: smoothly blended signed field.  The sign is preserved, but the
+ *          result is not an exact Euclidean SDF in the blend region (the
+ *          Eikonal property |grad d| = 1 does not hold there).
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf_smooth_union(float d1, float d2, float k)
+{
+    if (k <= 0.0f) return d1 < d2 ? d1 : d2;
+
+    float h = forge_clampf(0.5f + 0.5f * (d2 - d1) / k, 0.0f, 1.0f);
+
+    return d2 + (d1 - d2) * h - k * h * (1.0f - h);
+}
+
+/* Smooth intersection of two SDFs with blending factor k.
+ *
+ * The smooth analog of max(d1, d2).  Produces a rounded intersection
+ * instead of a sharp edge where two surfaces meet.
+ *
+ * Parameters:
+ *   d1, d2 — signed distances from two SDF primitives
+ *   k      — blend radius (>= 0; 0 = hard intersection)
+ *
+ * Returns: smoothly blended signed field.  The sign is preserved, but the
+ *          result is not an exact Euclidean SDF in the blend region (the
+ *          Eikonal property |grad d| = 1 does not hold there).
+ *
+ * See: lessons/math/17-implicit-curves
+ */
+static inline float sdf_smooth_intersection(float d1, float d2, float k)
+{
+    if (k <= 0.0f) return d1 > d2 ? d1 : d2;
+
+    float h = forge_clampf(0.5f - 0.5f * (d2 - d1) / k, 0.0f, 1.0f);
+
+    return d2 + (d1 - d2) * h + k * h * (1.0f - h);
+}
+
 #endif /* FORGE_MATH_H */

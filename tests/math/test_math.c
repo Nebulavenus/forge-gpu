@@ -3193,6 +3193,208 @@ static void test_mat3_from_diagonal_single_nonzero(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * SDF Tests (Math Lesson 17)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_sdf2_circle_outside(void)
+{
+    TEST("sdf2_circle — point outside");
+    vec2 p = vec2_create(2.0f, 0.0f);
+    ASSERT_FLOAT_EQ(sdf2_circle(p, 1.0f), 1.0f);
+    END_TEST();
+}
+
+static void test_sdf2_circle_inside(void)
+{
+    TEST("sdf2_circle — point inside");
+    vec2 p = vec2_create(0.5f, 0.0f);
+    ASSERT_FLOAT_EQ(sdf2_circle(p, 1.0f), -0.5f);
+    END_TEST();
+}
+
+static void test_sdf2_circle_on_boundary(void)
+{
+    TEST("sdf2_circle — point on boundary");
+    vec2 p = vec2_create(0.0f, 1.0f);
+    ASSERT_FLOAT_EQ(sdf2_circle(p, 1.0f), 0.0f);
+    END_TEST();
+}
+
+static void test_sdf2_circle_negative_radius_clamped(void)
+{
+    TEST("sdf2_circle — negative radius clamped to 0");
+    vec2 p = vec2_create(3.0f, 4.0f);
+    /* radius clamped to 0, so result = length(p) = 5.0 */
+    ASSERT_FLOAT_EQ(sdf2_circle(p, -1.0f), 5.0f);
+    END_TEST();
+}
+
+static void test_sdf2_box_outside(void)
+{
+    TEST("sdf2_box — point outside on axis");
+    vec2 p = vec2_create(2.0f, 0.0f);
+    vec2 half = vec2_create(1.0f, 1.0f);
+    ASSERT_FLOAT_EQ(sdf2_box(p, half), 1.0f);
+    END_TEST();
+}
+
+static void test_sdf2_box_inside(void)
+{
+    TEST("sdf2_box — point inside");
+    vec2 p = vec2_create(0.5f, 0.0f);
+    vec2 half = vec2_create(1.0f, 1.0f);
+    /* Inside: nearest face at x=1, distance = -(1-0.5) = -0.5 */
+    ASSERT_FLOAT_EQ(sdf2_box(p, half), -0.5f);
+    END_TEST();
+}
+
+static void test_sdf2_box_corner(void)
+{
+    TEST("sdf2_box — point outside at corner");
+    vec2 p = vec2_create(2.0f, 2.0f);
+    vec2 half = vec2_create(1.0f, 1.0f);
+    /* Euclidean distance to corner (1,1): sqrt(1+1) = sqrt(2) */
+    ASSERT_FLOAT_EQ(sdf2_box(p, half), sqrtf(2.0f));
+    END_TEST();
+}
+
+static void test_sdf2_rounded_box_matches_box_at_zero_radius(void)
+{
+    TEST("sdf2_rounded_box — radius 0 matches sdf2_box");
+    vec2 p = vec2_create(1.5f, 0.3f);
+    vec2 half = vec2_create(1.0f, 0.5f);
+    ASSERT_FLOAT_EQ(sdf2_rounded_box(p, half, 0.0f), sdf2_box(p, half));
+    END_TEST();
+}
+
+static void test_sdf2_rounded_box_radius_clamped(void)
+{
+    TEST("sdf2_rounded_box — radius clamped to min half_extent");
+    vec2 p = vec2_create(0.0f, 0.0f);
+    vec2 half = vec2_create(1.0f, 0.5f);
+    /* radius=2.0 > min(1.0, 0.5) = 0.5, clamped to 0.5 */
+    float d_clamped = sdf2_rounded_box(p, half, 2.0f);
+    float d_max = sdf2_rounded_box(p, half, 0.5f);
+    ASSERT_FLOAT_EQ(d_clamped, d_max);
+    END_TEST();
+}
+
+static void test_sdf2_rounded_box_negative_radius(void)
+{
+    TEST("sdf2_rounded_box — negative radius clamped to 0");
+    vec2 p = vec2_create(1.5f, 0.3f);
+    vec2 half = vec2_create(1.0f, 0.5f);
+    /* Negative radius should behave like radius=0 (plain box) */
+    ASSERT_FLOAT_EQ(sdf2_rounded_box(p, half, -0.5f), sdf2_box(p, half));
+    END_TEST();
+}
+
+static void test_sdf2_segment_endpoint(void)
+{
+    TEST("sdf2_segment — perpendicular to endpoint");
+    vec2 p = vec2_create(0.0f, 1.0f);
+    vec2 a = vec2_create(0.0f, 0.0f);
+    vec2 b = vec2_create(2.0f, 0.0f);
+    /* Closest point is a=(0,0), distance = 1 */
+    ASSERT_FLOAT_EQ(sdf2_segment(p, a, b), 1.0f);
+    END_TEST();
+}
+
+static void test_sdf2_segment_midpoint(void)
+{
+    TEST("sdf2_segment — perpendicular to midpoint");
+    vec2 p = vec2_create(1.0f, 1.0f);
+    vec2 a = vec2_create(0.0f, 0.0f);
+    vec2 b = vec2_create(2.0f, 0.0f);
+    /* Closest point is (1,0), distance = 1 */
+    ASSERT_FLOAT_EQ(sdf2_segment(p, a, b), 1.0f);
+    END_TEST();
+}
+
+static void test_sdf2_segment_degenerate(void)
+{
+    TEST("sdf2_segment — degenerate (a == b)");
+    vec2 p = vec2_create(3.0f, 4.0f);
+    vec2 a = vec2_create(0.0f, 0.0f);
+    /* Degenerate: distance to point a = length(p) = 5 */
+    ASSERT_FLOAT_EQ(sdf2_segment(p, a, a), 5.0f);
+    END_TEST();
+}
+
+static void test_sdf_union(void)
+{
+    TEST("sdf_union — min of two distances");
+    ASSERT_FLOAT_EQ(sdf_union(1.0f, -0.5f), -0.5f);
+    ASSERT_FLOAT_EQ(sdf_union(-2.0f, -1.0f), -2.0f);
+    END_TEST();
+}
+
+static void test_sdf_intersection(void)
+{
+    TEST("sdf_intersection — max of two distances");
+    ASSERT_FLOAT_EQ(sdf_intersection(1.0f, -0.5f), 1.0f);
+    ASSERT_FLOAT_EQ(sdf_intersection(-2.0f, -1.0f), -1.0f);
+    END_TEST();
+}
+
+static void test_sdf_subtraction(void)
+{
+    TEST("sdf_subtraction — max(d1, -d2)");
+    ASSERT_FLOAT_EQ(sdf_subtraction(1.0f, -0.5f), 1.0f);
+    /* max(-2, -(-1)) = max(-2, 1) = 1 */
+    ASSERT_FLOAT_EQ(sdf_subtraction(-2.0f, -1.0f), 1.0f);
+    END_TEST();
+}
+
+static void test_sdf_smooth_union_zero_k(void)
+{
+    TEST("sdf_smooth_union — k=0 matches hard union");
+    ASSERT_FLOAT_EQ(sdf_smooth_union(1.0f, -0.5f, 0.0f), -0.5f);
+    ASSERT_FLOAT_EQ(sdf_smooth_union(-2.0f, 3.0f, 0.0f), -2.0f);
+    END_TEST();
+}
+
+static void test_sdf_smooth_union_blends(void)
+{
+    TEST("sdf_smooth_union — blended result < hard union");
+    float hard = sdf_union(0.5f, 0.5f);
+    float soft = sdf_smooth_union(0.5f, 0.5f, 1.0f);
+    /* Smooth union at equal distances with k=1: result = 0.5 - 1*0.5*0.5 = 0.25 */
+    ASSERT_FLOAT_EQ(soft, 0.25f);
+    /* Must be strictly less than hard union */
+    if (soft >= hard) {
+        SDL_Log("    FAIL: smooth %.6f >= hard %.6f", soft, hard);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+static void test_sdf_smooth_intersection_zero_k(void)
+{
+    TEST("sdf_smooth_intersection — k=0 matches hard intersection");
+    ASSERT_FLOAT_EQ(sdf_smooth_intersection(1.0f, -0.5f, 0.0f), 1.0f);
+    ASSERT_FLOAT_EQ(sdf_smooth_intersection(-2.0f, 3.0f, 0.0f), 3.0f);
+    END_TEST();
+}
+
+static void test_sdf_smooth_intersection_blends(void)
+{
+    TEST("sdf_smooth_intersection — blended result > hard intersection");
+    float hard = sdf_intersection(0.5f, 0.5f);   /* max(0.5, 0.5) = 0.5 */
+    float soft = sdf_smooth_intersection(0.5f, 0.5f, 1.0f);
+    /* h = 0.5, result = 0.5 + 0 + 1*0.5*0.5 = 0.75 */
+    ASSERT_FLOAT_EQ(soft, 0.75f);
+    /* Smooth intersection rounds outward (> hard) */
+    if (soft <= hard) {
+        SDL_Log("    FAIL: smooth %.6f <= hard %.6f", soft, hard);
+        fail_count++;
+        return;
+    }
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * quat_to_mat3 Tests (Physics Lesson 04)
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -3569,6 +3771,29 @@ int main(int argc, char *argv[])
     test_mat3_from_diagonal_zero();
     test_mat3_from_diagonal_negative();
     test_mat3_from_diagonal_single_nonzero();
+
+    /* SDF tests (Math Lesson 17) */
+    SDL_Log("\nSDF primitive tests:");
+    test_sdf2_circle_outside();
+    test_sdf2_circle_inside();
+    test_sdf2_circle_on_boundary();
+    test_sdf2_circle_negative_radius_clamped();
+    test_sdf2_box_outside();
+    test_sdf2_box_inside();
+    test_sdf2_box_corner();
+    test_sdf2_rounded_box_matches_box_at_zero_radius();
+    test_sdf2_rounded_box_radius_clamped();
+    test_sdf2_rounded_box_negative_radius();
+    test_sdf2_segment_endpoint();
+    test_sdf2_segment_midpoint();
+    test_sdf2_segment_degenerate();
+    test_sdf_union();
+    test_sdf_intersection();
+    test_sdf_subtraction();
+    test_sdf_smooth_union_zero_k();
+    test_sdf_smooth_union_blends();
+    test_sdf_smooth_intersection_zero_k();
+    test_sdf_smooth_intersection_blends();
 
     /* quat_to_mat3 tests (Physics Lesson 04) */
     SDL_Log("\nquat_to_mat3 tests:");
