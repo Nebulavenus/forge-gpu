@@ -197,7 +197,8 @@ forge-gpu/
 │   ├── common/            # Shared binary I/O helpers (header-only)
 │   ├── mesh/              # C mesh processing tool (meshoptimizer, MikkTSpace)
 │   ├── anim/              # C animation processing tool (glTF animation extraction)
-│   └── scene/             # C scene hierarchy extraction tool (glTF to .fscene)
+│   ├── scene/             # C scene hierarchy extraction tool (glTF to .fscene)
+│   └── texture/           # C texture processing tool (BC7/BC5 compression via basisu)
 ├── assets/                # Shared assets (fonts, models, skyboxes)
 ├── docs/                  # Project documentation and plans
 ├── .claude/skills/        # Claude Code skills (AI-invokable patterns)
