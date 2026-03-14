@@ -120,6 +120,49 @@ after each review to avoid review thrashing from rapid commits.
 - The review is actively running. Exit and tell the user to re-run later.
 - Do NOT fetch review comments yet — they may be incomplete.
 
+#### 1.7a. Detect clean re-review (no actionable comments)
+
+After CodeRabbit re-reviews a fix commit, it sometimes finds nothing new to
+flag. When this happens, CodeRabbit does **not** post an `APPROVED` review.
+Instead, it posts an **issue comment** (not a review comment) containing:
+
+> No actionable comments were generated in the recent review.
+
+The review state from step 6 may still show `CHANGES_REQUESTED` or
+`COMMENTED` from a previous round — that's stale and misleading.
+
+**How to detect:**
+
+```bash
+# Get the latest "no actionable comments" timestamp
+NO_ACTION_TS=$(gh api repos/{owner}/{repo}/issues/{pr-number}/comments --paginate \
+  | jq -r -s '(add // []) | map(select(.user.login == "coderabbitai[bot]"
+    and (.body | contains("No actionable comments"))))
+    | sort_by(.created_at) | last | .created_at // empty')
+
+# Get the latest CHANGES_REQUESTED or COMMENTED review timestamp
+LAST_REVIEW_TS=$(gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews --paginate \
+  | jq -r -s '(add // []) | map(select(.user.login == "coderabbitai[bot]"
+    and (.state == "CHANGES_REQUESTED" or .state == "COMMENTED")))
+    | sort_by(.submitted_at) | last | .submitted_at // empty')
+
+# Compare timestamps (lexicographic works for ISO 8601 dates)
+if [[ -z "$NO_ACTION_TS" ]]; then
+  echo "No 'no actionable comments' signal found"
+elif [[ -z "$LAST_REVIEW_TS" || "$NO_ACTION_TS" > "$LAST_REVIEW_TS" ]]; then
+  echo "Clean re-review detected — proceeding to step 6b"
+else
+  echo "Review feedback still pending"
+fi
+```
+
+If the "no actionable comments" comment is **newer** than the last review
+with feedback, CodeRabbit is satisfied.
+
+**When detected, skip straight to step 6b** (pre-merge branch update and
+resolve). Do not loop back to step 2 looking for feedback that does not
+exist.
+
 ### 2. Fetch review comments
 
 **Important:** Inline review comments (the "tasks" users see in the GitHub UI)
@@ -599,42 +642,96 @@ non-blocking feedback but did not approve. This typically happens when:
    Also do NOT request another review (`@coderabbitai review`) — that
    triggers a new feedback round.
 
-6. **The catch-22: branch must be up to date to merge, but merging main
-   dismisses the approval.** If `main` has moved ahead since the PR was
-   created, you must merge main to satisfy branch protection — but that
-   commit dismisses the approval from resolve.
+6. **Update the branch before requesting resolve.** Any commit after
+   resolve — including a merge from main — dismisses the approval. So
+   update the branch **first**, then resolve, then merge the PR.
 
    **Practical workflow:**
 
    a. Push all local changes first (if any). Wait for checks to pass.
 
-   b. Request resolve:
+   b. Check if the branch is behind main:
+
+      ```bash
+      gh pr view <pr-number> --json mergeStateStatus \
+        --jq '.mergeStateStatus'
+      ```
+
+   c. If `BEHIND`, merge main and push **before** requesting resolve:
+
+      ```bash
+      git fetch origin main
+      git merge origin/main --no-edit
+      git push
+      ```
+
+      Wait for checks to pass on the updated branch. CodeRabbit's
+      auto-pause prevents the main merge from triggering new review
+      feedback.
+
+   d. Once the branch is up to date and checks pass, request resolve:
 
       ```bash
       gh pr comment <pr-number> --body "@coderabbitai resolve"
       ```
 
-   c. If the branch is already up to date with main, merge immediately
-      after the approval arrives — no problem.
-
-   d. If the branch is behind main, you must merge main first, which
-      dismisses the approval. In this case, use `--admin` to merge:
+   e. After CodeRabbit posts the `APPROVED` review, merge immediately:
 
       ```bash
-      git fetch origin main
-      git merge origin/main
-      git push
-      # Wait for checks to pass, then:
-      gh pr merge <pr-number> --squash --delete-branch --admin
+      gh pr merge <pr-number> --squash --delete-branch
       ```
 
-      Only use `--admin` when: the nitpick was intentionally skipped
-      with user confirmation, all checks are green, and the only reason
-      for the missing approval is the main merge dismissing it. Present
-      this to the user for confirmation.
+      No `--admin` needed because the branch is already up to date and
+      no commits were made after the resolve.
 
-   Note: CodeRabbit's auto-pause prevents the main merge from triggering
-   new review feedback — the only consequence is the dismissed approval.
+   **Fallback — if you already resolved before updating the branch:**
+
+   If the approval was dismissed by a main merge, use `--admin` to merge:
+
+   ```bash
+   gh pr merge <pr-number> --squash --delete-branch --admin
+   ```
+
+   Only use `--admin` when: the nitpick was intentionally skipped
+   with user confirmation, all checks are green, and the only reason
+   for the missing approval is the main merge dismissing it. Present
+   this to the user for confirmation.
+
+#### 6b. Pre-merge branch update and resolve
+
+When all feedback is addressed (either via fixes or the "no actionable
+comments" signal from step 1.7a), prepare the branch for merge:
+
+1. **Check if the branch is behind main:**
+
+   ```bash
+   gh pr view <pr-number> --json mergeStateStatus \
+     --jq '.mergeStateStatus'
+   ```
+
+2. **If `BEHIND`, update the branch first:**
+
+   ```bash
+   git fetch origin main
+   git merge origin/main --no-edit
+   git push
+   ```
+
+   Wait for all checks to pass on the updated branch. CodeRabbit's
+   auto-pause prevents the main merge from triggering new review feedback.
+
+3. **Once the branch is up to date and checks pass, request resolve:**
+
+   ```bash
+   gh pr comment <pr-number> --body "@coderabbitai resolve"
+   ```
+
+4. **After CodeRabbit posts the `APPROVED` review, proceed to step 7.**
+
+**Why this order matters:** Any commit after `@coderabbitai resolve`
+(including a merge from main) dismisses the approval. By merging main
+*before* resolve, the approval sticks and you can merge the PR normally
+without `--admin`.
 
 ### 7. Merge the PR
 
@@ -744,6 +841,16 @@ single line.** Treat it that way.
   A test that exercises the actual code path will find runtime bugs (NULL
   derefs, off-by-one, division by zero) that no review tool can see. For
   library changes in `common/`, tests are non-negotiable.
+- **"No actionable comments" is CodeRabbit's clean signal.** When CodeRabbit
+  re-reviews and finds nothing, it posts an issue comment (not a review)
+  containing "No actionable comments were generated in the recent review."
+  The review state stays `COMMENTED` or `CHANGES_REQUESTED` from the
+  previous round — do not wait for an `APPROVED` review that will never
+  come. Detect this comment (step 1.7a) and proceed to step 6b.
+- **Merge main before resolve, not after.** Any commit after
+  `@coderabbitai resolve` dismisses the approval. Always update the branch
+  with main *before* requesting resolve (step 6b). This avoids the catch-22
+  of needing `--admin` to merge.
 
 ## Error handling
 
