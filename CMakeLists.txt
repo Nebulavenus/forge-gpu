@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(forge-gpu LANGUAGES C)
+project(forge-gpu LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -38,6 +38,9 @@ else()
     )
     FetchContent_MakeAvailable(SDL3)
 endif()
+
+# ── Basis Universal transcoder (C++ static lib, used by compressed texture pipeline)
+add_subdirectory(third_party/basis_universal)
 
 # ── Common include path ─────────────────────────────────────────────────────
 # Header-only helpers shared across lessons live in common/
@@ -131,6 +134,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/39-pipeline-processed-assets)
     add_subdirectory(lessons/gpu/40-scene-renderer)
     add_subdirectory(lessons/gpu/41-scene-model-loading)
+    add_subdirectory(lessons/gpu/42-pipeline-texture-compression)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────
@@ -167,6 +171,27 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(tools/mesh)
     add_subdirectory(tools/anim)
     add_subdirectory(tools/scene)
+    add_subdirectory(tools/texture)
+endif()
+
+# ── Basis Universal CLI (basisu) ──────────────────────────────────────────
+# The basisu command-line tool compresses textures to UASTC/ETC1S KTX2 at
+# build time.  Built from source via FetchContent so every dev environment
+# and CI server gets it automatically — no manual install required.
+option(FORGE_BUILD_BASISU "Build the basisu CLI for texture compression" ON)
+if(FORGE_BUILD_BASISU AND NOT FORGE_USE_SHIM)
+    include(FetchContent)
+    FetchContent_Declare(
+        basis_universal_full
+        GIT_REPOSITORY https://github.com/BinomialLLC/basis_universal.git
+        GIT_TAG        28e76f6e340e688188c94386ff068e437e1222ca
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(basis_universal_full)
+    # Note: basisu binary goes to _deps/basis_universal_full-src/bin/ by
+    # default.  Do NOT override RUNTIME_OUTPUT_DIRECTORY — the upstream
+    # CMakeLists has a post-build strip command that references the default
+    # path and would fail if redirected.
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────

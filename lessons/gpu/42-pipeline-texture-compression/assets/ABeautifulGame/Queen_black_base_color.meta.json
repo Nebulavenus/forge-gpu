@@ -1,0 +1,12 @@
+{
+  "source": "Queen_black_base_color.jpg",
+  "output": "Queen_black_base_color.jpg",
+  "output_width": 2048,
+  "output_height": 2048,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "Queen_black_base_color.ktx2",
+    "ratio": 7.53
+  }
+}

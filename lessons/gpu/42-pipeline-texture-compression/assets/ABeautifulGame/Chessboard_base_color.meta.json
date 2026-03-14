@@ -1,0 +1,12 @@
+{
+  "source": "Chessboard_base_color.jpg",
+  "output": "Chessboard_base_color.jpg",
+  "output_width": 2048,
+  "output_height": 2048,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "Chessboard_base_color.ktx2",
+    "ratio": 11.03
+  }
+}

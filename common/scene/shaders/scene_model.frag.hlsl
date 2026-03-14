@@ -109,9 +109,11 @@ float4 main(PSInput input) : SV_Target {
     float3 B = normalize(input.world_bitan);
 
     /* ── Sample and decode the normal map ────────────────────────── */
-    float3 map_normal = normal_tex.Sample(normal_smp, input.uv).rgb;
-    map_normal = map_normal * 2.0 - 1.0;
-    map_normal.xy *= normal_scale;
+    /* Reconstruct Z from RG — works with both RGB normal maps and
+     * BC5 two-channel compressed normals (which store only RG). */
+    float2 n_rg = normal_tex.Sample(normal_smp, input.uv).rg * 2.0 - 1.0;
+    n_rg *= normal_scale;
+    float3 map_normal = float3(n_rg, sqrt(saturate(1.0 - dot(n_rg, n_rg))));
     map_normal = normalize(map_normal);
 
     /* TBN transformation: tangent space -> world space */

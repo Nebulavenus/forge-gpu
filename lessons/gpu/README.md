@@ -63,6 +63,7 @@ portable C interface.
 | [<img src="39-pipeline-processed-assets/assets/screenshot.png" width="480" alt="Pipeline-Processed Assets"/>](39-pipeline-processed-assets/) | [**39 — Pipeline-Processed Assets**](39-pipeline-processed-assets/) | Load .fmesh binary meshes and pipeline-processed textures, compare against raw glTF loading in split-screen |
 | [<img src="40-scene-renderer/assets/screenshot.png" width="480" alt="Scene Renderer"/>](40-scene-renderer/) | [**40 — Scene Renderer**](40-scene-renderer/) | Reusable header-only library packaging the full rendering stack — shadow mapping, Blinn-Phong, grid, sky, camera, and UI in one init call |
 | [<img src="41-scene-model-loading/assets/screenshot.png" width="480" alt="Scene Model Loading"/>](41-scene-model-loading/) | [**41 — Scene Model Loading**](41-scene-model-loading/) | Load pipeline-processed models (.fscene + .fmesh + .fmat), traverse scene hierarchy, per-primitive material binding, mesh instancing |
+| [<img src="42-pipeline-texture-compression/assets/screenshot.png" width="480" alt="Pipeline Texture Compression"/>](42-pipeline-texture-compression/) | [**42 — Pipeline Texture Compression**](42-pipeline-texture-compression/) | GPU block-compressed textures (BC7/BC5) via asset pipeline, UASTC transcoding, D3D12 alignment, VRAM savings, normal map encoding |
 
 ## Prerequisites
 

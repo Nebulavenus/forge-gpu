@@ -1,0 +1,12 @@
+{
+  "source": "Knight_normal.jpg",
+  "output": "Knight_normal.jpg",
+  "output_width": 2048,
+  "output_height": 2048,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "Knight_normal.ktx2",
+    "ratio": 13.22
+  }
+}

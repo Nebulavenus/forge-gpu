@@ -210,6 +210,52 @@ typedef enum ForgePipelineTextureFormat {
     FORGE_PIPELINE_TEX_RGB8
 } ForgePipelineTextureFormat;
 
+/* ── Compressed texture types ──────────────────────────────────────────── */
+
+/* .ftex file format constants — pre-transcoded GPU-ready textures.
+ * Produced at build time by forge_texture_tool; loaded at runtime with
+ * forge_pipeline_load_ftex().  No transcoding library needed at runtime. */
+#define FORGE_PIPELINE_FTEX_MAGIC            0x58455446  /* "FTEX" little-endian */
+#define FORGE_PIPELINE_FTEX_VERSION          1
+#define FORGE_PIPELINE_FTEX_HEADER_SIZE      32  /* 8 × uint32 fields */
+#define FORGE_PIPELINE_FTEX_MIP_ENTRY_SIZE   16  /* 4 × uint32 per mip level */
+#define FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS   32  /* max mip levels in .ftex (supports up to 4G×4G) */
+
+/* GPU block-compressed format stored in .ftex files.
+ * These map directly to SDL_GPU_TEXTUREFORMAT_* values. */
+typedef enum ForgePipelineCompressedFormat {
+    FORGE_PIPELINE_COMPRESSED_BC7_SRGB  = 1, /* BC7 in sRGB color space (base color, emissive) */
+    FORGE_PIPELINE_COMPRESSED_BC7_UNORM = 2, /* BC7 in linear space (metallic-roughness, occlusion) */
+    FORGE_PIPELINE_COMPRESSED_BC5_UNORM = 3  /* BC5 two-channel (normal maps: RG only) */
+} ForgePipelineCompressedFormat;
+
+/* One mip level of a compressed texture — GPU-ready block data. */
+typedef struct ForgePipelineCompressedMip {
+    void    *data;       /* GPU-ready compressed blocks (points into parent _file_buf) */
+    uint32_t data_size;  /* byte count of compressed data */
+    uint32_t width;      /* mip level width in pixels */
+    uint32_t height;     /* mip level height in pixels */
+} ForgePipelineCompressedMip;
+
+/* A transcoded compressed texture ready for GPU upload. */
+typedef struct ForgePipelineCompressedTexture {
+    ForgePipelineCompressedMip   *mips;       /* mip chain array (mip_count entries) */
+    uint32_t                      mip_count;  /* number of mip levels */
+    uint32_t                      width;      /* base (mip 0) width */
+    uint32_t                      height;     /* base (mip 0) height */
+    ForgePipelineCompressedFormat format;     /* target GPU format */
+    void                         *_file_buf;  /* internal: backing buffer for mip data pointers */
+} ForgePipelineCompressedTexture;
+
+/* Compression info parsed from a .meta.json sidecar. */
+typedef struct ForgePipelineCompressionInfo {
+    bool has_compression;  /* true if a "compression" block was found */
+    char codec[32];        /* e.g. "uastc", "etc1s", "astc" */
+    char container[32];    /* e.g. "ktx2", ".astc" */
+    char compressed_file[FORGE_PIPELINE_MAT_PATH_SIZE]; /* relative path to compressed file */
+    float ratio;           /* compression ratio (uncompressed / compressed) */
+} ForgePipelineCompressionInfo;
+
 /* One mip level of a texture.
  * data contains the raw file bytes (PNG, KTX2, etc.) as loaded from disk.
  * For current pipeline output (PNG), decode with SDL_image or stb_image.
@@ -504,6 +550,43 @@ bool forge_pipeline_load_texture(const char *path,
  * Safe to call on a zeroed or already-freed texture (no-op if tex is NULL).
  */
 void forge_pipeline_free_texture(ForgePipelineTexture *tex);
+
+/*
+ * forge_pipeline_detect_sidecar — Check .meta.json for compression info.
+ *
+ * Given the path to an image file (e.g. "texture.jpg"), looks for the
+ * corresponding .meta.json sidecar and parses the "compression" block.
+ * Populates `info` with codec, container, compressed file path, etc.
+ *
+ * Returns true if the sidecar was found and parsed (even if no compression
+ * block is present — check info->has_compression).  Returns false if the
+ * sidecar doesn't exist or can't be parsed.
+ */
+bool forge_pipeline_detect_sidecar(const char *image_path,
+                                    ForgePipelineCompressionInfo *info);
+
+/*
+ * forge_pipeline_load_ftex — Load a pre-transcoded .ftex texture.
+ *
+ * Reads a .ftex file produced at build time by forge_texture_tool.
+ * The file contains GPU-ready BC7/BC5 block data with a full mip chain —
+ * no transcoding library is needed at runtime.
+ *
+ * The result contains one mip level per stored mip, each with a pointer
+ * into a single heap-allocated buffer.  The caller owns the memory and
+ * must call forge_pipeline_free_compressed_texture() when done.
+ *
+ * Returns true on success, false on any error (logged via SDL_Log).
+ */
+bool forge_pipeline_load_ftex(const char *ftex_path,
+                               ForgePipelineCompressedTexture *tex);
+
+/*
+ * forge_pipeline_free_compressed_texture — Release compressed texture memory.
+ *
+ * Safe to call on a zeroed struct (no-op).
+ */
+void forge_pipeline_free_compressed_texture(ForgePipelineCompressedTexture *tex);
 
 /*
  * forge_pipeline_load_scene — Load a .fscene binary file.
@@ -1692,6 +1775,315 @@ void forge_pipeline_free_texture(ForgePipelineTexture *tex)
         }
         SDL_free(tex->mips);
     }
+    SDL_memset(tex, 0, sizeof(*tex));
+}
+
+/* ── Path safety helper ────────────────────────────────────────────────── */
+
+/* Validate that a path is a safe relative path: non-empty, no absolute
+ * prefix (Unix root or Windows drive letter), no ".." traversal sequences.
+ * Used to prevent directory escape when loading paths from untrusted data
+ * such as .meta.json sidecars or animation set manifests. */
+static bool forge_pipeline__is_safe_relative_path(const char *path)
+{
+    if (!path || path[0] == '\0') return false;
+    /* Reject Unix/UNC absolute paths */
+    if (path[0] == '/' || path[0] == '\\') return false;
+    /* Reject Windows drive-letter paths (e.g. "C:\...") */
+    size_t len = SDL_strlen(path);
+    if (len > 1 && path[1] == ':') return false;
+    /* Reject directory traversal: "../", "..\", standalone "..",
+     * or trailing "/.." / "\.." (e.g. "subdir/..") */
+    if (SDL_strstr(path, "../") || SDL_strstr(path, "..\\") ||
+        SDL_strcmp(path, "..") == 0) {
+        return false;
+    }
+    if (len >= 3 && path[len - 2] == '.' && path[len - 1] == '.' &&
+        (path[len - 3] == '/' || path[len - 3] == '\\')) {
+        return false;
+    }
+    return true;
+}
+
+/* ── Compressed texture support ─────────────────────────────────────────── */
+
+/* Include the Basis Universal C wrapper when compressed texture support is
+ * available.  The .ftex format is loaded directly — no Basis Universal
+ * transcoder is needed at runtime. */
+
+bool forge_pipeline_detect_sidecar(const char *image_path,
+                                    ForgePipelineCompressionInfo *info)
+{
+    if (!image_path || !info) {
+        SDL_Log("forge_pipeline_detect_sidecar: NULL argument");
+        return false;
+    }
+    SDL_memset(info, 0, sizeof(*info));
+
+    /* Build .meta.json path from the image path */
+    char *meta_path = forge_pipeline__meta_json_path(image_path);
+    if (!meta_path) {
+        return false;
+    }
+
+    /* Load and parse the sidecar */
+    size_t meta_size = 0;
+    char *meta_data = (char *)SDL_LoadFile(meta_path, &meta_size);
+    SDL_free(meta_path);
+    if (!meta_data) {
+        return false; /* sidecar doesn't exist — not an error */
+    }
+
+    cJSON *root = cJSON_ParseWithLength(meta_data, meta_size);
+    SDL_free(meta_data);
+    if (!root) {
+        SDL_Log("forge_pipeline_detect_sidecar: failed to parse JSON for '%s'",
+                image_path);
+        return false;
+    }
+
+    /* Look for the "compression" block */
+    cJSON *j_comp = cJSON_GetObjectItemCaseSensitive(root, "compression");
+    if (!cJSON_IsObject(j_comp)) {
+        /* Valid sidecar but no compression — that's fine */
+        cJSON_Delete(root);
+        return true;
+    }
+
+    /* Validate compressed_file before marking sidecar as compressed.
+     * A missing or invalid path means the sidecar is unusable. */
+    cJSON *j_file = cJSON_GetObjectItemCaseSensitive(j_comp, "compressed_file");
+    if (!cJSON_IsString(j_file) ||
+        !forge_pipeline__is_safe_relative_path(j_file->valuestring)) {
+        SDL_Log("forge_pipeline_detect_sidecar: missing or unsafe "
+                "compressed_file for '%s'", image_path);
+        cJSON_Delete(root);
+        return false;
+    }
+    {
+        const char *cf = j_file->valuestring;
+        size_t cf_len = SDL_strlen(cf);
+        /* Reject overlong paths that would be silently truncated */
+        if (cf_len >= sizeof(info->compressed_file)) {
+            SDL_Log("forge_pipeline_detect_sidecar: compressed_file too long "
+                    "(%u >= %u) for '%s'",
+                    (unsigned)cf_len, (unsigned)sizeof(info->compressed_file),
+                    image_path);
+            cJSON_Delete(root);
+            return false;
+        }
+        SDL_strlcpy(info->compressed_file, cf,
+                     sizeof(info->compressed_file));
+    }
+
+    cJSON *j_codec = cJSON_GetObjectItemCaseSensitive(j_comp, "codec");
+    if (cJSON_IsString(j_codec) && j_codec->valuestring) {
+        SDL_strlcpy(info->codec, j_codec->valuestring, sizeof(info->codec));
+    }
+
+    cJSON *j_container = cJSON_GetObjectItemCaseSensitive(j_comp, "container");
+    if (cJSON_IsString(j_container) && j_container->valuestring) {
+        SDL_strlcpy(info->container, j_container->valuestring,
+                     sizeof(info->container));
+    }
+
+    info->has_compression = true;
+
+    cJSON *j_ratio = cJSON_GetObjectItemCaseSensitive(j_comp, "ratio");
+    if (cJSON_IsNumber(j_ratio)) {
+        info->ratio = (float)j_ratio->valuedouble;
+    }
+
+    cJSON_Delete(root);
+    return true;
+}
+
+bool forge_pipeline_load_ftex(const char *ftex_path,
+                               ForgePipelineCompressedTexture *tex)
+{
+    if (!ftex_path || !tex) {
+        SDL_Log("forge_pipeline_load_ftex: NULL argument");
+        return false;
+    }
+    SDL_memset(tex, 0, sizeof(*tex));
+
+    /* Load the entire .ftex file into memory.
+     * We keep this buffer alive — mip data pointers point into it. */
+    size_t file_size = 0;
+    uint8_t *file_data = (uint8_t *)SDL_LoadFile(ftex_path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_ftex: failed to load '%s': %s",
+                ftex_path, SDL_GetError());
+        return false;
+    }
+
+    /* Parse header */
+    if (file_size < FORGE_PIPELINE_FTEX_HEADER_SIZE) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' too small for header", ftex_path);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Read header fields (little-endian) */
+    uint32_t magic      = (uint32_t)file_data[0]  | (uint32_t)file_data[1]  << 8
+                        | (uint32_t)file_data[2]  << 16 | (uint32_t)file_data[3]  << 24;
+    uint32_t version    = (uint32_t)file_data[4]  | (uint32_t)file_data[5]  << 8
+                        | (uint32_t)file_data[6]  << 16 | (uint32_t)file_data[7]  << 24;
+    uint32_t format     = (uint32_t)file_data[8]  | (uint32_t)file_data[9]  << 8
+                        | (uint32_t)file_data[10] << 16 | (uint32_t)file_data[11] << 24;
+    uint32_t width      = (uint32_t)file_data[12] | (uint32_t)file_data[13] << 8
+                        | (uint32_t)file_data[14] << 16 | (uint32_t)file_data[15] << 24;
+    uint32_t height     = (uint32_t)file_data[16] | (uint32_t)file_data[17] << 8
+                        | (uint32_t)file_data[18] << 16 | (uint32_t)file_data[19] << 24;
+    uint32_t mip_count  = (uint32_t)file_data[20] | (uint32_t)file_data[21] << 8
+                        | (uint32_t)file_data[22] << 16 | (uint32_t)file_data[23] << 24;
+
+    if (magic != FORGE_PIPELINE_FTEX_MAGIC) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' bad magic (0x%08X)",
+                ftex_path, magic);
+        SDL_free(file_data);
+        return false;
+    }
+    if (version != FORGE_PIPELINE_FTEX_VERSION) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' unsupported version %u",
+                ftex_path, version);
+        SDL_free(file_data);
+        return false;
+    }
+    if (format < FORGE_PIPELINE_COMPRESSED_BC7_SRGB ||
+        format > FORGE_PIPELINE_COMPRESSED_BC5_UNORM) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' unknown format %u",
+                ftex_path, format);
+        SDL_free(file_data);
+        return false;
+    }
+    if (mip_count == 0 || mip_count > FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' invalid mip_count %u",
+                ftex_path, mip_count);
+        SDL_free(file_data);
+        return false;
+    }
+    if (width == 0 || height == 0) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' invalid base dimensions %ux%u",
+                ftex_path, width, height);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Derive maximum legal mip count from base dimensions.
+     * A texture can have at most log2(max(w,h)) + 1 mip levels. */
+    uint32_t max_dim = (width > height) ? width : height;
+    uint32_t max_mips = 1;
+    for (uint32_t d = max_dim; d > 1; d >>= 1) max_mips++;
+    if (mip_count > max_mips) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' mip_count %u exceeds "
+                "max %u for %ux%u", ftex_path, mip_count, max_mips,
+                width, height);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Validate file size covers mip entries */
+    size_t entries_end = FORGE_PIPELINE_FTEX_HEADER_SIZE + (size_t)mip_count * FORGE_PIPELINE_FTEX_MIP_ENTRY_SIZE;
+    if (file_size < entries_end) {
+        SDL_Log("forge_pipeline_load_ftex: '%s' truncated mip entries",
+                ftex_path);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Parse mip entries and set up pointers into the loaded buffer */
+    tex->mips = (ForgePipelineCompressedMip *)SDL_calloc(
+        mip_count, sizeof(ForgePipelineCompressedMip));
+    if (!tex->mips) {
+        SDL_Log("forge_pipeline_load_ftex: allocation failed");
+        SDL_free(file_data);
+        return false;
+    }
+
+    uint8_t *entry_ptr = file_data + FORGE_PIPELINE_FTEX_HEADER_SIZE;
+    for (uint32_t i = 0; i < mip_count; i++) {
+        uint32_t mip_offset = (uint32_t)entry_ptr[0]  | (uint32_t)entry_ptr[1]  << 8
+                            | (uint32_t)entry_ptr[2]  << 16 | (uint32_t)entry_ptr[3]  << 24;
+        uint32_t mip_size   = (uint32_t)entry_ptr[4]  | (uint32_t)entry_ptr[5]  << 8
+                            | (uint32_t)entry_ptr[6]  << 16 | (uint32_t)entry_ptr[7]  << 24;
+        uint32_t mip_w      = (uint32_t)entry_ptr[8]  | (uint32_t)entry_ptr[9]  << 8
+                            | (uint32_t)entry_ptr[10] << 16 | (uint32_t)entry_ptr[11] << 24;
+        uint32_t mip_h      = (uint32_t)entry_ptr[12] | (uint32_t)entry_ptr[13] << 8
+                            | (uint32_t)entry_ptr[14] << 16 | (uint32_t)entry_ptr[15] << 24;
+        entry_ptr += FORGE_PIPELINE_FTEX_MIP_ENTRY_SIZE;
+
+        /* Derive expected dimensions for this mip level from the base size.
+         * Standard mip chain: each level is half the previous, clamped to 1. */
+        uint32_t expected_w = width >> i;
+        uint32_t expected_h = height >> i;
+        if (expected_w == 0) expected_w = 1;
+        if (expected_h == 0) expected_h = 1;
+
+        /* Validate mip metadata: dimensions must match the expected chain,
+         * data must live past the header/entry table, and the payload must
+         * be at least as large as the BC block data for these dimensions. */
+        uint64_t mip_end = (uint64_t)mip_offset + (uint64_t)mip_size;
+        uint64_t blocks_x = ((uint64_t)expected_w + 3u) / 4u;
+        uint64_t blocks_y = ((uint64_t)expected_h + 3u) / 4u;
+        /* Overflow-safe: check blocks_x * blocks_y, then * 16. */
+        if (blocks_x > 0 && blocks_y > UINT64_MAX / blocks_x) {
+            SDL_Log("forge_pipeline_load_ftex: '%s' mip %u dimensions overflow",
+                    ftex_path, i);
+            SDL_free(tex->mips);
+            tex->mips = NULL;
+            SDL_free(file_data);
+            return false;
+        }
+        uint64_t block_count = blocks_x * blocks_y;
+        const uint64_t bytes_per_block = 16u; /* BC5 and BC7 both use 16 bytes per 4x4 block */
+        if (block_count > UINT64_MAX / bytes_per_block) {
+            SDL_Log("forge_pipeline_load_ftex: '%s' mip %u BC size overflow",
+                    ftex_path, i);
+            SDL_free(tex->mips);
+            tex->mips = NULL;
+            SDL_free(file_data);
+            return false;
+        }
+        uint64_t min_bc_size = block_count * bytes_per_block;
+        if (mip_w != expected_w || mip_h != expected_h ||
+            (uint64_t)mip_offset < entries_end ||
+            mip_end > (uint64_t)file_size ||
+            (uint64_t)mip_size < min_bc_size) {
+            SDL_Log("forge_pipeline_load_ftex: '%s' mip %u invalid "
+                    "(off=%u size=%u dim=%ux%u expected=%ux%u)",
+                    ftex_path, i, mip_offset, mip_size, mip_w, mip_h,
+                    expected_w, expected_h);
+            SDL_free(tex->mips);
+            tex->mips = NULL;
+            SDL_free(file_data);
+            return false;
+        }
+
+        tex->mips[i].data      = file_data + mip_offset;
+        tex->mips[i].data_size = mip_size;
+        tex->mips[i].width     = mip_w;
+        tex->mips[i].height    = mip_h;
+    }
+
+    tex->width     = width;
+    tex->height    = height;
+    tex->mip_count = mip_count;
+    tex->format    = (ForgePipelineCompressedFormat)format;
+
+    /* Store the file buffer pointer so free() can release it.
+     * Mip data pointers point into this buffer — it must outlive them. */
+    tex->_file_buf = file_data;
+
+    return true;
+}
+
+void forge_pipeline_free_compressed_texture(ForgePipelineCompressedTexture *tex)
+{
+    if (!tex) return;
+    /* The mip data pointers all point into _file_buf — free it once. */
+    SDL_free(tex->_file_buf);
+    SDL_free(tex->mips);
     SDL_memset(tex, 0, sizeof(*tex));
 }
 
@@ -2997,9 +3389,7 @@ bool forge_pipeline_load_clip(const ForgePipelineAnimSet *set,
     }
 
     /* Reject unsafe paths: absolute or with directory traversal sequences */
-    if (info->file[0] == '/' || info->file[0] == '\\' ||
-        (SDL_strlen(info->file) > 1 && info->file[1] == ':') ||
-        SDL_strstr(info->file, "..")) {
+    if (!forge_pipeline__is_safe_relative_path(info->file)) {
         SDL_Log("forge_pipeline_load_clip: unsafe clip path '%s'", info->file);
         return false;
     }

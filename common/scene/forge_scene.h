@@ -235,6 +235,13 @@ typedef struct ForgeSceneModel {
 
     /* Stats (updated per draw_model call) */
     uint32_t draw_calls;
+
+    /* VRAM tracking for texture compression comparison.
+     * Updated during texture loading — includes all material textures. */
+    uint64_t vram_compressed_bytes;   /* actual bytes uploaded (compressed or raw) */
+    uint64_t vram_uncompressed_bytes; /* what it would cost as RGBA8 with mipmaps */
+    uint32_t compressed_texture_count; /* how many textures loaded as compressed */
+    uint32_t total_texture_count;     /* total textures loaded for this model */
 } ForgeSceneModel;
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 
@@ -511,6 +518,18 @@ static void forge_scene_draw_model_shadows(ForgeScene *scene,
 /* Release all GPU and CPU resources for a model. */
 static void forge_scene_free_model(ForgeScene *scene,
                                     ForgeSceneModel *model);
+
+/* Load a texture, preferring pipeline-compressed (.ftex) when a .meta.json
+ * sidecar with compression info exists.  Falls back to SDL_LoadSurface +
+ * GPU mipmaps otherwise.
+ *
+ * The .ftex format is chosen at build time by forge_texture_tool — `srgb`
+ * and `is_normal_map` are used only for the uncompressed fallback path.
+ *
+ * Updates model->vram_compressed_bytes and vram_uncompressed_bytes. */
+static SDL_GPUTexture *forge_scene_load_pipeline_texture(
+    ForgeScene *scene, ForgeSceneModel *model,
+    const char *path, bool srgb, bool is_normal_map);
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 
 /* ── Utility functions ──────────────────────────────────────── */
@@ -2785,6 +2804,341 @@ static SDL_GPUTexture *forge_scene_load_texture(ForgeScene *scene,
     return tex;
 }
 
+/* ── Compressed texture upload (BC7/BC5 from pre-transcoded mip data) ──── */
+
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+
+/* Map ForgePipelineCompressedFormat to SDL_GPUTextureFormat. */
+static SDL_GPUTextureFormat forge_scene__compressed_sdl_format(
+    ForgePipelineCompressedFormat fmt)
+{
+    switch (fmt) {
+    case FORGE_PIPELINE_COMPRESSED_BC7_SRGB:
+        return SDL_GPU_TEXTUREFORMAT_BC7_RGBA_UNORM_SRGB;
+    case FORGE_PIPELINE_COMPRESSED_BC7_UNORM:
+        return SDL_GPU_TEXTUREFORMAT_BC7_RGBA_UNORM;
+    case FORGE_PIPELINE_COMPRESSED_BC5_UNORM:
+        return SDL_GPU_TEXTUREFORMAT_BC5_RG_UNORM;
+    default:
+        return SDL_GPU_TEXTUREFORMAT_BC7_RGBA_UNORM;
+    }
+}
+
+/* Upload pre-transcoded compressed mip levels to the GPU.
+ * Returns the created GPU texture, or NULL on failure. */
+static SDL_GPUTexture *forge_scene_upload_compressed_texture(
+    ForgeScene *scene,
+    const ForgePipelineCompressedTexture *ctex)
+{
+    if (!scene || !scene->device || !ctex || !ctex->mips || ctex->mip_count == 0) {
+        SDL_Log("forge_scene: upload_compressed_texture: invalid arguments");
+        return NULL;
+    }
+
+    SDL_GPUTextureFormat sdl_fmt = forge_scene__compressed_sdl_format(ctex->format);
+
+    /* Check format support before attempting creation */
+    if (!SDL_GPUTextureSupportsFormat(scene->device, sdl_fmt,
+                                       SDL_GPU_TEXTURETYPE_2D,
+                                       SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
+        SDL_Log("forge_scene: GPU does not support compressed format %d",
+                (int)sdl_fmt);
+        return NULL;
+    }
+
+    /* Create the GPU texture with the compressed format */
+    SDL_GPUTextureCreateInfo tex_info;
+    SDL_zero(tex_info);
+    tex_info.type                 = SDL_GPU_TEXTURETYPE_2D;
+    tex_info.format               = sdl_fmt;
+    tex_info.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tex_info.width                = ctex->width;
+    tex_info.height               = ctex->height;
+    tex_info.layer_count_or_depth = 1;
+    tex_info.num_levels           = ctex->mip_count;
+
+    SDL_GPUTexture *texture = SDL_CreateGPUTexture(scene->device, &tex_info);
+    if (!texture) {
+        SDL_Log("forge_scene: compressed texture creation failed (%ux%u, "
+                "fmt %d, mips %u): %s", ctex->width, ctex->height,
+                (int)sdl_fmt, ctex->mip_count, SDL_GetError());
+        return NULL;
+    }
+
+    /* D3D12 requires texture upload row pitch aligned to 256 bytes
+     * (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) and mip offsets aligned to
+     * 512 bytes (D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT).  For BC formats
+     * (4x4 blocks, 16 bytes/block), small mips have row pitches below 256.
+     * We pad rows and align offsets unconditionally (harmless on Vulkan/Metal)
+     * so the D3D12 backend takes the fast copy path instead of hitting its
+     * buggy realignment code. */
+#define FORGE_SCENE_D3D12_PITCH_ALIGN     256
+#define FORGE_SCENE_D3D12_PLACEMENT_ALIGN 512
+#define FORGE_SCENE_BC_BLOCK_SIZE         16  /* BC7 and BC5: 16 bytes per 4x4 block */
+#define FORGE_SCENE_BC_BLOCK_DIM          4   /* 4x4 pixel blocks */
+
+    /* Compute padded sizes per mip and total transfer buffer size */
+    uint32_t offsets[FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS];
+    uint32_t aligned_pitches[FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS];
+    uint32_t total_size = 0;
+    for (uint32_t i = 0; i < ctex->mip_count && i < FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS; i++) {
+        const ForgePipelineCompressedMip *mip = &ctex->mips[i];
+        if (!mip->data || mip->data_size == 0) {
+            offsets[i] = total_size;
+            aligned_pitches[i] = 0;
+            continue;
+        }
+        /* Align mip offset to 512 bytes (D3D12 placement alignment) */
+        total_size = (total_size + FORGE_SCENE_D3D12_PLACEMENT_ALIGN - 1)
+                   & ~(FORGE_SCENE_D3D12_PLACEMENT_ALIGN - 1);
+        uint32_t blocks_x = (mip->width + FORGE_SCENE_BC_BLOCK_DIM - 1) / FORGE_SCENE_BC_BLOCK_DIM;
+        uint32_t blocks_y = (mip->height + FORGE_SCENE_BC_BLOCK_DIM - 1) / FORGE_SCENE_BC_BLOCK_DIM;
+        uint32_t row_pitch = blocks_x * FORGE_SCENE_BC_BLOCK_SIZE;
+        uint32_t aligned_pitch = (row_pitch + FORGE_SCENE_D3D12_PITCH_ALIGN - 1)
+                               & ~(FORGE_SCENE_D3D12_PITCH_ALIGN - 1);
+        offsets[i] = total_size;
+        aligned_pitches[i] = aligned_pitch;
+        total_size += aligned_pitch * blocks_y;
+    }
+    if (total_size == 0) return texture;
+
+    /* Create a single transfer buffer for all mips */
+    SDL_GPUTransferBufferCreateInfo xfer_info;
+    SDL_zero(xfer_info);
+    xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    xfer_info.size  = total_size;
+
+    SDL_GPUTransferBuffer *xfer =
+        SDL_CreateGPUTransferBuffer(scene->device, &xfer_info);
+    if (!xfer) {
+        SDL_Log("forge_scene: compressed transfer buffer failed: %s",
+                SDL_GetError());
+        SDL_ReleaseGPUTexture(scene->device, texture);
+        return NULL;
+    }
+
+    /* Map and pack mip data with 256-byte row alignment */
+    void *mapped = SDL_MapGPUTransferBuffer(scene->device, xfer, false);
+    if (!mapped) {
+        SDL_Log("forge_scene: compressed transfer map failed: %s",
+                SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+        SDL_ReleaseGPUTexture(scene->device, texture);
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < ctex->mip_count && i < FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS; i++) {
+        const ForgePipelineCompressedMip *mip = &ctex->mips[i];
+        if (!mip->data || mip->data_size == 0) continue;
+
+        uint32_t blocks_x = (mip->width + FORGE_SCENE_BC_BLOCK_DIM - 1) / FORGE_SCENE_BC_BLOCK_DIM;
+        uint32_t blocks_y = (mip->height + FORGE_SCENE_BC_BLOCK_DIM - 1) / FORGE_SCENE_BC_BLOCK_DIM;
+        uint32_t src_pitch = blocks_x * FORGE_SCENE_BC_BLOCK_SIZE;
+        uint32_t expected_size = src_pitch * blocks_y;
+        if (mip->data_size < expected_size) {
+            SDL_Log("forge_scene: mip %u data_size %u < expected %u, skipping",
+                    i, mip->data_size, expected_size);
+            continue;
+        }
+        uint32_t dst_pitch = aligned_pitches[i];
+
+        const uint8_t *src_row = (const uint8_t *)mip->data;
+        uint8_t *dst_row = (uint8_t *)mapped + offsets[i];
+
+        for (uint32_t row = 0; row < blocks_y; row++) {
+            SDL_memcpy(dst_row, src_row, src_pitch);
+            /* Zero padding bytes so we don't upload garbage */
+            if (dst_pitch > src_pitch)
+                SDL_memset(dst_row + src_pitch, 0, dst_pitch - src_pitch);
+            src_row += src_pitch;
+            dst_row += dst_pitch;
+        }
+    }
+    SDL_UnmapGPUTransferBuffer(scene->device, xfer);
+
+    /* Upload all mips in a single command buffer + copy pass */
+    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(scene->device);
+    if (!cmd) {
+        SDL_Log("forge_scene: compressed cmd failed: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+        SDL_ReleaseGPUTexture(scene->device, texture);
+        return NULL;
+    }
+
+    SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+    if (!copy) {
+        SDL_Log("forge_scene: compressed copy pass failed: %s", SDL_GetError());
+        if (!SDL_CancelGPUCommandBuffer(cmd)) {
+            SDL_Log("forge_scene: SDL_CancelGPUCommandBuffer failed: %s",
+                    SDL_GetError());
+        }
+        SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+        SDL_ReleaseGPUTexture(scene->device, texture);
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < ctex->mip_count && i < FORGE_PIPELINE_FTEX_MAX_MIP_LEVELS; i++) {
+        const ForgePipelineCompressedMip *mip = &ctex->mips[i];
+        if (!mip->data || mip->data_size == 0) continue;
+
+        /* Tell SDL the row pitch in pixels so it matches our padded layout */
+        uint32_t pixels_per_padded_row =
+            (aligned_pitches[i] / FORGE_SCENE_BC_BLOCK_SIZE) * FORGE_SCENE_BC_BLOCK_DIM;
+
+        SDL_GPUTextureTransferInfo src;
+        SDL_zero(src);
+        src.transfer_buffer = xfer;
+        src.offset          = offsets[i];
+        src.pixels_per_row  = pixels_per_padded_row;
+        src.rows_per_layer  = mip->height;
+
+        SDL_GPUTextureRegion dst;
+        SDL_zero(dst);
+        dst.texture   = texture;
+        dst.mip_level = i;
+        dst.w = mip->width;
+        dst.h = mip->height;
+        dst.d = 1;
+
+        SDL_UploadToGPUTexture(copy, &src, &dst, false);
+    }
+
+#undef FORGE_SCENE_D3D12_PITCH_ALIGN
+#undef FORGE_SCENE_D3D12_PLACEMENT_ALIGN
+#undef FORGE_SCENE_BC_BLOCK_SIZE
+#undef FORGE_SCENE_BC_BLOCK_DIM
+
+    SDL_EndGPUCopyPass(copy);
+
+    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
+        SDL_Log("forge_scene: compressed upload submit failed: %s",
+                SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+        SDL_ReleaseGPUTexture(scene->device, texture);
+        return NULL;
+    }
+    /* Safe to release now — SDL internally defers the free until the
+     * submitted command buffer finishes executing on the GPU. */
+    SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+
+    return texture;
+}
+
+/* Estimate uncompressed VRAM cost: RGBA8 with full mip chain.
+ * The mip chain sums to 4/3 * base size for power-of-two textures. */
+static uint64_t forge_scene__estimate_uncompressed_vram(uint32_t w, uint32_t h)
+{
+    uint64_t total = 0;
+    while (w >= 1 && h >= 1) {
+        total += (uint64_t)w * h * 4; /* RGBA8 = 4 bytes/pixel */
+        if (w == 1 && h == 1) break;
+        if (w > 1) w /= 2;
+        if (h > 1) h /= 2;
+    }
+    return total;
+}
+
+/* ── Pipeline-compressed texture loader ─────────────────────────────────── */
+
+static SDL_GPUTexture *forge_scene_load_pipeline_texture(
+    ForgeScene *scene, ForgeSceneModel *model,
+    const char *path, bool srgb, bool is_normal_map)
+{
+    (void)is_normal_map; /* format is baked into the .ftex file at build time */
+    if (!path || path[0] == '\0') return NULL;
+    if (!scene || !model) return NULL;
+
+    model->total_texture_count++;
+
+    /* Check for .meta.json sidecar with compression info */
+    ForgePipelineCompressionInfo comp_info;
+    bool has_sidecar = forge_pipeline_detect_sidecar(path, &comp_info);
+
+    if (has_sidecar && comp_info.has_compression &&
+        comp_info.compressed_file[0] != '\0') {
+
+        /* Build full path to the .ftex file.
+         * compressed_file is relative to the same directory as the image.
+         * Extract the directory portion of `path`. */
+        const char *last_sep = SDL_strrchr(path, '/');
+        {
+            const char *last_bsep = SDL_strrchr(path, '\\');
+            if (last_bsep && (!last_sep || last_bsep > last_sep))
+                last_sep = last_bsep;
+        }
+        size_t dir_len = last_sep ? (size_t)(last_sep - path) + 1 : 0;
+
+        /* Replace .ktx2 extension with .ftex in the compressed_file name */
+        char ftex_name[FORGE_PIPELINE_MAT_PATH_SIZE];
+        SDL_strlcpy(ftex_name, comp_info.compressed_file, sizeof(ftex_name));
+        {
+            char *ext = SDL_strrchr(ftex_name, '.');
+            if (ext) SDL_strlcpy(ext, ".ftex", sizeof(ftex_name) - (size_t)(ext - ftex_name));
+        }
+
+        char ftex_path[1024];
+        if (dir_len > 0) {
+            char dir_buf[512];
+            if (dir_len >= sizeof(dir_buf)) dir_len = sizeof(dir_buf) - 1;
+            SDL_memcpy(dir_buf, path, dir_len);
+            dir_buf[dir_len] = '\0';
+            SDL_snprintf(ftex_path, sizeof(ftex_path), "%s%s", dir_buf, ftex_name);
+        } else {
+            SDL_strlcpy(ftex_path, ftex_name, sizeof(ftex_path));
+        }
+
+        /* Load pre-transcoded .ftex — no Basis transcoder needed */
+        ForgePipelineCompressedTexture ctex;
+        if (forge_pipeline_load_ftex(ftex_path, &ctex)) {
+            /* Upload compressed blocks to GPU */
+            SDL_GPUTexture *gpu_tex =
+                forge_scene_upload_compressed_texture(scene, &ctex);
+
+            if (gpu_tex) {
+                /* Track VRAM usage */
+                uint64_t compressed_size = 0;
+                for (uint32_t m = 0; m < ctex.mip_count; m++) {
+                    compressed_size += ctex.mips[m].data_size;
+                }
+                model->vram_compressed_bytes += compressed_size;
+                model->vram_uncompressed_bytes +=
+                    forge_scene__estimate_uncompressed_vram(
+                        ctex.width, ctex.height);
+                model->compressed_texture_count++;
+
+                forge_pipeline_free_compressed_texture(&ctex);
+                return gpu_tex;
+            }
+
+            forge_pipeline_free_compressed_texture(&ctex);
+            /* Fall through to fallback if upload failed */
+        }
+    }
+
+    /* No compression available or transcoding failed — use the existing
+     * SDL_LoadSurface + GPU mipmap generation path. */
+    {
+        SDL_Surface *surface = SDL_LoadSurface(path);
+        if (!surface) {
+            SDL_Log("forge_scene: failed to load texture '%s': %s",
+                    path, SDL_GetError());
+            return NULL;
+        }
+
+        /* Track VRAM before uploading (we have the surface dimensions) */
+        uint64_t uncompressed = forge_scene__estimate_uncompressed_vram(
+            (uint32_t)surface->w, (uint32_t)surface->h);
+        model->vram_compressed_bytes   += uncompressed;
+        model->vram_uncompressed_bytes += uncompressed;
+
+        SDL_GPUTexture *tex = forge_scene_upload_texture(scene, surface, srgb);
+        SDL_DestroySurface(surface);
+        return tex;
+    }
+}
+
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
+
 /* ── Init model pipelines (lazy, called on first load) ──────────────────── */
 
 static bool forge_scene_init_model_pipelines(ForgeScene *scene)
@@ -3204,7 +3558,10 @@ static bool forge_scene_load_model(ForgeScene *scene,
         }
     }
 
-    /* Load per-material textures */
+    /* Load per-material textures.
+     * Uses forge_scene_load_pipeline_texture which checks for .meta.json
+     * sidecars with compression info and loads .ftex (pre-transcoded BC7/BC5)
+     * when available, falling back to SDL_LoadSurface + GPU mipmaps otherwise. */
     {
         uint32_t mat_count = model->materials.material_count;
         /* mat_count is guaranteed <= FORGE_SCENE_MODEL_MAX_MATERIALS
@@ -3222,16 +3579,18 @@ static bool forge_scene_load_model(ForgeScene *scene,
                                        base_dir, mat->base_color_texture);
                 if (len >= 0 && len < (int)sizeof(path_buf))
                     model->mat_textures[i].base_color =
-                        forge_scene_load_texture(scene, path_buf, true);
+                        forge_scene_load_pipeline_texture(
+                            scene, model, path_buf, true, false);
             }
 
-            /* Normal texture */
+            /* Normal texture (is_normal_map=true selects BC5) */
             if (mat->normal_texture[0]) {
                 int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
                                        base_dir, mat->normal_texture);
                 if (len >= 0 && len < (int)sizeof(path_buf))
                     model->mat_textures[i].normal =
-                        forge_scene_load_texture(scene, path_buf, false);
+                        forge_scene_load_pipeline_texture(
+                            scene, model, path_buf, false, true);
             }
 
             /* Metallic-roughness texture */
@@ -3241,7 +3600,8 @@ static bool forge_scene_load_model(ForgeScene *scene,
                                        mat->metallic_roughness_texture);
                 if (len >= 0 && len < (int)sizeof(path_buf))
                     model->mat_textures[i].metallic_roughness =
-                        forge_scene_load_texture(scene, path_buf, false);
+                        forge_scene_load_pipeline_texture(
+                            scene, model, path_buf, false, false);
             }
 
             /* Occlusion texture */
@@ -3250,7 +3610,8 @@ static bool forge_scene_load_model(ForgeScene *scene,
                                        base_dir, mat->occlusion_texture);
                 if (len >= 0 && len < (int)sizeof(path_buf))
                     model->mat_textures[i].occlusion =
-                        forge_scene_load_texture(scene, path_buf, false);
+                        forge_scene_load_pipeline_texture(
+                            scene, model, path_buf, false, false);
             }
 
             /* Emissive texture */
@@ -3259,16 +3620,18 @@ static bool forge_scene_load_model(ForgeScene *scene,
                                        base_dir, mat->emissive_texture);
                 if (len >= 0 && len < (int)sizeof(path_buf))
                     model->mat_textures[i].emissive =
-                        forge_scene_load_texture(scene, path_buf, true);
+                        forge_scene_load_pipeline_texture(
+                            scene, model, path_buf, true, false);
             }
         }
     }
 
     SDL_Log("forge_scene: loaded model: %u nodes, %u meshes, %u materials, "
-            "%u vertices, %u submeshes",
+            "%u vertices, %u submeshes, %u/%u textures compressed",
             model->scene_data.node_count, model->scene_data.mesh_count,
             model->materials.material_count, model->mesh.vertex_count,
-            model->mesh.submesh_count);
+            model->mesh.submesh_count,
+            model->compressed_texture_count, model->total_texture_count);
     return true;
 
 fail:

@@ -1,0 +1,382 @@
+{
+  "source": "ABeautifulGame.gltf",
+  "format_version": 1,
+  "node_count": 49,
+  "mesh_count": 15,
+  "root_count": 33,
+  "mesh_node_count": 49,
+  "total_children": 16,
+  "meshes": [
+    {
+      "name": "King_Shared",
+      "first_submesh": 0,
+      "submesh_count": 1
+    },
+    {
+      "name": "King_Shared",
+      "first_submesh": 1,
+      "submesh_count": 1
+    },
+    {
+      "name": "Queen_Shared",
+      "first_submesh": 2,
+      "submesh_count": 1
+    },
+    {
+      "name": "Queen_Shared",
+      "first_submesh": 3,
+      "submesh_count": 1
+    },
+    {
+      "name": "Chessboard",
+      "first_submesh": 4,
+      "submesh_count": 1
+    },
+    {
+      "name": "Pawn_Top_Shared",
+      "first_submesh": 5,
+      "submesh_count": 1
+    },
+    {
+      "name": "Pawn_Body_Shared",
+      "first_submesh": 6,
+      "submesh_count": 1
+    },
+    {
+      "name": "Pawn_Top_Shared",
+      "first_submesh": 7,
+      "submesh_count": 1
+    },
+    {
+      "name": "Pawn_Body_Shared",
+      "first_submesh": 8,
+      "submesh_count": 1
+    },
+    {
+      "name": "Castle_Shared",
+      "first_submesh": 9,
+      "submesh_count": 1
+    },
+    {
+      "name": "Castle_Shared",
+      "first_submesh": 10,
+      "submesh_count": 1
+    },
+    {
+      "name": "Knight_Shared",
+      "first_submesh": 11,
+      "submesh_count": 1
+    },
+    {
+      "name": "Knight_Shared",
+      "first_submesh": 12,
+      "submesh_count": 1
+    },
+    {
+      "name": "Bishop_Shared",
+      "first_submesh": 13,
+      "submesh_count": 1
+    },
+    {
+      "name": "Bishop_Shared",
+      "first_submesh": 14,
+      "submesh_count": 1
+    }
+  ],
+  "nodes": [
+    {
+      "name": "King_B",
+      "parent": -1,
+      "mesh_index": 0,
+      "child_count": 0
+    },
+    {
+      "name": "King_W",
+      "parent": -1,
+      "mesh_index": 1,
+      "child_count": 0
+    },
+    {
+      "name": "Queen_B",
+      "parent": -1,
+      "mesh_index": 2,
+      "child_count": 0
+    },
+    {
+      "name": "Queen_W",
+      "parent": -1,
+      "mesh_index": 3,
+      "child_count": 0
+    },
+    {
+      "name": "Chessboard",
+      "parent": -1,
+      "mesh_index": 4,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Top_W1",
+      "parent": 6,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W1",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W2",
+      "parent": 8,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W2",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W3",
+      "parent": 10,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W3",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W4",
+      "parent": 12,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W4",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W5",
+      "parent": 14,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W5",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W6",
+      "parent": 16,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W6",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W7",
+      "parent": 18,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W7",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_W8",
+      "parent": 20,
+      "mesh_index": 5,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_W8",
+      "parent": -1,
+      "mesh_index": 6,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B1",
+      "parent": 22,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B1",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B2",
+      "parent": 24,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B2",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B3",
+      "parent": 26,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B3",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B4",
+      "parent": 28,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B4",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B5",
+      "parent": 30,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B5",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B6",
+      "parent": 32,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B6",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B7",
+      "parent": 34,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B7",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Pawn_Top_B8",
+      "parent": 36,
+      "mesh_index": 7,
+      "child_count": 0
+    },
+    {
+      "name": "Pawn_Body_B8",
+      "parent": -1,
+      "mesh_index": 8,
+      "child_count": 1
+    },
+    {
+      "name": "Castle_B1",
+      "parent": -1,
+      "mesh_index": 9,
+      "child_count": 0
+    },
+    {
+      "name": "Castle_B2",
+      "parent": -1,
+      "mesh_index": 9,
+      "child_count": 0
+    },
+    {
+      "name": "Castle_W1",
+      "parent": -1,
+      "mesh_index": 10,
+      "child_count": 0
+    },
+    {
+      "name": "Castle_W2",
+      "parent": -1,
+      "mesh_index": 10,
+      "child_count": 0
+    },
+    {
+      "name": "Knight_B1",
+      "parent": -1,
+      "mesh_index": 11,
+      "child_count": 0
+    },
+    {
+      "name": "Knight_B2",
+      "parent": -1,
+      "mesh_index": 11,
+      "child_count": 0
+    },
+    {
+      "name": "Knight_W1",
+      "parent": -1,
+      "mesh_index": 12,
+      "child_count": 0
+    },
+    {
+      "name": "Knight_W2",
+      "parent": -1,
+      "mesh_index": 12,
+      "child_count": 0
+    },
+    {
+      "name": "Bishop_B1",
+      "parent": -1,
+      "mesh_index": 13,
+      "child_count": 0
+    },
+    {
+      "name": "Bishop_B2",
+      "parent": -1,
+      "mesh_index": 13,
+      "child_count": 0
+    },
+    {
+      "name": "Bishop_W1",
+      "parent": -1,
+      "mesh_index": 14,
+      "child_count": 0
+    },
+    {
+      "name": "Bishop_W2",
+      "parent": -1,
+      "mesh_index": 14,
+      "child_count": 0
+    }
+  ]
+}

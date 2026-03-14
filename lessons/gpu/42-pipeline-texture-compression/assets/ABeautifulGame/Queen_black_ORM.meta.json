@@ -1,0 +1,12 @@
+{
+  "source": "Queen_black_ORM.jpg",
+  "output": "Queen_black_ORM.jpg",
+  "output_width": 2048,
+  "output_height": 2048,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "Queen_black_ORM.ktx2",
+    "ratio": 4.23
+  }
+}

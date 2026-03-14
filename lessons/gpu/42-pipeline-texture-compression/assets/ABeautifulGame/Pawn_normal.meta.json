@@ -1,0 +1,12 @@
+{
+  "source": "Pawn_normal.jpg",
+  "output": "Pawn_normal.jpg",
+  "output_width": 2048,
+  "output_height": 2048,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "Pawn_normal.ktx2",
+    "ratio": 4.38
+  }
+}

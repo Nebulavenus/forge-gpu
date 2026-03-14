@@ -214,6 +214,48 @@ python scripts/compile_shaders.py 02         # just lesson 02
 python scripts/compile_shaders.py -v         # verbose (show dxc commands)
 ```
 
+## Texture compression (basisu)
+
+GPU Lesson 42 and later use
+[Basis Universal](https://github.com/BinomialLLC/basis_universal)
+to compress textures into KTX2 (UASTC) at build time. The `basisu` CLI tool
+is built from source automatically via CMake FetchContent — no manual install
+needed. The first build downloads and compiles it alongside SDL3.
+
+To compress a texture manually:
+
+```bash
+# Build just the basisu tool
+cmake --build build --target basisu --config Release
+
+# Compress a texture to UASTC KTX2 with mipmaps
+build/_deps/basis_universal_full-src/bin/basisu -uastc -ktx2 -mipmap -file texture.jpg
+
+# Normal maps: -normal_map for linear encoding, -separate_rg_to_color_alpha
+# so the BC5 transcoder picks up G from the alpha channel
+build/_deps/basis_universal_full-src/bin/basisu -uastc -ktx2 -mipmap -normal_map -separate_rg_to_color_alpha -file normal.jpg
+```
+
+The Python pipeline's texture plugin (`pipeline/plugins/texture.py`) calls
+`basisu` automatically when `compression = "basisu"` is set in
+`pipeline.toml`. It finds the CMake-built binary in the build directory.
+
+To skip building basisu (e.g. in CI where textures are pre-compressed):
+
+```bash
+cmake -B build -DFORGE_BUILD_BASISU=OFF
+```
+
+### Headless servers
+
+basisu runs without a GPU — it's CPU-only compression. The offline tool
+`forge_texture_tool` transcodes UASTC to BC7/BC5 using the Basis Universal
+transcoder library at build time, producing `.ftex` files with GPU-ready
+blocks. At runtime, lessons load the pre-transcoded `.ftex` blocks via
+`forge_pipeline_load_ftex()` and upload them directly — no transcoding
+library is needed at runtime. This means the full texture compression
+pipeline works on headless CI servers and cloud VMs.
+
 ## SDL source (optional)
 
 You can browse the SDL headers and GPU backend code locally by initializing

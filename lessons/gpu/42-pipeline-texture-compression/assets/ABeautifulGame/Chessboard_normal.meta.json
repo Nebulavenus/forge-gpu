@@ -1,0 +1,12 @@
+{
+  "source": "Chessboard_normal.jpg",
+  "output": "Chessboard_normal.jpg",
+  "output_width": 2048,
+  "output_height": 2048,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "Chessboard_normal.ktx2",
+    "ratio": 6.13
+  }
+}
