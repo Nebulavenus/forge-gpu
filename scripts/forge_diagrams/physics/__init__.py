@@ -27,6 +27,11 @@ __all__ = [
     "diagram_integration_flowchart",
     "diagram_precession",
     "diagram_kinetic_energy",
+    "diagram_force_at_point",
+    "diagram_force_accumulator_lifecycle",
+    "diagram_drag_terminal_velocity",
+    "diagram_gyroscopic_stability",
+    "diagram_friction_decomposition",
 ]
 
 from .lesson_01 import (
@@ -62,4 +67,11 @@ from .lesson_04 import (
     diagram_rigid_body_state,
     diagram_torque_force_at_point,
     diagram_world_space_inertia,
+)
+from .lesson_05 import (
+    diagram_drag_terminal_velocity,
+    diagram_force_accumulator_lifecycle,
+    diagram_force_at_point,
+    diagram_friction_decomposition,
+    diagram_gyroscopic_stability,
 )

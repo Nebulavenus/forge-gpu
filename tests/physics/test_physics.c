@@ -4292,6 +4292,535 @@ static void test_rb_integrate_inf_dt(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Lesson 05: Force Generators
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Test constants for force generator tests */
+#define FG_MASS             5.0f
+#define FG_MASS_ALT         2.0f    /* alternate mass for direction tests */
+#define FG_DT               (1.0f / 60.0f)
+#define FG_GRAVITY_Y        (-9.81f)
+#define FG_DRAG_COEFF       2.0f
+#define FG_ADRAG_COEFF      1.5f
+#define FG_FRIC_COEFF       3.0f
+#define FG_VELOCITY         10.0f
+#define FG_ANG_VEL          8.0f
+#define FG_TOL              0.01f
+#define FG_RESTIT           0.5f
+#define FG_LIN_DAMPING      1.0f
+#define FG_ANG_DAMPING      1.0f
+#define FG_SPHERE_RADIUS    0.5f
+#define FG_INIT_Y           10.0f
+#define FG_DROP_HEIGHT      100.0f
+#define FG_COM_HEIGHT       1.0f
+#define FG_FALL_SPEED       5.0f
+#define FG_GRAV_DIR_X       3.0f
+#define FG_GRAV_DIR_Z       (-2.0f)
+/* Combined test constants (group 59) */
+#define FG_COMB_LDRAG       0.5f
+#define FG_COMB_ADRAG       0.3f
+#define FG_COMB_FRICTION    2.0f
+#define FG_COMB_DAMPING     0.99f
+#define FG_BOX_EXT_X        1.0f
+#define FG_BOX_EXT_Y        0.5f
+#define FG_BOX_EXT_Z        0.3f
+#define FG_COMB_VEL_X       5.0f
+#define FG_COMB_VEL_Z       3.0f
+#define FG_COMB_ANGVEL_X    2.0f
+#define FG_COMB_ANGVEL_Y    5.0f
+#define FG_COMB_ANGVEL_Z    1.0f
+#define FG_GROUND_PROX      1.0f
+#define FG_GROUND_LEVEL     0.5f
+#define FG_TERMINAL_STEPS   3000
+#define FG_STABILITY_STEPS  10000
+#define FG_DETERM_STEPS     1000
+#define FG_TERMINAL_TOL     0.05f   /* 5% relative tolerance */
+
+/* ── 55. Gravity on rigid body ─────────────────────────────────────────── */
+
+static void test_rb_gravity_basic(void)
+{
+    TEST("rb_gravity — basic gravity accumulates F = m * g");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_INIT_Y, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    forge_physics_rigid_body_apply_gravity(&rb,
+        vec3_create(0, FG_GRAVITY_Y, 0));
+    /* F = m * g = 5 * -9.81 = -49.05 */
+    ASSERT_NEAR(rb.force_accum.y, FG_MASS * FG_GRAVITY_Y, EPSILON);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.z, 0.0f, EPSILON);
+    /* Gravity at COM produces no torque */
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_gravity_static_noop(void)
+{
+    TEST("rb_gravity — static body unaffected");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_apply_gravity(&rb,
+        vec3_create(0, FG_GRAVITY_Y, 0));
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_gravity_direction(void)
+{
+    TEST("rb_gravity — arbitrary direction");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS_ALT, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    forge_physics_rigid_body_apply_gravity(&rb,
+        vec3_create(FG_GRAV_DIR_X, 0, FG_GRAV_DIR_Z));
+    /* F = m * g = 2 * (3, 0, -2) = (6, 0, -4) */
+    ASSERT_NEAR(rb.force_accum.x, FG_MASS_ALT * FG_GRAV_DIR_X, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.z, FG_MASS_ALT * FG_GRAV_DIR_Z, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_gravity_null_noop(void)
+{
+    TEST("rb_gravity — NULL does not crash");
+    forge_physics_rigid_body_apply_gravity(NULL,
+        vec3_create(0, FG_GRAVITY_Y, 0));
+    ASSERT_TRUE(1);
+    END_TEST();
+}
+
+/* ── 56. Linear drag ───────────────────────────────────────────────────── */
+
+static void test_rb_linear_drag_basic(void)
+{
+    TEST("rb_linear_drag — F = -k * v");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_linear_drag(&rb, FG_DRAG_COEFF);
+    /* F = -2.0 * 10.0 = -20.0 */
+    ASSERT_NEAR(rb.force_accum.x, -FG_DRAG_COEFF * FG_VELOCITY, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.z, 0.0f, EPSILON);
+    /* No torque from linear drag */
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_linear_drag_zero_coeff_noop(void)
+{
+    TEST("rb_linear_drag — zero coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_linear_drag(&rb, 0.0f);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_linear_drag_static_noop(void)
+{
+    TEST("rb_linear_drag — static body unaffected");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_linear_drag(&rb, FG_DRAG_COEFF);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_linear_drag_negative_coeff_noop(void)
+{
+    TEST("rb_linear_drag — negative coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_linear_drag(&rb, -1.0f);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_linear_drag_nan_coeff_noop(void)
+{
+    TEST("rb_linear_drag — NaN coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_linear_drag(&rb, NAN);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_linear_drag_null_noop(void)
+{
+    TEST("rb_linear_drag — NULL does not crash");
+    forge_physics_rigid_body_apply_linear_drag(NULL, FG_DRAG_COEFF);
+    ASSERT_TRUE(1);
+    END_TEST();
+}
+
+/* ── 57. Angular drag ──────────────────────────────────────────────────── */
+
+static void test_rb_angular_drag_basic(void)
+{
+    TEST("rb_angular_drag — tau = -k * omega");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    rb.angular_velocity = vec3_create(0.0f, FG_ANG_VEL, 0.0f);
+    forge_physics_rigid_body_apply_angular_drag(&rb, FG_ADRAG_COEFF);
+    /* tau = -1.5 * 8.0 = -12.0 */
+    ASSERT_NEAR(rb.torque_accum.y, -FG_ADRAG_COEFF * FG_ANG_VEL, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.torque_accum.z, 0.0f, EPSILON);
+    /* No force from angular drag */
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_angular_drag_zero_coeff_noop(void)
+{
+    TEST("rb_angular_drag — zero coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.angular_velocity = vec3_create(0.0f, FG_ANG_VEL, 0.0f);
+    forge_physics_rigid_body_apply_angular_drag(&rb, 0.0f);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_angular_drag_static_noop(void)
+{
+    TEST("rb_angular_drag — static body unaffected");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.angular_velocity = vec3_create(0.0f, FG_ANG_VEL, 0.0f);
+    forge_physics_rigid_body_apply_angular_drag(&rb, FG_ADRAG_COEFF);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_angular_drag_negative_coeff_noop(void)
+{
+    TEST("rb_angular_drag — negative coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.angular_velocity = vec3_create(0.0f, FG_ANG_VEL, 0.0f);
+    forge_physics_rigid_body_apply_angular_drag(&rb, -FG_ADRAG_COEFF);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_angular_drag_nan_coeff_noop(void)
+{
+    TEST("rb_angular_drag — NaN coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.angular_velocity = vec3_create(0.0f, FG_ANG_VEL, 0.0f);
+    forge_physics_rigid_body_apply_angular_drag(&rb, NAN);
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_angular_drag_null_noop(void)
+{
+    TEST("rb_angular_drag — NULL does not crash");
+    forge_physics_rigid_body_apply_angular_drag(NULL, FG_ADRAG_COEFF);
+    ASSERT_TRUE(1);
+    END_TEST();
+}
+
+/* ── 58. Friction ──────────────────────────────────────────────────────── */
+
+static void test_rb_friction_opposes_sliding(void)
+{
+    TEST("rb_friction — friction opposes tangential velocity");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_GROUND_LEVEL, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 0.5f);
+    /* Sliding along +X on a ground plane (normal = +Y) */
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    vec3 normal = vec3_create(0, 1, 0);
+    vec3 contact = vec3_create(0, 0, 0);
+    forge_physics_rigid_body_apply_friction(&rb, normal, contact,
+                                            FG_FRIC_COEFF);
+    /* Friction should oppose +X velocity → force in -X direction */
+    ASSERT_TRUE(rb.force_accum.x < -EPSILON);
+    /* F = -coeff * |v_tangent| = -3 * 10 = -30 in X direction */
+    ASSERT_NEAR(rb.force_accum.x, -FG_FRIC_COEFF * FG_VELOCITY, EPSILON);
+    /* No force along normal (Y) from friction */
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_friction_normal_aligned_noop(void)
+{
+    TEST("rb_friction — velocity along normal produces no friction");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_GROUND_LEVEL, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 0.5f);
+    /* Velocity straight down (along the normal) — no tangential component */
+    rb.velocity = vec3_create(0.0f, -FG_FALL_SPEED, 0.0f);
+    vec3 normal = vec3_create(0, 1, 0);
+    vec3 contact = rb.position;
+    forge_physics_rigid_body_apply_friction(&rb, normal, contact,
+                                            FG_FRIC_COEFF);
+    /* No tangential velocity → no friction force */
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_friction_zero_coeff_noop(void)
+{
+    TEST("rb_friction — zero coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_GROUND_LEVEL, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_friction(&rb,
+        vec3_create(0, 1, 0), vec3_create(0, 0, 0), 0.0f);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_friction_static_noop(void)
+{
+    TEST("rb_friction — static body unaffected");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), 0.0f, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_friction(&rb,
+        vec3_create(0, 1, 0), vec3_create(0, 0, 0), FG_FRIC_COEFF);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_friction_generates_torque(void)
+{
+    TEST("rb_friction — off-center contact generates torque");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_COM_HEIGHT, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    /* Sliding along +X, contact at bottom of sphere (0, 0, 0) */
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    vec3 normal = vec3_create(0, 1, 0);
+    vec3 contact = vec3_create(0, 0, 0);  /* below COM */
+    forge_physics_rigid_body_apply_friction(&rb, normal, contact,
+                                            FG_FRIC_COEFF);
+    /* Friction force is in -X direction at contact point (0,0,0).
+     * Offset from COM (0,1,0) to contact (0,0,0) = (0,-1,0).
+     * Torque = offset × force = (0,-1,0) × (-30,0,0)
+     *        = ((-1)*0 - 0*0, 0*(-30) - 0*0, 0*0 - (-1)*(-30))
+     *        = (0, 0, -30)
+     * Wait — that's cross((0,-1,0), (-30,0,0)):
+     *   x = (-1)*0 - 0*0     = 0
+     *   y = 0*(-30) - 0*0    = 0
+     *   z = 0*0 - (-1)*(-30) = -30
+     * So torque should be in -Z direction. */
+    ASSERT_TRUE(fabsf(rb.torque_accum.z) > EPSILON);
+    /* Torque z should be negative (friction causes backward spin) */
+    ASSERT_TRUE(rb.torque_accum.z < 0.0f);
+    END_TEST();
+}
+
+static void test_rb_friction_spinning_body_gets_friction(void)
+{
+    TEST("rb_friction — spinning body with zero linear velocity gets friction");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_COM_HEIGHT, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, FG_SPHERE_RADIUS);
+    /* Zero linear velocity, spinning around Y axis */
+    rb.velocity = vec3_create(0.0f, 0.0f, 0.0f);
+    rb.angular_velocity = vec3_create(0.0f, FG_ANG_VEL, 0.0f);
+    vec3 normal = vec3_create(0, 1, 0);
+    /* Contact point at bottom of sphere (on the ground) */
+    vec3 contact = vec3_create(0, 0, 0);
+    /* r = contact - position = (0,-1,0)
+     * v_contact = v + omega x r = 0 + (0,8,0) x (0,-1,0)
+     *           = (8*0 - 0*(-1), 0*0 - 0*0, 0*(-1) - 8*0)
+     *           = (0, 0, 0)  — spinning around Y with r along Y produces no tangent
+     * Actually: cross((0,8,0), (0,-1,0)):
+     *   x = 8*0 - 0*(-1) = 0
+     *   y = 0*0 - 0*0    = 0
+     *   z = 0*(-1) - 8*0 = 0
+     * So no friction — angular velocity parallel to r. Try spinning around Z: */
+    rb.angular_velocity = vec3_create(0.0f, 0.0f, FG_ANG_VEL);
+    /* r = (0,-1,0), omega = (0,0,8)
+     * omega x r = (0,0,8) x (0,-1,0)
+     *   x = 0*0 - 8*(-1)  = 8
+     *   y = 8*0 - 0*0     = 0
+     *   z = 0*(-1) - 0*0  = 0
+     * v_contact = (8, 0, 0) — tangent to ground plane! */
+    forge_physics_rigid_body_apply_friction(&rb, normal, contact,
+                                            FG_FRIC_COEFF);
+    /* Friction should oppose the +X contact-point velocity */
+    ASSERT_TRUE(rb.force_accum.x < -EPSILON);
+    /* v_contact tangent speed = 8, so F = -coeff * 8 = -3 * 8 = -24 */
+    float expected_force = -FG_FRIC_COEFF * FG_ANG_VEL;
+    ASSERT_NEAR(rb.force_accum.x, expected_force, FG_TOL);
+    END_TEST();
+}
+
+static void test_rb_friction_nan_coeff_noop(void)
+{
+    TEST("rb_friction — NaN coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_GROUND_LEVEL, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_friction(&rb,
+        vec3_create(0, 1, 0), vec3_create(0, 0, 0), NAN);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_friction_negative_coeff_noop(void)
+{
+    TEST("rb_friction — negative coefficient is no-op");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_GROUND_LEVEL, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    rb.velocity = vec3_create(FG_VELOCITY, 0.0f, 0.0f);
+    forge_physics_rigid_body_apply_friction(&rb,
+        vec3_create(0, 1, 0), vec3_create(0, 0, 0), -FG_FRIC_COEFF);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_friction_null_noop(void)
+{
+    TEST("rb_friction — NULL does not crash");
+    forge_physics_rigid_body_apply_friction(NULL,
+        vec3_create(0, 1, 0), vec3_create(0, 0, 0), FG_FRIC_COEFF);
+    ASSERT_TRUE(1);
+    END_TEST();
+}
+
+/* ── 59. Combined force generator effects ──────────────────────────────── */
+
+static void test_rb_gravity_drag_terminal_velocity(void)
+{
+    TEST("combined — gravity + drag approaches terminal velocity");
+    /* Terminal velocity: v_term = m * g / k
+     * m=5, g=9.81, k=2 → v_term = 5*9.81/2 = 24.525 m/s */
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_DROP_HEIGHT, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
+    float v_term = FG_MASS * fabsf(FG_GRAVITY_Y) / FG_DRAG_COEFF;
+    /* Run for many steps to approach terminal velocity */
+    for (int i = 0; i < FG_TERMINAL_STEPS; i++) {
+        forge_physics_rigid_body_apply_gravity(&rb,
+            vec3_create(0, FG_GRAVITY_Y, 0));
+        forge_physics_rigid_body_apply_linear_drag(&rb, FG_DRAG_COEFF);
+        forge_physics_rigid_body_integrate(&rb, FG_DT);
+    }
+    /* Vertical speed should be near terminal velocity */
+    float vy = fabsf(rb.velocity.y);
+    ASSERT_NEAR(vy, v_term, v_term * FG_TERMINAL_TOL);  /* within 5% */
+    END_TEST();
+}
+
+static void test_rb_all_generators_no_nan(void)
+{
+    TEST("combined — all generators for 10000 steps, no NaN/Inf");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, FG_INIT_Y, 0), FG_MASS, FG_COMB_DAMPING, FG_COMB_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb,
+        vec3_create(FG_BOX_EXT_X, FG_BOX_EXT_Y, FG_BOX_EXT_Z));
+    rb.velocity = vec3_create(FG_COMB_VEL_X, 0.0f, FG_COMB_VEL_Z);
+    rb.angular_velocity = vec3_create(FG_COMB_ANGVEL_X, FG_COMB_ANGVEL_Y, FG_COMB_ANGVEL_Z);
+    vec3 ground_normal = vec3_create(0, 1, 0);
+    for (int i = 0; i < FG_STABILITY_STEPS; i++) {
+        forge_physics_rigid_body_apply_gravity(&rb,
+            vec3_create(0, FG_GRAVITY_Y, 0));
+        forge_physics_rigid_body_apply_linear_drag(&rb, FG_COMB_LDRAG);
+        forge_physics_rigid_body_apply_angular_drag(&rb, FG_COMB_ADRAG);
+        /* Apply friction when near ground */
+        if (rb.position.y < FG_GROUND_PROX) {
+            vec3 contact = rb.position;
+            contact.y = 0.0f;
+            forge_physics_rigid_body_apply_friction(&rb, ground_normal,
+                                                    contact, FG_COMB_FRICTION);
+        }
+        forge_physics_rigid_body_integrate(&rb, FG_DT);
+        /* Simple ground collision */
+        if (rb.position.y < FG_GROUND_LEVEL) {
+            rb.position.y = FG_GROUND_LEVEL;
+            if (rb.velocity.y < 0.0f)
+                rb.velocity.y = -rb.velocity.y * rb.restitution;
+        }
+    }
+    ASSERT_TRUE(isfinite(rb.position.x));
+    ASSERT_TRUE(isfinite(rb.position.y));
+    ASSERT_TRUE(isfinite(rb.position.z));
+    ASSERT_TRUE(isfinite(rb.velocity.x));
+    ASSERT_TRUE(isfinite(rb.velocity.y));
+    ASSERT_TRUE(isfinite(rb.velocity.z));
+    ASSERT_TRUE(isfinite(rb.angular_velocity.x));
+    ASSERT_TRUE(isfinite(rb.angular_velocity.y));
+    ASSERT_TRUE(isfinite(rb.angular_velocity.z));
+    ASSERT_TRUE(isfinite(rb.orientation.w));
+    float q_len = quat_length(rb.orientation);
+    ASSERT_NEAR(q_len, 1.0f, FG_TOL);
+    END_TEST();
+}
+
+static void test_rb_force_generators_determinism(void)
+{
+    TEST("combined — deterministic with all generators");
+    ForgePhysicsRigidBody rb1 = forge_physics_rigid_body_create(
+        vec3_create(0, FG_INIT_Y, 0), FG_MASS, FG_COMB_DAMPING, FG_COMB_DAMPING, FG_RESTIT);
+    forge_physics_rigid_body_set_inertia_box(&rb1,
+        vec3_create(FG_BOX_EXT_X, FG_BOX_EXT_Y, FG_BOX_EXT_Z));
+    rb1.velocity = vec3_create(FG_COMB_VEL_X, 0.0f, FG_COMB_VEL_Z);
+    rb1.angular_velocity = vec3_create(FG_COMB_ANGVEL_X, FG_COMB_ANGVEL_Y, FG_COMB_ANGVEL_Z);
+    ForgePhysicsRigidBody rb2 = rb1;
+    vec3 ground_normal = vec3_create(0, 1, 0);
+    for (int i = 0; i < FG_DETERM_STEPS; i++) {
+        forge_physics_rigid_body_apply_gravity(&rb1,
+            vec3_create(0, FG_GRAVITY_Y, 0));
+        forge_physics_rigid_body_apply_linear_drag(&rb1, FG_COMB_LDRAG);
+        forge_physics_rigid_body_apply_angular_drag(&rb1, FG_COMB_ADRAG);
+        if (rb1.position.y < FG_GROUND_PROX) {
+            vec3 cp1 = rb1.position; cp1.y = 0.0f;
+            forge_physics_rigid_body_apply_friction(&rb1, ground_normal,
+                cp1, FG_COMB_FRICTION);
+        }
+        forge_physics_rigid_body_integrate(&rb1, FG_DT);
+
+        forge_physics_rigid_body_apply_gravity(&rb2,
+            vec3_create(0, FG_GRAVITY_Y, 0));
+        forge_physics_rigid_body_apply_linear_drag(&rb2, FG_COMB_LDRAG);
+        forge_physics_rigid_body_apply_angular_drag(&rb2, FG_COMB_ADRAG);
+        if (rb2.position.y < FG_GROUND_PROX) {
+            vec3 cp2 = rb2.position; cp2.y = 0.0f;
+            forge_physics_rigid_body_apply_friction(&rb2, ground_normal,
+                cp2, FG_COMB_FRICTION);
+        }
+        forge_physics_rigid_body_integrate(&rb2, FG_DT);
+    }
+    /* Compare full rigid body state */
+    ASSERT_NEAR(rb1.position.x, rb2.position.x, EPSILON);
+    ASSERT_NEAR(rb1.position.y, rb2.position.y, EPSILON);
+    ASSERT_NEAR(rb1.position.z, rb2.position.z, EPSILON);
+    ASSERT_NEAR(rb1.velocity.x, rb2.velocity.x, EPSILON);
+    ASSERT_NEAR(rb1.velocity.y, rb2.velocity.y, EPSILON);
+    ASSERT_NEAR(rb1.velocity.z, rb2.velocity.z, EPSILON);
+    ASSERT_NEAR(rb1.angular_velocity.x, rb2.angular_velocity.x, EPSILON);
+    ASSERT_NEAR(rb1.angular_velocity.y, rb2.angular_velocity.y, EPSILON);
+    ASSERT_NEAR(rb1.angular_velocity.z, rb2.angular_velocity.z, EPSILON);
+    ASSERT_NEAR(rb1.orientation.w, rb2.orientation.w, EPSILON);
+    ASSERT_NEAR(rb1.orientation.x, rb2.orientation.x, EPSILON);
+    ASSERT_NEAR(rb1.orientation.y, rb2.orientation.y, EPSILON);
+    ASSERT_NEAR(rb1.orientation.z, rb2.orientation.z, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main — run all tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -4638,6 +5167,51 @@ int main(int argc, char *argv[])
     test_rb_integrate_negative_dt();
     test_rb_integrate_nan_dt();
     test_rb_integrate_inf_dt();
+
+    /* ── Lesson 05: Force Generators ───────────────────────────────────── */
+
+    /* 55. Gravity on rigid body */
+    SDL_Log("--- rigid body gravity ---");
+    test_rb_gravity_basic();
+    test_rb_gravity_static_noop();
+    test_rb_gravity_direction();
+    test_rb_gravity_null_noop();
+
+    /* 56. Linear drag */
+    SDL_Log("--- rigid body linear drag ---");
+    test_rb_linear_drag_basic();
+    test_rb_linear_drag_zero_coeff_noop();
+    test_rb_linear_drag_static_noop();
+    test_rb_linear_drag_negative_coeff_noop();
+    test_rb_linear_drag_nan_coeff_noop();
+    test_rb_linear_drag_null_noop();
+
+    /* 57. Angular drag */
+    SDL_Log("--- rigid body angular drag ---");
+    test_rb_angular_drag_basic();
+    test_rb_angular_drag_zero_coeff_noop();
+    test_rb_angular_drag_static_noop();
+    test_rb_angular_drag_negative_coeff_noop();
+    test_rb_angular_drag_nan_coeff_noop();
+    test_rb_angular_drag_null_noop();
+
+    /* 58. Friction */
+    SDL_Log("--- rigid body friction ---");
+    test_rb_friction_opposes_sliding();
+    test_rb_friction_normal_aligned_noop();
+    test_rb_friction_zero_coeff_noop();
+    test_rb_friction_static_noop();
+    test_rb_friction_generates_torque();
+    test_rb_friction_spinning_body_gets_friction();
+    test_rb_friction_nan_coeff_noop();
+    test_rb_friction_negative_coeff_noop();
+    test_rb_friction_null_noop();
+
+    /* 59. Combined force generator effects */
+    SDL_Log("--- combined force generators ---");
+    test_rb_gravity_drag_terminal_velocity();
+    test_rb_all_generators_no_nan();
+    test_rb_force_generators_determinism();
 
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

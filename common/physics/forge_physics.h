@@ -1868,6 +1868,194 @@ static inline void forge_physics_rigid_body_integrate(
     rb->torque_accum = vec3_create(0.0f, 0.0f, 0.0f);
 }
 
+/* ── Lesson 05 — Force Generators ─────────────────────────────────────── */
+
+/* Apply gravitational acceleration to a rigid body.
+ *
+ * Adds F = m * g to the force accumulator at the center of mass.
+ * Gravity acts uniformly on the entire body, which is equivalent to a
+ * force at the center of mass — it produces no torque. Static bodies
+ * (inv_mass == 0) are unaffected.
+ *
+ * This is a convenience wrapper around forge_physics_rigid_body_apply_force()
+ * that handles the mass multiplication, matching the particle-level
+ * forge_physics_apply_gravity().
+ *
+ * Parameters:
+ *   rb      — rigid body to apply gravity to (must not be NULL)
+ *   gravity — gravitational acceleration vector (m/s²), typically (0, -9.81, 0)
+ *
+ * Usage:
+ *   forge_physics_rigid_body_apply_gravity(&rb, (vec3){0, -9.81f, 0});
+ *
+ * Reference: Newton's second law: F = m * a. For gravity, a = g.
+ *
+ * See: Physics Lesson 05 — Forces and Torques
+ */
+static inline void forge_physics_rigid_body_apply_gravity(
+    ForgePhysicsRigidBody *rb, vec3 gravity)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    rb->force_accum = vec3_add(rb->force_accum,
+                               vec3_scale(gravity, rb->mass));
+}
+
+/* Apply linear drag (air resistance) to a rigid body.
+ *
+ * Adds F = -coeff * v to the force accumulator, opposing the current
+ * linear velocity. This is a simplified linear drag model — real drag
+ * is proportional to v² (quadratic), but linear drag is numerically
+ * stable and sufficient for most game physics.
+ *
+ * Linear drag causes objects to reach a terminal velocity where the
+ * drag force equals the applied force (e.g. gravity):
+ *   v_terminal = m * g / coeff
+ *
+ * Parameters:
+ *   rb    — rigid body (static bodies are skipped)
+ *   coeff — drag coefficient (kg/s). Must be >= 0. Higher values mean
+ *           more drag. Typical range: 0.1 to 5.0.
+ *
+ * Usage:
+ *   forge_physics_rigid_body_apply_linear_drag(&rb, 0.5f);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 10 —
+ * simplified drag model for rigid bodies.
+ *
+ * See: Physics Lesson 05 — Forces and Torques
+ */
+static inline void forge_physics_rigid_body_apply_linear_drag(
+    ForgePhysicsRigidBody *rb, float coeff)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!(coeff > 0.0f)) return;  /* skip zero, negative, NaN */
+
+    /* F_drag = -coeff * v */
+    rb->force_accum = vec3_add(rb->force_accum,
+                               vec3_scale(rb->velocity, -coeff));
+}
+
+/* Apply angular drag (rotational air resistance) to a rigid body.
+ *
+ * Adds torque = -coeff * omega to the torque accumulator, opposing the
+ * current angular velocity. This models the resistance that air exerts
+ * on a spinning object — without it, objects spin forever (unless the
+ * exponential damping field is < 1.0).
+ *
+ * Angular drag differs from the damping field:
+ * - damping is exponential decay (v *= damping^dt) — frame-rate independent
+ *   but not physically motivated
+ * - angular drag is a force-based model (tau = -k*omega) — participates
+ *   in the force accumulator and interacts correctly with other torques
+ *
+ * Both can be used together. Damping provides baseline energy loss;
+ * angular drag adds physically-motivated rotational resistance.
+ *
+ * Parameters:
+ *   rb    — rigid body (static bodies are skipped)
+ *   coeff — angular drag coefficient (N·m·s/rad). Must be >= 0.
+ *           Typical range: 0.1 to 5.0.
+ *
+ * Usage:
+ *   forge_physics_rigid_body_apply_angular_drag(&rb, 1.0f);
+ *
+ * Reference: Millington, "Game Physics Engine Development", Ch. 10.
+ *
+ * See: Physics Lesson 05 — Forces and Torques
+ */
+static inline void forge_physics_rigid_body_apply_angular_drag(
+    ForgePhysicsRigidBody *rb, float coeff)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!(coeff > 0.0f)) return;  /* skip zero, negative, NaN */
+
+    /* tau_drag = -coeff * omega */
+    rb->torque_accum = vec3_add(rb->torque_accum,
+                                vec3_scale(rb->angular_velocity, -coeff));
+}
+
+/* Apply contact friction to a rigid body sliding on a surface.
+ *
+ * Friction opposes the tangential component of the contact-point velocity.
+ * The contact-point velocity accounts for both linear and rotational motion:
+ *   v_contact = v + omega x r    (where r = contact_point - position)
+ *
+ * The tangential velocity is the projection onto the contact plane:
+ *   v_tangent = v_contact - (v_contact . n) * n
+ *
+ * The friction force opposes v_tangent:
+ *   F_friction = -coeff * |v_tangent| * normalize(v_tangent)
+ *
+ * This is a simplified velocity-proportional friction model. The coefficient
+ * combines the friction coefficient with the velocity dependence — in a full
+ * contact solver, Coulomb friction (F_friction <= mu * F_normal) is used
+ * instead, but for a force-generator approach this form is practical.
+ *
+ * The force is applied at the contact point, so it also generates
+ * torque (causing objects to spin from friction, like a rolling ball
+ * slowing down). When the contact point equals the body's position
+ * (|r| < epsilon), only the linear velocity contributes and no torque
+ * is produced.
+ *
+ * Parameters:
+ *   rb            — rigid body (static bodies are skipped)
+ *   normal        — contact surface normal (non-zero; normalized internally)
+ *   contact_point — world-space point where friction acts
+ *   coeff         — friction coefficient (N·s/m). Must be >= 0.
+ *                   Typical range: 0.1 to 10.0.
+ *
+ * Usage:
+ *   vec3 ground_normal = {0, 1, 0};
+ *   vec3 contact = rb.position;
+ *   contact.y = 0;  // ground contact point
+ *   forge_physics_rigid_body_apply_friction(&rb, ground_normal,
+ *       contact, 2.0f);
+ *
+ * Reference: Coulomb friction model, simplified for force-generator use.
+ * See Millington, "Game Physics Engine Development", Ch. 15.
+ *
+ * See: Physics Lesson 05 — Forces and Torques
+ */
+static inline void forge_physics_rigid_body_apply_friction(
+    ForgePhysicsRigidBody *rb, vec3 normal, vec3 contact_point,
+    float coeff)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!(coeff > 0.0f)) return;  /* skip zero, negative, NaN */
+
+    /* Guard and normalize the contact normal */
+    float normal_len_sq = vec3_dot(normal, normal);
+    if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return;
+    normal = vec3_scale(normal, 1.0f / sqrtf(normal_len_sq));
+
+    /* Compute contact-point velocity: v_p = v + omega x r */
+    vec3 r = vec3_sub(contact_point, rb->position);
+    vec3 v_contact;
+    if (vec3_length(r) < FORGE_PHYSICS_EPSILON) {
+        /* Contact at COM — use linear velocity only (no torque) */
+        v_contact = rb->velocity;
+    } else {
+        v_contact = vec3_add(rb->velocity,
+                             vec3_cross(rb->angular_velocity, r));
+    }
+
+    /* Project contact-point velocity onto the contact plane */
+    float v_dot_n = vec3_dot(v_contact, normal);
+    vec3 v_normal = vec3_scale(normal, v_dot_n);
+    vec3 v_tangent = vec3_sub(v_contact, v_normal);
+
+    float tang_speed = vec3_length(v_tangent);
+    if (tang_speed < FORGE_PHYSICS_EPSILON) return;  /* not sliding */
+
+    /* Friction force opposes tangential velocity */
+    vec3 friction_dir = vec3_scale(v_tangent, -1.0f / tang_speed);
+    vec3 friction_force = vec3_scale(friction_dir, coeff * tang_speed);
+
+    /* Apply at contact point (generates torque if off-center) */
+    forge_physics_rigid_body_apply_force_at_point(rb, friction_force,
+                                                   contact_point);
+}
+
 /* Clear force and torque accumulators.
  *
  * Call this at the start of each physics step before applying forces,

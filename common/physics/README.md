@@ -77,12 +77,21 @@ force/torque accumulators, mass properties.
 Constants: `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` (100 rad/s),
 `FORGE_PHYSICS_QUAT_RENORM_THRESHOLD` (1e-4).
 
+### Lesson 05 — Forces and Torques
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_rigid_body_apply_gravity()` | Apply gravitational acceleration (F = m * g at COM) |
+| `forge_physics_rigid_body_apply_linear_drag()` | Apply velocity-proportional drag (F = -k * v) |
+| `forge_physics_rigid_body_apply_angular_drag()` | Apply angular velocity drag (tau = -k * omega) |
+| `forge_physics_rigid_body_apply_friction()` | Apply contact friction opposing tangential contact-point velocity |
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 05 — Rigid Body Collisions | Rigid body contact detection, collision response | Contact points, angular impulse, friction |
-| 06–14 | *See [PLAN.md](../../PLAN.md)* | Contacts, GJK/EPA, constraints, solver |
+| 06 — Resting Contacts and Friction | Plane contact detection, resting contact resolution | Coulomb friction, stacking, contact caching |
+| 07–14 | *See [PLAN.md](../../PLAN.md)* | Contacts, GJK/EPA, constraints, solver |
 
 ## Design
 
@@ -105,3 +114,4 @@ Constants: `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` (100 rad/s),
 | [Physics L02](../../lessons/physics/02-springs-and-constraints/) | `ForgePhysicsSpring`, `ForgePhysicsDistanceConstraint`, `forge_physics_spring_apply()`, `forge_physics_constraint_solve_distance()`, `forge_physics_constraints_solve()` |
 | [Physics L03](../../lessons/physics/03-particle-collisions/) | `ForgePhysicsContact`, `forge_physics_collide_sphere_sphere()`, `forge_physics_resolve_contact()`, `forge_physics_collide_particles_step()` |
 | [Physics L04](../../lessons/physics/04-rigid-body-state/) | `ForgePhysicsRigidBody`, `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()`, inertia setters, force/torque application |
+| [Physics L05](../../lessons/physics/05-forces-and-torques/) | `forge_physics_rigid_body_apply_gravity()`, `forge_physics_rigid_body_apply_linear_drag()`, `forge_physics_rigid_body_apply_angular_drag()`, `forge_physics_rigid_body_apply_friction()` |
