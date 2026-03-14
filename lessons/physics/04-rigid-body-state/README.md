@@ -496,6 +496,9 @@ API reference.
 - [Physics Lesson 03 -- Particle Collisions](../03-particle-collisions/) covers
   impulse-based response; rigid body collision extends that impulse to include
   rotational effects
+- [Physics Lesson 06 -- Resting Contacts and Friction](../06-resting-contacts-and-friction/)
+  uses the rigid body state for contact detection and impulse-based resolution
+  with Coulomb friction
 - [Math Lesson 08 -- Orientation](../../math/08-orientation/) explains the
   quaternion algebra underlying orientation representation and the derivative
   formula

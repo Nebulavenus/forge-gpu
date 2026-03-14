@@ -10,21 +10,13 @@
  * SPDX-License-Identifier: Zlib
  */
 
-#include <SDL3/SDL.h>
-#include <math.h>
-#include "math/forge_math.h"
-#include "physics/forge_physics.h"
+#include "test_physics_common.h"
 
 /* ── Test Framework ──────────────────────────────────────────────────────── */
 
-static int test_count = 0;
-static int pass_count = 0;
-static int fail_count = 0;
-
-/* ── Shared test constants ─────────────────────────────────────────────── */
-
-#define EPSILON           0.001f
-#define PHYSICS_DT        (1.0f / 60.0f)
+int test_count = 0;
+int pass_count = 0;
+int fail_count = 0;
 
 /* Gravity */
 #define GRAVITY_Y         (-9.81f)
@@ -130,30 +122,8 @@ static int fail_count = 0;
 #define NRG_POS_BOUND     1e6f
 #define NRG_HEADROOM      1.5f
 
-#define TEST(name) \
-    do { \
-        test_count++; \
-        SDL_Log("  Testing: %s", name);
-
-#define ASSERT_NEAR(a, b, eps) \
-    if (fabsf((a) - (b)) > (eps)) { \
-        SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
-                (double)(b), (double)(a), (double)(eps)); \
-        fail_count++; \
-        return; \
-    }
-
-#define ASSERT_TRUE(cond) \
-    if (!(cond)) { \
-        SDL_Log("    FAIL: Condition false: %s", #cond); \
-        fail_count++; \
-        return; \
-    }
-
-#define END_TEST() \
-        SDL_Log("    PASS"); \
-        pass_count++; \
-    } while (0)
+/* Test macros (TEST, ASSERT_NEAR, ASSERT_TRUE, END_TEST) and
+ * run_rbc_tests() prototype are in test_physics_common.h */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * 1. forge_physics_particle_create
@@ -4820,6 +4790,8 @@ static void test_rb_force_generators_determinism(void)
     END_TEST();
 }
 
+/* Rigid body contact tests are in test_physics_rbc.c — called via run_rbc_tests() */
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Main — run all tests
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -5212,6 +5184,9 @@ int main(int argc, char *argv[])
     test_rb_gravity_drag_terminal_velocity();
     test_rb_all_generators_no_nan();
     test_rb_force_generators_determinism();
+
+    /* ── Rigid Body Contacts (test_physics_rbc.c) ────────────────────────── */
+    run_rbc_tests();
 
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

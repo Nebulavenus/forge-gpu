@@ -840,7 +840,9 @@ static inline void forge_physics_constraint_solve_distance(
  *   num_constraints (int) — number of constraints
  *   particles       (ForgePhysicsParticle*) — particle array
  *   num_particles   (int) — number of particles
- *   iterations      (int) — solver iterations; clamped to [1, 100]
+ *   iterations      (int) — solver iterations; clamped to
+ *                          [FORGE_PHYSICS_SOLVER_MIN_ITERATIONS,
+ *                           FORGE_PHYSICS_SOLVER_MAX_ITERATIONS]
  *
  * Usage:
  *   // Solve all constraints with 10 iterations
@@ -2102,6 +2104,666 @@ static inline mat4 forge_physics_rigid_body_get_transform(
     mat4 rotation    = quat_to_mat4(rb->orientation);
     mat4 translation = mat4_translate(rb->position);
     return mat4_multiply(translation, rotation);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Lesson 06 — Resting Contacts and Friction
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Constants ─────────────────────────────────────────────────────────────── */
+
+/* Maximum number of rigid body contacts per step.
+ *
+ * Each box-plane collision can produce up to 8 contacts (all corners below
+ * the plane). With N bodies, the worst case for plane contacts alone is
+ * 8*N. 64 is generous for the small scenes in these lessons.
+ */
+#define FORGE_PHYSICS_MAX_RB_CONTACTS 64
+
+/* Default Coulomb friction coefficients (reference values).
+ *
+ * Static friction must be >= dynamic friction. These are combined between
+ * two bodies using the geometric mean: mu = sqrt(mu_a * mu_b).
+ * Provided as reference defaults — callers pass friction explicitly.
+ *
+ * Reference: typical rubber-on-concrete ~ 0.6 static / 0.4 dynamic.
+ */
+#define FORGE_PHYSICS_DEFAULT_STATIC_FRICTION   0.6f
+#define FORGE_PHYSICS_DEFAULT_DYNAMIC_FRICTION  0.4f
+
+/* Default number of contact solver iterations (reference value).
+ *
+ * Each iteration re-evaluates and resolves all contacts. More iterations
+ * improve convergence for stacked bodies at the cost of CPU time. 10 is
+ * a good balance for real-time stacking of 5-8 bodies.
+ * Provided as a reference default — callers pass the count explicitly.
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ */
+#define FORGE_PHYSICS_CONTACT_SOLVER_ITERATIONS 10
+
+/* Baumgarte stabilization factor.
+ *
+ * Controls how aggressively penetration is corrected via velocity bias.
+ * Higher values correct faster but can cause jitter. 0.2 is standard.
+ *
+ * The velocity bias is: v_bias = (beta / dt) * max(penetration - slop, 0)
+ *
+ * Reference: Baumgarte, "Stabilization of Constraints and Integrals of
+ * Motion in Dynamical Systems" (1972).
+ */
+#define FORGE_PHYSICS_BAUMGARTE_FACTOR  0.2f
+
+/* Penetration slop — overlap below this threshold is ignored.
+ *
+ * Prevents jitter from micro-corrections. Objects are allowed to overlap
+ * by this much without corrective velocity being applied.
+ */
+#define FORGE_PHYSICS_PENETRATION_SLOP  0.01f
+
+/* Resting velocity threshold for rigid body contacts.
+ *
+ * When the closing velocity is below this threshold, restitution is zeroed
+ * to prevent micro-bouncing of resting objects.
+ */
+#define FORGE_PHYSICS_RB_RESTING_THRESHOLD  0.5f
+
+/* ── Types ─────────────────────────────────────────────────────────────────── */
+
+/* A contact between two rigid bodies (or a body and a plane).
+ *
+ * Stores the geometric data needed to compute and apply contact impulses:
+ * the contact point, surface normal, penetration depth, and friction
+ * coefficients.
+ *
+ * For body-plane contacts, body_b is set to -1 (the plane is implicitly
+ * static with infinite mass).
+ *
+ * The normal always points from body B toward body A. For plane contacts,
+ * the normal is the plane's outward normal.
+ *
+ * Fields:
+ *   point        — world-space contact point (on the contact surface)
+ *   normal       — unit normal from B toward A
+ *   penetration  — overlap depth (m), >= 0
+ *   body_a       — index of first body (the one the normal points toward)
+ *   body_b       — index of second body (-1 for plane/static environment)
+ *   static_friction  — combined static friction coefficient [0..inf)
+ *   dynamic_friction — combined dynamic friction coefficient [0..inf)
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ *
+ * See: Physics Lesson 06 — Resting Contacts and Friction
+ */
+typedef struct ForgePhysicsRBContact {
+    vec3  point;              /* world-space contact point (m) — torque arm   */
+    vec3  normal;             /* unit normal from B toward A                  */
+    float penetration;        /* overlap depth (m), >= 0                      */
+    int   body_a;             /* index of body A in the body array            */
+    int   body_b;             /* index of body B, or -1 for plane             */
+    float static_friction;    /* static friction coefficient, >= 0            */
+    float dynamic_friction;   /* dynamic friction coefficient, >= 0           */
+} ForgePhysicsRBContact;
+
+/* ── Rigid Body Contact Detection ──────────────────────────────────────────── */
+
+/* Detect contact between a rigid body sphere and an infinite plane.
+ *
+ * Tests whether a sphere (defined by the body's position and the given
+ * radius) intersects the plane defined by a point and normal. If contact
+ * is detected, fills out a ForgePhysicsRBContact.
+ *
+ * Algorithm:
+ *   signed_dist = dot(sphere_center - plane_point, plane_normal)
+ *   penetration = radius - signed_dist
+ *   if penetration > 0: contact exists
+ *   contact_point = sphere_center - plane_normal * signed_dist
+ *
+ * Parameters:
+ *   body         — the rigid body (sphere shape)
+ *   body_idx     — index of this body in the body array
+ *   radius       — sphere radius (m), must be > 0
+ *   plane_point  — any point on the plane (m)
+ *   plane_normal — outward normal of the plane (must be unit length)
+ *   mu_s         — static friction coefficient for this contact
+ *   mu_d         — dynamic friction coefficient for this contact
+ *   out          — output contact (filled on collision)
+ *
+ * Returns:
+ *   true if contact was detected.
+ *
+ * Usage:
+ *   ForgePhysicsRBContact c;
+ *   vec3 ground_pt = {0, 0, 0};
+ *   vec3 ground_n  = {0, 1, 0};
+ *   if (forge_physics_rb_collide_sphere_plane(&body, 0, 0.5f,
+ *           ground_pt, ground_n, 0.6f, 0.4f, &c)) { ... }
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Ch. 5.2.2.
+ *
+ * See: Physics Lesson 06 — Resting Contacts and Friction
+ */
+static inline bool forge_physics_rb_collide_sphere_plane(
+    const ForgePhysicsRigidBody *body, int body_idx,
+    float radius,
+    vec3 plane_point, vec3 plane_normal,
+    float mu_s, float mu_d,
+    ForgePhysicsRBContact *out)
+{
+    if (!body || !out) return false;
+    if (!(radius > FORGE_PHYSICS_EPSILON)) return false;
+    float normal_len_sq = vec3_length_squared(plane_normal);
+    if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return false;
+    plane_normal = vec3_scale(plane_normal, 1.0f / sqrtf(normal_len_sq));
+
+    /* Signed distance from sphere center to plane */
+    vec3 diff = vec3_sub(body->position, plane_point);
+    float signed_dist = vec3_dot(diff, plane_normal);
+
+    float penetration = radius - signed_dist;
+    if (penetration <= 0.0f) return false;
+
+    out->normal       = plane_normal;
+    out->penetration  = penetration;
+    out->body_a       = body_idx;
+    out->body_b       = -1;  /* plane = static environment */
+
+    /* Contact point: projection of sphere center onto the plane */
+    out->point = vec3_sub(body->position,
+                          vec3_scale(plane_normal, signed_dist));
+
+    /* Friction coefficients */
+    out->static_friction  = (mu_s >= 0.0f) ? mu_s : 0.0f;
+    out->dynamic_friction = (mu_d >= 0.0f) ? mu_d : 0.0f;
+
+    return true;
+}
+
+/* Detect contacts between a rigid body box (OBB) and an infinite plane.
+ *
+ * Tests all 8 corners of the oriented bounding box against the plane. Each
+ * corner below the plane surface generates a contact. This can produce
+ * 0 to 8 contacts (commonly 1 for corner, 2 for edge, 4 for face).
+ *
+ * The box is defined by its center (body position), orientation (body
+ * quaternion), and half-extents.
+ *
+ * Algorithm:
+ *   For each of the 8 corners (±hx, ±hy, ±hz):
+ *     world_corner = position + R * local_corner
+ *     signed_dist = dot(world_corner - plane_point, plane_normal)
+ *     if signed_dist < 0:
+ *       generate contact at world_corner with penetration = -signed_dist
+ *
+ * Parameters:
+ *   body         — the rigid body (box shape)
+ *   body_idx     — index of this body in the body array
+ *   half_extents — half-width, half-height, half-depth (m)
+ *   plane_point  — any point on the plane (m)
+ *   plane_normal — outward normal of the plane (must be unit length)
+ *   mu_s         — static friction coefficient
+ *   mu_d         — dynamic friction coefficient
+ *   out          — output contact array (must have room for up to 8 entries)
+ *   max_contacts — capacity of the output array
+ *
+ * Returns:
+ *   Number of contacts generated (0 to min(8, max_contacts)).
+ *
+ * Usage:
+ *   ForgePhysicsRBContact contacts[8];
+ *   int n = forge_physics_rb_collide_box_plane(&body, 0,
+ *       vec3_create(1, 0.5f, 0.5f),
+ *       vec3_create(0, 0, 0), vec3_create(0, 1, 0),
+ *       0.6f, 0.4f, contacts, 8);
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Ch. 5.2.3 —
+ * OBB vs plane intersection.
+ *
+ * See: Physics Lesson 06 — Resting Contacts and Friction
+ */
+static inline int forge_physics_rb_collide_box_plane(
+    const ForgePhysicsRigidBody *body, int body_idx,
+    vec3 half_extents,
+    vec3 plane_point, vec3 plane_normal,
+    float mu_s, float mu_d,
+    ForgePhysicsRBContact *out, int max_contacts)
+{
+    if (!body || !out || max_contacts <= 0) return 0;
+    float normal_len_sq = vec3_length_squared(plane_normal);
+    if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return 0;
+    plane_normal = vec3_scale(plane_normal, 1.0f / sqrtf(normal_len_sq));
+
+    /* Rotation matrix from body orientation */
+    mat3 R = quat_to_mat3(body->orientation);
+
+    /* Clamp friction coefficients */
+    if (mu_s < 0.0f) mu_s = 0.0f;
+    if (mu_d < 0.0f) mu_d = 0.0f;
+
+    float hx = fabsf(half_extents.x);
+    float hy = fabsf(half_extents.y);
+    float hz = fabsf(half_extents.z);
+
+    /* Signs for all 8 corners */
+    float signs[8][3] = {
+        {-1, -1, -1}, {-1, -1,  1}, {-1,  1, -1}, {-1,  1,  1},
+        { 1, -1, -1}, { 1, -1,  1}, { 1,  1, -1}, { 1,  1,  1}
+    };
+
+    int count = 0;
+
+    for (int i = 0; i < 8 && count < max_contacts; i++) {
+        /* Local-space corner */
+        vec3 local_corner = vec3_create(
+            signs[i][0] * hx,
+            signs[i][1] * hy,
+            signs[i][2] * hz);
+
+        /* Transform to world space */
+        vec3 world_corner = vec3_add(body->position,
+                                      mat3_multiply_vec3(R, local_corner));
+
+        /* Signed distance from corner to plane */
+        vec3 diff = vec3_sub(world_corner, plane_point);
+        float signed_dist = vec3_dot(diff, plane_normal);
+
+        if (signed_dist < 0.0f) {
+            /* Project penetrating corner onto the plane surface so
+             * friction lever arms are computed at the contact surface,
+             * not below it. */
+            out[count].point        = vec3_sub(
+                world_corner,
+                vec3_scale(plane_normal, signed_dist));
+            out[count].normal       = plane_normal;
+            out[count].penetration  = -signed_dist;
+            out[count].body_a       = body_idx;
+            out[count].body_b       = -1;
+            out[count].static_friction  = mu_s;
+            out[count].dynamic_friction = mu_d;
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/* Detect collision between two sphere-shaped rigid bodies.
+ *
+ * Tests whether spheres with given radii overlap. If so, computes the
+ * contact point (midpoint of the overlap region), normal (from B toward A),
+ * and penetration depth.
+ *
+ * This is the rigid body version of forge_physics_collide_sphere_sphere()
+ * (Lesson 03). It outputs a ForgePhysicsRBContact instead of a particle
+ * contact, enabling impulse-based resolution with angular velocity.
+ *
+ * Parameters:
+ *   a         — first rigid body (must not be NULL)
+ *   idx_a     — index of body A in the bodies array
+ *   radius_a  — collision radius of body A (must be > 0)
+ *   b         — second rigid body (must not be NULL)
+ *   idx_b     — index of body B in the bodies array
+ *   radius_b  — collision radius of body B (must be > 0)
+ *   mu_s      — static friction coefficient for the contact (>= 0)
+ *   mu_d      — dynamic friction coefficient for the contact (>= 0)
+ *   out       — receives the contact if overlap detected (must not be NULL)
+ *
+ * Returns: true if the spheres overlap, false otherwise.
+ *
+ * Usage:
+ *   ForgePhysicsRBContact c;
+ *   if (forge_physics_rb_collide_sphere_sphere(
+ *           &bodies[0], 0, 0.5f, &bodies[1], 1, 0.5f,
+ *           0.6f, 0.4f, &c)) {
+ *       forge_physics_rb_resolve_contact(&c, bodies, 2, dt);
+ *   }
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Ch. 4.3
+ * See: Physics Lesson 03 — Particle Collisions (particle version)
+ * See: Physics Lesson 06 — Resting Contacts and Friction (rigid body usage)
+ */
+static inline bool forge_physics_rb_collide_sphere_sphere(
+    const ForgePhysicsRigidBody *a, int idx_a, float radius_a,
+    const ForgePhysicsRigidBody *b, int idx_b, float radius_b,
+    float mu_s, float mu_d, ForgePhysicsRBContact *out)
+{
+    if (!a || !b || !out) return false;
+    if (radius_a <= 0.0f || radius_b <= 0.0f) return false;
+
+    /* Two static bodies cannot collide. */
+    if (a->inv_mass == 0.0f && b->inv_mass == 0.0f) return false;
+
+    /* Vector from B toward A. */
+    vec3 d = vec3_sub(a->position, b->position);
+    float dist_sq = vec3_dot(d, d);
+    float sum_radii = radius_a + radius_b;
+
+    /* No overlap — spheres are separated. */
+    if (dist_sq >= sum_radii * sum_radii) return false;
+
+    float dist = sqrtf(dist_sq);
+    vec3 normal;
+
+    if (dist < FORGE_PHYSICS_EPSILON) {
+        /* Coincident centers — use arbitrary upward normal. */
+        normal = vec3_create(0.0f, 1.0f, 0.0f);
+        dist = 0.0f;
+    } else {
+        /* Normal from B toward A. */
+        normal = vec3_scale(d, 1.0f / dist);
+    }
+
+    out->normal      = normal;
+    out->penetration = sum_radii - dist;
+    out->body_a      = idx_a;
+    out->body_b      = idx_b;
+    out->static_friction  = (mu_s >= 0.0f) ? mu_s : 0.0f;
+    out->dynamic_friction = (mu_d >= 0.0f) ? mu_d : 0.0f;
+
+    /* Contact point: midpoint of the overlap region. */
+    out->point = vec3_add(b->position,
+        vec3_scale(normal, radius_b - out->penetration * 0.5f));
+
+    return true;
+}
+
+/* ── Rigid Body Contact Resolution ─────────────────────────────────────────── */
+
+/* Resolve a single rigid body contact with impulse-based response and
+ * Coulomb friction.
+ *
+ * Computes and applies a normal impulse to prevent penetration, plus a
+ * tangential friction impulse that opposes sliding. The friction impulse
+ * is clamped by the Coulomb friction cone:
+ *   |j_tangent| <= mu * |j_normal|
+ *
+ * If the tangential impulse exceeds the static friction limit, dynamic
+ * friction is used instead. This produces the correct static-to-dynamic
+ * transition: objects stick until the applied force exceeds mu_s * N,
+ * then slide with mu_d * N resistance.
+ *
+ * Algorithm:
+ *   1. Compute contact-point velocity for each body:
+ *      v_p = v + omega x r   (r = contact_point - position)
+ *   2. Relative velocity: v_rel = v_a - v_b (at contact point)
+ *   3. Normal closing velocity: v_n = dot(v_rel, normal)
+ *   4. If separating (v_n > 0) and no Baumgarte bias, skip (clamped below)
+ *   5. Compute restitution: e = min(e_a, e_b), zero if v_n < threshold
+ *   6. Effective mass along normal:
+ *      m_eff = inv_mass_a + inv_mass_b
+ *            + dot(normal, (I_inv_a * (r_a x normal)) x r_a)
+ *            + dot(normal, (I_inv_b * (r_b x normal)) x r_b)
+ *   7. Normal impulse: j_n = -(1 + e) * v_n / m_eff
+ *      Apply Baumgarte bias: j_n += (beta/dt) * max(pen - slop, 0) / m_eff
+ *   8. Apply normal impulse to velocities
+ *   9. Recompute tangential velocity after normal impulse
+ *  10. Compute friction impulse magnitude, clamped by Coulomb cone
+ *  11. Apply friction impulse
+ *
+ * Parameters:
+ *   contact — the contact to resolve
+ *   bodies  — rigid body array
+ *   count   — number of bodies in the array
+ *   dt      — physics timestep (for Baumgarte bias)
+ *
+ * Usage:
+ *   forge_physics_rb_resolve_contact(&contacts[i], bodies, num_bodies, dt);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ * See also: Tonge, "Iterative Rigid Body Solvers" (GDC 2013).
+ *
+ * See: Physics Lesson 06 — Resting Contacts and Friction
+ */
+static inline void forge_physics_rb_resolve_contact(
+    const ForgePhysicsRBContact *contact,
+    ForgePhysicsRigidBody *bodies, int count,
+    float dt)
+{
+    if (!contact || !bodies || count <= 0) return;
+    if (!(dt > 0.0f) || !isfinite(dt)) return;
+
+    int ia = contact->body_a;
+    int ib = contact->body_b;
+
+    if (ia < 0 || ia >= count) return;
+
+    /* body_b must be -1 (plane sentinel) or a valid index.  Reject any
+     * other out-of-range value so upstream bugs are surfaced early. */
+    if (ib != -1 && (ib < 0 || ib >= count)) return;
+
+    ForgePhysicsRigidBody *a = &bodies[ia];
+    ForgePhysicsRigidBody *b = (ib >= 0) ? &bodies[ib] : NULL;
+
+    float inv_mass_a = a->inv_mass;
+    float inv_mass_b = b ? b->inv_mass : 0.0f;
+    bool dynamic_a = inv_mass_a > 0.0f;
+    bool dynamic_b = b && inv_mass_b > 0.0f;
+
+    /* Both static — nothing to do */
+    if (!dynamic_a && !dynamic_b) return;
+
+    vec3 n = contact->normal;
+    float n_len_sq = vec3_length_squared(n);
+    if (!(n_len_sq > FORGE_PHYSICS_EPSILON) || !isfinite(n_len_sq)) return;
+    n = vec3_scale(n, 1.0f / sqrtf(n_len_sq));
+
+    /* Offsets from COM to contact point */
+    vec3 r_a = vec3_sub(contact->point, a->position);
+    vec3 r_b = b ? vec3_sub(contact->point, b->position)
+                 : vec3_create(0, 0, 0);
+
+    /* ── Contact-point velocities ─────────────────────────────────── */
+    vec3 v_a = vec3_add(a->velocity, vec3_cross(a->angular_velocity, r_a));
+    vec3 v_b = b ? vec3_add(b->velocity, vec3_cross(b->angular_velocity, r_b))
+                 : vec3_create(0, 0, 0);
+    vec3 v_rel = vec3_sub(v_a, v_b);
+
+    /* Normal closing velocity */
+    float v_n = vec3_dot(v_rel, n);
+
+    /* ── Effective mass along the normal ──────────────────────────── */
+    /* m_eff_inv = 1/m_a + 1/m_b + n . ((I_a_inv * (r_a x n)) x r_a)
+     *                              + n . ((I_b_inv * (r_b x n)) x r_b)
+     * Angular terms are only included for dynamic bodies — static bodies
+     * (inv_mass == 0) must not contribute angular effective mass. */
+    vec3 r_a_cross_n = vec3_cross(r_a, n);
+    vec3 r_b_cross_n = vec3_cross(r_b, n);
+
+    float m_eff_inv = inv_mass_a;
+    if (dynamic_a) {
+        vec3 ang_a = vec3_cross(
+            mat3_multiply_vec3(a->inv_inertia_world, r_a_cross_n), r_a);
+        m_eff_inv += vec3_dot(ang_a, n);
+    }
+
+    if (b) {
+        m_eff_inv += inv_mass_b;
+        if (dynamic_b) {
+            vec3 ang_b = vec3_cross(
+                mat3_multiply_vec3(b->inv_inertia_world, r_b_cross_n), r_b);
+            m_eff_inv += vec3_dot(ang_b, n);
+        }
+    }
+
+    if (m_eff_inv < FORGE_PHYSICS_EPSILON) return;
+
+    /* ── Normal impulse ───────────────────────────────────────────── */
+    float e = a->restitution;
+    if (b) e = fminf(e, b->restitution);
+
+    /* Kill restitution for resting contacts */
+    if (fabsf(v_n) < FORGE_PHYSICS_RB_RESTING_THRESHOLD) {
+        e = 0.0f;
+    }
+
+    /* Baumgarte velocity bias for penetration correction */
+    float bias = 0.0f;
+    if (dt > FORGE_PHYSICS_EPSILON) {
+        float pen_excess = contact->penetration - FORGE_PHYSICS_PENETRATION_SLOP;
+        if (pen_excess > 0.0f) {
+            bias = (FORGE_PHYSICS_BAUMGARTE_FACTOR / dt) * pen_excess;
+        }
+    }
+
+    float j_n = (-(1.0f + e) * v_n + bias) / m_eff_inv;
+
+    /* Clamp: normal impulse must be non-negative (push apart, never pull) */
+    if (j_n < 0.0f) j_n = 0.0f;
+
+    /* Apply normal impulse */
+    vec3 impulse_n = vec3_scale(n, j_n);
+
+    a->velocity = vec3_add(a->velocity, vec3_scale(impulse_n, inv_mass_a));
+    if (dynamic_a) {
+        a->angular_velocity = vec3_add(a->angular_velocity,
+            mat3_multiply_vec3(a->inv_inertia_world,
+                               vec3_cross(r_a, impulse_n)));
+    }
+
+    if (b) {
+        b->velocity = vec3_sub(b->velocity, vec3_scale(impulse_n, inv_mass_b));
+        if (dynamic_b) {
+            b->angular_velocity = vec3_sub(b->angular_velocity,
+                mat3_multiply_vec3(b->inv_inertia_world,
+                                   vec3_cross(r_b, impulse_n)));
+        }
+    }
+
+    /* ── Friction impulse ─────────────────────────────────────────── */
+
+    /* Recompute relative velocity after normal impulse */
+    v_a = vec3_add(a->velocity, vec3_cross(a->angular_velocity, r_a));
+    v_b = b ? vec3_add(b->velocity, vec3_cross(b->angular_velocity, r_b))
+             : vec3_create(0, 0, 0);
+    v_rel = vec3_sub(v_a, v_b);
+
+    /* Tangential velocity: project out the normal component */
+    float v_n2 = vec3_dot(v_rel, n);
+    vec3 v_tangent = vec3_sub(v_rel, vec3_scale(n, v_n2));
+    float tang_speed = vec3_length(v_tangent);
+
+    if (tang_speed > FORGE_PHYSICS_EPSILON) {
+        vec3 tang_dir = vec3_scale(v_tangent, 1.0f / tang_speed);
+
+        /* Effective mass along tangent direction */
+        vec3 r_a_cross_t = vec3_cross(r_a, tang_dir);
+        vec3 r_b_cross_t = vec3_cross(r_b, tang_dir);
+
+        float m_eff_t_inv = inv_mass_a;
+        if (dynamic_a) {
+            m_eff_t_inv += vec3_dot(
+                vec3_cross(mat3_multiply_vec3(a->inv_inertia_world,
+                                              r_a_cross_t), r_a),
+                tang_dir);
+        }
+
+        if (b) {
+            m_eff_t_inv += inv_mass_b;
+            if (dynamic_b) {
+                m_eff_t_inv += vec3_dot(
+                    vec3_cross(mat3_multiply_vec3(b->inv_inertia_world,
+                                                  r_b_cross_t), r_b),
+                    tang_dir);
+            }
+        }
+
+        if (m_eff_t_inv > FORGE_PHYSICS_EPSILON) {
+            float j_t = -tang_speed / m_eff_t_inv;
+
+            /* Sanitize friction coefficients: clamp to >= 0, enforce
+             * dynamic <= static (Coulomb model requires mu_d <= mu_s) */
+            float mu_s = contact->static_friction;
+            float mu_d = contact->dynamic_friction;
+            if (!(mu_s >= 0.0f)) mu_s = 0.0f;  /* catches NaN too */
+            if (!(mu_d >= 0.0f)) mu_d = 0.0f;
+            if (mu_d > mu_s) mu_d = mu_s;
+
+            /* Coulomb friction cone: clamp tangential impulse */
+            float friction_limit;
+            if (fabsf(j_t) <= mu_s * j_n) {
+                /* Within static friction cone — full stop */
+                friction_limit = j_t;
+            } else {
+                /* Exceeded static friction — use dynamic friction */
+                friction_limit = (j_t < 0.0f ? -1.0f : 1.0f)
+                               * mu_d * j_n;
+            }
+
+            vec3 impulse_t = vec3_scale(tang_dir, friction_limit);
+
+            a->velocity = vec3_add(a->velocity,
+                                    vec3_scale(impulse_t, inv_mass_a));
+            if (dynamic_a) {
+                a->angular_velocity = vec3_add(a->angular_velocity,
+                    mat3_multiply_vec3(a->inv_inertia_world,
+                                       vec3_cross(r_a, impulse_t)));
+            }
+
+            if (b) {
+                b->velocity = vec3_sub(b->velocity,
+                                        vec3_scale(impulse_t, inv_mass_b));
+                if (dynamic_b) {
+                    b->angular_velocity = vec3_sub(b->angular_velocity,
+                        mat3_multiply_vec3(b->inv_inertia_world,
+                                           vec3_cross(r_b, impulse_t)));
+                }
+            }
+        }
+    }
+}
+
+/* Resolve an array of rigid body contacts with iterative solving.
+ *
+ * Runs multiple passes over the contact array, resolving each contact
+ * on every pass. Iterative solving improves convergence for scenarios
+ * with multiple simultaneous contacts (stacking, resting on surfaces).
+ *
+ * A single pass is equivalent to sequential impulse solving. Each
+ * additional pass allows impulse changes from one contact to propagate
+ * to neighboring contacts, improving the global solution.
+ *
+ * Algorithm:
+ *   for iter in [0, iterations):
+ *     for each contact:
+ *       resolve_contact(contact, bodies, count, dt)
+ *
+ * Parameters:
+ *   contacts      — array of contacts to resolve
+ *   num_contacts  — number of contacts in the array
+ *   bodies        — rigid body array (modified in place)
+ *   num_bodies    — number of bodies in the array
+ *   iterations    — number of solver passes (clamped to
+ *                    [FORGE_PHYSICS_SOLVER_MIN_ITERATIONS,
+ *                     FORGE_PHYSICS_SOLVER_MAX_ITERATIONS])
+ *   dt            — physics timestep (for Baumgarte bias)
+ *
+ * Usage:
+ *   forge_physics_rb_resolve_contacts(contacts, num_contacts,
+ *       bodies, num_bodies, 10, PHYSICS_DT);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ *
+ * See: Physics Lesson 06 — Resting Contacts and Friction
+ */
+static inline void forge_physics_rb_resolve_contacts(
+    const ForgePhysicsRBContact *contacts, int num_contacts,
+    ForgePhysicsRigidBody *bodies, int num_bodies,
+    int iterations, float dt)
+{
+    if (!contacts || num_contacts <= 0 || !bodies || num_bodies <= 0) return;
+
+    /* Clamp iterations */
+    if (iterations < FORGE_PHYSICS_SOLVER_MIN_ITERATIONS)
+        iterations = FORGE_PHYSICS_SOLVER_MIN_ITERATIONS;
+    if (iterations > FORGE_PHYSICS_SOLVER_MAX_ITERATIONS)
+        iterations = FORGE_PHYSICS_SOLVER_MAX_ITERATIONS;
+
+    for (int iter = 0; iter < iterations; iter++) {
+        for (int i = 0; i < num_contacts; i++) {
+            forge_physics_rb_resolve_contact(&contacts[i], bodies,
+                                              num_bodies, dt);
+        }
+    }
 }
 
 #endif /* FORGE_PHYSICS_H */

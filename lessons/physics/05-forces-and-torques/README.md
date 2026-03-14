@@ -535,6 +535,9 @@ API reference.
 - [Physics Lesson 04 -- Rigid Body State](../04-rigid-body-state/) introduces
   the rigid body struct, the force and torque accumulators, and the integration
   loop that this lesson's generators feed into
+- [Physics Lesson 06 -- Resting Contacts and Friction](../06-resting-contacts-and-friction/)
+  replaces this lesson's simplified friction with Coulomb friction (static and
+  dynamic) and adds iterative contact solving for stacking
 - [Physics Lesson 01 -- Point Particles](../01-point-particles/) establishes the
   force accumulator pattern for the simpler particle case
 - [Math Lesson 01 -- Vectors](../../math/01-vectors/) covers the cross product

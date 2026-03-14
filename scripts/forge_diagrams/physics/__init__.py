@@ -32,6 +32,11 @@ __all__ = [
     "diagram_drag_terminal_velocity",
     "diagram_gyroscopic_stability",
     "diagram_friction_decomposition",
+    "diagram_coulomb_friction_cone",
+    "diagram_contact_normal_tangent",
+    "diagram_box_plane_contacts",
+    "diagram_iterative_solver_convergence",
+    "diagram_impulse_resolution",
 ]
 
 from .lesson_01 import (
@@ -74,4 +79,11 @@ from .lesson_05 import (
     diagram_force_at_point,
     diagram_friction_decomposition,
     diagram_gyroscopic_stability,
+)
+from .lesson_06 import (
+    diagram_box_plane_contacts,
+    diagram_contact_normal_tangent,
+    diagram_coulomb_friction_cone,
+    diagram_impulse_resolution,
+    diagram_iterative_solver_convergence,
 )

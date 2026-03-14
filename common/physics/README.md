@@ -86,11 +86,31 @@ Constants: `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` (100 rad/s),
 | `forge_physics_rigid_body_apply_angular_drag()` | Apply angular velocity drag (tau = -k * omega) |
 | `forge_physics_rigid_body_apply_friction()` | Apply contact friction opposing tangential contact-point velocity |
 
+### Lesson 06 — Resting Contacts and Friction
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_rb_collide_sphere_plane()` | Sphere-plane contact detection (signed distance) |
+| `forge_physics_rb_collide_sphere_sphere()` | Sphere-sphere rigid body collision detection |
+| `forge_physics_rb_collide_box_plane()` | OBB-plane contact detection (up to 8 corner contacts) |
+| `forge_physics_rb_resolve_contact()` | Single contact resolution with Coulomb friction and Baumgarte stabilization |
+| `forge_physics_rb_resolve_contacts()` | Iterative solver for multiple contacts (sequential impulse) |
+
+Types: `ForgePhysicsRBContact` — contact point, normal, penetration depth, body indices,
+static and dynamic friction coefficients.
+
+Constants: `FORGE_PHYSICS_MAX_RB_CONTACTS` (64),
+`FORGE_PHYSICS_DEFAULT_STATIC_FRICTION` (0.6),
+`FORGE_PHYSICS_DEFAULT_DYNAMIC_FRICTION` (0.4),
+`FORGE_PHYSICS_CONTACT_SOLVER_ITERATIONS` (10),
+`FORGE_PHYSICS_BAUMGARTE_FACTOR` (0.2),
+`FORGE_PHYSICS_PENETRATION_SLOP` (0.01 m),
+`FORGE_PHYSICS_RB_RESTING_THRESHOLD` (0.5 m/s).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 06 — Resting Contacts and Friction | Plane contact detection, resting contact resolution | Coulomb friction, stacking, contact caching |
 | 07–14 | *See [PLAN.md](../../PLAN.md)* | Contacts, GJK/EPA, constraints, solver |
 
 ## Design
@@ -115,3 +135,4 @@ Constants: `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` (100 rad/s),
 | [Physics L03](../../lessons/physics/03-particle-collisions/) | `ForgePhysicsContact`, `forge_physics_collide_sphere_sphere()`, `forge_physics_resolve_contact()`, `forge_physics_collide_particles_step()` |
 | [Physics L04](../../lessons/physics/04-rigid-body-state/) | `ForgePhysicsRigidBody`, `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()`, inertia setters, force/torque application |
 | [Physics L05](../../lessons/physics/05-forces-and-torques/) | `forge_physics_rigid_body_apply_gravity()`, `forge_physics_rigid_body_apply_linear_drag()`, `forge_physics_rigid_body_apply_angular_drag()`, `forge_physics_rigid_body_apply_friction()` |
+| [Physics L06](../../lessons/physics/06-resting-contacts-and-friction/) | `ForgePhysicsRBContact`, `forge_physics_rb_collide_sphere_plane()`, `forge_physics_rb_collide_sphere_sphere()`, `forge_physics_rb_collide_box_plane()`, `forge_physics_rb_resolve_contact()`, `forge_physics_rb_resolve_contacts()` |
