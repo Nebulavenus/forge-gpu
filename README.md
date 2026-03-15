@@ -12,35 +12,52 @@ SDL3 GPU handles the platform abstraction over Vulkan, D3D12, and Metal.
 <table>
 <tr>
 <td align="center" valign="top">
-<a href="lessons/gpu/02-first-triangle/"><img src="lessons/gpu/02-first-triangle/assets/screenshot.png" width="280" alt="First Triangle" /></a><br />
+<a href="lessons/gpu/02-first-triangle/"><img src="lessons/gpu/02-first-triangle/assets/screenshot.png" width="330" alt="First Triangle" /></a><br />
 First Triangle
 </td>
 <td align="center" valign="top">
-<a href="lessons/gpu/23-point-light-shadows/"><img src="lessons/gpu/23-point-light-shadows/assets/screenshot.png" width="280" alt="Point Light Shadows" /></a><br />
+<a href="lessons/gpu/23-point-light-shadows/"><img src="lessons/gpu/23-point-light-shadows/assets/screenshot.png" width="330" alt="Point Light Shadows" /></a><br />
 Point Light Shadows
 </td>
 <td align="center" valign="top">
-<a href="lessons/gpu/30-planar-reflections/"><img src="lessons/gpu/30-planar-reflections/assets/screenshot.png" width="280" alt="Planar Reflections" /></a><br />
+<a href="lessons/gpu/30-planar-reflections/"><img src="lessons/gpu/30-planar-reflections/assets/screenshot.png" width="330" alt="Planar Reflections" /></a><br />
 Planar Reflections
 </td>
 </tr>
 <tr>
 <td align="center" valign="top">
-<a href="lessons/gpu/32-skinning-animations/"><img src="lessons/gpu/32-skinning-animations/assets/screenshot.png" width="280" alt="Skinning Animations" /></a><br />
+<a href="lessons/gpu/32-skinning-animations/"><img src="lessons/gpu/32-skinning-animations/assets/screenshot.png" width="330" alt="Skinning Animations" /></a><br />
 Skinning Animations
 </td>
 <td align="center" valign="top">
-<a href="lessons/gpu/28-ui-rendering/"><img src="lessons/gpu/28-ui-rendering/assets/screenshot.png" width="280" alt="UI Rendering" /></a><br />
+<a href="lessons/gpu/28-ui-rendering/"><img src="lessons/gpu/28-ui-rendering/assets/screenshot.png" width="330" alt="UI Rendering" /></a><br />
 UI Rendering
 </td>
 <td align="center" valign="top">
-<a href="lessons/gpu/38-indirect-drawing/"><img src="lessons/gpu/38-indirect-drawing/assets/screenshot.png" width="280" alt="Indirect Drawing" /></a><br />
+<a href="lessons/gpu/38-indirect-drawing/"><img src="lessons/gpu/38-indirect-drawing/assets/screenshot.png" width="330" alt="Indirect Drawing" /></a><br />
 Indirect Drawing
 </td>
 </tr>
 </table>
 
 See the [GPU track](lessons/gpu/) for all lessons.
+
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<a href="lessons/audio/"><strong>Audio</strong></a><br />
+
+https://github.com/user-attachments/assets/c2b27d64-25e8-4e7f-bd2a-25768bee2fd2
+
+</td>
+<td align="center" valign="top" width="50%">
+<a href="lessons/physics/"><strong>Physics</strong></a><br />
+
+https://github.com/user-attachments/assets/2202a981-40fc-48e2-924b-25146c86a3cf
+
+</td>
+</tr>
+</table>
 
 ## Topics covered
 
