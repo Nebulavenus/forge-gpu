@@ -158,7 +158,7 @@ forge-gpu/
 │   ├── engine/            # Engine fundamentals (CMake, C, debugging)
 │   ├── ui/                # UI fundamentals (fonts, text, atlas, controls)
 │   ├── physics/           # Physics simulation (particles, rigid bodies, collisions)
-│   ├── audio/             # Audio programming (planned — coming soon)
+│   ├── audio/             # Audio programming (playback, mixing, spatial audio, DSP)
 │   ├── assets/            # Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
 ├── pipeline/              # Asset pipeline library (Python, pip-installable)
@@ -185,8 +185,12 @@ forge-gpu/
 │   └── forge.h            # Shared utilities for lessons
 ├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, shapes, scene, pipeline)
 ├── scripts/
+│   ├── compile_shaders.py # HLSL → SPIRV/DXIL shader compiler
+│   ├── compile_scene_shaders.py # Scene renderer shader compiler
+│   ├── dump_fmesh.py      # .fmesh binary inspector
+│   ├── dump_fscene.py     # .fscene binary inspector
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
-│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_39.py)
+│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_43.py)
 │       ├── math/          # Math lesson diagrams
 │       ├── ui/            # UI lesson diagrams
 │       ├── engine/        # Engine lesson diagrams

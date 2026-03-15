@@ -1,10 +1,10 @@
 ---
-name: pipeline-texture-compression
+name: forge-pipeline-texture-compression
 description: Load GPU block-compressed textures (BC7/BC5) through the asset pipeline. Covers basisu encoding, UASTC transcoding, .ftex format, D3D12 alignment, and normal map channel handling.
 trigger: Use when someone needs compressed textures, BC7/BC5 loading, VRAM optimization, or asks about .ftex files or texture compression.
 ---
 
-# pipeline-texture-compression
+# forge-pipeline-texture-compression
 
 Load GPU block-compressed textures through `forge_scene.h`. The asset
 pipeline compresses textures at build time (basisu → KTX2 → .ftex), and

@@ -238,6 +238,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-pipeline-assets`** — Load .fmesh binary meshes and pipeline-processed textures
 - **`/forge-scene-renderer`** — Complete 3D scene with forge_scene.h — shadows, lighting, grid, sky, camera, UI
 - **`/forge-scene-model-loading`** — Load and render pipeline-processed 3D models with per-primitive materials and scene hierarchy traversal
+- **`/forge-pipeline-texture-compression`** — Load GPU block-compressed textures (BC7/BC5) through the asset pipeline
 - **`/forge-pipeline-skinned-animations`** — Pipeline-based skeletal animation with .fskin/.fanim assets and ForgeSceneSkinnedModel
 
 **How to use:**

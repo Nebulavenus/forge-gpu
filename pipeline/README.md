@@ -197,6 +197,10 @@ The pipeline is built incrementally across the
 | [07 — Materials](../lessons/assets/07-materials/) | PBR material support, .fmat sidecars, multi-primitive meshes |
 | [08 — Animations](../lessons/assets/08-animations/) | glTF animation parsing and runtime keyframe evaluation |
 | [09 — Scene Hierarchy](../lessons/assets/09-scene-hierarchy/) | Node tree extraction, `.fscene` binary format, `forge-scene-tool` |
+| [10 — Animation Loader](../lessons/assets/10-animation-loader/) | glTF animation extraction, `.fanim` binary format |
+| [11 — Animation Manifest](../lessons/assets/11-animation-manifest/) | Animation metadata, clip registry, manifest generation |
+| [12 — Skinned Animations](../lessons/assets/12-skinned-animations/) | Joint hierarchies, inverse bind matrices, `.fskin` format |
+| [13 — Morph Targets](../lessons/assets/13-morph-targets/) | Morph target deltas, weight channels, blend shape pipeline |
 
 ## License
 

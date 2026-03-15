@@ -12,6 +12,9 @@ Helper scripts for building, running, and maintaining forge-gpu lessons.
 | `capture_lesson.py` | Capture screenshots and GIFs from running lessons |
 | `bin_to_header.py` | Convert binary files to C byte-array headers |
 | `equirect_to_cubemap.py` | Convert equirectangular HDR images to cube map faces |
+| `compile_scene_shaders.py` | Compile scene renderer shaders (common/scene/) |
+| `dump_fmesh.py` | Inspect `.fmesh` binary mesh files |
+| `dump_fscene.py` | Inspect `.fscene` binary scene files |
 | `check_math_blocks.py` | Validate math code blocks in lesson READMEs |
 | `cloud-setup.sh` | Set up a headless Linux environment (Lavapipe + Mesa) |
 

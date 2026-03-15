@@ -247,8 +247,8 @@ python scripts/run.py 42
 
 ## AI skill
 
-The **`/pipeline-texture-compression`** skill
-(`.claude/skills/pipeline-texture-compression/SKILL.md`) encodes this lesson's
+The **`/forge-pipeline-texture-compression`** skill
+(`.claude/skills/forge-pipeline-texture-compression/SKILL.md`) encodes this lesson's
 patterns — basisu encoding flags, .ftex format, D3D12 alignment, BC5 channel
 handling — so Claude Code can apply them to new projects.
 
