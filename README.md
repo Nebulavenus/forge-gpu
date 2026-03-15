@@ -102,15 +102,20 @@ AI-assisted building. All tested, documented, and usable in your own projects.
 - **A C compiler** (MSVC, GCC, or Clang)
 - **A GPU** with Vulkan, Direct3D 12, or Metal support
 - **Python 3.10+** (for helper scripts and the asset pipeline)
-- **Git LFS** — binary assets and animated GIFs are stored with Git Large File Storage
+- **[Git LFS](https://git-lfs.com)** — required before cloning. Binary assets
+  (3D models, animated GIFs) are stored with Git Large File Storage. Cloning
+  without LFS leaves these files as unusable pointer stubs, and the working
+  tree may appear corrupted. See the
+  [build guide](docs/building.md#installing-git-lfs) for installation steps.
 
 SDL3 is fetched as part of running the build.
 
-After cloning, run `git lfs install && git lfs pull` to fetch large files.
-
-### Build and run
+### Clone and build
 
 ```bash
+git lfs install                           # one-time setup (before cloning)
+git clone https://github.com/RosyGameStudio/forge-gpu.git
+cd forge-gpu
 cmake -B build
 cmake --build build --config Debug
 python scripts/run.py 01                  # by number

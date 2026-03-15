@@ -21,7 +21,10 @@ installation required.
 
 ### Installing Git LFS
 
-Most Git installations include LFS, but it needs to be initialized once:
+Git LFS must be installed and initialized **before cloning** the repository.
+Cloning without LFS leaves binary assets as small pointer stubs instead of
+real data, and the working tree may appear corrupted with files showing as
+modified or deleted.
 
 ```bash
 git lfs install
@@ -48,9 +51,12 @@ sudo dnf install git-lfs    # Fedora
 brew install git-lfs
 ```
 
-After cloning the repo, run `git lfs pull` to download the binary assets.
-Without this, lessons that load 3D models will fail at runtime because the
-`.bin` files will be LFS pointer files instead of actual data.
+If you ran `git lfs install` before cloning, LFS files are downloaded
+automatically during checkout. If the files were not fetched (e.g. you
+cloned with `GIT_LFS_SKIP_SMUDGE=1`), run `git lfs pull` to download them.
+Without the actual binary data, lessons that load 3D models will fail at
+runtime because the `.bin` files will be LFS pointer files instead of actual
+data.
 
 ### Installing Python
 
