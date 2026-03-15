@@ -1,0 +1,49 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_TonemapUniforms
+{
+    float exposure;
+    uint tonemap_mode;
+    float2 _pad;
+};
+
+struct main0_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct main0_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_TonemapUniforms& TonemapUniforms [[buffer(0)]], texture2d<float> hdr_texture [[texture(0)]], sampler smp [[sampler(0)]])
+{
+    main0_out out = {};
+    float4 _49 = hdr_texture.sample(smp, in.in_var_TEXCOORD0);
+    float3 _53 = _49.xyz * TonemapUniforms.exposure;
+    float3 _77;
+    if (TonemapUniforms.tonemap_mode == 1u)
+    {
+        _77 = _53 / (_53 + float3(1.0));
+    }
+    else
+    {
+        float3 _76;
+        if (TonemapUniforms.tonemap_mode == 2u)
+        {
+            _76 = fast::clamp((_53 * ((_53 * 2.5099999904632568359375) + float3(0.02999999932944774627685546875))) / ((_53 * ((_53 * 2.4300000667572021484375) + float3(0.589999973773956298828125))) + float3(0.14000000059604644775390625)), float3(0.0), float3(1.0));
+        }
+        else
+        {
+            _76 = fast::clamp(_53, float3(0.0), float3(1.0));
+        }
+        _77 = _76;
+    }
+    out.out_var_SV_Target = float4(_77, 1.0);
+    return out;
+}
+

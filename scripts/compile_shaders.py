@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """
-compile_shaders.py — Compile HLSL shaders to SPIRV and DXIL with embedded C headers.
+compile_shaders.py — Compile HLSL shaders to SPIRV, DXIL, and MSL with embedded C headers.
 
-Finds .vert.hlsl, .frag.hlsl, and .comp.hlsl files and compiles them using dxc.
+Finds .vert.hlsl, .frag.hlsl, and .comp.hlsl files and compiles them using dxc,
+then cross-compiles SPIRV to MSL via spirv-cross for Metal support.
 
 Usage:
     python scripts/compile_shaders.py                    # all lessons
@@ -10,8 +11,8 @@ Usage:
     python scripts/compile_shaders.py first-triangle     # by name
     python scripts/compile_shaders.py --dxc PATH         # override dxc path
 
-The script auto-detects dxc from:
-  1. --dxc command-line flag
+The script auto-detects dxc and spirv-cross from:
+  1. --dxc / --spirv-cross command-line flags
   2. VULKAN_SDK environment variable (for SPIRV via -spirv)
   3. System PATH
 """
@@ -21,6 +22,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LESSONS_DIR = os.path.join(REPO_ROOT, "lessons", "gpu")
@@ -55,6 +57,14 @@ def find_dxc():
     if dxc_path:
         return dxc_path
 
+    return None
+
+
+def find_spirv_cross():
+    """Auto-detect spirv-cross location."""
+    sc = shutil.which("spirv-cross")
+    if sc:
+        return sc
     return None
 
 
@@ -120,10 +130,10 @@ def get_stage_suffix(shader_path):
     return None
 
 
-def compile_shader(dxc_path, shader_path, verbose=False):
-    """Compile a single HLSL shader to SPIRV and DXIL, then generate C headers.
+def compile_shader(dxc_path, spirv_cross_path, shader_path, verbose=False):
+    """Compile a single HLSL shader to SPIRV, DXIL, and MSL, then generate C headers.
 
-    Generated files (.spv, .dxil, and C headers) are placed in a compiled/
+    Generated files (.spv, .dxil, .msl, and C headers) are placed in a compiled/
     subdirectory so that the shaders/ directory contains only HLSL source.
     """
     suffix = get_stage_suffix(shader_path)
@@ -145,6 +155,7 @@ def compile_shader(dxc_path, shader_path, verbose=False):
 
     spirv_out = os.path.join(compiled_dir, f"{basename}.{stage}.spv")
     dxil_out = os.path.join(compiled_dir, f"{basename}.{stage}.dxil")
+    msl_out = os.path.join(compiled_dir, f"{basename}.{stage}.msl")
 
     success = True
 
@@ -207,6 +218,39 @@ def compile_shader(dxc_path, shader_path, verbose=False):
             size = os.path.getsize(dxil_out)
             print(f"  DXIL:  {size} bytes -> compiled/{array_name}.h")
 
+    # Cross-compile SPIRV → MSL (requires successful SPIRV compilation)
+    if spirv_cross_path and os.path.isfile(spirv_out):
+        msl_tmp = msl_out + ".tmp"
+        msl_cmd = [
+            spirv_cross_path,
+            "--msl",
+            "--msl-version",
+            "20100",
+            spirv_out,
+            "--output",
+            msl_tmp,
+        ]
+        if verbose:
+            print(f"  $ {' '.join(msl_cmd)}")
+        result = subprocess.run(msl_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(
+                f"  MSL cross-compilation failed for {os.path.basename(shader_path)}:"
+            )
+            print(f"    {result.stderr.strip()}")
+            Path(msl_tmp).unlink(missing_ok=True)
+            success = False
+        else:
+            os.replace(msl_tmp, msl_out)
+            var_name = f"{basename}_{stage}_msl"
+            header_path = os.path.join(compiled_dir, f"{var_name}.h")
+            generate_msl_header(msl_out, var_name, header_path)
+            if verbose:
+                size = os.path.getsize(msl_out)
+                print(f"  MSL:   {size} bytes -> compiled/{var_name}.h")
+    elif not spirv_cross_path:
+        print("  MSL:   skipped (spirv-cross not found)")
+
     return success
 
 
@@ -230,9 +274,30 @@ def generate_header(binary_path, array_name, output_path):
         )
 
 
+def generate_msl_header(msl_path, var_name, output_path):
+    """Convert an MSL source file to a C string literal header."""
+    with open(msl_path) as f:
+        msl_source = f.read()
+
+    basename = os.path.basename(msl_path)
+    tmp_path = output_path + ".tmp"
+
+    with open(tmp_path, "w", newline="\n") as f:
+        f.write(f"/* Auto-generated from {basename} -- do not edit by hand. */\n")
+        f.write(f"static const char {var_name}[] =\n")
+        for line in msl_source.splitlines():
+            escaped = line.replace("\\", "\\\\").replace('"', '\\"')
+            f.write(f'    "{escaped}\\n"\n')
+        f.write(";\n")
+        f.write(
+            f"static const unsigned int {var_name}_size = sizeof({var_name}) - 1;\n"
+        )
+    os.replace(tmp_path, output_path)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Compile HLSL shaders to SPIRV and DXIL with C headers."
+        description="Compile HLSL shaders to SPIRV, DXIL, and MSL with C headers."
     )
     parser.add_argument(
         "lesson",
@@ -240,6 +305,11 @@ def main():
         help="Lesson number or name fragment (default: all lessons)",
     )
     parser.add_argument("--dxc", help="Path to dxc compiler (auto-detected if not set)")
+    parser.add_argument(
+        "--spirv-cross",
+        dest="spirv_cross",
+        help="Path to spirv-cross (auto-detected if not set)",
+    )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Show compilation commands"
     )
@@ -252,7 +322,15 @@ def main():
         print("Set VULKAN_SDK environment variable or pass --dxc PATH.")
         return 1
 
+    spirv_cross_path = args.spirv_cross or find_spirv_cross()
+    if spirv_cross_path is None:
+        print("Warning: spirv-cross not found — MSL shaders will not be generated.")
+        print("Install via: brew install spirv-cross (macOS), apt install spirv-cross (Linux),")
+        print("or the Vulkan SDK (all platforms).")
+
     print(f"Using dxc: {dxc_path}")
+    if spirv_cross_path:
+        print(f"Using spirv-cross: {spirv_cross_path}")
 
     # Find lessons
     lesson_dirs = find_lesson_dirs(args.lesson)
@@ -278,7 +356,7 @@ def main():
             total_shaders += 1
             shader_name = os.path.basename(shader)
             print(f"  {shader_name}")
-            if not compile_shader(dxc_path, shader, verbose=args.verbose):
+            if not compile_shader(dxc_path, spirv_cross_path, shader, verbose=args.verbose):
                 failed += 1
 
     if total_shaders == 0:

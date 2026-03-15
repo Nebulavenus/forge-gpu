@@ -1,0 +1,25 @@
+/* Auto-generated from fullscreen.vert.msl -- do not edit by hand. */
+static const char fullscreen_vert_msl[] =
+    "#include <metal_stdlib>\n"
+    "#include <simd/simd.h>\n"
+    "\n"
+    "using namespace metal;\n"
+    "\n"
+    "struct main0_out\n"
+    "{\n"
+    "    float2 out_var_TEXCOORD0 [[user(locn0)]];\n"
+    "    float4 gl_Position [[position]];\n"
+    "};\n"
+    "\n"
+    "vertex main0_out main0(uint gl_VertexIndex [[vertex_id]])\n"
+    "{\n"
+    "    main0_out out = {};\n"
+    "    float _29 = (float((gl_VertexIndex & 1u) << 1u) - 1.0) * 2.0;\n"
+    "    float _31 = (float(gl_VertexIndex & 2u) - 1.0) * 2.0;\n"
+    "    out.gl_Position = float4(_29 + 1.0, _31 + 1.0, 0.0, 1.0);\n"
+    "    out.out_var_TEXCOORD0 = float2((_29 + 2.0) * 0.5, 1.0 - ((_31 + 2.0) * 0.5));\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+;
+static const unsigned int fullscreen_vert_msl_size = sizeof(fullscreen_vert_msl) - 1;

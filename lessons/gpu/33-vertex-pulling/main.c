@@ -50,18 +50,24 @@
 
 #include "shaders/compiled/pulled_vert_spirv.h"
 #include "shaders/compiled/pulled_vert_dxil.h"
+#include "shaders/compiled/pulled_vert_msl.h"
 #include "shaders/compiled/pulled_frag_spirv.h"
 #include "shaders/compiled/pulled_frag_dxil.h"
+#include "shaders/compiled/pulled_frag_msl.h"
 
 #include "shaders/compiled/shadow_pulled_vert_spirv.h"
 #include "shaders/compiled/shadow_pulled_vert_dxil.h"
+#include "shaders/compiled/shadow_pulled_vert_msl.h"
 #include "shaders/compiled/shadow_frag_spirv.h"
 #include "shaders/compiled/shadow_frag_dxil.h"
+#include "shaders/compiled/shadow_frag_msl.h"
 
 #include "shaders/compiled/grid_vert_spirv.h"
 #include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_msl.h"
 #include "shaders/compiled/grid_frag_spirv.h"
 #include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_msl.h"
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
@@ -305,6 +311,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage stage,
     const Uint8 *spirv_code, size_t spirv_size,
     const Uint8 *dxil_code,  size_t dxil_size,
+    const char *msl_code, unsigned int msl_size,
     Uint32 num_samplers,
     Uint32 num_storage_buffers,
     Uint32 num_uniform_buffers)
@@ -327,6 +334,11 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
         SDL_Log("No supported shader format available");
         return NULL;
@@ -909,7 +921,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, true, NULL);
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, true, NULL);
     if (!device) {
         SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -1129,12 +1141,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             device, SDL_GPU_SHADERSTAGE_VERTEX,
             pulled_vert_spirv, sizeof(pulled_vert_spirv),
             pulled_vert_dxil,  sizeof(pulled_vert_dxil),
+            pulled_vert_msl,   pulled_vert_msl_size,
             0, 1, 1);   /* 0 samplers, 1 storage buffer, 1 uniform buffer */
         /* Fragment shader: 2 samplers (diffuse + shadow), 1 uniform buffer. */
         SDL_GPUShader *frag = create_shader(
             device, SDL_GPU_SHADERSTAGE_FRAGMENT,
             pulled_frag_spirv, sizeof(pulled_frag_spirv),
             pulled_frag_dxil,  sizeof(pulled_frag_dxil),
+            pulled_frag_msl,   pulled_frag_msl_size,
             2, 0, 1);   /* 2 samplers, 0 storage buffers, 1 uniform buffer */
         if (!vert || !frag) {
             if (vert) SDL_ReleaseGPUShader(device, vert);
@@ -1186,11 +1200,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             device, SDL_GPU_SHADERSTAGE_VERTEX,
             shadow_pulled_vert_spirv, sizeof(shadow_pulled_vert_spirv),
             shadow_pulled_vert_dxil,  sizeof(shadow_pulled_vert_dxil),
+            shadow_pulled_vert_msl,   shadow_pulled_vert_msl_size,
             0, 1, 1);   /* 0 samplers, 1 storage buffer, 1 uniform buffer */
         SDL_GPUShader *frag = create_shader(
             device, SDL_GPU_SHADERSTAGE_FRAGMENT,
             shadow_frag_spirv, sizeof(shadow_frag_spirv),
             shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+            shadow_frag_msl,   shadow_frag_msl_size,
             0, 0, 0);   /* no resources */
         if (!vert || !frag) {
             if (vert) SDL_ReleaseGPUShader(device, vert);
@@ -1234,11 +1250,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             device, SDL_GPU_SHADERSTAGE_VERTEX,
             grid_vert_spirv, sizeof(grid_vert_spirv),
             grid_vert_dxil,  sizeof(grid_vert_dxil),
+            grid_vert_msl,   grid_vert_msl_size,
             0, 0, 1);
         SDL_GPUShader *frag = create_shader(
             device, SDL_GPU_SHADERSTAGE_FRAGMENT,
             grid_frag_spirv, sizeof(grid_frag_spirv),
             grid_frag_dxil,  sizeof(grid_frag_dxil),
+            grid_frag_msl,   grid_frag_msl_size,
             1, 0, 1);  /* 1 sampler (shadow map), 0 storage buffers, 1 uniform buffer */
         if (!vert || !frag) {
             if (vert) SDL_ReleaseGPUShader(device, vert);

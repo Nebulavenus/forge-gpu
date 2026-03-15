@@ -635,12 +635,13 @@ static void forge_scene_free_skinned_model(
 
 /* ── Utility functions ──────────────────────────────────────── */
 
-/* Create a GPU shader from pre-compiled SPIRV and DXIL bytecode. */
+/* Create a GPU shader from pre-compiled SPIRV/DXIL bytecode or MSL source. */
 static SDL_GPUShader *forge_scene_create_shader(
     ForgeScene *scene,
     SDL_GPUShaderStage stage,
     const unsigned char *spirv_code, unsigned int spirv_size,
     const unsigned char *dxil_code,  unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int num_samplers, int num_storage_textures,
     int num_storage_buffers, int num_uniform_buffers);
 
@@ -664,38 +665,52 @@ static SDL_GPUTexture *forge_scene_upload_texture(
 
 #include "scene/shaders/compiled/scene_vert_spirv.h"
 #include "scene/shaders/compiled/scene_vert_dxil.h"
+#include "scene/shaders/compiled/scene_vert_msl.h"
 #include "scene/shaders/compiled/scene_frag_spirv.h"
 #include "scene/shaders/compiled/scene_frag_dxil.h"
+#include "scene/shaders/compiled/scene_frag_msl.h"
 
 #include "scene/shaders/compiled/grid_vert_spirv.h"
 #include "scene/shaders/compiled/grid_vert_dxil.h"
+#include "scene/shaders/compiled/grid_vert_msl.h"
 #include "scene/shaders/compiled/grid_frag_spirv.h"
 #include "scene/shaders/compiled/grid_frag_dxil.h"
+#include "scene/shaders/compiled/grid_frag_msl.h"
 
 #include "scene/shaders/compiled/shadow_vert_spirv.h"
 #include "scene/shaders/compiled/shadow_vert_dxil.h"
+#include "scene/shaders/compiled/shadow_vert_msl.h"
 #include "scene/shaders/compiled/shadow_frag_spirv.h"
 #include "scene/shaders/compiled/shadow_frag_dxil.h"
+#include "scene/shaders/compiled/shadow_frag_msl.h"
 
 #include "scene/shaders/compiled/sky_vert_spirv.h"
 #include "scene/shaders/compiled/sky_vert_dxil.h"
+#include "scene/shaders/compiled/sky_vert_msl.h"
 #include "scene/shaders/compiled/sky_frag_spirv.h"
 #include "scene/shaders/compiled/sky_frag_dxil.h"
+#include "scene/shaders/compiled/sky_frag_msl.h"
 
 #include "scene/shaders/compiled/ui_vert_spirv.h"
 #include "scene/shaders/compiled/ui_vert_dxil.h"
+#include "scene/shaders/compiled/ui_vert_msl.h"
 #include "scene/shaders/compiled/ui_frag_spirv.h"
 #include "scene/shaders/compiled/ui_frag_dxil.h"
+#include "scene/shaders/compiled/ui_frag_msl.h"
 
 #ifdef FORGE_SCENE_MODEL_SUPPORT
 #include "scene/shaders/compiled/scene_model_vert_spirv.h"
 #include "scene/shaders/compiled/scene_model_vert_dxil.h"
+#include "scene/shaders/compiled/scene_model_vert_msl.h"
 #include "scene/shaders/compiled/scene_model_frag_spirv.h"
 #include "scene/shaders/compiled/scene_model_frag_dxil.h"
+#include "scene/shaders/compiled/scene_model_frag_msl.h"
 #include "scene/shaders/compiled/scene_skinned_vert_spirv.h"
 #include "scene/shaders/compiled/scene_skinned_vert_dxil.h"
+#include "scene/shaders/compiled/scene_skinned_vert_msl.h"
 #include "scene/shaders/compiled/scene_skinned_shadow_vert_spirv.h"
 #include "scene/shaders/compiled/scene_skinned_shadow_vert_dxil.h"
+#include "scene/shaders/compiled/scene_skinned_shadow_vert_msl.h"
 #endif
 
 /* ── Inline accessors ───────────────────────────────────────────────────── */
@@ -830,6 +845,7 @@ static SDL_GPUShader *forge_scene_create_shader(
     SDL_GPUShaderStage stage,
     const unsigned char *spirv_code, unsigned int spirv_size,
     const unsigned char *dxil_code,  unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int num_samplers, int num_storage_textures,
     int num_storage_buffers, int num_uniform_buffers)
 {
@@ -843,22 +859,28 @@ static SDL_GPUShader *forge_scene_create_shader(
     SDL_GPUShaderCreateInfo info;
     SDL_zero(info);
     info.stage                = stage;
-    info.entrypoint           = "main";
     info.num_samplers         = num_samplers;
     info.num_storage_textures = num_storage_textures;
     info.num_storage_buffers  = num_storage_buffers;
     info.num_uniform_buffers  = num_uniform_buffers;
 
     if (formats & SDL_GPU_SHADERFORMAT_SPIRV) {
-        info.format    = SDL_GPU_SHADERFORMAT_SPIRV;
-        info.code      = spirv_code;
-        info.code_size = spirv_size;
+        info.format     = SDL_GPU_SHADERFORMAT_SPIRV;
+        info.entrypoint = "main";
+        info.code       = spirv_code;
+        info.code_size  = spirv_size;
     } else if (formats & SDL_GPU_SHADERFORMAT_DXIL) {
-        info.format    = SDL_GPU_SHADERFORMAT_DXIL;
-        info.code      = dxil_code;
-        info.code_size = dxil_size;
+        info.format     = SDL_GPU_SHADERFORMAT_DXIL;
+        info.entrypoint = "main";
+        info.code       = dxil_code;
+        info.code_size  = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";  /* spirv-cross renames main → main0 in MSL */
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("forge_scene: no supported shader format (need SPIRV or DXIL)");
+        SDL_Log("forge_scene: no supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -1358,7 +1380,9 @@ static bool forge_scene_init(ForgeScene *scene,
     }
 
     scene->device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_SPIRV |
+        SDL_GPU_SHADERFORMAT_DXIL |
+        SDL_GPU_SHADERFORMAT_MSL,
         true, NULL);
     if (!scene->device) {
         SDL_Log("forge_scene: SDL_CreateGPUDevice failed: %s", SDL_GetError());
@@ -1425,48 +1449,56 @@ static bool forge_scene_init(ForgeScene *scene,
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_vert_spirv, sizeof(scene_vert_spirv),
         scene_vert_dxil,  sizeof(scene_vert_dxil),
+        scene_vert_msl, scene_vert_msl_size,
         0, 0, 0, 1);
 
     SDL_GPUShader *scene_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         scene_frag_spirv, sizeof(scene_frag_spirv),
         scene_frag_dxil,  sizeof(scene_frag_dxil),
+        scene_frag_msl, scene_frag_msl_size,
         1, 0, 0, 1);
 
     SDL_GPUShader *shadow_vs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_VERTEX,
         shadow_vert_spirv, sizeof(shadow_vert_spirv),
         shadow_vert_dxil,  sizeof(shadow_vert_dxil),
+        shadow_vert_msl, shadow_vert_msl_size,
         0, 0, 0, 1);
 
     SDL_GPUShader *shadow_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         shadow_frag_spirv, sizeof(shadow_frag_spirv),
         shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl, shadow_frag_msl_size,
         0, 0, 0, 0);
 
     SDL_GPUShader *grid_vs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_VERTEX,
         grid_vert_spirv, sizeof(grid_vert_spirv),
         grid_vert_dxil,  sizeof(grid_vert_dxil),
+        grid_vert_msl, grid_vert_msl_size,
         0, 0, 0, 1);
 
     SDL_GPUShader *grid_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         grid_frag_spirv, sizeof(grid_frag_spirv),
         grid_frag_dxil,  sizeof(grid_frag_dxil),
+        grid_frag_msl, grid_frag_msl_size,
         1, 0, 0, 1);
 
     SDL_GPUShader *sky_vs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_VERTEX,
         sky_vert_spirv, sizeof(sky_vert_spirv),
         sky_vert_dxil,  sizeof(sky_vert_dxil),
+        sky_vert_msl, sky_vert_msl_size,
         0, 0, 0, 0);
 
     SDL_GPUShader *sky_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         sky_frag_spirv, sizeof(sky_frag_spirv),
         sky_frag_dxil,  sizeof(sky_frag_dxil),
+        sky_frag_msl, sky_frag_msl_size,
         0, 0, 0, 0);
 
     if (!scene_vs || !scene_fs || !shadow_vs || !shadow_fs ||
@@ -1883,12 +1915,14 @@ static bool forge_scene_init(ForgeScene *scene,
                 SDL_GPU_SHADERSTAGE_VERTEX,
                 ui_vert_spirv, sizeof(ui_vert_spirv),
                 ui_vert_dxil,  sizeof(ui_vert_dxil),
+                ui_vert_msl, ui_vert_msl_size,
                 0, 0, 0, 1);
 
             SDL_GPUShader *ui_fs = forge_scene_create_shader(scene,
                 SDL_GPU_SHADERSTAGE_FRAGMENT,
                 ui_frag_spirv, sizeof(ui_frag_spirv),
                 ui_frag_dxil,  sizeof(ui_frag_dxil),
+                ui_frag_msl, ui_frag_msl_size,
                 1, 0, 0, 0);
 
             if (!ui_vs || !ui_fs) {
@@ -3315,12 +3349,14 @@ static bool forge_scene_init_model_pipelines(ForgeScene *scene)
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_model_vert_spirv, sizeof(scene_model_vert_spirv),
         scene_model_vert_dxil,  sizeof(scene_model_vert_dxil),
+        scene_model_vert_msl, scene_model_vert_msl_size,
         0, 0, 0, 1);  /* 0 samplers, 0 storage, 0 storage_buf, 1 uniform */
 
     SDL_GPUShader *model_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         scene_model_frag_spirv, sizeof(scene_model_frag_spirv),
         scene_model_frag_dxil,  sizeof(scene_model_frag_dxil),
+        scene_model_frag_msl, scene_model_frag_msl_size,
         6, 0, 0, 1);  /* 6 samplers (5 texture + 1 shadow cmp), 1 uniform */
 
     /* Shadow uses existing shadow shader but with 48-byte stride */
@@ -3328,12 +3364,14 @@ static bool forge_scene_init_model_pipelines(ForgeScene *scene)
         SDL_GPU_SHADERSTAGE_VERTEX,
         shadow_vert_spirv, sizeof(shadow_vert_spirv),
         shadow_vert_dxil,  sizeof(shadow_vert_dxil),
+        shadow_vert_msl, shadow_vert_msl_size,
         0, 0, 0, 1);
 
     SDL_GPUShader *mshadow_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         shadow_frag_spirv, sizeof(shadow_frag_spirv),
         shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl, shadow_frag_msl_size,
         0, 0, 0, 0);
 
     if (!model_vs || !model_fs || !mshadow_vs || !mshadow_fs) {
@@ -4124,6 +4162,7 @@ static bool forge_scene_init_skinned_pipelines(ForgeScene *scene)
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_skinned_vert_spirv, sizeof(scene_skinned_vert_spirv),
         scene_skinned_vert_dxil,  sizeof(scene_skinned_vert_dxil),
+        scene_skinned_vert_msl, scene_skinned_vert_msl_size,
         0, 0, 1, 1);  /* 0 samplers, 0 storage_tex, 1 storage_buf, 1 uniform */
 
     /* Reuse model fragment shader */
@@ -4131,6 +4170,7 @@ static bool forge_scene_init_skinned_pipelines(ForgeScene *scene)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         scene_model_frag_spirv, sizeof(scene_model_frag_spirv),
         scene_model_frag_dxil,  sizeof(scene_model_frag_dxil),
+        scene_model_frag_msl, scene_model_frag_msl_size,
         6, 0, 0, 1);
 
     /* Skinned shadow vertex shader — 1 storage buffer, 1 uniform */
@@ -4138,6 +4178,7 @@ static bool forge_scene_init_skinned_pipelines(ForgeScene *scene)
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_skinned_shadow_vert_spirv, sizeof(scene_skinned_shadow_vert_spirv),
         scene_skinned_shadow_vert_dxil,  sizeof(scene_skinned_shadow_vert_dxil),
+        scene_skinned_shadow_vert_msl, scene_skinned_shadow_vert_msl_size,
         0, 0, 1, 1);
 
     /* Reuse existing shadow fragment shader */
@@ -4145,6 +4186,7 @@ static bool forge_scene_init_skinned_pipelines(ForgeScene *scene)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         shadow_frag_spirv, sizeof(shadow_frag_spirv),
         shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl, shadow_frag_msl_size,
         0, 0, 0, 0);
 
     if (!skinned_vs || !skinned_fs || !skinned_shadow_vs || !skinned_shadow_fs) {

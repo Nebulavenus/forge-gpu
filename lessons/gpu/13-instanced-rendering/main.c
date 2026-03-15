@@ -61,13 +61,17 @@
 #include "shaders/compiled/grid_vert_spirv.h"
 #include "shaders/compiled/grid_frag_spirv.h"
 #include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_msl.h"
 #include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_msl.h"
 
 /* Instanced shaders — per-instance model matrix + Blinn-Phong lighting */
 #include "shaders/compiled/instanced_vert_spirv.h"
 #include "shaders/compiled/instanced_frag_spirv.h"
 #include "shaders/compiled/instanced_vert_dxil.h"
+#include "shaders/compiled/instanced_vert_msl.h"
 #include "shaders/compiled/instanced_frag_dxil.h"
+#include "shaders/compiled/instanced_frag_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -374,6 +378,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage   stage,
     const unsigned char *spirv_code,  unsigned int spirv_size,
     const unsigned char *dxil_code,   unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int                  num_samplers,
     int                  num_storage_textures,
     int                  num_storage_buffers,
@@ -398,8 +403,13 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -1164,7 +1174,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     /* ── 2. Create GPU device ─────────────────────────────────────────── */
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
         SDL_GPU_SHADERFORMAT_SPIRV |
-        SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_DXIL |
+        SDL_GPU_SHADERFORMAT_MSL,
         true,   /* debug mode */
         NULL    /* no backend preference */
     );
@@ -1377,6 +1388,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_VERTEX,
         grid_vert_spirv, grid_vert_spirv_size,
         grid_vert_dxil,  grid_vert_dxil_size,
+        grid_vert_msl,   grid_vert_msl_size,
         GRID_VERT_NUM_SAMPLERS,
         GRID_VERT_NUM_STORAGE_TEXTURES,
         GRID_VERT_NUM_STORAGE_BUFFERS,
@@ -1387,6 +1399,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         grid_frag_spirv, grid_frag_spirv_size,
         grid_frag_dxil,  grid_frag_dxil_size,
+        grid_frag_msl,   grid_frag_msl_size,
         GRID_FRAG_NUM_SAMPLERS,
         GRID_FRAG_NUM_STORAGE_TEXTURES,
         GRID_FRAG_NUM_STORAGE_BUFFERS,
@@ -1458,6 +1471,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_VERTEX,
         instanced_vert_spirv, instanced_vert_spirv_size,
         instanced_vert_dxil,  instanced_vert_dxil_size,
+        instanced_vert_msl,   instanced_vert_msl_size,
         INST_VERT_NUM_SAMPLERS,
         INST_VERT_NUM_STORAGE_TEXTURES,
         INST_VERT_NUM_STORAGE_BUFFERS,
@@ -1471,6 +1485,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         instanced_frag_spirv, instanced_frag_spirv_size,
         instanced_frag_dxil,  instanced_frag_dxil_size,
+        instanced_frag_msl,   instanced_frag_msl_size,
         INST_FRAG_NUM_SAMPLERS,
         INST_FRAG_NUM_STORAGE_TEXTURES,
         INST_FRAG_NUM_STORAGE_BUFFERS,

@@ -1,0 +1,162 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_EdgeDetectUniforms
+{
+    float2 texel_size;
+    float depth_threshold;
+    float normal_threshold;
+    int edge_source;
+    int show_debug;
+    float2 _pad0;
+};
+
+struct main0_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+};
+
+struct main0_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_EdgeDetectUniforms& EdgeDetectUniforms [[buffer(0)]], texture2d<float> depth_tex [[texture(0)]], texture2d<float> normal_tex [[texture(1)]], texture2d<float> color_tex [[texture(2)]], sampler depth_smp [[sampler(0)]], sampler normal_smp [[sampler(1)]], sampler color_smp [[sampler(2)]])
+{
+    main0_out out = {};
+    float4 _344;
+    do
+    {
+        if (EdgeDetectUniforms.show_debug != 0)
+        {
+            if (in.in_var_TEXCOORD0.x < 0.5)
+            {
+                float _77 = powr(depth_tex.sample(depth_smp, in.in_var_TEXCOORD0).x, 50.0);
+                _344 = float4(_77, _77, _77, 1.0);
+                break;
+            }
+            else
+            {
+                _344 = float4((normal_tex.sample(normal_smp, in.in_var_TEXCOORD0).xyz * 0.5) + float3(0.5), 1.0);
+                break;
+            }
+            break; // unreachable workaround
+        }
+        bool _138;
+        do
+        {
+            if (depth_tex.sample(depth_smp, in.in_var_TEXCOORD0).x >= 0.999000012874603271484375)
+            {
+                _138 = true;
+                break;
+            }
+            float _93 = -EdgeDetectUniforms.texel_size.x;
+            float4 _99 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(_93, EdgeDetectUniforms.texel_size.y)));
+            float _100 = _99.x;
+            float4 _106 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, EdgeDetectUniforms.texel_size.y)));
+            float _110 = -EdgeDetectUniforms.texel_size.y;
+            float4 _114 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(_93, _110)));
+            float4 _121 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, _110)));
+            bool _127;
+            if ((isunordered(_100, 0.999000012874603271484375) || _100 < 0.999000012874603271484375))
+            {
+                _127 = _106.x >= 0.999000012874603271484375;
+            }
+            else
+            {
+                _127 = true;
+            }
+            bool _132;
+            if (!_127)
+            {
+                _132 = _114.x >= 0.999000012874603271484375;
+            }
+            else
+            {
+                _132 = true;
+            }
+            bool _137;
+            if (!_132)
+            {
+                _137 = _121.x >= 0.999000012874603271484375;
+            }
+            else
+            {
+                _137 = true;
+            }
+            _138 = _137;
+            break;
+        } while(false);
+        float _332;
+        if (!_138)
+        {
+            bool _148;
+            if (EdgeDetectUniforms.edge_source != 0)
+            {
+                _148 = EdgeDetectUniforms.edge_source == 2;
+            }
+            else
+            {
+                _148 = true;
+            }
+            float _237;
+            if (_148)
+            {
+                float _155 = -EdgeDetectUniforms.texel_size.x;
+                float4 _175 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, EdgeDetectUniforms.texel_size.y)));
+                float _176 = _175.x;
+                float _193 = -EdgeDetectUniforms.texel_size.y;
+                float4 _197 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(_155, _193)));
+                float _198 = _197.x;
+                float4 _211 = depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, _193)));
+                float _212 = _211.x;
+                float _213 = -depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(_155, EdgeDetectUniforms.texel_size.y))).x;
+                float _220 = ((((_213 - (2.0 * depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(_155, 0.0))).x)) - _198) + _176) + (2.0 * depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, 0.0))).x)) + _212;
+                float _227 = ((((_213 - (2.0 * depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(0.0, EdgeDetectUniforms.texel_size.y))).x)) - _176) + _198) + (2.0 * depth_tex.sample(depth_smp, (in.in_var_TEXCOORD0 + float2(0.0, _193))).x)) + _212;
+                _237 = precise::max(0.0, smoothstep(EdgeDetectUniforms.depth_threshold, EdgeDetectUniforms.depth_threshold * 2.0, sqrt((_220 * _220) + (_227 * _227))));
+            }
+            else
+            {
+                _237 = 0.0;
+            }
+            bool _242;
+            if (EdgeDetectUniforms.edge_source != 1)
+            {
+                _242 = EdgeDetectUniforms.edge_source == 2;
+            }
+            else
+            {
+                _242 = true;
+            }
+            float _331;
+            if (_242)
+            {
+                float _249 = -EdgeDetectUniforms.texel_size.x;
+                float3 _270 = normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, EdgeDetectUniforms.texel_size.y))).xyz;
+                float _287 = -EdgeDetectUniforms.texel_size.y;
+                float3 _292 = normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(_249, _287))).xyz;
+                float3 _306 = normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, _287))).xyz;
+                float3 _307 = -normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(_249, EdgeDetectUniforms.texel_size.y))).xyz;
+                float3 _314 = ((((_307 - (normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(_249, 0.0))).xyz * 2.0)) - _292) + _270) + (normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(EdgeDetectUniforms.texel_size.x, 0.0))).xyz * 2.0)) + _306;
+                float3 _321 = ((((_307 - (normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(0.0, EdgeDetectUniforms.texel_size.y))).xyz * 2.0)) - _270) + _292) + (normal_tex.sample(normal_smp, (in.in_var_TEXCOORD0 + float2(0.0, _287))).xyz * 2.0)) + _306;
+                _331 = precise::max(_237, smoothstep(EdgeDetectUniforms.normal_threshold, EdgeDetectUniforms.normal_threshold * 2.0, sqrt(dot(_314, _314) + dot(_321, _321))));
+            }
+            else
+            {
+                _331 = _237;
+            }
+            _332 = _331;
+        }
+        else
+        {
+            _332 = 0.0;
+        }
+        _344 = float4(mix(color_tex.sample(color_smp, in.in_var_TEXCOORD0).xyz, float3(0.0), float3(_332)), 1.0);
+        break;
+    } while(false);
+    out.out_var_SV_Target0 = _344;
+    return out;
+}
+

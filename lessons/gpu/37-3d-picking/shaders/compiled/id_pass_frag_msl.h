@@ -1,0 +1,26 @@
+/* Auto-generated from id_pass.frag.msl -- do not edit by hand. */
+static const char id_pass_frag_msl[] =
+    "#include <metal_stdlib>\n"
+    "#include <simd/simd.h>\n"
+    "\n"
+    "using namespace metal;\n"
+    "\n"
+    "struct type_IdFragUniforms\n"
+    "{\n"
+    "    float4 id_color;\n"
+    "};\n"
+    "\n"
+    "struct main0_out\n"
+    "{\n"
+    "    float4 out_var_SV_Target [[color(0)]];\n"
+    "};\n"
+    "\n"
+    "fragment main0_out main0(constant type_IdFragUniforms& IdFragUniforms [[buffer(0)]])\n"
+    "{\n"
+    "    main0_out out = {};\n"
+    "    out.out_var_SV_Target = IdFragUniforms.id_color;\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+;
+static const unsigned int id_pass_frag_msl_size = sizeof(id_pass_frag_msl) - 1;

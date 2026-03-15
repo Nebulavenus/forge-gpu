@@ -1,0 +1,27 @@
+/* Auto-generated from debug_overlay.frag.msl -- do not edit by hand. */
+static const char debug_overlay_frag_msl[] =
+    "#include <metal_stdlib>\n"
+    "#include <simd/simd.h>\n"
+    "\n"
+    "using namespace metal;\n"
+    "\n"
+    "struct main0_out\n"
+    "{\n"
+    "    float4 out_var_SV_Target [[color(0)]];\n"
+    "};\n"
+    "\n"
+    "struct main0_in\n"
+    "{\n"
+    "    float2 in_var_TEXCOORD0 [[user(locn0)]];\n"
+    "};\n"
+    "\n"
+    "fragment main0_out main0(main0_in in [[stage_in]], texture2d<float> debug_tex [[texture(0)]], sampler debug_smp [[sampler(0)]])\n"
+    "{\n"
+    "    main0_out out = {};\n"
+    "    float4 _24 = debug_tex.sample(debug_smp, in.in_var_TEXCOORD0);\n"
+    "    out.out_var_SV_Target = float4(_24.xyz, _24.w * 0.699999988079071044921875);\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+;
+static const unsigned int debug_overlay_frag_msl_size = sizeof(debug_overlay_frag_msl) - 1;

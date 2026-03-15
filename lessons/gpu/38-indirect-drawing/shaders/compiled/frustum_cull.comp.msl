@@ -1,0 +1,108 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct ObjectData
+{
+    float4x4 model;
+    float4 color;
+    float4 bounding_sphere;
+    uint num_indices;
+    uint first_index;
+    int vertex_offset;
+    uint _pad;
+};
+
+struct type_StructuredBuffer_ObjectData
+{
+    ObjectData _m0[1];
+};
+
+struct IndirectCommand
+{
+    uint num_indices;
+    uint num_instances;
+    uint first_index;
+    int vertex_offset;
+    uint first_instance;
+};
+
+struct type_RWStructuredBuffer_IndirectCommand
+{
+    IndirectCommand _m0[1];
+};
+
+struct type_RWStructuredBuffer_uint
+{
+    uint _m0[1];
+};
+
+struct type_CullUniforms
+{
+    float4 frustum_planes[6];
+    uint num_objects;
+    uint enable_culling;
+    float2 _pad;
+};
+
+constant bool _47 = {};
+
+kernel void main0(device type_StructuredBuffer_ObjectData& objects [[buffer(0)]], device type_RWStructuredBuffer_IndirectCommand& indirect_commands [[buffer(1)]], device type_RWStructuredBuffer_uint& visibility [[buffer(2)]], constant type_CullUniforms& CullUniforms [[buffer(3)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+{
+    do
+    {
+        if (gl_GlobalInvocationID.x >= CullUniforms.num_objects)
+        {
+            break;
+        }
+        bool _103;
+        if (CullUniforms.enable_culling != 0u)
+        {
+            bool _102;
+            do
+            {
+                bool _99;
+                bool _100;
+                int _82 = 0;
+                for (;;)
+                {
+                    if (_82 < 6)
+                    {
+                        if ((dot(objects._m0[gl_GlobalInvocationID.x].bounding_sphere.xyz, CullUniforms.frustum_planes[_82].xyz) + CullUniforms.frustum_planes[_82].w) < (-objects._m0[gl_GlobalInvocationID.x].bounding_sphere.w))
+                        {
+                            _99 = false;
+                            _100 = true;
+                            break;
+                        }
+                        _82++;
+                        continue;
+                    }
+                    else
+                    {
+                        _99 = _47;
+                        _100 = false;
+                        break;
+                    }
+                }
+                if (_100)
+                {
+                    _102 = _99;
+                    break;
+                }
+                _102 = true;
+                break;
+            } while(false);
+            _103 = _102;
+        }
+        else
+        {
+            _103 = true;
+        }
+        uint _105 = uint(int(_103));
+        indirect_commands._m0[gl_GlobalInvocationID.x] = IndirectCommand{ objects._m0[gl_GlobalInvocationID.x].num_indices, _105, objects._m0[gl_GlobalInvocationID.x].first_index, objects._m0[gl_GlobalInvocationID.x].vertex_offset, gl_GlobalInvocationID.x };
+        visibility._m0[gl_GlobalInvocationID.x] = _105;
+        break;
+    } while(false);
+}
+

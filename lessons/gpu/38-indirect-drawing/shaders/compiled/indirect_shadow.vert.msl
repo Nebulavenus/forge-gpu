@@ -1,0 +1,44 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct ObjectTransform
+{
+    float4x4 model;
+    float4 color;
+    float4 bounding_sphere;
+    uint num_indices;
+    uint first_index;
+    int vertex_offset;
+    uint _pad;
+};
+
+struct type_StructuredBuffer_ObjectTransform
+{
+    ObjectTransform _m0[1];
+};
+
+struct type_ShadowUniforms
+{
+    float4x4 light_vp;
+};
+
+struct main0_out
+{
+    float4 gl_Position [[position]];
+};
+
+struct main0_in
+{
+    float3 in_var_TEXCOORD0 [[attribute(0)]];
+    uint in_var_TEXCOORD3 [[attribute(3)]];
+};
+
+vertex main0_out main0(main0_in in [[stage_in]], const device type_StructuredBuffer_ObjectTransform& object_data [[buffer(0)]], constant type_ShadowUniforms& ShadowUniforms [[buffer(1)]])
+{
+    main0_out out = {};
+    out.gl_Position = ShadowUniforms.light_vp * (object_data._m0[in.in_var_TEXCOORD3].model * float4(in.in_var_TEXCOORD0, 1.0));
+    return out;
+}
+

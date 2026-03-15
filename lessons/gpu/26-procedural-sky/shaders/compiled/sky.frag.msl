@@ -1,0 +1,228 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_SkyFragUniforms
+{
+    packed_float3 cam_pos_km;
+    float sun_intensity;
+    packed_float3 sun_dir;
+    int num_steps;
+    float2 resolution;
+    float2 _pad;
+};
+
+struct main0_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct main0_in
+{
+    float3 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_SkyFragUniforms& SkyFragUniforms [[buffer(0)]], texture2d<float> transmittance_lut [[texture(0)]], texture2d<float> multiscatter_lut [[texture(1)]], sampler trans_sampler [[sampler(0)]], sampler ms_sampler [[sampler(1)]])
+{
+    main0_out out = {};
+    float _96;
+    float3 _86 = fast::normalize(in.in_var_TEXCOORD0);
+    float3 _296;
+    float3 _297;
+    do
+    {
+        float _93;
+        float _94;
+        float _98;
+        float _99;
+        float _112;
+        float _113;
+        bool _114;
+        do
+        {
+            _93 = dot(_86, _86);
+            _94 = dot(float3(SkyFragUniforms.cam_pos_km), _86);
+            float _95 = 2.0 * _94;
+            _96 = dot(float3(SkyFragUniforms.cam_pos_km), float3(SkyFragUniforms.cam_pos_km));
+            _98 = _95 * _95;
+            _99 = 4.0 * _93;
+            float _101 = _98 - (_99 * (_96 - 41731600.0));
+            if (_101 < 0.0)
+            {
+                _112 = 0.0;
+                _113 = 0.0;
+                _114 = false;
+                break;
+            }
+            float _105 = sqrt(_101);
+            float _106 = 0.5 / _93;
+            float _107 = _94 * (-2.0);
+            _112 = (_107 + _105) * _106;
+            _113 = (_107 - _105) * _106;
+            _114 = true;
+            break;
+        } while(false);
+        if (!_114)
+        {
+            _296 = float3(1.0);
+            _297 = float3(0.0);
+            break;
+        }
+        float _119 = (_113 < 0.0) ? 0.0 : _113;
+        float _133;
+        bool _134;
+        do
+        {
+            float _124 = _98 - (_99 * (_96 - 40449600.0));
+            if (_124 < 0.0)
+            {
+                _133 = 0.0;
+                _134 = false;
+                break;
+            }
+            _133 = ((_94 * (-2.0)) - sqrt(_124)) * (0.5 / _93);
+            _134 = true;
+            break;
+        } while(false);
+        float _142;
+        if (_134)
+        {
+            float _141;
+            if (_133 > 0.0)
+            {
+                _141 = precise::min(_112, _133);
+            }
+            else
+            {
+                _141 = _112;
+            }
+            _142 = _141;
+        }
+        else
+        {
+            _142 = _112;
+        }
+        float _147 = (_142 - _119) / float(SkyFragUniforms.num_steps);
+        float _150 = dot(_86, float3(SkyFragUniforms.sun_dir));
+        float _153 = 0.0596831031143665313720703125 * (1.0 + (_150 * _150));
+        float _155 = 1.6400001049041748046875 - (1.60000002384185791015625 * _150);
+        float _158 = 0.02864788472652435302734375 / (_155 * sqrt(_155));
+        float3 _160;
+        float3 _163;
+        _160 = float3(0.0);
+        _163 = float3(1.0);
+        float3 _161;
+        float3 _164;
+        for (int _165 = 0; _165 < SkyFragUniforms.num_steps; _160 = _161, _163 = _164, _165++)
+        {
+            float3 _175 = float3(SkyFragUniforms.cam_pos_km) + (_86 * (_119 + ((float(_165) + 0.5) * _147)));
+            float _176 = length(_175);
+            float _178 = 6360.0 - _176;
+            float _182 = exp(_178 * 0.833333313465118408203125);
+            float3 _188 = float3(0.00580199994146823883056640625, 0.0135580003261566162109375, 0.033100001513957977294921875) * exp(_178 * 0.125);
+            float _189 = 0.0039960001595318317413330078125 * _182;
+            float3 _197 = (_188 + float3(_189 + (0.000444000004790723323822021484375 * _182))) + (float3(0.0006500000017695128917694091796875, 0.001881000003777444362640380859375, 8.4999999671708792448043823242188e-05) * precise::max(0.0, 1.0 - (abs(_176 - 6385.0) * 0.066666670143604278564453125)));
+            float _199 = dot(fast::normalize(_175), float3(SkyFragUniforms.sun_dir));
+            float _200 = _176 * _176;
+            float _203 = sqrt(precise::max(0.0, _200 - 40449600.0));
+            float _214 = 6460.0 - _176;
+            float _215 = _203 + 1132.25439453125;
+            float _223;
+            if (_215 > _214)
+            {
+                _223 = (precise::max(0.0, ((-_176) * _199) + sqrt(precise::max(0.0, (_200 * ((_199 * _199) - 1.0)) + 41731600.0))) - _214) / (_215 - _214);
+            }
+            else
+            {
+                _223 = 0.0;
+            }
+            float _252;
+            bool _253;
+            do
+            {
+                float _235 = dot(float3(SkyFragUniforms.sun_dir), float3(SkyFragUniforms.sun_dir));
+                float _236 = dot(_175, float3(SkyFragUniforms.sun_dir));
+                float _237 = 2.0 * _236;
+                float _243 = (_237 * _237) - ((4.0 * _235) * (dot(_175, _175) - 40449600.0));
+                if (_243 < 0.0)
+                {
+                    _252 = 0.0;
+                    _253 = false;
+                    break;
+                }
+                _252 = ((_236 * (-2.0)) - sqrt(_243)) * (0.5 / _235);
+                _253 = true;
+                break;
+            } while(false);
+            bool _257;
+            if (_253)
+            {
+                _257 = _252 >= 0.0;
+            }
+            else
+            {
+                _257 = false;
+            }
+            float3 _290 = exp((-_197) * _147);
+            _161 = _160 + ((((((((_188 * _153) + ((float3(0.0039960001595318317413330078125) * _182) * _158)) * transmittance_lut.sample(trans_sampler, float2(fast::clamp(_223, 0.0, 1.0), fast::clamp(_203 * 0.0008831937448121607303619384765625, 0.0, 1.0)), level(0.0)).xyz) * ((_257 ? 0.0 : 1.0) * fast::clamp((_199 * 10.0) + 0.100000001490116119384765625, 0.0, 1.0))) * SkyFragUniforms.sun_intensity) + ((multiscatter_lut.sample(ms_sampler, float2(((_199 * 0.5) + 0.515625) * 0.96969699859619140625, (fast::clamp((_176 - 6360.0) * 0.00999999977648258209228515625, 0.0, 1.0) + 0.015625) * 0.96969699859619140625), level(0.0)).xyz * (_188 + float3(_189))) * SkyFragUniforms.sun_intensity)) * ((float3(1.0) - _290) / precise::max(_197, float3(9.9999999747524270787835121154785e-07)))) * _163);
+            _164 = _163 * _290;
+        }
+        _296 = _163;
+        _297 = _160;
+        break;
+    } while(false);
+    float _318;
+    bool _319;
+    do
+    {
+        float _302 = dot(float3(SkyFragUniforms.sun_dir), float3(SkyFragUniforms.sun_dir));
+        float _303 = dot(float3(SkyFragUniforms.cam_pos_km), float3(SkyFragUniforms.sun_dir));
+        float _304 = 2.0 * _303;
+        float _309 = (_304 * _304) - ((4.0 * _302) * (_96 - 40449600.0));
+        if (_309 < 0.0)
+        {
+            _318 = 0.0;
+            _319 = false;
+            break;
+        }
+        _318 = ((_303 * (-2.0)) - sqrt(_309)) * (0.5 / _302);
+        _319 = true;
+        break;
+    } while(false);
+    bool _323;
+    if (_319)
+    {
+        _323 = _318 < 0.0;
+    }
+    else
+    {
+        _323 = true;
+    }
+    float3 _352;
+    if (_323)
+    {
+        float3 _350;
+        do
+        {
+            float _330 = acos(fast::clamp(dot(_86, float3(SkyFragUniforms.sun_dir)), -1.0, 1.0));
+            float _331 = smoothstep(0.01680000126361846923828125, 0.012600000016391277313232421875, _330);
+            if (_331 <= 0.0)
+            {
+                _350 = float3(0.0);
+                break;
+            }
+            float _335 = _330 * 71.42856597900390625;
+            _350 = ((((float3(1.0) * SkyFragUniforms.sun_intensity) * 10.0) * (1.0 - (0.60000002384185791015625 * (1.0 - sqrt(precise::max(0.0, 1.0 - (_335 * _335))))))) * _331) * _296;
+            break;
+        } while(false);
+        _352 = _297 + _350;
+    }
+    else
+    {
+        _352 = _297;
+    }
+    out.out_var_SV_Target = float4(_352, 1.0);
+    return out;
+}
+

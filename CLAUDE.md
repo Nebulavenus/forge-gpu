@@ -389,3 +389,6 @@ recovery steps.
 - A Vulkan/Metal/D3D12-capable GPU
 - Git LFS (`git lfs install` after cloning — GIFs are LFS-tracked)
 - Python packages for diagram generation: `pip install numpy matplotlib`
+
+For full build instructions, platform-specific setup (especially macOS/Metal),
+and common troubleshooting, see [docs/building.md](docs/building.md).

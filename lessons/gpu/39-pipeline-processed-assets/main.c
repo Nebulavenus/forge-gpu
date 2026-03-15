@@ -54,34 +54,44 @@
  * normal mapping, Blinn-Phong with shadow */
 #include "shaders/compiled/scene_pipeline_vert_spirv.h"
 #include "shaders/compiled/scene_pipeline_vert_dxil.h"
+#include "shaders/compiled/scene_pipeline_vert_msl.h"
 #include "shaders/compiled/scene_pipeline_frag_spirv.h"
 #include "shaders/compiled/scene_pipeline_frag_dxil.h"
+#include "shaders/compiled/scene_pipeline_frag_msl.h"
 
 /* Raw scene shaders — 32-byte vertex (no tangent), simple Blinn-Phong
  * with shadow, uses interpolated vertex normal only */
 #include "shaders/compiled/scene_raw_vert_spirv.h"
 #include "shaders/compiled/scene_raw_vert_dxil.h"
+#include "shaders/compiled/scene_raw_vert_msl.h"
 #include "shaders/compiled/scene_raw_frag_spirv.h"
 #include "shaders/compiled/scene_raw_frag_dxil.h"
+#include "shaders/compiled/scene_raw_frag_msl.h"
 
 /* Shadow shaders — depth-only pass, shared between pipeline and raw
  * (same HLSL, but separate pipelines for different vertex strides) */
 #include "shaders/compiled/shadow_vert_spirv.h"
 #include "shaders/compiled/shadow_vert_dxil.h"
+#include "shaders/compiled/shadow_vert_msl.h"
 #include "shaders/compiled/shadow_frag_spirv.h"
 #include "shaders/compiled/shadow_frag_dxil.h"
+#include "shaders/compiled/shadow_frag_msl.h"
 
 /* Sky shaders — fullscreen triangle vertical gradient */
 #include "shaders/compiled/sky_vert_spirv.h"
 #include "shaders/compiled/sky_vert_dxil.h"
+#include "shaders/compiled/sky_vert_msl.h"
 #include "shaders/compiled/sky_frag_spirv.h"
 #include "shaders/compiled/sky_frag_dxil.h"
+#include "shaders/compiled/sky_frag_msl.h"
 
 /* Grid shaders — procedural anti-aliased grid floor with shadow */
 #include "shaders/compiled/grid_vert_spirv.h"
 #include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_msl.h"
 #include "shaders/compiled/grid_frag_spirv.h"
 #include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
@@ -437,6 +447,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage   stage,
     const unsigned char *spirv_code,  unsigned int spirv_size,
     const unsigned char *dxil_code,   unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int                  num_samplers,
     int                  num_storage_textures,
     int                  num_storage_buffers,
@@ -461,8 +472,13 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -960,7 +976,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
     /* ── 2. Create GPU device ─────────────────────────────────────────── */
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
         true, NULL);
     if (!device) {
         SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
@@ -1091,6 +1107,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_pipeline_vert_spirv, scene_pipeline_vert_spirv_size,
         scene_pipeline_vert_dxil,  scene_pipeline_vert_dxil_size,
+        scene_pipeline_vert_msl,   scene_pipeline_vert_msl_size,
         PIPE_VERT_NUM_SAMPLERS, PIPE_VERT_NUM_STORAGE_TEXTURES,
         PIPE_VERT_NUM_STORAGE_BUFFERS, PIPE_VERT_NUM_UNIFORM_BUFFERS);
     if (!pipe_vs) goto fail_cleanup;
@@ -1099,6 +1116,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         scene_pipeline_frag_spirv, scene_pipeline_frag_spirv_size,
         scene_pipeline_frag_dxil,  scene_pipeline_frag_dxil_size,
+        scene_pipeline_frag_msl,   scene_pipeline_frag_msl_size,
         PIPE_FRAG_NUM_SAMPLERS, PIPE_FRAG_NUM_STORAGE_TEXTURES,
         PIPE_FRAG_NUM_STORAGE_BUFFERS, PIPE_FRAG_NUM_UNIFORM_BUFFERS);
     if (!pipe_fs) { SDL_ReleaseGPUShader(device, pipe_vs); goto fail_cleanup; }
@@ -1108,6 +1126,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_raw_vert_spirv, scene_raw_vert_spirv_size,
         scene_raw_vert_dxil,  scene_raw_vert_dxil_size,
+        scene_raw_vert_msl,   scene_raw_vert_msl_size,
         RAW_VERT_NUM_SAMPLERS, RAW_VERT_NUM_STORAGE_TEXTURES,
         RAW_VERT_NUM_STORAGE_BUFFERS, RAW_VERT_NUM_UNIFORM_BUFFERS);
     if (!raw_vs) {
@@ -1120,6 +1139,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         scene_raw_frag_spirv, scene_raw_frag_spirv_size,
         scene_raw_frag_dxil,  scene_raw_frag_dxil_size,
+        scene_raw_frag_msl,   scene_raw_frag_msl_size,
         RAW_FRAG_NUM_SAMPLERS, RAW_FRAG_NUM_STORAGE_TEXTURES,
         RAW_FRAG_NUM_STORAGE_BUFFERS, RAW_FRAG_NUM_UNIFORM_BUFFERS);
     if (!raw_fs) {
@@ -1134,6 +1154,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_VERTEX,
         shadow_vert_spirv, shadow_vert_spirv_size,
         shadow_vert_dxil,  shadow_vert_dxil_size,
+        shadow_vert_msl,   shadow_vert_msl_size,
         SHADOW_VERT_NUM_SAMPLERS, SHADOW_VERT_NUM_STORAGE_TEXTURES,
         SHADOW_VERT_NUM_STORAGE_BUFFERS, SHADOW_VERT_NUM_UNIFORM_BUFFERS);
     if (!shadow_vs) {
@@ -1148,6 +1169,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         shadow_frag_spirv, shadow_frag_spirv_size,
         shadow_frag_dxil,  shadow_frag_dxil_size,
+        shadow_frag_msl,   shadow_frag_msl_size,
         SHADOW_FRAG_NUM_SAMPLERS, SHADOW_FRAG_NUM_STORAGE_TEXTURES,
         SHADOW_FRAG_NUM_STORAGE_BUFFERS, SHADOW_FRAG_NUM_UNIFORM_BUFFERS);
     if (!shadow_fs) {
@@ -1164,6 +1186,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_VERTEX,
         sky_vert_spirv, sky_vert_spirv_size,
         sky_vert_dxil,  sky_vert_dxil_size,
+        sky_vert_msl,   sky_vert_msl_size,
         SKY_VERT_NUM_SAMPLERS, SKY_VERT_NUM_STORAGE_TEXTURES,
         SKY_VERT_NUM_STORAGE_BUFFERS, SKY_VERT_NUM_UNIFORM_BUFFERS);
     if (!sky_vs) {
@@ -1180,6 +1203,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         sky_frag_spirv, sky_frag_spirv_size,
         sky_frag_dxil,  sky_frag_dxil_size,
+        sky_frag_msl,   sky_frag_msl_size,
         SKY_FRAG_NUM_SAMPLERS, SKY_FRAG_NUM_STORAGE_TEXTURES,
         SKY_FRAG_NUM_STORAGE_BUFFERS, SKY_FRAG_NUM_UNIFORM_BUFFERS);
     if (!sky_fs) {
@@ -1198,6 +1222,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_VERTEX,
         grid_vert_spirv, grid_vert_spirv_size,
         grid_vert_dxil,  grid_vert_dxil_size,
+        grid_vert_msl,   grid_vert_msl_size,
         GRID_VERT_NUM_SAMPLERS, GRID_VERT_NUM_STORAGE_TEXTURES,
         GRID_VERT_NUM_STORAGE_BUFFERS, GRID_VERT_NUM_UNIFORM_BUFFERS);
     if (!grid_vs) {
@@ -1216,6 +1241,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         grid_frag_spirv, grid_frag_spirv_size,
         grid_frag_dxil,  grid_frag_dxil_size,
+        grid_frag_msl,   grid_frag_msl_size,
         GRID_FRAG_NUM_SAMPLERS, GRID_FRAG_NUM_STORAGE_TEXTURES,
         GRID_FRAG_NUM_STORAGE_BUFFERS, GRID_FRAG_NUM_UNIFORM_BUFFERS);
     if (!grid_fs) {

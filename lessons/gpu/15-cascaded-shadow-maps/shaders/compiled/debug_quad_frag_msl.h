@@ -1,0 +1,26 @@
+/* Auto-generated from debug_quad.frag.msl -- do not edit by hand. */
+static const char debug_quad_frag_msl[] =
+    "#include <metal_stdlib>\n"
+    "#include <simd/simd.h>\n"
+    "\n"
+    "using namespace metal;\n"
+    "\n"
+    "struct main0_out\n"
+    "{\n"
+    "    float4 out_var_SV_Target [[color(0)]];\n"
+    "};\n"
+    "\n"
+    "struct main0_in\n"
+    "{\n"
+    "    float2 in_var_TEXCOORD0 [[user(locn0)]];\n"
+    "};\n"
+    "\n"
+    "fragment main0_out main0(main0_in in [[stage_in]], texture2d<float> shadow_map [[texture(0)]], sampler smp [[sampler(0)]])\n"
+    "{\n"
+    "    main0_out out = {};\n"
+    "    out.out_var_SV_Target = float4(shadow_map.sample(smp, in.in_var_TEXCOORD0).xxx, 1.0);\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+;
+static const unsigned int debug_quad_frag_msl_size = sizeof(debug_quad_frag_msl) - 1;

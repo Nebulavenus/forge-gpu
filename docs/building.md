@@ -19,6 +19,16 @@ and [Lesson 06 (Reading Error Messages)](../lessons/engine/06-reading-error-mess
 SDL3 is fetched automatically via CMake's FetchContent — no manual
 installation required.
 
+### macOS / Metal
+
+On macOS, the GPU backend is Metal, which only accepts MSL (Metal Shading
+Language) shaders. The project's shaders are written in HLSL and pre-compiled
+to SPIR-V and DXIL bytecode and MSL source — all three formats are checked into the
+repository, so Metal support works out of the box with no extra tooling.
+
+If you modify shader source (`.hlsl` files), you'll need `spirv-cross` to
+regenerate the MSL headers (see [Shader compilation](#shader-compilation)).
+
 ### Installing Git LFS
 
 Git LFS must be installed and initialized **before cloning** the repository.
@@ -178,6 +188,19 @@ Note: the Visual Studio generator is multi-config, so you pass `--config Debug`
 at build time instead of `-DCMAKE_BUILD_TYPE=Debug` at configure time. It does
 not produce `compile_commands.json`.
 
+**"No supported SDL_GPU backend found!" on macOS** — The Metal backend
+requires MSL shaders. All shaders should include pre-compiled MSL headers
+(`.h` files in `shaders/compiled/`). If MSL headers are missing, regenerate
+them with both scripts (requires `spirv-cross`):
+
+```bash
+python scripts/compile_scene_shaders.py   # forge_scene.h shaders
+python scripts/compile_shaders.py          # per-lesson shaders
+```
+
+The device creation must also request `SDL_GPU_SHADERFORMAT_MSL` alongside
+SPIRV and DXIL.
+
 **FetchContent download fails** — Check your internet connection. If you're
 behind a proxy, configure git: `git config --global http.proxy http://proxy:port`.
 
@@ -208,12 +231,15 @@ build\lessons\gpu\01-hello-window\Debug\01-hello-window.exe
 
 ## Shader compilation
 
-Pre-compiled shader bytecodes are checked in, so you **don't need any extra
-tools just to build and run the lessons**. If you want to modify the HLSL
-shader source, you'll need:
+Pre-compiled shader data (SPIR-V and DXIL bytecode, MSL source) is checked in, so
+you **don't need any extra tools just to build and run the lessons**. If you
+want to modify the HLSL shader source, you'll need:
 
 - **[Vulkan SDK](https://vulkan.lunarg.com/)** — provides `dxc` with SPIR-V
   support (the Windows SDK `dxc` can only compile DXIL, not SPIR-V)
+- **spirv-cross** — cross-compiles SPIR-V to MSL for Metal (macOS/iOS).
+  Available via the Vulkan SDK, or: `brew install spirv-cross` (macOS),
+  `apt install spirv-cross` (Linux)
 
 After installing, make sure the `VULKAN_SDK` environment variable is set
 (the installer does this automatically). On Windows the default location is:
@@ -227,8 +253,9 @@ C:\VulkanSDK\<version>\Bin\dxc.exe
 > SDK one. Use the full path to the Vulkan SDK `dxc` or put its `Bin/`
 > directory earlier on your PATH.
 
-The shader compilation script handles everything — finds `dxc`, compiles
-each HLSL file to both SPIR-V and DXIL, and generates C byte-array headers:
+The shader compilation script handles everything — finds `dxc` and
+`spirv-cross`, compiles each HLSL file to SPIR-V, DXIL, and MSL, and
+generates C headers (byte-arrays for SPIR-V/DXIL, string literals for MSL):
 
 ```bash
 python scripts/compile_shaders.py            # all lessons

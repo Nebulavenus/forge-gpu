@@ -1,0 +1,35 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct PulledVertex
+{
+    float3 position;
+    float3 normal;
+    float2 uv;
+    char _m0_final_padding[8];
+};
+
+struct type_StructuredBuffer_PulledVertex
+{
+    PulledVertex _m0[1];
+};
+
+struct type_ShadowUniforms
+{
+    float4x4 light_vp;
+};
+
+struct main0_out
+{
+    float4 gl_Position [[position]];
+};
+
+vertex main0_out main0(const device type_StructuredBuffer_PulledVertex& vertex_buffer [[buffer(0)]], constant type_ShadowUniforms& ShadowUniforms [[buffer(1)]], uint gl_VertexIndex [[vertex_id]])
+{
+    main0_out out = {};
+    out.gl_Position = ShadowUniforms.light_vp * float4(vertex_buffer._m0[gl_VertexIndex].position, 1.0);
+    return out;
+}
+

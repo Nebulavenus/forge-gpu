@@ -67,11 +67,15 @@
 #include "shaders/compiled/material_vert_spirv.h"
 #include "shaders/compiled/material_frag_spirv.h"
 #include "shaders/compiled/material_vert_dxil.h"
+#include "shaders/compiled/material_vert_msl.h"
 #include "shaders/compiled/material_frag_dxil.h"
+#include "shaders/compiled/material_frag_msl.h"
 #include "shaders/compiled/grid_vert_spirv.h"
 #include "shaders/compiled/grid_frag_spirv.h"
 #include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_msl.h"
 #include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
@@ -394,6 +398,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage stage,
     const Uint8 *spirv_code, size_t spirv_size,
     const Uint8 *dxil_code, size_t dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int num_samplers, int num_storage_textures,
     int num_storage_buffers, int num_uniform_buffers)
 {
@@ -416,8 +421,13 @@ static SDL_GPUShader *create_shader(
         info.code = dxil_code;
         info.code_size = dxil_size;
         info.entrypoint = "main";
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -815,7 +825,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* ── 2. Create GPU device ───────────────────────────────────────── */
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
         true,  /* debug mode */
         NULL);
     if (!device) {
@@ -917,6 +927,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_VERTEX,
         material_vert_spirv, sizeof(material_vert_spirv),
         material_vert_dxil, sizeof(material_vert_dxil),
+        material_vert_msl,   material_vert_msl_size,
         VS_NUM_SAMPLERS, VS_NUM_STORAGE_TEXTURES,
         VS_NUM_STORAGE_BUFFERS, VS_NUM_UNIFORM_BUFFERS);
     if (!scene_vs) goto fail;
@@ -925,6 +936,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         material_frag_spirv, sizeof(material_frag_spirv),
         material_frag_dxil, sizeof(material_frag_dxil),
+        material_frag_msl,   material_frag_msl_size,
         FS_NUM_SAMPLERS, FS_NUM_STORAGE_TEXTURES,
         FS_NUM_STORAGE_BUFFERS, FS_NUM_UNIFORM_BUFFERS);
     if (!scene_fs) { SDL_ReleaseGPUShader(device, scene_vs); goto fail; }
@@ -1009,6 +1021,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             device, SDL_GPU_SHADERSTAGE_VERTEX,
             grid_vert_spirv, sizeof(grid_vert_spirv),
             grid_vert_dxil, sizeof(grid_vert_dxil),
+            grid_vert_msl,   grid_vert_msl_size,
             GRID_VS_NUM_SAMPLERS, GRID_VS_NUM_STORAGE_TEXTURES,
             GRID_VS_NUM_STORAGE_BUFFERS, GRID_VS_NUM_UNIFORM_BUFFERS);
         if (!grid_vs) goto fail;
@@ -1017,6 +1030,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             device, SDL_GPU_SHADERSTAGE_FRAGMENT,
             grid_frag_spirv, sizeof(grid_frag_spirv),
             grid_frag_dxil, sizeof(grid_frag_dxil),
+            grid_frag_msl,   grid_frag_msl_size,
             GRID_FS_NUM_SAMPLERS, GRID_FS_NUM_STORAGE_TEXTURES,
             GRID_FS_NUM_STORAGE_BUFFERS, GRID_FS_NUM_UNIFORM_BUFFERS);
         if (!grid_fs) {

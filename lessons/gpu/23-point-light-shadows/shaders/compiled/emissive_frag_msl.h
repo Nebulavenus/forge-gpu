@@ -1,0 +1,27 @@
+/* Auto-generated from emissive.frag.msl -- do not edit by hand. */
+static const char emissive_frag_msl[] =
+    "#include <metal_stdlib>\n"
+    "#include <simd/simd.h>\n"
+    "\n"
+    "using namespace metal;\n"
+    "\n"
+    "struct type_FragUniforms\n"
+    "{\n"
+    "    packed_float3 emission_color;\n"
+    "    float _pad;\n"
+    "};\n"
+    "\n"
+    "struct main0_out\n"
+    "{\n"
+    "    float4 out_var_SV_Target [[color(0)]];\n"
+    "};\n"
+    "\n"
+    "fragment main0_out main0(constant type_FragUniforms& FragUniforms [[buffer(0)]])\n"
+    "{\n"
+    "    main0_out out = {};\n"
+    "    out.out_var_SV_Target = float4(FragUniforms.emission_color[0], FragUniforms.emission_color[1], FragUniforms.emission_color[2], 1.0);\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+;
+static const unsigned int emissive_frag_msl_size = sizeof(emissive_frag_msl) - 1;

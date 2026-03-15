@@ -52,8 +52,10 @@
 
 /* Noise shaders — fullscreen quad vertex + noise fragment */
 #include "shaders/compiled/noise_frag_dxil.h"
+#include "shaders/compiled/noise_frag_msl.h"
 #include "shaders/compiled/noise_frag_spirv.h"
 #include "shaders/compiled/noise_vert_dxil.h"
+#include "shaders/compiled/noise_vert_msl.h"
 #include "shaders/compiled/noise_vert_spirv.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
@@ -141,7 +143,7 @@ typedef struct {
 #endif
 } AppState;
 
-/* ── Helper: create shader from SPIRV/DXIL bytecodes ──────────────────────── */
+/* ── Helper: create shader from SPIRV/DXIL/MSL shader code ──────────────────────── */
 
 /* Queries the GPU device for its supported shader format (SPIRV for
  * Vulkan, DXIL for D3D12) and creates the shader from the matching
@@ -153,6 +155,8 @@ static SDL_GPUShader *create_shader(
     size_t           spirv_size,
     const Uint8     *dxil_code,
     size_t           dxil_size,
+    const char      *msl_code,
+    unsigned int     msl_size,
     Uint32           num_samplers,
     Uint32           num_uniform_buffers
 ) {
@@ -173,8 +177,13 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -211,7 +220,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* Create GPU device — request any backend (Vulkan, D3D12, Metal). */
     state->device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
         true,  /* debug mode — enables validation layers */
         NULL   /* no preferred backend */
     );
@@ -267,6 +276,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->device, SDL_GPU_SHADERSTAGE_VERTEX,
         noise_vert_spirv, sizeof(noise_vert_spirv),
         noise_vert_dxil,  sizeof(noise_vert_dxil),
+        noise_vert_msl,   noise_vert_msl_size,
         0, 0  /* no samplers, no uniform buffers */
     );
 
@@ -277,6 +287,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         noise_frag_spirv, sizeof(noise_frag_spirv),
         noise_frag_dxil,  sizeof(noise_frag_dxil),
+        noise_frag_msl,   noise_frag_msl_size,
         0, 1  /* no samplers, 1 uniform buffer */
     );
 

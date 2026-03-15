@@ -51,47 +51,60 @@
  * and per-object visibility flags */
 #include "shaders/compiled/frustum_cull_comp_spirv.h"
 #include "shaders/compiled/frustum_cull_comp_dxil.h"
+#include "shaders/compiled/frustum_cull_comp_msl.h"
 
 /* Indirect box rendering — vertex reads object data from storage buffer,
  * fragment does Blinn-Phong with diffuse texture + shadow map */
 #include "shaders/compiled/indirect_box_vert_spirv.h"
 #include "shaders/compiled/indirect_box_vert_dxil.h"
+#include "shaders/compiled/indirect_box_vert_msl.h"
 #include "shaders/compiled/indirect_box_frag_spirv.h"
 #include "shaders/compiled/indirect_box_frag_dxil.h"
+#include "shaders/compiled/indirect_box_frag_msl.h"
 
 /* Indirect shadow pass — vertex reads object data from storage buffer,
  * fragment is a no-op (depth-only) */
 #include "shaders/compiled/indirect_shadow_vert_spirv.h"
 #include "shaders/compiled/indirect_shadow_vert_dxil.h"
+#include "shaders/compiled/indirect_shadow_vert_msl.h"
 #include "shaders/compiled/indirect_shadow_frag_spirv.h"
 #include "shaders/compiled/indirect_shadow_frag_dxil.h"
+#include "shaders/compiled/indirect_shadow_frag_msl.h"
 
 /* Debug view — renders all boxes with green/red coloring based on
  * visibility buffer from the compute pass */
 #include "shaders/compiled/debug_box_vert_spirv.h"
 #include "shaders/compiled/debug_box_vert_dxil.h"
+#include "shaders/compiled/debug_box_vert_msl.h"
 #include "shaders/compiled/debug_box_frag_spirv.h"
 #include "shaders/compiled/debug_box_frag_dxil.h"
+#include "shaders/compiled/debug_box_frag_msl.h"
 
 /* Frustum wireframe — draws the main camera's frustum as yellow lines
  * in the debug view */
 #include "shaders/compiled/frustum_lines_vert_spirv.h"
 #include "shaders/compiled/frustum_lines_vert_dxil.h"
+#include "shaders/compiled/frustum_lines_vert_msl.h"
 #include "shaders/compiled/frustum_lines_frag_spirv.h"
 #include "shaders/compiled/frustum_lines_frag_dxil.h"
+#include "shaders/compiled/frustum_lines_frag_msl.h"
 
 /* Grid floor — procedural anti-aliased grid with shadow receiving */
 #include "shaders/compiled/grid_vert_spirv.h"
 #include "shaders/compiled/grid_vert_dxil.h"
+#include "shaders/compiled/grid_vert_msl.h"
 #include "shaders/compiled/grid_frag_spirv.h"
 #include "shaders/compiled/grid_frag_dxil.h"
+#include "shaders/compiled/grid_frag_msl.h"
 
 /* Truck scene — standard Blinn-Phong with diffuse texture + shadow map,
  * rendered with regular (non-indirect) draw calls */
 #include "shaders/compiled/truck_scene_vert_spirv.h"
 #include "shaders/compiled/truck_scene_vert_dxil.h"
+#include "shaders/compiled/truck_scene_vert_msl.h"
 #include "shaders/compiled/truck_scene_frag_spirv.h"
 #include "shaders/compiled/truck_scene_frag_dxil.h"
+#include "shaders/compiled/truck_scene_frag_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
@@ -541,7 +554,7 @@ static SDL_GPUTexture *create_depth_texture(SDL_GPUDevice *device,
 }
 
 /* ── Shader helper ────────────────────────────────────────────────────── */
-/* Creates a vertex or fragment shader from pre-compiled SPIRV and DXIL
+/* Creates a vertex or fragment shader from pre-compiled SPIRV, DXIL, or MSL
  * bytecode, choosing the format supported by the current GPU device. */
 
 static SDL_GPUShader *create_shader(
@@ -549,6 +562,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage   stage,
     const unsigned char *spirv_code,  unsigned int spirv_size,
     const unsigned char *dxil_code,   unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int                  num_samplers,
     int                  num_storage_textures,
     int                  num_storage_buffers,
@@ -573,8 +587,13 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -588,14 +607,15 @@ static SDL_GPUShader *create_shader(
 }
 
 /* ── Compute pipeline helper ──────────────────────────────────────────── */
-/* Creates a compute pipeline from pre-compiled SPIRV and DXIL bytecode.
+/* Creates a compute pipeline from pre-compiled SPIRV/DXIL bytecode or MSL source.
  * The resource binding counts are taken from the COMP_NUM_* constants
  * which must match the HLSL register declarations. */
 
 static SDL_GPUComputePipeline *create_compute_pipeline_helper(
     SDL_GPUDevice *device,
     const unsigned char *spirv_code, unsigned int spirv_size,
-    const unsigned char *dxil_code, unsigned int dxil_size)
+    const unsigned char *dxil_code, unsigned int dxil_size,
+    const char          *msl_code,   unsigned int msl_size)
 {
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
 
@@ -620,6 +640,11 @@ static SDL_GPUComputePipeline *create_compute_pipeline_helper(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
         SDL_Log("No supported compute shader format");
         return NULL;
@@ -1240,7 +1265,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* ── 2. Create GPU device ─────────────────────────────────────────── */
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
         true,   /* debug mode */
         NULL    /* no backend preference */
     );
@@ -1431,6 +1456,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_VERTEX,
         indirect_box_vert_spirv, indirect_box_vert_spirv_size,
         indirect_box_vert_dxil,  indirect_box_vert_dxil_size,
+        indirect_box_vert_msl,   indirect_box_vert_msl_size,
         IBOX_VERT_NUM_SAMPLERS, IBOX_VERT_NUM_STORAGE_TEXTURES,
         IBOX_VERT_NUM_STORAGE_BUFFERS, IBOX_VERT_NUM_UNIFORM_BUFFERS);
     if (!ibox_vert) goto fail_cleanup;
@@ -1439,6 +1465,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         indirect_box_frag_spirv, indirect_box_frag_spirv_size,
         indirect_box_frag_dxil,  indirect_box_frag_dxil_size,
+        indirect_box_frag_msl,   indirect_box_frag_msl_size,
         IBOX_FRAG_NUM_SAMPLERS, IBOX_FRAG_NUM_STORAGE_TEXTURES,
         IBOX_FRAG_NUM_STORAGE_BUFFERS, IBOX_FRAG_NUM_UNIFORM_BUFFERS);
     if (!ibox_frag) {
@@ -1451,6 +1478,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_VERTEX,
         indirect_shadow_vert_spirv, indirect_shadow_vert_spirv_size,
         indirect_shadow_vert_dxil,  indirect_shadow_vert_dxil_size,
+        indirect_shadow_vert_msl,   indirect_shadow_vert_msl_size,
         ISHADOW_VERT_NUM_SAMPLERS, ISHADOW_VERT_NUM_STORAGE_TEXTURES,
         ISHADOW_VERT_NUM_STORAGE_BUFFERS, ISHADOW_VERT_NUM_UNIFORM_BUFFERS);
     if (!ishadow_vert) {
@@ -1463,6 +1491,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         indirect_shadow_frag_spirv, indirect_shadow_frag_spirv_size,
         indirect_shadow_frag_dxil,  indirect_shadow_frag_dxil_size,
+        indirect_shadow_frag_msl,   indirect_shadow_frag_msl_size,
         ISHADOW_FRAG_NUM_SAMPLERS, ISHADOW_FRAG_NUM_STORAGE_TEXTURES,
         ISHADOW_FRAG_NUM_STORAGE_BUFFERS, ISHADOW_FRAG_NUM_UNIFORM_BUFFERS);
     if (!ishadow_frag) {
@@ -1477,6 +1506,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_VERTEX,
         debug_box_vert_spirv, debug_box_vert_spirv_size,
         debug_box_vert_dxil,  debug_box_vert_dxil_size,
+        debug_box_vert_msl,   debug_box_vert_msl_size,
         DBOX_VERT_NUM_SAMPLERS, DBOX_VERT_NUM_STORAGE_TEXTURES,
         DBOX_VERT_NUM_STORAGE_BUFFERS, DBOX_VERT_NUM_UNIFORM_BUFFERS);
     if (!dbox_vert) {
@@ -1491,6 +1521,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         debug_box_frag_spirv, debug_box_frag_spirv_size,
         debug_box_frag_dxil,  debug_box_frag_dxil_size,
+        debug_box_frag_msl,   debug_box_frag_msl_size,
         DBOX_FRAG_NUM_SAMPLERS, DBOX_FRAG_NUM_STORAGE_TEXTURES,
         DBOX_FRAG_NUM_STORAGE_BUFFERS, DBOX_FRAG_NUM_UNIFORM_BUFFERS);
     if (!dbox_frag) {
@@ -1507,6 +1538,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_VERTEX,
         frustum_lines_vert_spirv, frustum_lines_vert_spirv_size,
         frustum_lines_vert_dxil,  frustum_lines_vert_dxil_size,
+        frustum_lines_vert_msl,   frustum_lines_vert_msl_size,
         FLINE_VERT_NUM_SAMPLERS, FLINE_VERT_NUM_STORAGE_TEXTURES,
         FLINE_VERT_NUM_STORAGE_BUFFERS, FLINE_VERT_NUM_UNIFORM_BUFFERS);
     if (!fline_vert) {
@@ -1523,6 +1555,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         frustum_lines_frag_spirv, frustum_lines_frag_spirv_size,
         frustum_lines_frag_dxil,  frustum_lines_frag_dxil_size,
+        frustum_lines_frag_msl,   frustum_lines_frag_msl_size,
         FLINE_FRAG_NUM_SAMPLERS, FLINE_FRAG_NUM_STORAGE_TEXTURES,
         FLINE_FRAG_NUM_STORAGE_BUFFERS, FLINE_FRAG_NUM_UNIFORM_BUFFERS);
     if (!fline_frag) {
@@ -1541,6 +1574,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_VERTEX,
         grid_vert_spirv, grid_vert_spirv_size,
         grid_vert_dxil,  grid_vert_dxil_size,
+        grid_vert_msl,   grid_vert_msl_size,
         GRID_VERT_NUM_SAMPLERS, GRID_VERT_NUM_STORAGE_TEXTURES,
         GRID_VERT_NUM_STORAGE_BUFFERS, GRID_VERT_NUM_UNIFORM_BUFFERS);
     if (!grid_vs) {
@@ -1559,6 +1593,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         grid_frag_spirv, grid_frag_spirv_size,
         grid_frag_dxil,  grid_frag_dxil_size,
+        grid_frag_msl,   grid_frag_msl_size,
         GRID_FRAG_NUM_SAMPLERS, GRID_FRAG_NUM_STORAGE_TEXTURES,
         GRID_FRAG_NUM_STORAGE_BUFFERS, GRID_FRAG_NUM_UNIFORM_BUFFERS);
     if (!grid_fs) {
@@ -1579,6 +1614,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_VERTEX,
         truck_scene_vert_spirv, truck_scene_vert_spirv_size,
         truck_scene_vert_dxil,  truck_scene_vert_dxil_size,
+        truck_scene_vert_msl,   truck_scene_vert_msl_size,
         TRUCK_VERT_NUM_SAMPLERS, TRUCK_VERT_NUM_STORAGE_TEXTURES,
         TRUCK_VERT_NUM_STORAGE_BUFFERS, TRUCK_VERT_NUM_UNIFORM_BUFFERS);
     if (!truck_vert) {
@@ -1599,6 +1635,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         truck_scene_frag_spirv, truck_scene_frag_spirv_size,
         truck_scene_frag_dxil,  truck_scene_frag_dxil_size,
+        truck_scene_frag_msl,   truck_scene_frag_msl_size,
         TRUCK_FRAG_NUM_SAMPLERS, TRUCK_FRAG_NUM_STORAGE_TEXTURES,
         TRUCK_FRAG_NUM_STORAGE_BUFFERS, TRUCK_FRAG_NUM_UNIFORM_BUFFERS);
     if (!truck_frag) {
@@ -1619,7 +1656,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     /* ── 10. Create compute pipeline (frustum culling) ────────────────── */
     state->cull_pipeline = create_compute_pipeline_helper(device,
         frustum_cull_comp_spirv, frustum_cull_comp_spirv_size,
-        frustum_cull_comp_dxil,  frustum_cull_comp_dxil_size);
+        frustum_cull_comp_dxil,  frustum_cull_comp_dxil_size,
+        frustum_cull_comp_msl,   frustum_cull_comp_msl_size);
     if (!state->cull_pipeline) {
         SDL_Log("Failed to create cull compute pipeline");
         goto fail_release_shaders;

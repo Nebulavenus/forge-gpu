@@ -1,0 +1,26 @@
+/* Auto-generated from quad.frag.msl -- do not edit by hand. */
+static const char quad_frag_msl[] =
+    "#include <metal_stdlib>\n"
+    "#include <simd/simd.h>\n"
+    "\n"
+    "using namespace metal;\n"
+    "\n"
+    "struct main0_out\n"
+    "{\n"
+    "    float4 out_var_SV_Target [[color(0)]];\n"
+    "};\n"
+    "\n"
+    "struct main0_in\n"
+    "{\n"
+    "    float2 in_var_TEXCOORD0 [[user(locn0)]];\n"
+    "};\n"
+    "\n"
+    "fragment main0_out main0(main0_in in [[stage_in]], texture2d<float> tex [[texture(0)]], sampler smp [[sampler(0)]])\n"
+    "{\n"
+    "    main0_out out = {};\n"
+    "    out.out_var_SV_Target = tex.sample(smp, in.in_var_TEXCOORD0);\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+;
+static const unsigned int quad_frag_msl_size = sizeof(quad_frag_msl) - 1;

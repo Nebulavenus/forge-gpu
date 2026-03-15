@@ -64,26 +64,34 @@
 /* Shadow pass — depth-only rendering from the light's perspective */
 #include "shaders/compiled/shadow_frag_dxil.h"
 #include "shaders/compiled/shadow_frag_spirv.h"
+#include "shaders/compiled/shadow_frag_msl.h"
 #include "shaders/compiled/shadow_vert_dxil.h"
 #include "shaders/compiled/shadow_vert_spirv.h"
+#include "shaders/compiled/shadow_vert_msl.h"
 
 /* Scene shaders — Blinn-Phong + cascaded shadow receiving */
 #include "shaders/compiled/scene_frag_dxil.h"
 #include "shaders/compiled/scene_frag_spirv.h"
+#include "shaders/compiled/scene_frag_msl.h"
 #include "shaders/compiled/scene_vert_dxil.h"
 #include "shaders/compiled/scene_vert_spirv.h"
+#include "shaders/compiled/scene_vert_msl.h"
 
 /* Grid shaders — procedural grid + shadow receiving */
 #include "shaders/compiled/grid_frag_dxil.h"
 #include "shaders/compiled/grid_frag_spirv.h"
+#include "shaders/compiled/grid_frag_msl.h"
 #include "shaders/compiled/grid_vert_dxil.h"
 #include "shaders/compiled/grid_vert_spirv.h"
+#include "shaders/compiled/grid_vert_msl.h"
 
 /* Debug quad — shadow map visualization overlay */
 #include "shaders/compiled/debug_quad_frag_dxil.h"
 #include "shaders/compiled/debug_quad_frag_spirv.h"
+#include "shaders/compiled/debug_quad_frag_msl.h"
 #include "shaders/compiled/debug_quad_vert_dxil.h"
 #include "shaders/compiled/debug_quad_vert_spirv.h"
+#include "shaders/compiled/debug_quad_vert_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
@@ -482,6 +490,8 @@ static SDL_GPUShader *create_shader(
     unsigned int spirv_size,
     const unsigned char *dxil_code,
     unsigned int dxil_size,
+    const char *msl_code,
+    unsigned int msl_size,
     int num_samplers,
     int num_storage_textures,
     int num_storage_buffers,
@@ -506,8 +516,13 @@ static SDL_GPUShader *create_shader(
     info.format = SDL_GPU_SHADERFORMAT_DXIL;
     info.code = dxil_code;
     info.code_size = dxil_size;
+  } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+    info.format = SDL_GPU_SHADERFORMAT_MSL;
+    info.entrypoint = "main0";
+    info.code = (const unsigned char *)msl_code;
+    info.code_size = msl_size;
   } else {
-    SDL_Log("No supported shader format (need SPIRV or DXIL)");
+    SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
     return NULL;
   }
 
@@ -1383,7 +1398,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
   /* ── 2. Create GPU device ─────────────────────────────────────────── */
   SDL_GPUDevice *device = SDL_CreateGPUDevice(
-      SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL,
+      SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL,
       true, /* debug mode */
       NULL  /* no backend preference */
   );
@@ -1618,6 +1633,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         shadow_vert_spirv_size,
         shadow_vert_dxil,
         shadow_vert_dxil_size,
+        shadow_vert_msl,
+        shadow_vert_msl_size,
         SHADOW_VERT_NUM_SAMPLERS,
         SHADOW_VERT_NUM_STORAGE_TEXTURES,
         SHADOW_VERT_NUM_STORAGE_BUFFERS,
@@ -1638,6 +1655,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         shadow_frag_spirv_size,
         shadow_frag_dxil,
         shadow_frag_dxil_size,
+        shadow_frag_msl,
+        shadow_frag_msl_size,
         SHADOW_FRAG_NUM_SAMPLERS,
         SHADOW_FRAG_NUM_STORAGE_TEXTURES,
         SHADOW_FRAG_NUM_STORAGE_BUFFERS,
@@ -1724,6 +1743,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         scene_vert_spirv_size,
         scene_vert_dxil,
         scene_vert_dxil_size,
+        scene_vert_msl,
+        scene_vert_msl_size,
         SCENE_VERT_NUM_SAMPLERS,
         SCENE_VERT_NUM_STORAGE_TEXTURES,
         SCENE_VERT_NUM_STORAGE_BUFFERS,
@@ -1745,6 +1766,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         scene_frag_spirv_size,
         scene_frag_dxil,
         scene_frag_dxil_size,
+        scene_frag_msl,
+        scene_frag_msl_size,
         SCENE_FRAG_NUM_SAMPLERS,
         SCENE_FRAG_NUM_STORAGE_TEXTURES,
         SCENE_FRAG_NUM_STORAGE_BUFFERS,
@@ -1831,6 +1854,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         grid_vert_spirv_size,
         grid_vert_dxil,
         grid_vert_dxil_size,
+        grid_vert_msl,
+        grid_vert_msl_size,
         GRID_VERT_NUM_SAMPLERS,
         GRID_VERT_NUM_STORAGE_TEXTURES,
         GRID_VERT_NUM_STORAGE_BUFFERS,
@@ -1852,6 +1877,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         grid_frag_spirv_size,
         grid_frag_dxil,
         grid_frag_dxil_size,
+        grid_frag_msl,
+        grid_frag_msl_size,
         GRID_FRAG_NUM_SAMPLERS,
         GRID_FRAG_NUM_STORAGE_TEXTURES,
         GRID_FRAG_NUM_STORAGE_BUFFERS,
@@ -1928,6 +1955,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         debug_quad_vert_spirv_size,
         debug_quad_vert_dxil,
         debug_quad_vert_dxil_size,
+        debug_quad_vert_msl,
+        debug_quad_vert_msl_size,
         DEBUG_VERT_NUM_SAMPLERS,
         DEBUG_VERT_NUM_STORAGE_TEXTURES,
         DEBUG_VERT_NUM_STORAGE_BUFFERS,
@@ -1947,6 +1976,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         debug_quad_frag_spirv_size,
         debug_quad_frag_dxil,
         debug_quad_frag_dxil_size,
+        debug_quad_frag_msl,
+        debug_quad_frag_msl_size,
         DEBUG_FRAG_NUM_SAMPLERS,
         DEBUG_FRAG_NUM_STORAGE_TEXTURES,
         DEBUG_FRAG_NUM_STORAGE_BUFFERS,

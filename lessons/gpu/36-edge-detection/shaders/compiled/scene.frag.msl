@@ -1,0 +1,138 @@
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wmissing-braces"
+
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+template<typename T, size_t Num>
+struct spvUnsafeArray
+{
+    T elements[Num ? Num : 1];
+    
+    thread T& operator [] (size_t pos) thread
+    {
+        return elements[pos];
+    }
+    constexpr const thread T& operator [] (size_t pos) const thread
+    {
+        return elements[pos];
+    }
+    
+    device T& operator [] (size_t pos) device
+    {
+        return elements[pos];
+    }
+    constexpr const device T& operator [] (size_t pos) const device
+    {
+        return elements[pos];
+    }
+    
+    constexpr const constant T& operator [] (size_t pos) const constant
+    {
+        return elements[pos];
+    }
+    
+    threadgroup T& operator [] (size_t pos) threadgroup
+    {
+        return elements[pos];
+    }
+    constexpr const threadgroup T& operator [] (size_t pos) const threadgroup
+    {
+        return elements[pos];
+    }
+};
+
+struct type_SceneFragUniforms
+{
+    float4 base_color;
+    packed_float3 eye_pos;
+    float ambient;
+    float4 light_dir;
+    packed_float3 light_color;
+    float light_intensity;
+    float shininess;
+    float specular_str;
+    float2 _pad0;
+};
+
+constant spvUnsafeArray<float2, 4> _59 = spvUnsafeArray<float2, 4>({ float2(-0.5), float2(0.5, -0.5), float2(-0.5, 0.5), float2(0.5) });
+
+struct main0_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+    float4 out_var_SV_Target1 [[color(1)]];
+};
+
+struct main0_in
+{
+    float3 in_var_TEXCOORD0 [[user(locn0)]];
+    float3 in_var_TEXCOORD1 [[user(locn1)]];
+    float4 in_var_TEXCOORD2 [[user(locn2)]];
+    float3 in_var_TEXCOORD3 [[user(locn3)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_SceneFragUniforms& SceneFragUniforms [[buffer(0)]], texture2d<float> shadow_tex [[texture(0)]], sampler shadow_smp [[sampler(0)]])
+{
+    main0_out out = {};
+    float3 _69 = fast::normalize(in.in_var_TEXCOORD1);
+    float3 _82 = fast::normalize(-SceneFragUniforms.light_dir.xyz);
+    float _148;
+    do
+    {
+        float3 _101 = in.in_var_TEXCOORD2.xyz / float3(in.in_var_TEXCOORD2.w);
+        float2 _104 = (_101.xy * 0.5) + float2(0.5);
+        float _106 = 1.0 - _104.y;
+        float2 _107 = _104;
+        _107.y = _106;
+        float _108 = _104.x;
+        bool _113;
+        if ((isunordered(_108, 0.0) || _108 >= 0.0))
+        {
+            _113 = _108 > 1.0;
+        }
+        else
+        {
+            _113 = true;
+        }
+        bool _118;
+        if (!_113)
+        {
+            _118 = _106 < 0.0;
+        }
+        else
+        {
+            _118 = true;
+        }
+        bool _123;
+        if (!_118)
+        {
+            _123 = _106 > 1.0;
+        }
+        else
+        {
+            _123 = true;
+        }
+        if (_123)
+        {
+            _148 = 1.0;
+            break;
+        }
+        float _126 = _101.z;
+        float _128;
+        _128 = 0.0;
+        for (int _131 = 0; _131 < 4; )
+        {
+            _128 += float((_126 - 0.004999999888241291046142578125) <= shadow_tex.sample(shadow_smp, (_107 + (_59[_131] * float2(0.00048828125)))).x);
+            _131++;
+            continue;
+        }
+        _148 = _128 * 0.25;
+        break;
+    } while(false);
+    out.out_var_SV_Target0 = float4((SceneFragUniforms.base_color.xyz * SceneFragUniforms.ambient) + (((((SceneFragUniforms.base_color.xyz * precise::max(dot(_69, _82), 0.0)) + float3(SceneFragUniforms.specular_str * powr(precise::max(dot(_69, fast::normalize(_82 + fast::normalize(float3(SceneFragUniforms.eye_pos) - in.in_var_TEXCOORD0))), 0.0), SceneFragUniforms.shininess))) * SceneFragUniforms.light_intensity) * float3(SceneFragUniforms.light_color)) * _148), SceneFragUniforms.base_color.w);
+    out.out_var_SV_Target1 = float4(fast::normalize(in.in_var_TEXCOORD3), 1.0);
+    return out;
+}
+

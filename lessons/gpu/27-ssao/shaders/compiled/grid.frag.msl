@@ -1,0 +1,142 @@
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wmissing-braces"
+
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+template<typename T, size_t Num>
+struct spvUnsafeArray
+{
+    T elements[Num ? Num : 1];
+    
+    thread T& operator [] (size_t pos) thread
+    {
+        return elements[pos];
+    }
+    constexpr const thread T& operator [] (size_t pos) const thread
+    {
+        return elements[pos];
+    }
+    
+    device T& operator [] (size_t pos) device
+    {
+        return elements[pos];
+    }
+    constexpr const device T& operator [] (size_t pos) const device
+    {
+        return elements[pos];
+    }
+    
+    constexpr const constant T& operator [] (size_t pos) const constant
+    {
+        return elements[pos];
+    }
+    
+    threadgroup T& operator [] (size_t pos) threadgroup
+    {
+        return elements[pos];
+    }
+    constexpr const threadgroup T& operator [] (size_t pos) const threadgroup
+    {
+        return elements[pos];
+    }
+};
+
+struct type_FragUniforms
+{
+    float4 line_color;
+    float4 bg_color;
+    packed_float3 eye_pos;
+    float grid_spacing;
+    float line_width;
+    float fade_distance;
+    float ambient;
+    float light_intensity;
+    float4 light_dir;
+    packed_float3 light_color;
+    float _pad;
+};
+
+constant spvUnsafeArray<float2, 4> _62 = spvUnsafeArray<float2, 4>({ float2(-0.5), float2(0.5, -0.5), float2(-0.5, 0.5), float2(0.5) });
+
+struct main0_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+    float4 out_var_SV_Target1 [[color(1)]];
+};
+
+struct main0_in
+{
+    float3 in_var_TEXCOORD0 [[user(locn0)]];
+    float3 in_var_TEXCOORD1 [[user(locn1)]];
+    float4 in_var_TEXCOORD2 [[user(locn2)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_FragUniforms& FragUniforms [[buffer(0)]], texture2d<float> shadow_tex [[texture(0)]], sampler shadow_smp [[sampler(0)]])
+{
+    main0_out out = {};
+    float2 _73 = in.in_var_TEXCOORD0.xz / float2(FragUniforms.grid_spacing);
+    float2 _78 = fwidth(_73);
+    float2 _81 = float2(FragUniforms.line_width);
+    float2 _84 = float2(1.0) - smoothstep(_81, _81 + _78, abs(fract(_73 - float2(0.5)) - float2(0.5)));
+    float3 _111 = mix(FragUniforms.bg_color.xyz, FragUniforms.line_color.xyz, float3((precise::max(_84.x, _84.y) * (1.0 - smoothstep(0.300000011920928955078125, 0.5, precise::max(_78.x, _78.y)))) * (1.0 - smoothstep(FragUniforms.fade_distance * 0.5, FragUniforms.fade_distance, length(in.in_var_TEXCOORD0 - float3(FragUniforms.eye_pos))))));
+    float _174;
+    do
+    {
+        float3 _127 = in.in_var_TEXCOORD2.xyz / float3(in.in_var_TEXCOORD2.w);
+        float2 _130 = (_127.xy * 0.5) + float2(0.5);
+        float _132 = 1.0 - _130.y;
+        float2 _133 = _130;
+        _133.y = _132;
+        float _134 = _130.x;
+        bool _139;
+        if ((isunordered(_134, 0.0) || _134 >= 0.0))
+        {
+            _139 = _134 > 1.0;
+        }
+        else
+        {
+            _139 = true;
+        }
+        bool _144;
+        if (!_139)
+        {
+            _144 = _132 < 0.0;
+        }
+        else
+        {
+            _144 = true;
+        }
+        bool _149;
+        if (!_144)
+        {
+            _149 = _132 > 1.0;
+        }
+        else
+        {
+            _149 = true;
+        }
+        if (_149)
+        {
+            _174 = 1.0;
+            break;
+        }
+        float _152 = _127.z;
+        float _154;
+        _154 = 0.0;
+        for (int _157 = 0; _157 < 4; )
+        {
+            _154 += float((_152 - 0.004999999888241291046142578125) <= shadow_tex.sample(shadow_smp, (_133 + (_62[_157] * float2(0.00048828125)))).x);
+            _157++;
+            continue;
+        }
+        _174 = _154 * 0.25;
+        break;
+    } while(false);
+    out.out_var_SV_Target0 = float4((_111 * FragUniforms.ambient) + ((((_111 * precise::max(fast::normalize(-FragUniforms.light_dir.xyz).y, 0.0)) * FragUniforms.light_intensity) * float3(FragUniforms.light_color)) * _174), 1.0);
+    out.out_var_SV_Target1 = float4(fast::normalize(in.in_var_TEXCOORD1), 1.0);
+    return out;
+}
+

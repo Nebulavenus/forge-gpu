@@ -1,0 +1,70 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_GridFragUniforms
+{
+    float4 line_color;
+    float4 bg_color;
+    float4 light_dir;
+    float4 eye_pos;
+    float grid_spacing;
+    float line_width;
+    float fade_distance;
+    float ambient;
+    float shininess;
+    float specular_str;
+    float _pad0;
+    float _pad1;
+    float4 fog_color;
+    float fog_start;
+    float fog_end;
+    float fog_density;
+    uint fog_mode;
+};
+
+struct main0_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct main0_in
+{
+    float3 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_GridFragUniforms& GridFragUniforms [[buffer(0)]])
+{
+    main0_out out = {};
+    float2 _50 = in.in_var_TEXCOORD0.xz / float2(GridFragUniforms.grid_spacing);
+    float2 _51 = fwidth(_50);
+    float2 _56 = abs(fract(_50 - float2(0.5)) - float2(0.5)) / _51;
+    float4 _84 = mix(GridFragUniforms.bg_color, GridFragUniforms.line_color, float4(((1.0 - fast::clamp(precise::min(_56.x, _56.y), 0.0, 1.0)) * (1.0 - smoothstep(0.300000011920928955078125, 0.5, precise::max(_51.x, _51.y)))) * (1.0 - smoothstep(GridFragUniforms.fade_distance * 0.5, GridFragUniforms.fade_distance, length(in.in_var_TEXCOORD0.xz - GridFragUniforms.eye_pos.xz)))));
+    float3 _88 = fast::normalize(GridFragUniforms.light_dir.xyz);
+    float3 _90 = GridFragUniforms.eye_pos.xyz - in.in_var_TEXCOORD0;
+    float3 _92 = _84.xyz;
+    float _112 = length(_90);
+    float _145;
+    if (GridFragUniforms.fog_mode == 0u)
+    {
+        _145 = fast::clamp((GridFragUniforms.fog_end - _112) / (GridFragUniforms.fog_end - GridFragUniforms.fog_start), 0.0, 1.0);
+    }
+    else
+    {
+        float _144;
+        if (GridFragUniforms.fog_mode == 1u)
+        {
+            _144 = fast::clamp(exp((-GridFragUniforms.fog_density) * _112), 0.0, 1.0);
+        }
+        else
+        {
+            float _139 = GridFragUniforms.fog_density * _112;
+            _144 = fast::clamp(exp(-(_139 * _139)), 0.0, 1.0);
+        }
+        _145 = _144;
+    }
+    out.out_var_SV_Target = float4(mix(GridFragUniforms.fog_color.xyz, ((_92 * GridFragUniforms.ambient) + (_92 * precise::max(_88.y, 0.0))) + (float3(1.0) * (GridFragUniforms.specular_str * powr(precise::max(fast::normalize(_88 + fast::normalize(_90)).y, 0.0), GridFragUniforms.shininess))), float3(_145)), _84.w);
+    return out;
+}
+

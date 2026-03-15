@@ -916,7 +916,7 @@ static void test_create_shader_null_scene(void)
 {
     TEST("robustness — create_shader with NULL scene returns NULL");
     SDL_GPUShader *s = forge_scene_create_shader(
-        NULL, SDL_GPU_SHADERSTAGE_VERTEX, NULL, 0, NULL, 0, 0, 0, 0, 0);
+        NULL, SDL_GPU_SHADERSTAGE_VERTEX, NULL, 0, NULL, 0, NULL, 0, 0, 0, 0, 0);
     ASSERT_TRUE(s == NULL);
     END_TEST();
 }
@@ -927,7 +927,7 @@ static void test_create_shader_null_device(void)
     ForgeScene scene;
     SDL_memset(&scene, 0, sizeof(scene));
     SDL_GPUShader *s = forge_scene_create_shader(
-        &scene, SDL_GPU_SHADERSTAGE_VERTEX, NULL, 0, NULL, 0, 0, 0, 0, 0);
+        &scene, SDL_GPU_SHADERSTAGE_VERTEX, NULL, 0, NULL, 0, NULL, 0, 0, 0, 0, 0);
     ASSERT_TRUE(s == NULL);
     END_TEST();
 }

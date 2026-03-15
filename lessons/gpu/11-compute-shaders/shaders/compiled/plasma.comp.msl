@@ -1,0 +1,64 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_Params
+{
+    float time;
+    float width;
+    float height;
+    float _pad;
+};
+
+kernel void main0(constant type_Params& Params [[buffer(0)]], texture2d<float, access::write> output_tex [[texture(0)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+{
+    do
+    {
+        bool _75;
+        if (gl_GlobalInvocationID.x < uint(Params.width))
+        {
+            _75 = gl_GlobalInvocationID.y >= uint(Params.height);
+        }
+        else
+        {
+            _75 = true;
+        }
+        if (_75)
+        {
+            break;
+        }
+        float2 _87 = (float2(float(gl_GlobalInvocationID.x) / Params.width, float(gl_GlobalInvocationID.y) / Params.height) - float2(0.5)) * 2.0;
+        float _88 = _87.x;
+        float _95 = _87.y;
+        float _107 = length(_87);
+        float3 _151;
+        do
+        {
+            float _127 = fract(((((((sin((_88 * 3.0) + (Params.time * 1.2000000476837158203125)) + sin((_95 * 4.0) + (Params.time * 0.800000011920928955078125))) + sin(((_88 + _95) * 2.5) + (Params.time * 1.5))) + sin((_107 * 5.0) - (Params.time * 2.0))) + sin(((precise::atan2(_95, _88) * 3.0) + (_107 * 4.0)) + Params.time)) * 0.100000001490116119384765625) + 0.5) + (Params.time * 0.100000001490116119384765625)) * 4.0;
+            int _128 = int(_127);
+            float _129 = fract(_127);
+            float _133 = (_129 * _129) * (3.0 - (2.0 * _129));
+            if (_128 == 0)
+            {
+                _151 = mix(float3(0.063000001013278961181640625, 0.53299999237060546875, 0.870999991893768310546875), float3(0.760999977588653564453125, 0.16099999845027923583984375, 0.0240000002086162567138671875), float3(_133));
+                break;
+            }
+            if (_128 == 1)
+            {
+                _151 = mix(float3(0.760999977588653564453125, 0.16099999845027923583984375, 0.0240000002086162567138671875), float3(0.122000001370906829833984375, 0.4709999859333038330078125, 0.12899999320507049560546875), float3(_133));
+                break;
+            }
+            if (_128 == 2)
+            {
+                _151 = mix(float3(0.122000001370906829833984375, 0.4709999859333038330078125, 0.12899999320507049560546875), float3(0.3950000107288360595703125, 0.054999999701976776123046875, 0.481000006198883056640625), float3(_133));
+                break;
+            }
+            _151 = mix(float3(0.3950000107288360595703125, 0.054999999701976776123046875, 0.481000006198883056640625), float3(0.063000001013278961181640625, 0.53299999237060546875, 0.870999991893768310546875), float3(_133));
+            break;
+        } while(false);
+        output_tex.write(float4(mix(float3(0.01200000010430812835693359375, 0.0240000002086162567138671875, 0.05900000035762786865234375), _151, float3(1.0 - smoothstep(0.5, 1.2000000476837158203125, _107))), 1.0), uint2(gl_GlobalInvocationID.xy));
+        break;
+    } while(false);
+}
+

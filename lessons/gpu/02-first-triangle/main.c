@@ -35,13 +35,15 @@
 #endif
 
 /* ── Pre-compiled shader bytecodes ───────────────────────────────────────── */
-/* These headers contain SPIRV (Vulkan) and DXIL (D3D12) bytecodes compiled
+/* These headers contain SPIRV (Vulkan), DXIL (D3D12), and MSL (Metal) shader code compiled
  * from the HLSL source files in shaders/.  See README.md for how to
  * recompile them if you modify the HLSL. */
 #include "shaders/compiled/triangle_vert_spirv.h"
 #include "shaders/compiled/triangle_frag_spirv.h"
 #include "shaders/compiled/triangle_vert_dxil.h"
+#include "shaders/compiled/triangle_vert_msl.h"
 #include "shaders/compiled/triangle_frag_dxil.h"
+#include "shaders/compiled/triangle_frag_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -123,13 +125,14 @@ typedef struct app_state {
 
 /* ── Shader helper ────────────────────────────────────────────────────────── */
 /* Creates a GPU shader from pre-compiled bytecodes, picking the right format
- * for the current backend (Vulkan → SPIRV, D3D12 → DXIL). */
+ * for the current backend (Vulkan → SPIRV, D3D12 → DXIL, Metal → MSL). */
 
 static SDL_GPUShader *create_shader(
     SDL_GPUDevice       *device,
     SDL_GPUShaderStage   stage,
     const unsigned char *spirv_code,  unsigned int spirv_size,
-    const unsigned char *dxil_code,   unsigned int dxil_size)
+    const unsigned char *dxil_code,   unsigned int dxil_size,
+    const char          *msl_code,   unsigned int msl_size)
 {
     /* Ask the device which shader format(s) it supports. */
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
@@ -151,8 +154,13 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -179,12 +187,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     /* ── 2. Create GPU device ──────────────────────────────────────────── */
-    /* We supply both SPIRV and DXIL so SDL can pick the best backend:
-     *   Vulkan → SPIRV,  Direct3D 12 → DXIL.
-     * (Metal / MSL support can be added when we have MSL shaders.) */
+    /* We supply SPIRV, DXIL, and MSL so SDL can pick the best backend:
+     *   Vulkan → SPIRV,  Direct3D 12 → DXIL,  Metal → MSL. */
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
         SDL_GPU_SHADERFORMAT_SPIRV |
-        SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_DXIL |
+        SDL_GPU_SHADERFORMAT_MSL,
         true,   /* debug mode */
         NULL    /* no backend preference */
     );
@@ -238,7 +246,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_GPUShader *vertex_shader = create_shader(
         device, SDL_GPU_SHADERSTAGE_VERTEX,
         triangle_vert_spirv, triangle_vert_spirv_size,
-        triangle_vert_dxil,  triangle_vert_dxil_size);
+        triangle_vert_dxil,  triangle_vert_dxil_size,
+        triangle_vert_msl,   triangle_vert_msl_size);
     if (!vertex_shader) {
         SDL_ReleaseWindowFromGPUDevice(device, window);
         SDL_DestroyWindow(window);
@@ -249,7 +258,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_GPUShader *fragment_shader = create_shader(
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         triangle_frag_spirv, triangle_frag_spirv_size,
-        triangle_frag_dxil,  triangle_frag_dxil_size);
+        triangle_frag_dxil,  triangle_frag_dxil_size,
+        triangle_frag_msl,   triangle_frag_msl_size);
     if (!fragment_shader) {
         SDL_ReleaseGPUShader(device, vertex_shader);
         SDL_ReleaseWindowFromGPUDevice(device, window);

@@ -1,0 +1,92 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_BloomDownsampleUniforms
+{
+    float2 texel_size;
+    float threshold;
+    float use_karis;
+};
+
+struct main0_out
+{
+    float4 out_var_SV_Target [[color(0)]];
+};
+
+struct main0_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment main0_out main0(main0_in in [[stage_in]], constant type_BloomDownsampleUniforms& BloomDownsampleUniforms [[buffer(0)]], texture2d<float> src_tex [[texture(0)]], sampler src_smp [[sampler(0)]])
+{
+    main0_out out = {};
+    float4 _63 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(-2.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _64 = _63.xyz;
+    float4 _70 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(0.0, -2.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _71 = _70.xyz;
+    float4 _77 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(2.0, -2.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _78 = _77.xyz;
+    float4 _84 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(-1.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _85 = _84.xyz;
+    float4 _91 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(1.0, -1.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _92 = _91.xyz;
+    float4 _98 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(-2.0, 0.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _99 = _98.xyz;
+    float4 _103 = src_tex.sample(src_smp, in.in_var_TEXCOORD0);
+    float3 _104 = _103.xyz;
+    float4 _110 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(2.0, 0.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _111 = _110.xyz;
+    float4 _117 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(-1.0, 1.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _118 = _117.xyz;
+    float4 _123 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + BloomDownsampleUniforms.texel_size));
+    float3 _124 = _123.xyz;
+    float4 _130 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(-2.0, 2.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _131 = _130.xyz;
+    float4 _137 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(0.0, 2.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _138 = _137.xyz;
+    float4 _144 = src_tex.sample(src_smp, (in.in_var_TEXCOORD0 + (float2(2.0) * BloomDownsampleUniforms.texel_size)));
+    float3 _145 = _144.xyz;
+    float3 _314;
+    if (BloomDownsampleUniforms.use_karis > 0.5)
+    {
+        float _154 = dot(_64, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _160 = dot(_71, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float3 _165 = _71 * (precise::max(_160 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_160, 9.9999997473787516355514526367188e-05));
+        float _166 = dot(_78, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _172 = dot(_85, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _178 = dot(_92, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _184 = dot(_99, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float3 _189 = _99 * (precise::max(_184 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_184, 9.9999997473787516355514526367188e-05));
+        float _190 = dot(_104, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float3 _195 = _104 * (precise::max(_190 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_190, 9.9999997473787516355514526367188e-05));
+        float _196 = dot(_111, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float3 _201 = _111 * (precise::max(_196 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_196, 9.9999997473787516355514526367188e-05));
+        float _202 = dot(_118, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _208 = dot(_124, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _214 = dot(_131, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _220 = dot(_138, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float3 _225 = _138 * (precise::max(_220 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_220, 9.9999997473787516355514526367188e-05));
+        float _226 = dot(_145, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float3 _235 = ((((_64 * (precise::max(_154 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_154, 9.9999997473787516355514526367188e-05))) + _165) + _189) + _195) * 0.25;
+        float3 _239 = (((_165 + (_78 * (precise::max(_166 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_166, 9.9999997473787516355514526367188e-05)))) + _195) + _201) * 0.25;
+        float3 _243 = (((_189 + _195) + (_131 * (precise::max(_214 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_214, 9.9999997473787516355514526367188e-05)))) + _225) * 0.25;
+        float3 _247 = (((_195 + _201) + _225) + (_145 * (precise::max(_226 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_226, 9.9999997473787516355514526367188e-05)))) * 0.25;
+        float3 _251 = ((((_85 * (precise::max(_172 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_172, 9.9999997473787516355514526367188e-05))) + (_92 * (precise::max(_178 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_178, 9.9999997473787516355514526367188e-05)))) + (_118 * (precise::max(_202 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_202, 9.9999997473787516355514526367188e-05)))) + (_124 * (precise::max(_208 - BloomDownsampleUniforms.threshold, 0.0) / precise::max(_208, 9.9999997473787516355514526367188e-05)))) * 0.25;
+        float _253 = 1.0 + dot(_235, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _256 = 1.0 + dot(_239, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _259 = 1.0 + dot(_243, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _262 = 1.0 + dot(_247, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875));
+        float _277 = 0.5 / (1.0 + dot(_251, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875)));
+        _314 = (((((_235 * (0.125 / _253)) + (_239 * (0.125 / _256))) + (_243 * (0.125 / _259))) + (_247 * (0.125 / _262))) + (_251 * _277)) / float3(precise::max((((((1.0 / _253) + (1.0 / _256)) + (1.0 / _259)) + (1.0 / _262)) * 0.125) + _277, 9.9999997473787516355514526367188e-05));
+    }
+    else
+    {
+        _314 = ((((((((_64 + _71) + _99) + _104) * 0.25) + ((((_71 + _78) + _104) + _111) * 0.25)) + ((((_99 + _104) + _131) + _138) * 0.25)) + ((((_104 + _111) + _138) + _145) * 0.25)) * 0.125) + (((((_85 + _92) + _118) + _124) * 0.25) * 0.5);
+    }
+    out.out_var_SV_Target = float4(_314, 1.0);
+    return out;
+}
+

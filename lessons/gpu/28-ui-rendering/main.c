@@ -48,8 +48,10 @@
 
 #include "shaders/compiled/ui_vert_spirv.h"
 #include "shaders/compiled/ui_vert_dxil.h"
+#include "shaders/compiled/ui_vert_msl.h"
 #include "shaders/compiled/ui_frag_spirv.h"
 #include "shaders/compiled/ui_frag_dxil.h"
+#include "shaders/compiled/ui_frag_msl.h"
 
 /* ── Constants ───────────────────────────────────────────────────────── */
 
@@ -321,6 +323,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage stage,
     const Uint8 *spirv_code, size_t spirv_size,
     const Uint8 *dxil_code,  size_t dxil_size,
+    const char *msl_code, unsigned int msl_size,
     Uint32 num_samplers,
     Uint32 num_uniform_buffers)
 {
@@ -341,6 +344,11 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
         SDL_Log("create_shader: no supported shader format available");
         return NULL;
@@ -365,7 +373,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, true, NULL);
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, true, NULL);
     if (!device) {
         SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -579,6 +587,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_VERTEX,
         ui_vert_spirv, sizeof(ui_vert_spirv),
         ui_vert_dxil,  sizeof(ui_vert_dxil),
+        ui_vert_msl,   ui_vert_msl_size,
         VS_NUM_SAMPLERS, VS_NUM_UNIFORM_BUFFERS);
     if (!vert_shader) goto init_fail;
 
@@ -586,6 +595,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         ui_frag_spirv, sizeof(ui_frag_spirv),
         ui_frag_dxil,  sizeof(ui_frag_dxil),
+        ui_frag_msl,   ui_frag_msl_size,
         FS_NUM_SAMPLERS, FS_NUM_UNIFORM_BUFFERS);
     if (!frag_shader) {
         SDL_ReleaseGPUShader(device, vert_shader);

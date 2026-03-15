@@ -16,7 +16,7 @@
  *
  * What we keep from earlier lessons:
  *   - SDL callbacks, GPU device, window, sRGB swapchain     (Lesson 01)
- *   - Shader loading / format selection (SPIRV or DXIL)      (Lesson 02)
+ *   - Shader loading / format selection (SPIRV, DXIL, or MSL)      (Lesson 02)
  *   - Push uniforms for per-frame data                       (Lesson 03)
  *   - Texture + sampler binding                              (Lesson 04)
  *
@@ -37,12 +37,15 @@
 /* Compute shader (plasma generator) */
 #include "shaders/compiled/plasma_comp_spirv.h"
 #include "shaders/compiled/plasma_comp_dxil.h"
+#include "shaders/compiled/plasma_comp_msl.h"
 
 /* Graphics shaders (fullscreen display) */
 #include "shaders/compiled/fullscreen_vert_spirv.h"
 #include "shaders/compiled/fullscreen_vert_dxil.h"
+#include "shaders/compiled/fullscreen_vert_msl.h"
 #include "shaders/compiled/fullscreen_frag_spirv.h"
 #include "shaders/compiled/fullscreen_frag_dxil.h"
+#include "shaders/compiled/fullscreen_frag_msl.h"
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -122,7 +125,7 @@ typedef struct app_state {
 } app_state;
 
 /* ── Shader helper (same pattern as all previous lessons) ────────────────── */
-/* Creates a vertex or fragment shader, selecting SPIRV or DXIL based on
+/* Creates a vertex or fragment shader, selecting SPIRV, DXIL, or MSL based on
  * the GPU backend.  See Lesson 02 for the full explanation. */
 
 static SDL_GPUShader *create_shader(
@@ -130,6 +133,7 @@ static SDL_GPUShader *create_shader(
     SDL_GPUShaderStage   stage,
     const unsigned char *spirv_code,  unsigned int spirv_size,
     const unsigned char *dxil_code,   unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int                  num_samplers,
     int                  num_storage_textures,
     int                  num_storage_buffers,
@@ -154,8 +158,13 @@ static SDL_GPUShader *create_shader(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -181,6 +190,7 @@ static SDL_GPUComputePipeline *create_compute_pipeline(
     SDL_GPUDevice       *device,
     const unsigned char *spirv_code,  unsigned int spirv_size,
     const unsigned char *dxil_code,   unsigned int dxil_size,
+    const char *msl_code, unsigned int msl_size,
     int num_samplers,
     int num_readonly_storage_textures,
     int num_readonly_storage_buffers,
@@ -214,8 +224,13 @@ static SDL_GPUComputePipeline *create_compute_pipeline(
         info.format    = SDL_GPU_SHADERFORMAT_DXIL;
         info.code      = dxil_code;
         info.code_size = dxil_size;
+    } else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code && msl_size > 0) {
+        info.format     = SDL_GPU_SHADERFORMAT_MSL;
+        info.entrypoint = "main0";
+        info.code       = (const unsigned char *)msl_code;
+        info.code_size  = msl_size;
     } else {
-        SDL_Log("No supported shader format (need SPIRV or DXIL)");
+        SDL_Log("No supported shader format (need SPIRV, DXIL, or MSL)");
         return NULL;
     }
 
@@ -243,7 +258,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     /* ── 2. Create GPU device ──────────────────────────────────────────── */
     SDL_GPUDevice *device = SDL_CreateGPUDevice(
         SDL_GPU_SHADERFORMAT_SPIRV |
-        SDL_GPU_SHADERFORMAT_DXIL,
+        SDL_GPU_SHADERFORMAT_DXIL |
+        SDL_GPU_SHADERFORMAT_MSL,
         true,   /* debug mode */
         NULL    /* no backend preference */
     );
@@ -291,6 +307,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device,
         plasma_comp_spirv, plasma_comp_spirv_size,
         plasma_comp_dxil,  plasma_comp_dxil_size,
+        plasma_comp_msl,   plasma_comp_msl_size,
         COMP_NUM_SAMPLERS,
         COMP_NUM_READONLY_STORAGE_TEXTURES,
         COMP_NUM_READONLY_STORAGE_BUFFERS,
@@ -313,6 +330,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_VERTEX,
         fullscreen_vert_spirv, fullscreen_vert_spirv_size,
         fullscreen_vert_dxil,  fullscreen_vert_dxil_size,
+        fullscreen_vert_msl,   fullscreen_vert_msl_size,
         VERT_NUM_SAMPLERS,
         VERT_NUM_STORAGE_TEXTURES,
         VERT_NUM_STORAGE_BUFFERS,
@@ -329,6 +347,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         device, SDL_GPU_SHADERSTAGE_FRAGMENT,
         fullscreen_frag_spirv, fullscreen_frag_spirv_size,
         fullscreen_frag_dxil,  fullscreen_frag_dxil_size,
+        fullscreen_frag_msl,   fullscreen_frag_msl_size,
         FRAG_NUM_SAMPLERS,
         FRAG_NUM_STORAGE_TEXTURES,
         FRAG_NUM_STORAGE_BUFFERS,
