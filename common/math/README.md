@@ -178,6 +178,35 @@ Quadratic and cubic Bezier curve evaluation and utilities:
 - **Adaptive flattening:** `vec2_bezier_quadratic_flatten(...)`,
   `vec2_bezier_cubic_flatten(...)` — convert curves to line segments
 
+### SDF Primitives (2D)
+
+Signed distance functions for implicit curve representation:
+
+- **Circle:** `sdf2_circle(p, radius)` — distance to circle boundary
+- **Box:** `sdf2_box(p, half_extents)` — distance to axis-aligned rectangle
+- **Rounded box:** `sdf2_rounded_box(p, half_extents, radius)` — rounded rectangle
+- **Segment:** `sdf2_segment(p, a, b)` — distance to line segment
+
+### SDF Boolean Operations
+
+Combine and blend SDF primitives:
+
+- **Union:** `sdf_union(d1, d2)` — combine (min)
+- **Intersection:** `sdf_intersection(d1, d2)` — intersect (max)
+- **Subtraction:** `sdf_subtraction(d1, d2)` — carve out
+- **Smooth union:** `sdf_smooth_union(d1, d2, k)` — blended combine
+- **Smooth intersection:** `sdf_smooth_intersection(d1, d2, k)` — blended intersect
+
+### Scalar Field Gradients (2D)
+
+Numerical gradient and Laplacian computation for arbitrary scalar fields:
+
+- **Type:** `forge_field2d_fn` — function pointer `float (*)(float x, float y, void *ctx)`
+- **Gradient:** `forge_field2d_gradient(f, x, y, eps, ctx)` — returns `vec2` gradient via central differences
+- **Laplacian:** `forge_field2d_laplacian(f, x, y, eps, ctx)` — sum of second partial derivatives
+- **Height map normal:** `forge_heightmap_normal(heights, x, z, w, h, spacing_x, spacing_z)` — surface
+  normal from height grid via cross product of tangent vectors
+
 ### Constants
 
 - `FORGE_PI` — π (3.14159...)
@@ -235,6 +264,9 @@ Standalone programs teaching each concept in depth:
 - `lessons/math/13-gradient-noise/` — Perlin noise, simplex noise, fBm, domain warping
 - `lessons/math/14-blue-noise-sequences/` — Halton, R2, Sobol, Mitchell's best candidate
 - `lessons/math/15-bezier-curves/` — Quadratic/cubic evaluation, tangents, splitting, flattening
+- `lessons/math/16-density-functions/` — Density as ratio, PDFs, integration, radiometry
+- `lessons/math/17-implicit-curves/` — Implicit curves, SDFs, CSG booleans, smooth blending
+- `lessons/math/18-scalar-field-gradients/` — Partial derivatives, gradient, Laplacian, height map normals
 
 Each lesson includes a demo program and README explaining the math.
 

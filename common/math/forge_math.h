@@ -23,6 +23,7 @@
 #define FORGE_MATH_H
 
 #include <math.h>    /* sqrtf, sinf, cosf, tanf, etc. */
+#include <stddef.h>  /* NULL */
 #include <stdint.h>  /* uint32_t for hash functions */
 
 /* ── Scalar Helpers ──────────────────────────────────────────────────────── */
@@ -5564,6 +5565,148 @@ static inline float sdf_smooth_intersection(float d1, float d2, float k)
     float h = forge_clampf(0.5f - 0.5f * (d2 - d1) / k, 0.0f, 1.0f);
 
     return d2 + (d1 - d2) * h + k * h * (1.0f - h);
+}
+
+/* ── Scalar Field Gradients (2D) ──────────────────────────────────────────── */
+
+/* Function pointer type for a 2D scalar field.
+ *
+ * The function takes (x, y) coordinates and an opaque context pointer,
+ * and returns the scalar value at that point.  The context pointer allows
+ * passing parameters (radii, offsets, etc.) without global state.
+ *
+ * See: lessons/math/18-scalar-field-gradients
+ */
+typedef float (*forge_field2d_fn)(float x, float y, void *ctx);
+
+/* Numerical gradient of a 2D scalar field using central differences.
+ *
+ * Computes the gradient vector (df/dx, df/dy) at (x, y) by evaluating the
+ * field at (x +/- eps, y) and (x, y +/- eps).  Central differences give
+ * O(eps^2) accuracy — second-order — compared to O(eps) for forward/backward.
+ *
+ * Parameters:
+ *   f   — scalar field function (must not be NULL; returns (0,0) if NULL)
+ *   x,y — evaluation point
+ *   eps — finite-difference step size (must be > 0; recommended: 1e-4f).
+ *         Returns (0,0) if eps <= 0.
+ *   ctx — opaque context passed through to f
+ *
+ * Returns: gradient vector (df/dx, df/dy) pointing uphill (steepest ascent).
+ *
+ * See: lessons/math/18-scalar-field-gradients
+ */
+static inline vec2 forge_field2d_gradient(forge_field2d_fn f, float x, float y,
+                                          float eps, void *ctx)
+{
+    if (f == NULL || eps <= 0.0f) return vec2_create(0.0f, 0.0f);
+    float inv2eps = 1.0f / (2.0f * eps);
+    float dfdx = (f(x + eps, y, ctx) - f(x - eps, y, ctx)) * inv2eps;
+    float dfdy = (f(x, y + eps, ctx) - f(x, y - eps, ctx)) * inv2eps;
+    return vec2_create(dfdx, dfdy);
+}
+
+/* Numerical Laplacian of a 2D scalar field.
+ *
+ * The Laplacian is the sum of second partial derivatives:
+ *   nabla^2 f = d^2f/dx^2 + d^2f/dy^2
+ *
+ * Computed using the standard central-difference stencil for the second
+ * derivative: f''(x) ~ (f(x+h) - 2*f(x) + f(x-h)) / h^2.
+ *
+ * At critical points the Laplacian indicates net curvature:
+ *   > 0  suggests a local minimum (value < neighbor average)
+ *   < 0  suggests a local maximum (value > neighbor average)
+ *   = 0  balanced curvature (e.g. saddle or flat region)
+ * Note: the Laplacian is the trace of the Hessian and does not uniquely
+ * classify all critical points (e.g. f = x^2 - 0.5*y^2 has positive
+ * Laplacian at the origin but is still a saddle).
+ *
+ * Parameters:
+ *   f   — scalar field function (must not be NULL; returns 0 if NULL)
+ *   x,y — evaluation point
+ *   eps — finite-difference step size (must be > 0; recommended: 5e-3f;
+ *         the Laplacian divides by eps^2, which amplifies floating-point
+ *         noise — use a larger eps than for the gradient).
+ *         Returns 0 if eps <= 0.
+ *   ctx — opaque context passed through to f
+ *
+ * Returns: scalar Laplacian value.
+ *
+ * See: lessons/math/18-scalar-field-gradients
+ */
+static inline float forge_field2d_laplacian(forge_field2d_fn f, float x, float y,
+                                            float eps, void *ctx)
+{
+    if (f == NULL || eps <= 0.0f) return 0.0f;
+    float fc = f(x, y, ctx);
+    float inv_eps2 = 1.0f / (eps * eps);
+    float d2fdx2 = (f(x + eps, y, ctx) - 2.0f * fc + f(x - eps, y, ctx)) * inv_eps2;
+    float d2fdy2 = (f(x, y + eps, ctx) - 2.0f * fc + f(x, y - eps, ctx)) * inv_eps2;
+    return d2fdx2 + d2fdy2;
+}
+
+/* Compute surface normal from a height map grid.
+ *
+ * Given a row-major float array of heights with dimensions w * h, computes
+ * the surface normal at grid position (x, z) using central differences of
+ * neighboring heights.  At grid boundaries, the differences are clamped to
+ * the nearest valid neighbor.
+ *
+ * The normal is derived from the cross product of parametric tangent vectors
+ * along the x and z axes.  Since dh/dx and dh/dz already incorporate
+ * spacing (they are divided by spacing during the central-difference step),
+ * the effective tangent vectors are:
+ *   T_x = (1, dh/dx, 0)
+ *   T_z = (0, dh/dz, 1)
+ *   n   = normalize(T_z x T_x) = normalize(-dh/dx, 1, -dh/dz)
+ *
+ * The spacing values control how steep the normals appear: larger spacing
+ * = gentler slopes (because dh/dx = delta_h / spacing).
+ *
+ * Parameters:
+ *   heights   — row-major float array [h * w]
+ *   x, z      — grid coordinates (column, row)
+ *   w, h      — grid dimensions (width = columns, h = rows)
+ *   spacing_x — distance between adjacent columns in world units
+ *   spacing_z — distance between adjacent rows in world units
+ *
+ * Returns: unit-length surface normal vector.
+ *
+ * See: lessons/math/18-scalar-field-gradients
+ */
+static inline vec3 forge_heightmap_normal(const float *heights, int x, int z,
+                                          int w, int h, float spacing_x,
+                                          float spacing_z)
+{
+    /* Validate inputs: out-of-bounds or invalid spacing returns up vector */
+    if (heights == NULL || w <= 0 || h <= 0 ||
+        x < 0 || x >= w || z < 0 || z >= h ||
+        spacing_x <= 0.0f || spacing_z <= 0.0f) {
+        return vec3_create(0.0f, 1.0f, 0.0f);
+    }
+
+    /* Clamp neighbor indices to grid boundaries */
+    int xl = x > 0     ? x - 1 : x;
+    int xr = x < w - 1 ? x + 1 : x;
+    int zl = z > 0     ? z - 1 : z;
+    int zr = z < h - 1 ? z + 1 : z;
+
+    /* Central differences for partial derivatives.
+     * If the grid is only 1 cell wide/tall, the clamped indices match and
+     * the derivative is zero (flat surface). */
+    float dhdx = (xr != xl)
+        ? (heights[z * w + xr] - heights[z * w + xl])
+          / ((float)(xr - xl) * spacing_x)
+        : 0.0f;
+    float dhdz = (zr != zl)
+        ? (heights[zr * w + x] - heights[zl * w + x])
+          / ((float)(zr - zl) * spacing_z)
+        : 0.0f;
+
+    /* Normal = normalize(-dhdx, 1, -dhdz) */
+    vec3 n = vec3_create(-dhdx, 1.0f, -dhdz);
+    return vec3_normalize(n);
 }
 
 #endif /* FORGE_MATH_H */

@@ -38,6 +38,7 @@ implementations for your projects.
 | 15 | [Bézier Curves](15-bezier-curves/) | Quadratic and cubic Bézier curves, De Casteljau's algorithm, tangent vectors, arc length, curve splitting, degree elevation, adaptive flattening |
 | 16 | [Density Functions](16-density-functions/) | Extensive vs intensive quantities, density as ratio, histograms, probability density functions, integration, radiometry, importance sampling |
 | 17 | [Implicit 2D Curves](17-implicit-curves/) | Implicit vs parametric, signed distance functions, SDF primitives, gradient/normals, CSG booleans, smooth blending, marching squares, isolines |
+| 18 | [Scalar Field Gradients](18-scalar-field-gradients/) | Partial derivatives, the gradient vector, central differences, gradient perpendicularity, height map normals, gradient descent, the Laplacian |
 
 ## How Math Lessons Work
 

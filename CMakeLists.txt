@@ -77,6 +77,7 @@ add_subdirectory(lessons/math/14-blue-noise-sequences)
 add_subdirectory(lessons/math/15-bezier-curves)
 add_subdirectory(lessons/math/16-density-functions)
 add_subdirectory(lessons/math/17-implicit-curves)
+add_subdirectory(lessons/math/18-scalar-field-gradients)
 
 # ── Engine Lessons ──────────────────────────────────────────────────────────
 add_subdirectory(lessons/engine/01-intro-to-c)

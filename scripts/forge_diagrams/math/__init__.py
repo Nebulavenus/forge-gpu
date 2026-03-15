@@ -58,6 +58,10 @@ __all__ = [
     "diagram_smooth_blend",
     "diagram_gradient_field",
     "diagram_marching_squares",
+    "diagram_gradient_quiver",
+    "diagram_heightmap_normals",
+    "diagram_gradient_descent_path",
+    "diagram_laplacian_classification",
 ]
 
 from .lesson_01 import diagram_dot_product, diagram_vector_addition
@@ -131,4 +135,10 @@ from .lesson_17 import (
     diagram_marching_squares,
     diagram_sdf_distance_field,
     diagram_smooth_blend,
+)
+from .lesson_18 import (
+    diagram_gradient_descent_path,
+    diagram_gradient_quiver,
+    diagram_heightmap_normals,
+    diagram_laplacian_classification,
 )

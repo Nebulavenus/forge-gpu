@@ -198,6 +198,15 @@ static bool mat4_eq(mat4 a, mat4 b)
         return; \
     }
 
+#define ASSERT_FLOAT_NEAR(a, b, tol) \
+    if (SDL_fabsf((a) - (b)) >= (tol)) { \
+        SDL_Log(\
+                     "    FAIL: Expected %.6f +/- %.6f, got %.6f", \
+                     (double)(b), (double)(tol), (double)(a)); \
+        fail_count++; \
+        return; \
+    }
+
 #define END_TEST() \
         SDL_Log("    PASS"); \
         pass_count++; \
@@ -3531,6 +3540,270 @@ static void test_quat_to_mat3_determinant(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Scalar Field Gradient Tests (Math Lesson 18)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static float test_field_quadratic(float x, float y, void *ctx)
+{
+    (void)ctx;
+    return x * x + y * y;
+}
+
+static float test_field_constant(float x, float y, void *ctx)
+{
+    (void)ctx; (void)x; (void)y;
+    return 42.0f;
+}
+
+static float test_field_linear(float x, float y, void *ctx)
+{
+    (void)ctx;
+    return 2.0f * x + 3.0f * y;
+}
+
+static float test_field_saddle(float x, float y, void *ctx)
+{
+    (void)ctx;
+    return x * x - y * y;
+}
+
+static void test_forge_field2d_gradient_quadratic(void)
+{
+    TEST("forge_field2d_gradient — quadratic x^2+y^2 at (3,4) should be ~(6,8)");
+    vec2 g = forge_field2d_gradient(test_field_quadratic, 3.0f, 4.0f, 1e-4f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 6.0f, 0.05f);
+    ASSERT_FLOAT_NEAR(g.y, 8.0f, 0.05f);
+    END_TEST();
+}
+
+static void test_forge_field2d_gradient_constant(void)
+{
+    TEST("forge_field2d_gradient — constant field should be (0,0)");
+    vec2 g = forge_field2d_gradient(test_field_constant, 5.0f, 7.0f, 1e-4f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(g.y, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_gradient_linear(void)
+{
+    TEST("forge_field2d_gradient — linear 2x+3y should be (2,3)");
+    vec2 g = forge_field2d_gradient(test_field_linear, 1.0f, 1.0f, 1e-4f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 2.0f, 0.01f);
+    ASSERT_FLOAT_NEAR(g.y, 3.0f, 0.01f);
+    END_TEST();
+}
+
+static void test_forge_field2d_gradient_origin(void)
+{
+    TEST("forge_field2d_gradient — x^2+y^2 at origin should be (0,0)");
+    vec2 g = forge_field2d_gradient(test_field_quadratic, 0.0f, 0.0f, 1e-4f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(g.y, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_gradient_invalid_eps(void)
+{
+    TEST("forge_field2d_gradient — zero eps returns (0,0)");
+    vec2 g = forge_field2d_gradient(test_field_quadratic, 1.0f, 1.0f, 0.0f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(g.y, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_gradient_negative_eps(void)
+{
+    TEST("forge_field2d_gradient — negative eps returns (0,0)");
+    vec2 g = forge_field2d_gradient(test_field_quadratic, 1.0f, 1.0f, -1.0f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(g.y, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_gradient_null_fn(void)
+{
+    TEST("forge_field2d_gradient — NULL function returns (0,0)");
+    vec2 g = forge_field2d_gradient(NULL, 1.0f, 1.0f, 1e-4f, NULL);
+    ASSERT_FLOAT_NEAR(g.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(g.y, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_laplacian_invalid_eps(void)
+{
+    TEST("forge_field2d_laplacian — zero eps returns 0");
+    float lap = forge_field2d_laplacian(test_field_quadratic, 1.0f, 1.0f,
+                                        0.0f, NULL);
+    ASSERT_FLOAT_NEAR(lap, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_laplacian_negative_eps(void)
+{
+    TEST("forge_field2d_laplacian — negative eps returns 0");
+    float lap = forge_field2d_laplacian(test_field_quadratic, 1.0f, 1.0f,
+                                        -1.0f, NULL);
+    ASSERT_FLOAT_NEAR(lap, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_laplacian_null_fn(void)
+{
+    TEST("forge_field2d_laplacian — NULL function returns 0");
+    float lap = forge_field2d_laplacian(NULL, 1.0f, 1.0f, 5e-3f, NULL);
+    ASSERT_FLOAT_NEAR(lap, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_field2d_laplacian_quadratic(void)
+{
+    TEST("forge_field2d_laplacian — x^2+y^2 should be ~4");
+    float lap = forge_field2d_laplacian(test_field_quadratic, 1.0f, 1.0f,
+                                        5e-3f, NULL);
+    ASSERT_FLOAT_NEAR(lap, 4.0f, 0.01f);
+    END_TEST();
+}
+
+static void test_forge_field2d_laplacian_saddle(void)
+{
+    TEST("forge_field2d_laplacian — x^2-y^2 should be ~0");
+    float lap = forge_field2d_laplacian(test_field_saddle, 1.0f, 1.0f,
+                                        5e-3f, NULL);
+    ASSERT_FLOAT_NEAR(lap, 0.0f, 0.01f);
+    END_TEST();
+}
+
+/* Context-aware field callback for testing ctx forwarding */
+typedef struct {
+    float ax;
+    float by;
+} FieldCtx;
+
+static float test_field_linear_ctx(float x, float y, void *ctx)
+{
+    const FieldCtx *params = (const FieldCtx *)ctx;
+    return params->ax * x + params->by * y;
+}
+
+static void test_forge_field2d_gradient_ctx(void)
+{
+    TEST("forge_field2d_gradient — forwards ctx to callback");
+    FieldCtx params = { 4.0f, -2.0f };
+    vec2 g = forge_field2d_gradient(test_field_linear_ctx, 1.0f, 1.0f,
+                                    1e-4f, &params);
+    ASSERT_FLOAT_NEAR(g.x, 4.0f, 0.01f);
+    ASSERT_FLOAT_NEAR(g.y, -2.0f, 0.01f);
+    END_TEST();
+}
+
+static void test_forge_field2d_laplacian_ctx(void)
+{
+    TEST("forge_field2d_laplacian — forwards ctx to callback");
+    FieldCtx params = { 4.0f, -2.0f };
+    /* Linear field has zero second derivatives */
+    float lap = forge_field2d_laplacian(test_field_linear_ctx, 1.0f, 1.0f,
+                                        5e-3f, &params);
+    ASSERT_FLOAT_NEAR(lap, 0.0f, 0.01f);
+    END_TEST();
+}
+
+static void test_forge_heightmap_normal_flat(void)
+{
+    TEST("forge_heightmap_normal — flat grid should give (0,1,0)");
+    float heights[9] = {1,1,1, 1,1,1, 1,1,1};  /* 3x3 flat */
+    vec3 n = forge_heightmap_normal(heights, 1, 1, 3, 3, 1.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(n.y, 1.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(n.z, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_heightmap_normal_slope(void)
+{
+    TEST("forge_heightmap_normal — sloped grid should tilt normal");
+    /* Height increases along x: 0, 1, 2 */
+    float heights[9] = {0,1,2, 0,1,2, 0,1,2};  /* 3x3, slope in x */
+    vec3 n = forge_heightmap_normal(heights, 1, 1, 3, 3, 1.0f, 1.0f);
+    /* dh/dx = 1, dh/dz = 0 => normal = normalize(-1, 1, 0) ≈ (-0.707, 0.707, 0) */
+    ASSERT_FLOAT_NEAR(n.x, -0.7071f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.y,  0.7071f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.z, 0.0f, 0.001f);  /* no z tilt */
+    /* Should be unit length */
+    float len = vec3_length(n);
+    ASSERT_FLOAT_NEAR(len, 1.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_heightmap_normal_spacing(void)
+{
+    TEST("forge_heightmap_normal — non-unit spacing affects the normal");
+    /* Same height ramp as slope test, but spacing_x = 2.0 halves the slope */
+    float heights[9] = {0,1,2, 0,1,2, 0,1,2};
+    vec3 n = forge_heightmap_normal(heights, 1, 1, 3, 3, 2.0f, 1.0f);
+    /* dh/dx = 1/2.0 = 0.5 => normal = normalize(-0.5, 1, 0) ≈ (-0.4472, 0.8944, 0) */
+    ASSERT_FLOAT_NEAR(n.x, -0.4472f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.y,  0.8944f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.z,  0.0f,    0.001f);
+    float len = vec3_length(n);
+    ASSERT_FLOAT_NEAR(len, 1.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_heightmap_normal_boundary(void)
+{
+    TEST("forge_heightmap_normal — corner cell uses forward/backward differences");
+    /* 3x3 grid with slope only in x: heights increase left to right */
+    float heights[9] = {0,1,2, 0,1,2, 0,1,2};
+    /* Corner (0,0): forward difference in x, forward difference in z.
+     * dh/dx = (heights[1] - heights[0]) / (1 * 1.0) = 1.0
+     * dh/dz = (heights[3] - heights[0]) / (1 * 1.0) = 0.0
+     * n = normalize(-1, 1, 0) ≈ (-0.707, 0.707, 0) — same as interior
+     * because this grid has uniform slope. */
+    vec3 n = forge_heightmap_normal(heights, 0, 0, 3, 3, 1.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.x, -0.7071f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.y,  0.7071f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.z,  0.0f,    0.001f);
+    float len = vec3_length(n);
+    ASSERT_FLOAT_NEAR(len, 1.0f, 0.001f);
+
+    /* Corner (2,2): backward difference in both axes.
+     * Same uniform slope, so same normal direction. */
+    n = forge_heightmap_normal(heights, 2, 2, 3, 3, 1.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.x, -0.7071f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.y,  0.7071f, 0.02f);
+    ASSERT_FLOAT_NEAR(n.z,  0.0f,    0.001f);
+    END_TEST();
+}
+
+static void test_forge_heightmap_normal_1x1(void)
+{
+    TEST("forge_heightmap_normal — 1x1 grid returns up vector");
+    float heights[1] = {5.0f};
+    vec3 n = forge_heightmap_normal(heights, 0, 0, 1, 1, 1.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.x, 0.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(n.y, 1.0f, 0.001f);
+    ASSERT_FLOAT_NEAR(n.z, 0.0f, 0.001f);
+    END_TEST();
+}
+
+static void test_forge_heightmap_normal_invalid(void)
+{
+    TEST("forge_heightmap_normal — invalid inputs return up vector");
+    /* NULL heights */
+    vec3 n = forge_heightmap_normal(NULL, 0, 0, 3, 3, 1.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.y, 1.0f, 0.001f);
+    /* Out-of-bounds coordinates */
+    float heights[4] = {0, 0, 0, 0};
+    n = forge_heightmap_normal(heights, -1, 0, 2, 2, 1.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.y, 1.0f, 0.001f);
+    /* Zero spacing */
+    n = forge_heightmap_normal(heights, 0, 0, 2, 2, 0.0f, 1.0f);
+    ASSERT_FLOAT_NEAR(n.y, 1.0f, 0.001f);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -3794,6 +4067,29 @@ int main(int argc, char *argv[])
     test_sdf_smooth_union_blends();
     test_sdf_smooth_intersection_zero_k();
     test_sdf_smooth_intersection_blends();
+
+    /* Scalar field gradient tests (Math Lesson 18) */
+    SDL_Log("\nScalar field gradient tests:");
+    test_forge_field2d_gradient_quadratic();
+    test_forge_field2d_gradient_constant();
+    test_forge_field2d_gradient_linear();
+    test_forge_field2d_gradient_origin();
+    test_forge_field2d_gradient_ctx();
+    test_forge_field2d_gradient_invalid_eps();
+    test_forge_field2d_gradient_negative_eps();
+    test_forge_field2d_gradient_null_fn();
+    test_forge_field2d_laplacian_quadratic();
+    test_forge_field2d_laplacian_saddle();
+    test_forge_field2d_laplacian_ctx();
+    test_forge_field2d_laplacian_invalid_eps();
+    test_forge_field2d_laplacian_negative_eps();
+    test_forge_field2d_laplacian_null_fn();
+    test_forge_heightmap_normal_flat();
+    test_forge_heightmap_normal_slope();
+    test_forge_heightmap_normal_spacing();
+    test_forge_heightmap_normal_boundary();
+    test_forge_heightmap_normal_1x1();
+    test_forge_heightmap_normal_invalid();
 
     /* quat_to_mat3 tests (Physics Lesson 04) */
     SDL_Log("\nquat_to_mat3 tests:");
