@@ -159,6 +159,18 @@ typedef struct ForgePipelineSubmesh {
     int32_t  material_index;  /* index into a ForgePipelineMaterialSet, -1 = none */
 } ForgePipelineSubmesh;
 
+/* Morph target name field size (bytes) */
+#define FORGE_PIPELINE_MORPH_NAME_LEN 64
+
+/* A loaded morph target — per-vertex position/normal/tangent deltas. */
+typedef struct ForgePipelineMorphTarget {
+    char   name[FORGE_PIPELINE_MORPH_NAME_LEN]; /* morph target name */
+    float  default_weight;     /* default blend weight (from mesh.weights) */
+    float *position_deltas;    /* vertex_count × 3 floats, NULL if absent */
+    float *normal_deltas;      /* vertex_count × 3 floats, NULL if absent */
+    float *tangent_deltas;     /* vertex_count × 3 floats, NULL if absent */
+} ForgePipelineMorphTarget;
+
 typedef struct ForgePipelineMesh {
     void             *vertices;     /* vertex array (cast to Vertex or VertexTan) */
     uint32_t         *indices;      /* all LOD indices concatenated (uint32) */
@@ -172,6 +184,11 @@ typedef struct ForgePipelineMesh {
      * submeshes[lod * submesh_count + submesh_idx]. */
     ForgePipelineSubmesh *submeshes;     /* lod_count × submesh_count entries */
     uint32_t              submesh_count; /* number of submeshes (primitives) */
+
+    /* Morph target data (present when FLAG_MORPHS is set) */
+    ForgePipelineMorphTarget *morph_targets;     /* morph_target_count entries */
+    uint32_t                  morph_target_count;
+    uint32_t                  morph_attribute_flags; /* FORGE_PIPELINE_MORPH_ATTR_* */
 } ForgePipelineMesh;
 
 /* ── Material types ───────────────────────────────────────────────────── */
@@ -339,7 +356,8 @@ typedef enum ForgePipelineAnimInterp {
 typedef enum ForgePipelineAnimPath {
     FORGE_PIPELINE_ANIM_TRANSLATION = 0,
     FORGE_PIPELINE_ANIM_ROTATION    = 1,
-    FORGE_PIPELINE_ANIM_SCALE       = 2
+    FORGE_PIPELINE_ANIM_SCALE         = 2,
+    FORGE_PIPELINE_ANIM_MORPH_WEIGHTS = 3
 } ForgePipelineAnimPath;
 
 /* A single animation sampler: keyframe timestamps and output values.
@@ -348,7 +366,7 @@ typedef struct ForgePipelineAnimSampler {
     float   *timestamps;        /* heap-allocated, keyframe_count floats */
     float   *values;            /* keyframe_count * value_components floats */
     uint32_t keyframe_count;    /* number of keyframes in this sampler */
-    uint32_t value_components;  /* 3 (translation/scale) or 4 (rotation) */
+    uint32_t value_components;  /* 3 (T/S), 4 (R quat), or 1-8 (morph weights) */
     ForgePipelineAnimInterp interpolation; /* LINEAR or STEP */
 } ForgePipelineAnimSampler;
 
@@ -436,6 +454,9 @@ typedef struct ForgePipelineSkinSet {
 /* .fmesh v3 flag for skinned vertex data */
 #define FORGE_PIPELINE_FLAG_SKINNED (1u << 1)
 
+/* .fmesh v3 flag for morph target (blend shape) delta data */
+#define FORGE_PIPELINE_FLAG_MORPHS (1u << 2)
+
 /* Skinned vertex strides:
  * Stride 56: position(12) + normal(12) + uv(8) + joints(8) + weights(16)
  * Stride 72: position(12) + normal(12) + uv(8) + tangent(16) + joints(8) + weights(16) */
@@ -460,6 +481,21 @@ typedef struct ForgePipelineVertexSkinTan {
     uint16_t joints[4];     /*  8B — bone indices */
     float    weights[4];    /* 16B — blend weights */
 } ForgePipelineVertexSkinTan; /* 72B total */
+
+/* Maximum morph targets per mesh */
+#define FORGE_PIPELINE_MAX_MORPH_TARGETS 8
+
+/* Morph section header: morph_target_count (u32) + morph_attr_flags (u32) */
+#define FORGE_PIPELINE_MORPH_HEADER_SIZE 8
+
+/* Morph target metadata: name + default_weight = 68 bytes */
+#define FORGE_PIPELINE_MORPH_META_SIZE \
+    (FORGE_PIPELINE_MORPH_NAME_LEN + sizeof(float))
+
+/* Morph attribute flags (in the morph header) */
+#define FORGE_PIPELINE_MORPH_ATTR_POSITION (1u << 0)
+#define FORGE_PIPELINE_MORPH_ATTR_NORMAL   (1u << 1)
+#define FORGE_PIPELINE_MORPH_ATTR_TANGENT  (1u << 2)
 
 /* ── Function declarations ─────────────────────────────────────────────── */
 
@@ -712,6 +748,11 @@ void forge_pipeline_free_skins(ForgePipelineSkinSet *skins);
  */
 bool forge_pipeline_has_skin_data(const ForgePipelineMesh *mesh);
 
+/*
+ * forge_pipeline_has_morph_data — Check if the mesh has morph target data.
+ */
+bool forge_pipeline_has_morph_data(const ForgePipelineMesh *mesh);
+
 /* ── Animation evaluation ─────────────────────────────────────────────── */
 
 /* These functions require forge_math.h (vec3, quat, mat4).  They are only
@@ -730,6 +771,9 @@ bool forge_pipeline_has_skin_data(const ForgePipelineMesh *mesh);
  * using binary search + interpolation (vec3_lerp for translation/scale,
  * quat_slerp for rotation).  Updates the target node's translation,
  * rotation, scale, and recomputes its local_transform = T × R × S.
+ *
+ * Channels with target_path == FORGE_PIPELINE_ANIM_MORPH_WEIGHTS (3) are
+ * skipped — morph weight evaluation is the caller's responsibility.
  *
  * Only nodes targeted by animation channels have their local_transform
  * rebuilt.  Non-animated nodes keep their existing local_transform, so
@@ -855,6 +899,7 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
 
     /* ── Parse header fields ──────────────────────────────────────── */
     const uint8_t *p = file_data;
+    const uint8_t *end = file_data + file_size;
 
     /* Magic: must be "FMSH" */
     if (SDL_memcmp(p, FORGE_PIPELINE_FMESH_MAGIC,
@@ -925,7 +970,8 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
      * newer-version files that use flags this loader doesn't understand. */
     {
         const uint32_t known_flags =
-            FORGE_PIPELINE_FLAG_TANGENTS | FORGE_PIPELINE_FLAG_SKINNED;
+            FORGE_PIPELINE_FLAG_TANGENTS | FORGE_PIPELINE_FLAG_SKINNED |
+            FORGE_PIPELINE_FLAG_MORPHS;
         if ((flags & ~known_flags) != 0u) {
             SDL_Log("forge_pipeline_load_mesh: '%s' has unknown flags 0x%08x",
                     path, flags & ~known_flags);
@@ -975,6 +1021,15 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     /* Skinned data requires v3 */
     if (has_skin && version < FORGE_PIPELINE_FMESH_VERSION_SKIN) {
         SDL_Log("forge_pipeline_load_mesh: '%s' v%u has SKINNED flag "
+                "(requires v3)", path, version);
+        SDL_free(file_data);
+        return false;
+    }
+
+    /* Morph target data requires v3 */
+    if ((flags & FORGE_PIPELINE_FLAG_MORPHS) != 0 &&
+        version < FORGE_PIPELINE_FMESH_VERSION_SKIN) {
+        SDL_Log("forge_pipeline_load_mesh: '%s' v%u has MORPHS flag "
                 "(requires v3)", path, version);
         SDL_free(file_data);
         return false;
@@ -1220,6 +1275,7 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
         return false;
     }
     SDL_memcpy(indices, p, index_section_size);
+    p += index_section_size;
 
     for (size_t i = 0; i < total_indices; i++) {
         if (indices[i] >= vertex_count) {
@@ -1234,6 +1290,184 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
         }
     }
 
+    /* ── Read morph target section (if FLAG_MORPHS is set) ────────── */
+    ForgePipelineMorphTarget *morph_targets_data = NULL;
+    uint32_t morph_target_count = 0;
+    uint32_t morph_attr_flags = 0;
+
+    if ((flags & FORGE_PIPELINE_FLAG_MORPHS) != 0) {
+        /* Morph header: morph_target_count (u32) + morph_attribute_flags (u32) */
+        if (p + FORGE_PIPELINE_MORPH_HEADER_SIZE > end) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' truncated at morph header",
+                    path);
+            SDL_free(vertices);
+            SDL_free(indices);
+            SDL_free(lods);
+            SDL_free(submeshes);
+            SDL_free(file_data);
+            return false;
+        }
+        morph_target_count = forge_pipeline__read_u32_le(p);
+        p += sizeof(uint32_t);
+        morph_attr_flags = forge_pipeline__read_u32_le(p);
+        p += sizeof(uint32_t);
+
+        if (morph_target_count == 0 ||
+            morph_target_count > FORGE_PIPELINE_MAX_MORPH_TARGETS) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' invalid morph_target_count "
+                    "%u (max %d)", path, morph_target_count,
+                    FORGE_PIPELINE_MAX_MORPH_TARGETS);
+            SDL_free(vertices);
+            SDL_free(indices);
+            SDL_free(lods);
+            SDL_free(submeshes);
+            SDL_free(file_data);
+            return false;
+        }
+
+        /* Reject invalid attribute flags: position is mandatory (per
+         * glTF spec), and no unknown bits may be set. */
+        {
+            uint32_t valid_bits = FORGE_PIPELINE_MORPH_ATTR_POSITION |
+                                  FORGE_PIPELINE_MORPH_ATTR_NORMAL |
+                                  FORGE_PIPELINE_MORPH_ATTR_TANGENT;
+            if (!(morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_POSITION) ||
+                (morph_attr_flags & ~valid_bits) != 0) {
+                SDL_Log("forge_pipeline_load_mesh: '%s' invalid "
+                        "morph_attr_flags 0x%x", path, morph_attr_flags);
+                SDL_free(vertices);
+                SDL_free(indices);
+                SDL_free(lods);
+                SDL_free(submeshes);
+                SDL_free(file_data);
+                return false;
+            }
+        }
+
+        /* Per-target metadata */
+        size_t meta_size = (size_t)morph_target_count *
+                           FORGE_PIPELINE_MORPH_META_SIZE;
+        if (p + meta_size > end) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' truncated at morph metadata",
+                    path);
+            SDL_free(vertices);
+            SDL_free(indices);
+            SDL_free(lods);
+            SDL_free(submeshes);
+            SDL_free(file_data);
+            return false;
+        }
+
+        morph_targets_data = (ForgePipelineMorphTarget *)SDL_calloc(
+            morph_target_count, sizeof(ForgePipelineMorphTarget));
+        if (!morph_targets_data) {
+            SDL_Log("forge_pipeline_load_mesh: allocation failed for morph targets");
+            SDL_free(vertices);
+            SDL_free(indices);
+            SDL_free(lods);
+            SDL_free(submeshes);
+            SDL_free(file_data);
+            return false;
+        }
+
+        for (uint32_t ti = 0; ti < morph_target_count; ti++) {
+            SDL_memcpy(morph_targets_data[ti].name, p,
+                       sizeof(morph_targets_data[ti].name));
+            morph_targets_data[ti].name[
+                sizeof(morph_targets_data[ti].name) - 1] = '\0';
+            p += sizeof(morph_targets_data[ti].name);
+            morph_targets_data[ti].default_weight =
+                forge_pipeline__read_f32_le(p);
+            p += sizeof(float);
+        }
+
+        /* Per-target delta arrays */
+        uint32_t attrs_per_target = 0;
+        if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_POSITION) attrs_per_target++;
+        if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_NORMAL) attrs_per_target++;
+        if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_TANGENT) attrs_per_target++;
+
+        size_t deltas_per_attr = (size_t)vertex_count * 3;
+        /* Guard against size_t overflow on 32-bit platforms.  Maximum
+         * possible: 8 targets × 3 attrs × vertex_count × 3 × 4 bytes.
+         * Reject if vertex_count alone would overflow the multiply. */
+        if (vertex_count > SIZE_MAX / (3u * sizeof(float) *
+                                       attrs_per_target *
+                                       morph_target_count)) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' morph delta size "
+                    "overflow (vertex_count %u)", path, vertex_count);
+            SDL_free(morph_targets_data);
+            SDL_free(vertices);
+            SDL_free(indices);
+            SDL_free(lods);
+            SDL_free(submeshes);
+            SDL_free(file_data);
+            return false;
+        }
+        size_t total_delta_floats = (size_t)morph_target_count *
+                                    attrs_per_target * deltas_per_attr;
+        size_t total_delta_bytes = total_delta_floats * sizeof(float);
+        if (p + total_delta_bytes > end) {
+            SDL_Log("forge_pipeline_load_mesh: '%s' truncated at morph deltas",
+                    path);
+            SDL_free(morph_targets_data);
+            SDL_free(vertices);
+            SDL_free(indices);
+            SDL_free(lods);
+            SDL_free(submeshes);
+            SDL_free(file_data);
+            return false;
+        }
+
+        for (uint32_t ti = 0; ti < morph_target_count; ti++) {
+            ForgePipelineMorphTarget *mt = &morph_targets_data[ti];
+
+            if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_POSITION) {
+                size_t bytes = deltas_per_attr * sizeof(float);
+                mt->position_deltas = (float *)SDL_malloc(bytes);
+                if (!mt->position_deltas) goto morph_alloc_fail;
+                for (size_t fi = 0; fi < deltas_per_attr; fi++) {
+                    mt->position_deltas[fi] = forge_pipeline__read_f32_le(p);
+                    p += sizeof(float);
+                }
+            }
+            if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_NORMAL) {
+                size_t bytes = deltas_per_attr * sizeof(float);
+                mt->normal_deltas = (float *)SDL_malloc(bytes);
+                if (!mt->normal_deltas) goto morph_alloc_fail;
+                for (size_t fi = 0; fi < deltas_per_attr; fi++) {
+                    mt->normal_deltas[fi] = forge_pipeline__read_f32_le(p);
+                    p += sizeof(float);
+                }
+            }
+            if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_TANGENT) {
+                size_t bytes = deltas_per_attr * sizeof(float);
+                mt->tangent_deltas = (float *)SDL_malloc(bytes);
+                if (!mt->tangent_deltas) goto morph_alloc_fail;
+                for (size_t fi = 0; fi < deltas_per_attr; fi++) {
+                    mt->tangent_deltas[fi] = forge_pipeline__read_f32_le(p);
+                    p += sizeof(float);
+                }
+            }
+        }
+        goto morph_ok;
+morph_alloc_fail:
+        SDL_Log("forge_pipeline_load_mesh: allocation failed for morph deltas");
+        for (uint32_t fi = 0; fi < morph_target_count; fi++) {
+            SDL_free(morph_targets_data[fi].position_deltas);
+            SDL_free(morph_targets_data[fi].normal_deltas);
+            SDL_free(morph_targets_data[fi].tangent_deltas);
+        }
+        SDL_free(morph_targets_data);
+        SDL_free(vertices);
+        SDL_free(indices);
+        SDL_free(lods);
+        SDL_free(submeshes);
+        SDL_free(file_data);
+        return false;
+morph_ok: ;
+    }
+
     /* ── Populate output struct ───────────────────────────────────── */
     mesh->vertices      = vertices;
     mesh->indices       = indices;
@@ -1244,6 +1478,9 @@ bool forge_pipeline_load_mesh(const char *path, ForgePipelineMesh *mesh)
     mesh->flags         = flags;
     mesh->submeshes     = submeshes;
     mesh->submesh_count = submesh_count;
+    mesh->morph_targets = morph_targets_data;
+    mesh->morph_target_count = morph_target_count;
+    mesh->morph_attribute_flags = morph_attr_flags;
 
     SDL_free(file_data);
     return true;
@@ -1258,6 +1495,14 @@ void forge_pipeline_free_mesh(ForgePipelineMesh *mesh)
     SDL_free(mesh->indices);
     SDL_free(mesh->lods);
     SDL_free(mesh->submeshes);
+    if (mesh->morph_targets) {
+        for (uint32_t ti = 0; ti < mesh->morph_target_count; ti++) {
+            SDL_free(mesh->morph_targets[ti].position_deltas);
+            SDL_free(mesh->morph_targets[ti].normal_deltas);
+            SDL_free(mesh->morph_targets[ti].tangent_deltas);
+        }
+        SDL_free(mesh->morph_targets);
+    }
     SDL_memset(mesh, 0, sizeof(*mesh));
 }
 
@@ -1275,6 +1520,14 @@ bool forge_pipeline_has_skin_data(const ForgePipelineMesh *mesh)
         return false;
     }
     return (mesh->flags & FORGE_PIPELINE_FLAG_SKINNED) != 0;
+}
+
+bool forge_pipeline_has_morph_data(const ForgePipelineMesh *mesh)
+{
+    if (!mesh) {
+        return false;
+    }
+    return (mesh->flags & FORGE_PIPELINE_FLAG_MORPHS) != 0;
 }
 
 uint32_t forge_pipeline_lod_index_count(const ForgePipelineMesh *mesh,
@@ -2872,11 +3125,12 @@ bool forge_pipeline_load_animation(const char *path,
                 goto fail;
             }
 
-            if (samp->value_components != 3 && samp->value_components != 4) {
+            if (samp->value_components == 0 ||
+                samp->value_components > FORGE_PIPELINE_MAX_MORPH_TARGETS) {
                 SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
                         "sampler %u has invalid value_components %u "
-                        "(expected 3 or 4)", path, ci, si,
-                        samp->value_components);
+                        "(max %u)", path, ci, si, samp->value_components,
+                        (uint32_t)FORGE_PIPELINE_MAX_MORPH_TARGETS);
                 goto fail;
             }
 
@@ -2955,7 +3209,8 @@ bool forge_pipeline_load_animation(const char *path,
                 p += sizeof(uint32_t);
                 if (path_raw != FORGE_PIPELINE_ANIM_TRANSLATION &&
                     path_raw != FORGE_PIPELINE_ANIM_ROTATION &&
-                    path_raw != FORGE_PIPELINE_ANIM_SCALE) {
+                    path_raw != FORGE_PIPELINE_ANIM_SCALE &&
+                    path_raw != FORGE_PIPELINE_ANIM_MORPH_WEIGHTS) {
                     SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
                             "channel %u has invalid target_path %u",
                             path, ci, chi, path_raw);
@@ -2979,21 +3234,24 @@ bool forge_pipeline_load_animation(const char *path,
             }
 
             /* Validate sampler value_components matches target_path:
-             * rotation requires 4 (quaternion), translation/scale require 3 */
+             * rotation requires 4 (quaternion), translation/scale require 3,
+             * morph weights have variable count (= number of targets). */
             {
                 ForgePipelineAnimChannel *ch = &clip->channels[chi];
                 const ForgePipelineAnimSampler *samp =
                     &clip->samplers[ch->sampler_index];
-                uint32_t expected = (ch->target_path ==
-                    FORGE_PIPELINE_ANIM_ROTATION) ? 4u : 3u;
-                if (samp->value_components != expected) {
-                    SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
-                            "channel %u target_path %u requires %u "
-                            "components, but sampler %u has %u",
-                            path, ci, chi, (uint32_t)ch->target_path,
-                            expected, ch->sampler_index,
-                            samp->value_components);
-                    goto fail;
+                if (ch->target_path != FORGE_PIPELINE_ANIM_MORPH_WEIGHTS) {
+                    uint32_t expected = (ch->target_path ==
+                        FORGE_PIPELINE_ANIM_ROTATION) ? 4u : 3u;
+                    if (samp->value_components != expected) {
+                        SDL_Log("forge_pipeline_load_animation: '%s' clip %u "
+                                "channel %u target_path %u requires %u "
+                                "components, but sampler %u has %u",
+                                path, ci, chi, (uint32_t)ch->target_path,
+                                expected, ch->sampler_index,
+                                samp->value_components);
+                        goto fail;
+                    }
                 }
             }
         }
@@ -3676,8 +3934,12 @@ void forge_pipeline_anim_apply(
             node->scale[2] = v.z;
             break;
         }
+        case FORGE_PIPELINE_ANIM_MORPH_WEIGHTS:
+            /* Morph target weight evaluation handled externally —
+             * the caller reads weights from the sampler directly.
+             * Skip node modification. */
+            continue; /* skip modified[] flag below */
         default:
-            /* Morph target weights not yet supported — skip silently */
             continue; /* skip modified[] flag below */
         }
 

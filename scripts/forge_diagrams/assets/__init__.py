@@ -15,6 +15,8 @@ __all__ = [
     "diagram_material_data_flow",
     "diagram_fmesh_v2_layout",
     "diagram_scene_hierarchy",
+    "diagram_morph_pipeline",
+    "diagram_morph_binary_layout",
 ]
 
 from .lesson_02 import (
@@ -35,3 +37,4 @@ from .lesson_05 import (
 )
 from .lesson_07 import diagram_fmesh_v2_layout, diagram_material_data_flow
 from .lesson_09 import diagram_scene_hierarchy
+from .lesson_13 import diagram_morph_binary_layout, diagram_morph_pipeline

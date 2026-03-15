@@ -23,14 +23,14 @@
  *
  *   Per sampler (immediately after the clip header):
  *     keyframe_count    u32    number of keyframes
- *     value_components  u32    3 for translation/scale, 4 for rotation
+ *     value_components  u32    3 for translation/scale, 4 for rotation, N for weights
  *     interpolation     u32    0 = LINEAR, 1 = STEP
  *     timestamps[]      float  keyframe_count floats
  *     values[]          float  keyframe_count * value_components floats
  *
  *   Per channel (immediately after all samplers for this clip):
  *     target_node    i32       index into scene nodes (-1 if unset)
- *     target_path    u32       0 = translation, 1 = rotation, 2 = scale
+ *     target_path    u32       0 = translation, 1 = rotation, 2 = scale, 3 = weights
  *     sampler_index  u32       index into this clip's sampler array
  *
  * Usage:
@@ -701,10 +701,12 @@ static bool process_animations(const ToolOptions *opts)
                 int si;
                 for (si = 0; si < anim->sampler_count; si++) {
                     const ForgeGltfAnimSampler *samp = &anim->samplers[si];
-                    if (samp->value_components != 3 &&
-                        samp->value_components != 4) {
+                    /* TRS paths require 3 (vec3) or 4 (quat) components.
+                     * Morph weights have variable component count
+                     * (= number of targets), so only require >= 1. */
+                    if (samp->value_components < 1) {
                         SDL_Log("Error: clip '%s' sampler %d has invalid "
-                                "value_components=%d (expected 3 or 4)",
+                                "value_components=%d (expected >= 1)",
                                 anim->name, si, samp->value_components);
                         forge_arena_destroy(&gltf_arena);
                         return false;

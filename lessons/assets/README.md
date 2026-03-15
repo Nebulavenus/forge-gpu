@@ -64,6 +64,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 10 | [Animation Loader](10-animation-loader/) | C + Python | Runtime `.fanim` loader in `forge_pipeline.h`, per-clip export via `--split`, `.fanims` stub manifest |
 | 11 | [Animation Manifest](11-animation-manifest/) | C + Python | `.fanims` JSON manifest loader, named clip lookup, convenience loading, loop flags and tags |
 | 12 | [Skinned Animations](12-skinned-animations/) | C + Python | `.fskin` binary format, skinned vertices in `.fmesh` v3, scene/mesh tool extensions |
+| 13 | [Morph Targets](13-morph-targets/) | C + Python | Morph target (blend shape) pipeline: glTF morph parsing, `.fmesh` morph deltas, weight animation channels, runtime loader |
 
 ## Building
 

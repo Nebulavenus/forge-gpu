@@ -46,6 +46,12 @@
 #define FMESH_VERSION_SKIN  3
 #define FMESH_FLAG_TANGENTS (1u << 0)
 #define FMESH_FLAG_SKINNED  (1u << 1)
+#define FMESH_FLAG_MORPHS   (1u << 2)
+
+/* Morph attribute flags (stored in .fmesh morph header) */
+#define FMESH_MORPH_ATTR_POSITION (1u << 0)
+#define FMESH_MORPH_ATTR_NORMAL   (1u << 1)
+#define FMESH_MORPH_ATTR_TANGENT  (1u << 2)
 
 #define MAX_LOD_LEVELS      8
 #define MAX_SUBMESHES       64
@@ -149,14 +155,18 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
                             unsigned int flags,
                             const Uint16 *skin_joints,
                             const float *skin_weights,
-                            bool has_skin);
+                            bool has_skin,
+                            const ForgeGltfScene *scene,
+                            int prim_count,
+                            bool has_morphs);
 static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene,
                        const char *gltf_path);
 static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              unsigned int vertex_count, unsigned int vertex_stride,
                              bool has_tangents, int lod_count,
                              const float *lod_ratios, int submesh_count,
-                             unsigned int original_vertex_count);
+                             unsigned int original_vertex_count,
+                             bool has_morphs);
 static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
                                const unsigned int *indices, unsigned int index_count);
 
@@ -595,7 +605,8 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
                       SubmeshEntry *out_submeshes, int *out_submesh_count,
                       ForgeGltfScene *out_scene, ForgeArena *arena,
                       Uint16 **out_skin_joints, float **out_skin_weights,
-                      bool *out_has_skin)
+                      bool *out_has_skin,
+                      bool *out_has_morphs)
 {
     if (!forge_gltf_load(path, out_scene, arena)) {
         SDL_Log("Error: failed to load glTF '%s'", path);
@@ -622,6 +633,8 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     bool all_have_tangents = true;
     bool any_has_skin = false;
     bool all_have_skin = true;
+    bool any_has_morphs = false;
+    bool all_have_morphs = true;
     int prim_count = out_scene->primitive_count;
     int p;
 
@@ -647,6 +660,12 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         } else {
             all_have_skin = false;
         }
+
+        if (prim->morph_target_count > 0) {
+            any_has_morphs = true;
+        } else {
+            all_have_morphs = false;
+        }
     }
 
     /* Skin data must be present on all or no primitives */
@@ -654,6 +673,31 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
         SDL_Log("Error: some primitives have skin data and others do not "
                 "(all-or-nothing required)");
         return false;
+    }
+
+    /* Morph targets: validate all-or-nothing; multi-primitive morph
+     * meshes are rejected (the writer serializes first-primitive only). */
+    if (any_has_morphs && !all_have_morphs) {
+        SDL_Log("Error: some primitives have morph targets and others do not "
+                "(all-or-nothing required)");
+        return false;
+    }
+    if (any_has_morphs) {
+        /* Multi-primitive morph merging is not supported — the writer
+         * serializes deltas from the first primitive only. */
+        if (prim_count > 1) {
+            SDL_Log("Error: morph targets on multi-primitive meshes are "
+                    "not yet supported (prim_count=%d)", prim_count);
+            return false;
+        }
+        /* Enforce the runtime loader's morph target cap. */
+        if (out_scene->primitives[0].morph_target_count >
+            FORGE_GLTF_MAX_MORPH_TARGETS) {
+            SDL_Log("Error: morph target count %d exceeds maximum %d",
+                    out_scene->primitives[0].morph_target_count,
+                    FORGE_GLTF_MAX_MORPH_TARGETS);
+            return false;
+        }
     }
 
     if (total_verts_64 > SDL_MAX_UINT32 || total_indices_64 > SDL_MAX_UINT32) {
@@ -677,6 +721,7 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
      * for the whole mesh — so we need ALL primitives to have tangents. */
     *out_has_tangents = all_have_tangents;
     *out_has_skin = all_have_skin;
+    *out_has_morphs = any_has_morphs;
 
     /* Skinned meshes skip deduplication — joint/weight data is not part of
      * the MeshVertex comparison key, so meshoptimizer would incorrectly
@@ -684,6 +729,15 @@ static bool load_gltf(const char *path, bool deduplicate, bool verbose,
     if (all_have_skin && deduplicate) {
         if (verbose) {
             SDL_Log("  Skinned mesh detected — deduplication disabled");
+        }
+        deduplicate = false;
+    }
+
+    /* Morphed meshes skip deduplication — morph deltas reference original
+     * vertex indices and would be invalidated by vertex merging. */
+    if (any_has_morphs && deduplicate) {
+        if (verbose) {
+            SDL_Log("  Morphed mesh detected — deduplication disabled");
         }
         deduplicate = false;
     }
@@ -932,6 +986,7 @@ static bool process_mesh(const ToolOptions *opts)
     Uint16       *skin_joints  = NULL;
     float        *skin_weights = NULL;
     bool          has_skin_data = false;
+    bool          has_morph_data = false;
 
     /* Submesh tracking — OBJ produces 1 submesh, glTF can produce many */
     SubmeshEntry  submeshes[MAX_SUBMESHES];
@@ -963,7 +1018,8 @@ static bool process_mesh(const ToolOptions *opts)
                        &vertices, &vertex_count, &indices, &index_count,
                        &original_vertex_count, &gltf_has_tangents,
                        submeshes, &submesh_count, gltf_scene, &gltf_arena,
-                       &skin_joints, &skin_weights, &has_skin_data)) {
+                       &skin_joints, &skin_weights, &has_skin_data,
+                       &has_morph_data)) {
             forge_arena_destroy(&gltf_arena);
             SDL_free(gltf_scene);
             return false;
@@ -1009,15 +1065,19 @@ static bool process_mesh(const ToolOptions *opts)
          * Runs on the entire merged buffer (all submeshes share vertices).
          * Skipped for skinned meshes because the reorder would desync the
          * parallel joint/weight arrays. */
-        if (!has_skin_data) {
+        if (!has_skin_data && !has_morph_data) {
             meshopt_optimizeVertexFetch(vertices, indices, index_count,
                                          vertices, vertex_count,
                                          sizeof(MeshVertex));
         }
 
         if (opts->verbose) {
+            const char *fetch_note = has_skin_data
+                ? " (fetch skipped — skinned)"
+                : has_morph_data ? " (fetch skipped — morphed)"
+                                : " + global fetch";
             SDL_Log("Optimization: per-submesh cache/overdraw%s complete",
-                    has_skin_data ? " (fetch skipped — skinned)" : " + global fetch");
+                    fetch_note);
         }
     }
 
@@ -1214,12 +1274,19 @@ static bool process_mesh(const ToolOptions *opts)
         vertex_stride = (unsigned int)VERTEX_STRIDE_NO_TAN;
     }
 
+    if (has_morph_data) {
+        flags |= FMESH_FLAG_MORPHS;
+    }
+
     /* ── Step 8: Write binary .fmesh ─────────────────────────────────────*/
     bool ok = write_fmesh_v2(opts->output_path, vertices, vertex_count,
                               vertex_stride, all_indices,
                               opts->lod_count, submesh_count,
                               lod_submeshes, lod_errors, flags,
-                              skin_joints, skin_weights, has_skin_data);
+                              skin_joints, skin_weights, has_skin_data,
+                              has_gltf_scene ? gltf_scene : NULL,
+                              has_gltf_scene ? gltf_scene->primitive_count : 0,
+                              has_morph_data);
     if (!ok) {
         SDL_free(vertices);
         SDL_free(all_indices);
@@ -1257,7 +1324,7 @@ static bool process_mesh(const ToolOptions *opts)
     ok = write_meta_json(opts->output_path, opts->input_path,
                           vertex_count, vertex_stride, has_tangents,
                           opts->lod_count, opts->lod_ratios, submesh_count,
-                          original_vertex_count);
+                          original_vertex_count, has_morph_data);
 
     if (ok && opts->verbose) {
         SDL_Log("Output: '%s' (%u vertices, %d submeshes, %d LODs, "
@@ -1290,7 +1357,10 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
                             unsigned int flags,
                             const Uint16 *skin_joints,
                             const float *skin_weights,
-                            bool has_skin)
+                            bool has_skin,
+                            const ForgeGltfScene *scene,
+                            int prim_count,
+                            bool has_morphs)
 {
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     if (!io) {
@@ -1410,6 +1480,117 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
                 SDL_CloseIO(io);
                 return false;
             }
+        }
+    }
+
+    /* ── Morph target data ────────────────────────────────────────────────
+     * Appended after index data when FLAG_MORPHS is set.  Layout:
+     *   morph_target_count  u32
+     *   morph_attr_flags    u32   (bit 0=pos, bit 1=normal, bit 2=tangent)
+     *   Per target (target_count x 68 bytes):
+     *     name              64B
+     *     default_weight    f32
+     *   Per target, contiguous delta arrays:
+     *     position_deltas[vertex_count x 3] if attr bit 0
+     *     normal_deltas[vertex_count x 3]   if attr bit 1
+     *     tangent_deltas[vertex_count x 3]  if attr bit 2 */
+    if (has_morphs && scene && prim_count > 0) {
+        /* Use first primitive's morph target data (all prims share targets) */
+        const ForgeGltfPrimitive *first_prim = &scene->primitives[0];
+        uint32_t mt_count = (uint32_t)first_prim->morph_target_count;
+
+        /* Determine which attributes have deltas */
+        uint32_t attr_flags = 0;
+        int ti;
+        for (ti = 0; ti < first_prim->morph_target_count; ti++) {
+            if (first_prim->morph_targets[ti].position_deltas)
+                attr_flags |= FMESH_MORPH_ATTR_POSITION;
+            if (first_prim->morph_targets[ti].normal_deltas)
+                attr_flags |= FMESH_MORPH_ATTR_NORMAL;
+            if (first_prim->morph_targets[ti].tangent_deltas)
+                attr_flags |= FMESH_MORPH_ATTR_TANGENT;
+        }
+
+        /* Morph header */
+        ok = ok && write_u32_le(io, mt_count);
+        ok = ok && write_u32_le(io, attr_flags);
+
+        /* Per-target metadata */
+        /* Find the mesh that owns the first primitive for default weights */
+        const ForgeGltfMesh *owner_mesh = NULL;
+        int mi;
+        for (mi = 0; mi < scene->mesh_count; mi++) {
+            const ForgeGltfMesh *m = &scene->meshes[mi];
+            if (m->first_primitive == 0 && m->primitive_count > 0) {
+                owner_mesh = m;
+                break;
+            }
+        }
+
+        for (ti = 0; ti < (int)mt_count; ti++) {
+            /* TODO: glTF supports authored names via mesh.extras.targetNames;
+             * currently we generate sequential names ("target_0", etc.). */
+            char name_buf[64];
+            SDL_memset(name_buf, 0, sizeof(name_buf));
+            SDL_snprintf(name_buf, sizeof(name_buf), "target_%d", ti);
+            ok = ok && (SDL_WriteIO(io, name_buf, 64) == 64);
+
+            float def_weight = 0.0f;
+            if (owner_mesh && owner_mesh->default_weights &&
+                ti < owner_mesh->default_weight_count) {
+                def_weight = owner_mesh->default_weights[ti];
+            }
+            ok = ok && write_float_le(io, def_weight);
+        }
+
+        /* Per-target delta data.  Use size_t for the loop bound to avoid
+         * overflow when vertex_count * 3 exceeds UINT32_MAX. */
+        size_t delta_count = (size_t)vertex_count * 3;
+        for (ti = 0; ti < (int)mt_count; ti++) {
+            const ForgeGltfMorphTarget *mt = &first_prim->morph_targets[ti];
+
+            if (attr_flags & FMESH_MORPH_ATTR_POSITION) {
+                size_t vi;
+                if (mt->position_deltas) {
+                    for (vi = 0; vi < delta_count; vi++) {
+                        ok = ok && write_float_le(io, mt->position_deltas[vi]);
+                    }
+                } else {
+                    for (vi = 0; vi < delta_count; vi++) {
+                        ok = ok && write_float_le(io, 0.0f);
+                    }
+                }
+            }
+            if (attr_flags & FMESH_MORPH_ATTR_NORMAL) {
+                size_t vi;
+                if (mt->normal_deltas) {
+                    for (vi = 0; vi < delta_count; vi++) {
+                        ok = ok && write_float_le(io, mt->normal_deltas[vi]);
+                    }
+                } else {
+                    for (vi = 0; vi < delta_count; vi++) {
+                        ok = ok && write_float_le(io, 0.0f);
+                    }
+                }
+            }
+            if (attr_flags & FMESH_MORPH_ATTR_TANGENT) {
+                size_t vi;
+                if (mt->tangent_deltas) {
+                    for (vi = 0; vi < delta_count; vi++) {
+                        ok = ok && write_float_le(io, mt->tangent_deltas[vi]);
+                    }
+                } else {
+                    for (vi = 0; vi < delta_count; vi++) {
+                        ok = ok && write_float_le(io, 0.0f);
+                    }
+                }
+            }
+        }
+
+        if (!ok) {
+            SDL_Log("Error: failed writing morph target data");
+            SDL_CloseIO(io);
+            return false;
         }
     }
 
@@ -1621,7 +1802,8 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              unsigned int vertex_count, unsigned int vertex_stride,
                              bool has_tangents, int lod_count,
                              const float *lod_ratios, int submesh_count,
-                             unsigned int original_vertex_count)
+                             unsigned int original_vertex_count,
+                             bool has_morphs)
 {
     /* Build the .meta.json path by replacing the .fmesh extension.
      * Example: "model.fmesh" -> "model.meta.json" */
@@ -1660,6 +1842,7 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
     SDL_IOprintf(io, "  \"vertex_count\": %u,\n", vertex_count);
     SDL_IOprintf(io, "  \"vertex_stride\": %u,\n", vertex_stride);
     SDL_IOprintf(io, "  \"has_tangents\": %s,\n", has_tangents ? "true" : "false");
+    SDL_IOprintf(io, "  \"has_morphs\": %s,\n", has_morphs ? "true" : "false");
     SDL_IOprintf(io, "  \"submesh_count\": %d,\n", submesh_count);
     SDL_IOprintf(io, "  \"lod_count\": %d,\n", lod_count);
     SDL_IOprintf(io, "  \"lod_ratios\": [");

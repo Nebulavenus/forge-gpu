@@ -249,6 +249,13 @@ class MeshPlugin(AssetPlugin):
                     exc,
                 )
 
+        # -- Log morph target metadata if present -----------------------------
+        if metadata.get("has_morphs"):
+            log.info(
+                "  morph targets detected in %s",
+                source.name,
+            )
+
         return AssetResult(
             source=source,
             output=output_path,

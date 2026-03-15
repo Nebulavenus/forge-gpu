@@ -4875,6 +4875,142 @@ static bool write_test_fmesh_v3(const char *path, uint32_t stride,
     return true;
 }
 
+/* Write a minimal v3 .fmesh with morph target data appended after indices.
+ * morph_target_count targets with the specified morph_attr_flags.
+ * vertex_count is fixed at 3. */
+static bool write_test_fmesh_v3_morph(const char *path, uint32_t stride,
+                                       uint32_t base_flags,
+                                       uint32_t morph_target_count,
+                                       uint32_t morph_attr_flags)
+{
+    uint32_t vertex_count = 3;
+    uint32_t lod_count = 1;
+    uint32_t submesh_count = 1;
+    uint32_t flags = base_flags | FORGE_PIPELINE_FLAG_MORPHS;
+
+    uint8_t header[32];
+    SDL_memset(header, 0, sizeof(header));
+    SDL_memcpy(header, "FMSH", 4);
+    write_u32(header, 4, 3);  /* version */
+    write_u32(header, 8, vertex_count);
+    write_u32(header, 12, stride);
+    write_u32(header, 16, lod_count);
+    write_u32(header, 20, flags);
+    write_u32(header, 24, submesh_count);
+
+    /* LOD-submesh table: for each LOD: target_error(f32), then per submesh:
+     * index_count(u32), index_offset(u32), material_index(i32).
+     * 1 LOD × (4 + 1 submesh × 12) = 16 bytes total. */
+    uint8_t lod_table[16];
+    write_f32(lod_table, 0, 0.0f);  /* target_error */
+    write_u32(lod_table, 4, 3);     /* submesh index_count */
+    write_u32(lod_table, 8, 0);     /* submesh index_offset */
+    write_i32(lod_table, 12, -1);   /* submesh material_index */
+
+    size_t verts_size = (size_t)vertex_count * stride;
+    uint8_t *verts = (uint8_t *)SDL_calloc(1, verts_size);
+    if (!verts) return false;
+
+    uint8_t indices[12];
+    write_u32(indices, 0, 0);
+    write_u32(indices, 4, 1);
+    write_u32(indices, 8, 2);
+
+    /* Morph header: target_count(u32) + attr_flags(u32) */
+    uint8_t morph_header[FORGE_PIPELINE_MORPH_HEADER_SIZE];
+    write_u32(morph_header, 0, morph_target_count);
+    write_u32(morph_header, 4, morph_attr_flags);
+
+    /* Per-target metadata: name + default_weight = MORPH_META_SIZE each */
+    if (morph_target_count > SIZE_MAX / FORGE_PIPELINE_MORPH_META_SIZE) {
+        SDL_Log("write_test_fmesh_v3_morph: meta_size overflow");
+        SDL_free(verts);
+        return false;
+    }
+    size_t meta_size = (size_t)morph_target_count * FORGE_PIPELINE_MORPH_META_SIZE;
+    uint8_t *morph_meta = NULL;
+    if (meta_size > 0) {
+        morph_meta = (uint8_t *)SDL_calloc(1, meta_size);
+        if (!morph_meta) { SDL_free(verts); return false; }
+    }
+    for (uint32_t ti = 0; ti < morph_target_count; ti++) {
+        size_t off = (size_t)ti * FORGE_PIPELINE_MORPH_META_SIZE;
+        SDL_snprintf((char *)&morph_meta[off],
+                     FORGE_PIPELINE_MORPH_NAME_LEN, "target_%u", ti);
+        write_f32(morph_meta, (uint32_t)(off + FORGE_PIPELINE_MORPH_NAME_LEN),
+                  0.5f); /* default_weight */
+    }
+
+    /* Delta data: count attrs set × target_count × vertex_count × 3 floats */
+    uint32_t attrs_per_target = 0;
+    if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_POSITION) attrs_per_target++;
+    if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_NORMAL) attrs_per_target++;
+    if (morph_attr_flags & FORGE_PIPELINE_MORPH_ATTR_TANGENT) attrs_per_target++;
+    size_t delta_floats = 0;
+    size_t delta_bytes = 0;
+    if (attrs_per_target > 0) {
+        size_t t = (size_t)morph_target_count;
+        size_t a = (size_t)attrs_per_target;
+        size_t v = (size_t)vertex_count;
+        if (t > SIZE_MAX / a ||
+            t * a > SIZE_MAX / v ||
+            t * a * v > SIZE_MAX / 3u ||
+            t * a * v * 3u > SIZE_MAX / sizeof(float)) {
+            SDL_Log("write_test_fmesh_v3_morph: delta_floats overflow");
+            SDL_free(verts);
+            SDL_free(morph_meta);
+            return false;
+        }
+        delta_floats = t * a * v * 3u;
+        delta_bytes = delta_floats * sizeof(float);
+    }
+    uint8_t *deltas = NULL;
+    if (delta_bytes > 0) {
+        deltas = (uint8_t *)SDL_calloc(1, delta_bytes);
+        if (!deltas) { SDL_free(verts); SDL_free(morph_meta); return false; }
+        /* Fill position deltas with recognizable values */
+        float *df = (float *)deltas;
+        for (size_t i = 0; i < delta_floats; i++) {
+            df[i] = (float)(i + 1) * 0.1f;
+        }
+    }
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("write_test_fmesh_v3_morph: SDL_IOFromFile failed for "
+                "'%s': %s", path, SDL_GetError());
+        SDL_free(verts); SDL_free(morph_meta); SDL_free(deltas);
+        return false;
+    }
+    bool ok = true;
+    ok = ok && (SDL_WriteIO(io, header, sizeof(header)) == sizeof(header));
+    ok = ok && (SDL_WriteIO(io, lod_table, sizeof(lod_table)) == sizeof(lod_table));
+    ok = ok && (SDL_WriteIO(io, verts, verts_size) == verts_size);
+    ok = ok && (SDL_WriteIO(io, indices, sizeof(indices)) == sizeof(indices));
+    ok = ok && (SDL_WriteIO(io, morph_header, sizeof(morph_header)) == sizeof(morph_header));
+    if (meta_size > 0)
+        ok = ok && (SDL_WriteIO(io, morph_meta, meta_size) == meta_size);
+    if (delta_bytes > 0 && deltas)
+        ok = ok && (SDL_WriteIO(io, deltas, delta_bytes) == delta_bytes);
+
+    SDL_free(verts);
+    SDL_free(morph_meta);
+    SDL_free(deltas);
+    bool close_ok = SDL_CloseIO(io);
+    if (!ok || !close_ok) {
+        if (!ok) {
+            SDL_Log("write_test_fmesh_v3_morph: SDL_WriteIO failed for "
+                    "'%s': %s", path, SDL_GetError());
+        }
+        if (!close_ok) {
+            SDL_Log("write_test_fmesh_v3_morph: SDL_CloseIO failed: %s",
+                    SDL_GetError());
+        }
+        return false;
+    }
+    return true;
+}
+
 static void test_load_skinned_mesh_stride_56(void)
 {
     TEST("load_skinned_mesh_stride_56");
@@ -5024,13 +5160,437 @@ static void test_load_v2_no_skin_flag(void)
 static void test_load_mesh_unknown_flags(void)
 {
     TEST("load_mesh_unknown_flags");
-    /* Build a v3 .fmesh with an unknown flag bit set (bit 2 = 0x4) */
+    /* Build a v3 .fmesh with an unknown flag bit set (bit 3 = 0x8) */
     char path[512];
     temp_path(path, sizeof(path), "test_unknown_flags.fmesh");
-    ASSERT_TRUE(write_test_fmesh_v3(path, 32, 0x4u)); /* bit 2 is not a known flag */
+    enum { TEST_UNKNOWN_MESH_FLAG = (1u << 3) };
+    ASSERT_TRUE(write_test_fmesh_v3(path, 32, TEST_UNKNOWN_MESH_FLAG));
     ForgePipelineMesh mesh;
     bool loaded = forge_pipeline_load_mesh(path, &mesh);
     ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+/* ── Morph target mesh tests ── */
+
+/* Forward declaration — init_identity_node is defined later in the file
+ * (animation runtime test section) but needed by morph anim tests. */
+static void init_identity_node(ForgePipelineSceneNode *node, int32_t parent);
+
+static void test_morph_load_position_only(void)
+{
+    TEST("morph_load_position_only");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_pos.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 2,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(forge_pipeline_has_morph_data(&mesh));
+    ASSERT_TRUE(mesh.morph_target_count == 2);
+    ASSERT_TRUE(mesh.morph_attribute_flags == FORGE_PIPELINE_MORPH_ATTR_POSITION);
+    ASSERT_TRUE(mesh.morph_targets != NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].position_deltas != NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].normal_deltas == NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].tangent_deltas == NULL);
+    /* Check default weight */
+    ASSERT_TRUE(float_eq(mesh.morph_targets[0].default_weight, 0.5f));
+    /* Check first delta value */
+    ASSERT_TRUE(float_eq(mesh.morph_targets[0].position_deltas[0], 0.1f));
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_load_pos_and_normal(void)
+{
+    TEST("morph_load_pos_and_normal");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_pos_norm.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 1,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION | FORGE_PIPELINE_MORPH_ATTR_NORMAL));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(mesh.morph_target_count == 1);
+    ASSERT_TRUE(mesh.morph_attribute_flags ==
+        (FORGE_PIPELINE_MORPH_ATTR_POSITION | FORGE_PIPELINE_MORPH_ATTR_NORMAL));
+    ASSERT_TRUE(mesh.morph_targets[0].position_deltas != NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].normal_deltas != NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].tangent_deltas == NULL);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_load_all_attrs(void)
+{
+    TEST("morph_load_all_attrs");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_all.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 48,
+        FORGE_PIPELINE_FLAG_TANGENTS, 1,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION | FORGE_PIPELINE_MORPH_ATTR_NORMAL |
+        FORGE_PIPELINE_MORPH_ATTR_TANGENT));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(mesh.morph_target_count == 1);
+    ASSERT_TRUE(mesh.morph_attribute_flags ==
+        (FORGE_PIPELINE_MORPH_ATTR_POSITION | FORGE_PIPELINE_MORPH_ATTR_NORMAL |
+         FORGE_PIPELINE_MORPH_ATTR_TANGENT));
+    ASSERT_TRUE(mesh.morph_targets[0].position_deltas != NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].normal_deltas != NULL);
+    ASSERT_TRUE(mesh.morph_targets[0].tangent_deltas != NULL);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_with_skin(void)
+{
+    TEST("morph_with_skin");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_skin.fmesh");
+    /* FLAG_SKINNED + FLAG_MORPHS, skin stride 56 */
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 56,
+        FORGE_PIPELINE_FLAG_SKINNED, 1,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(forge_pipeline_has_skin_data(&mesh));
+    ASSERT_TRUE(forge_pipeline_has_morph_data(&mesh));
+    ASSERT_TRUE(mesh.morph_target_count == 1);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_bad_target_count(void)
+{
+    TEST("morph_bad_target_count");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_bad_count.fmesh");
+    /* morph_target_count exceeds MAX_MORPH_TARGETS */
+    enum { TEST_TOO_MANY_MORPHS = FORGE_PIPELINE_MAX_MORPH_TARGETS + 1u };
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, TEST_TOO_MANY_MORPHS,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_bad_target_count_zero(void)
+{
+    TEST("morph_bad_target_count_zero");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_zero_count.fmesh");
+    /* morph_target_count = 0 with FLAG_MORPHS set is invalid */
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 0,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION));
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_bad_attr_flags_zero(void)
+{
+    TEST("morph_bad_attr_flags_zero");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_zero_flags.fmesh");
+    /* morph_attr_flags = 0 is invalid (no attributes) */
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 1, 0x0));
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_bad_attr_flags_unknown(void)
+{
+    TEST("morph_bad_attr_flags_unknown");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_unk_flags.fmesh");
+    /* Include POSITION so the file isn't rejected for missing required
+     * attributes — isolates validation of the unknown bit. */
+    enum { TEST_UNKNOWN_MORPH_ATTR_FLAG = (1u << 3) };
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 1,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION | TEST_UNKNOWN_MORPH_ATTR_FLAG));
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(!forge_pipeline_load_mesh(path, &mesh));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_truncated_data(void)
+{
+    TEST("morph_truncated_data");
+    /* Write a valid header but truncate before morph delta data */
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_trunc.fmesh");
+
+    uint32_t vertex_count = 3, stride = 32, lod_count = 1, submesh_count = 1;
+    uint32_t flags = FORGE_PIPELINE_FLAG_MORPHS;
+
+    uint8_t header[32];
+    SDL_memset(header, 0, sizeof(header));
+    SDL_memcpy(header, "FMSH", 4);
+    write_u32(header, 4, 3);
+    write_u32(header, 8, vertex_count);
+    write_u32(header, 12, stride);
+    write_u32(header, 16, lod_count);
+    write_u32(header, 20, flags);
+    write_u32(header, 24, submesh_count);
+
+    /* LOD-submesh table: target_error + submesh (index_count, offset, mat) */
+    uint8_t lod_table[16];
+    write_f32(lod_table, 0, 0.0f);
+    write_u32(lod_table, 4, 3);
+    write_u32(lod_table, 8, 0);
+    write_i32(lod_table, 12, -1);
+
+    size_t verts_size = (size_t)vertex_count * stride;
+    uint8_t *verts = (uint8_t *)SDL_calloc(1, verts_size);
+    ASSERT_TRUE(verts != NULL);
+
+    uint8_t indices[12];
+    write_u32(indices, 0, 0);
+    write_u32(indices, 4, 1);
+    write_u32(indices, 8, 2);
+
+    /* Morph header says 2 targets with position, but no delta data follows */
+    uint8_t morph_header[FORGE_PIPELINE_MORPH_HEADER_SIZE];
+    write_u32(morph_header, 0, 2);
+    write_u32(morph_header, 4, FORGE_PIPELINE_MORPH_ATTR_POSITION);
+
+    /* Only write metadata, no actual delta data — should cause truncation */
+    uint8_t morph_meta[2 * FORGE_PIPELINE_MORPH_META_SIZE];
+    SDL_memset(morph_meta, 0, sizeof(morph_meta));
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("test_morph_truncated_data: SDL_IOFromFile failed: %s",
+                SDL_GetError());
+        SDL_free(verts);
+        cleanup_file(path);
+        fail_count++;
+        return;
+    }
+    bool wok = true;
+    wok = wok && (SDL_WriteIO(io, header, sizeof(header)) == sizeof(header));
+    wok = wok && (SDL_WriteIO(io, lod_table, sizeof(lod_table)) == sizeof(lod_table));
+    wok = wok && (SDL_WriteIO(io, verts, verts_size) == verts_size);
+    SDL_free(verts);
+    wok = wok && (SDL_WriteIO(io, indices, sizeof(indices)) == sizeof(indices));
+    wok = wok && (SDL_WriteIO(io, morph_header, sizeof(morph_header)) == sizeof(morph_header));
+    wok = wok && (SDL_WriteIO(io, morph_meta, sizeof(morph_meta)) == sizeof(morph_meta));
+    bool close_ok = SDL_CloseIO(io);
+    if (!close_ok) {
+        SDL_Log("test_morph_truncated_data: SDL_CloseIO failed: %s",
+                SDL_GetError());
+    }
+    ASSERT_TRUE(close_ok);
+    ASSERT_TRUE(wok);
+
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(!loaded);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_flag_without_data(void)
+{
+    TEST("morph_flag_without_data");
+    /* FLAG_MORPHS set but file ends at indices — no morph section */
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_no_data.fmesh");
+    /* Use write_test_fmesh_v3 with FLAG_MORPHS bit but no morph data */
+    ASSERT_TRUE(write_test_fmesh_v3(path, 32, FORGE_PIPELINE_FLAG_MORPHS));
+    ForgePipelineMesh mesh;
+    bool loaded = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(!loaded); /* should fail — truncated at morph header */
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_free_null(void)
+{
+    TEST("morph_free_null");
+    /* Verify free_mesh handles zero morph data gracefully */
+    ForgePipelineMesh mesh;
+    SDL_memset(&mesh, 0, sizeof(mesh));
+    forge_pipeline_free_mesh(&mesh);
+    ASSERT_TRUE(mesh.morph_targets == NULL);
+    ASSERT_TRUE(mesh.morph_target_count == 0);
+    END_TEST();
+}
+
+static void test_morph_double_free(void)
+{
+    TEST("morph_double_free");
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_dbl.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 1,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION));
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(forge_pipeline_load_mesh(path, &mesh));
+    forge_pipeline_free_mesh(&mesh);
+    /* Second free should be safe (struct zeroed) */
+    forge_pipeline_free_mesh(&mesh);
+    ASSERT_TRUE(mesh.morph_targets == NULL);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_v3_flag_accepted(void)
+{
+    TEST("morph_v3_flag_accepted");
+    /* Verify that FLAG_MORPHS is accepted on v3 files and morph data
+     * loads correctly with a single position-only target. */
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_v3_ok.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3_morph(path, 32, 0, 1,
+        FORGE_PIPELINE_MORPH_ATTR_POSITION));
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(forge_pipeline_load_mesh(path, &mesh));
+    ASSERT_TRUE(mesh.morph_target_count == 1);
+    forge_pipeline_free_mesh(&mesh);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_anim_path_accepted(void)
+{
+    TEST("morph_anim_path_accepted");
+    /* Verify MORPH_WEIGHTS path (3) is accepted by the animation loader.
+     * Build a minimal .fanim with a morph weight channel. */
+    char path[512];
+    temp_path(path, sizeof(path), "test_morph_anim.fanim");
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("test_morph_anim_path_accepted: SDL_IOFromFile failed: %s",
+                SDL_GetError());
+        cleanup_file(path);
+        fail_count++;
+        return;
+    }
+    bool wok = true;
+
+    /* Header: magic + version + clip_count */
+    wok = wok && (SDL_WriteIO(io, "FANM", 4) == 4);
+    uint8_t buf[4];
+    write_u32(buf, 0, 1); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* version */
+    write_u32(buf, 0, 1); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* clip_count */
+
+    /* Clip header: name(64) + duration(f32) + sampler_count + channel_count */
+    uint8_t name[64];
+    SDL_memset(name, 0, sizeof(name));
+    SDL_strlcpy((char *)name, "morph_test", sizeof(name));
+    wok = wok && (SDL_WriteIO(io, name, sizeof(name)) == sizeof(name));
+    write_f32(buf, 0, 1.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* duration */
+    write_u32(buf, 0, 1); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* sampler_count */
+    write_u32(buf, 0, 1); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* channel_count */
+
+    /* Sampler: 2 keyframes, 2 components (2 morph targets) */
+    write_u32(buf, 0, 2); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* keyframe_count */
+    write_u32(buf, 0, 2); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* value_components */
+    write_u32(buf, 0, 0); wok = wok && (SDL_WriteIO(io, buf, 4) == 4); /* interpolation = LINEAR */
+    /* timestamps */
+    write_f32(buf, 0, 0.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_f32(buf, 0, 1.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    /* values: 2 keyframes × 2 components = 4 floats */
+    write_f32(buf, 0, 0.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_f32(buf, 0, 0.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_f32(buf, 0, 1.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_f32(buf, 0, 1.0f); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    /* Channel: target_node=0, target_path=MORPH_WEIGHTS, sampler=0 */
+    write_i32(buf, 0, 0); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, FORGE_PIPELINE_ANIM_MORPH_WEIGHTS);
+    wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+    write_u32(buf, 0, 0); wok = wok && (SDL_WriteIO(io, buf, 4) == 4);
+
+    bool close_ok = SDL_CloseIO(io);
+    if (!close_ok) {
+        SDL_Log("test_morph_anim_path_accepted: SDL_CloseIO failed: %s",
+                SDL_GetError());
+    }
+    ASSERT_TRUE(close_ok);
+    ASSERT_TRUE(wok);
+
+    ForgePipelineAnimFile anim;
+    bool loaded = forge_pipeline_load_animation(path, &anim);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(anim.clip_count == 1);
+    ASSERT_TRUE(anim.clips[0].channel_count == 1);
+    ASSERT_TRUE(anim.clips[0].channels[0].target_path ==
+                FORGE_PIPELINE_ANIM_MORPH_WEIGHTS);
+    ASSERT_TRUE(anim.clips[0].samplers[0].value_components == 2);
+    forge_pipeline_free_animation(&anim);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_morph_anim_apply_skips_weights(void)
+{
+    TEST("morph_anim_apply_skips_weights");
+    /* Verify that morph weight channels don't modify node TRS */
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+    float orig_tx = node.translation[0];
+
+    static float timestamps[2] = { 0.0f, 1.0f };
+    static float values[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 2;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_MORPH_WEIGHTS;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    /* Node translation should be unchanged */
+    ASSERT_TRUE(float_eq(node.translation[0], orig_tx));
+    END_TEST();
+}
+
+static void test_morph_backward_compat_no_flag(void)
+{
+    TEST("morph_backward_compat_no_flag");
+    /* v3 .fmesh without morph flag should load with zero morph data */
+    char path[512];
+    temp_path(path, sizeof(path), "test_no_morph.fmesh");
+    ASSERT_TRUE(write_test_fmesh_v3(path, 32, 0));
+    ForgePipelineMesh mesh;
+    ASSERT_TRUE(forge_pipeline_load_mesh(path, &mesh));
+    ASSERT_TRUE(!forge_pipeline_has_morph_data(&mesh));
+    ASSERT_TRUE(mesh.morph_target_count == 0);
+    ASSERT_TRUE(mesh.morph_targets == NULL);
+    forge_pipeline_free_mesh(&mesh);
     cleanup_file(path);
     END_TEST();
 }
@@ -6194,6 +6754,25 @@ int main(int argc, char *argv[])
     /* ── Unknown flag bits (1 test) ── */
     SDL_Log("\nUnknown flag bits:");
     test_load_mesh_unknown_flags();
+
+    /* ── Morph target mesh loading (16 tests) ── */
+    SDL_Log("\nMorph target mesh loading:");
+    test_morph_load_position_only();
+    test_morph_load_pos_and_normal();
+    test_morph_load_all_attrs();
+    test_morph_with_skin();
+    test_morph_bad_target_count();
+    test_morph_bad_target_count_zero();
+    test_morph_bad_attr_flags_zero();
+    test_morph_bad_attr_flags_unknown();
+    test_morph_truncated_data();
+    test_morph_flag_without_data();
+    test_morph_free_null();
+    test_morph_double_free();
+    test_morph_v3_flag_accepted();
+    test_morph_anim_path_accepted();
+    test_morph_anim_apply_skips_weights();
+    test_morph_backward_compat_no_flag();
 
     /* ── Path traversal rejection (3 tests) ── */
     SDL_Log("\nPath traversal rejection:");

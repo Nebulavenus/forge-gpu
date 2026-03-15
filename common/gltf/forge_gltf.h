@@ -68,6 +68,8 @@ static bool forge_gltf__safe_mul(size_t a, size_t b, size_t *out)
 #define FORGE_GLTF_MAX_ANIM_CHANNELS  128
 #define FORGE_GLTF_MAX_ANIM_SAMPLERS  128
 #define FORGE_GLTF_JOINTS_PER_VERT 4
+#define FORGE_GLTF_MAX_MORPH_TARGETS       8
+#define FORGE_GLTF_MORPH_DELTA_COMPONENTS  3  /* VEC3 per delta */
 
 /* glTF 2.0 spec default for alphaCutoff when alphaMode is MASK. */
 #define FORGE_GLTF_DEFAULT_ALPHA_CUTOFF 0.5f
@@ -107,6 +109,18 @@ typedef struct ForgeGltfVertex {
     vec2 uv;
 } ForgeGltfVertex;
 
+/* ── Morph target (blend shape deltas) ───────────────────────────────────── */
+/* Each morph target stores per-vertex displacement deltas for position,
+ * normal, and/or tangent attributes.  The base mesh vertices are displaced
+ * by: base + weight * delta for each active target.  Delta arrays are
+ * arena-allocated and have vertex_count elements (matching the primitive). */
+
+typedef struct ForgeGltfMorphTarget {
+    float *position_deltas;  /* vertex_count × 3 floats, NULL if absent */
+    float *normal_deltas;    /* vertex_count × 3 floats, NULL if absent */
+    float *tangent_deltas;   /* vertex_count × 3 floats, NULL if absent */
+} ForgeGltfMorphTarget;
+
 /* ── Primitive (one draw call) ────────────────────────────────────────────── */
 /* A primitive is a set of vertices + indices sharing one material.
  * A mesh may contain multiple primitives (one per material). */
@@ -124,6 +138,8 @@ typedef struct ForgeGltfPrimitive {
     Uint16          *joint_indices; /* 4 uint16 per vertex (JOINTS_0) — NULL if absent */
     float           *weights;       /* 4 float  per vertex (WEIGHTS_0) — NULL if absent */
     bool             has_skin_data; /* true if both JOINTS_0 and WEIGHTS_0 present */
+    ForgeGltfMorphTarget *morph_targets;   /* arena-allocated, morph_target_count elements */
+    int                   morph_target_count;
 } ForgeGltfPrimitive;
 
 /* ── Mesh ─────────────────────────────────────────────────────────────────── */
@@ -133,6 +149,8 @@ typedef struct ForgeGltfMesh {
     int  first_primitive;  /* index into scene.primitives[] */
     int  primitive_count;
     char name[FORGE_GLTF_NAME_SIZE];
+    float *default_weights;    /* arena-allocated, default_weight_count elements (from mesh.weights) */
+    int    default_weight_count;
 } ForgeGltfMesh;
 
 /* ── Alpha mode ───────────────────────────────────────────────────────────── */
@@ -231,11 +249,12 @@ typedef struct ForgeGltfSkin {
  * Data pointers reference the loaded binary buffers — no copying needed.
  * They remain valid for the lifetime of the ForgeGltfScene. */
 
-/* Animation channel target path — which TRS component to animate. */
+/* Animation channel target path — TRS components or morph weights. */
 typedef enum ForgeGltfAnimPath {
     FORGE_GLTF_ANIM_TRANSLATION = 0,
     FORGE_GLTF_ANIM_ROTATION    = 1,
-    FORGE_GLTF_ANIM_SCALE       = 2
+    FORGE_GLTF_ANIM_SCALE       = 2,
+    FORGE_GLTF_ANIM_MORPH_WEIGHTS = 3
 } ForgeGltfAnimPath;
 
 /* Component counts for animation target paths. */
@@ -255,14 +274,14 @@ typedef struct ForgeGltfAnimSampler {
     const float           *timestamps;      /* keyframe_count floats              */
     const float           *values;          /* keyframe_count × value_components  */
     int                    keyframe_count;
-    int                    value_components; /* 3 for translation/scale, 4 for rotation */
+    int                    value_components; /* 3 vec3, 4 quat, or N morph weights/keyframe */
     ForgeGltfInterpolation interpolation;
 } ForgeGltfAnimSampler;
 
 /* An animation channel: binds a sampler to a node property. */
 typedef struct ForgeGltfAnimChannel {
     int               target_node;   /* index into scene->nodes[] */
-    ForgeGltfAnimPath target_path;   /* which TRS component       */
+    ForgeGltfAnimPath target_path;   /* TRS component or morph weights */
     int               sampler_index; /* index into parent animation's samplers[] */
 } ForgeGltfAnimChannel;
 
@@ -1082,7 +1101,38 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene,
         ForgeGltfMesh *gm = &scene->meshes[mi];
         gm->first_primitive = scene->primitive_count;
         gm->primitive_count = 0;
+        gm->default_weights = NULL;
+        gm->default_weight_count = 0;
         copy_name(gm->name, sizeof(gm->name), mesh);
+
+        /* Default morph target weights (mesh.weights[]) */
+        const cJSON *weights_arr = cJSON_GetObjectItemCaseSensitive(
+            mesh, "weights");
+        int weight_count = cJSON_GetArraySize(weights_arr);
+        if (weight_count > FORGE_GLTF_MAX_MORPH_TARGETS) {
+            SDL_Log("forge_gltf: mesh %d has %d default morph weights "
+                    "(max %d)", mi, weight_count,
+                    FORGE_GLTF_MAX_MORPH_TARGETS);
+            return false;
+        }
+        if (weight_count > 0) {
+            size_t w_alloc;
+            if (!forge_gltf__safe_mul(weight_count, sizeof(float), &w_alloc)) {
+                SDL_Log("forge_gltf: weights alloc overflow");
+                return false;
+            }
+            gm->default_weights = (float *)forge_arena_alloc(arena, w_alloc);
+            if (!gm->default_weights) {
+                SDL_Log("forge_gltf: arena alloc failed for default weights");
+                return false;
+            }
+            gm->default_weight_count = weight_count;
+            for (int wi = 0; wi < weight_count; wi++) {
+                const cJSON *w = cJSON_GetArrayItem(weights_arr, wi);
+                gm->default_weights[wi] = cJSON_IsNumber(w)
+                    ? (float)w->valuedouble : 0.0f;
+            }
+        }
 
         int prim_count = cJSON_GetArraySize(prims);
         for (int pi = 0; pi < prim_count; pi++) {
@@ -1320,6 +1370,188 @@ static bool forge_gltf__parse_meshes(const cJSON *root, ForgeGltfScene *scene,
                     } else if (j_data && w_data && !w_valid) {
                         SDL_Log("forge_gltf: unsupported WEIGHTS_0 type %d",
                                 w_comp);
+                    }
+                }
+            }
+
+            /* ── Morph targets (blend shapes) ─────────────────────────── */
+            const cJSON *targets_arr = cJSON_GetObjectItemCaseSensitive(
+                prim, "targets");
+            int target_count = cJSON_GetArraySize(targets_arr);
+            if (target_count > FORGE_GLTF_MAX_MORPH_TARGETS) {
+                SDL_Log("forge_gltf: primitive %d has %d morph targets "
+                        "(max %d)", pi, target_count,
+                        FORGE_GLTF_MAX_MORPH_TARGETS);
+                return false;
+            }
+            if (target_count > 0) {
+                if (gm->default_weight_count > 0 &&
+                    gm->default_weight_count != target_count) {
+                    SDL_Log("forge_gltf: mesh %d default_weight_count %d "
+                            "does not match primitive %d "
+                            "morph_target_count %d",
+                            mi, gm->default_weight_count, pi,
+                            target_count);
+                    return false;
+                }
+                size_t mt_alloc;
+                if (!forge_gltf__safe_mul(target_count,
+                        sizeof(ForgeGltfMorphTarget), &mt_alloc)) {
+                    SDL_Log("forge_gltf: morph target alloc overflow");
+                    return false;
+                }
+                gp->morph_targets = (ForgeGltfMorphTarget *)
+                    forge_arena_alloc(arena, mt_alloc);
+                if (!gp->morph_targets) {
+                    SDL_Log("forge_gltf: arena alloc failed for morph targets");
+                    return false;
+                }
+                SDL_memset(gp->morph_targets, 0, mt_alloc);
+                gp->morph_target_count = target_count;
+
+                for (int ti = 0; ti < target_count; ti++) {
+                    const cJSON *tgt = cJSON_GetArrayItem(targets_arr, ti);
+                    ForgeGltfMorphTarget *mt = &gp->morph_targets[ti];
+
+                    /* POSITION deltas (required for every morph target) */
+                    const cJSON *mt_pos_acc = cJSON_GetObjectItemCaseSensitive(
+                        tgt, "POSITION");
+                    if (!cJSON_IsNumber(mt_pos_acc)) {
+                        SDL_Log("forge_gltf: morph target %d missing "
+                                "POSITION accessor", ti);
+                        return false;
+                    }
+                    {
+                        int mt_count = 0, mt_comp = 0, mt_num = 0;
+                        const float *mt_data = (const float *)
+                            forge_gltf__get_accessor(root, scene,
+                                mt_pos_acc->valueint,
+                                &mt_count, &mt_comp, &mt_num);
+                        if (!mt_data
+                            || mt_comp != FORGE_GLTF_FLOAT
+                            || mt_num != FORGE_GLTF_MORPH_DELTA_COMPONENTS
+                            || mt_count != (int)gp->vertex_count) {
+                            SDL_Log("forge_gltf: morph target %d has "
+                                    "invalid POSITION deltas (count=%d, "
+                                    "comp_type=%d, num_components=%d, "
+                                    "vertex_count=%u)",
+                                    ti, mt_count, mt_comp, mt_num,
+                                    gp->vertex_count);
+                            return false;
+                        }
+                        size_t floats_needed, d_bytes;
+                        if (!forge_gltf__safe_mul((size_t)mt_count,
+                                FORGE_GLTF_MORPH_DELTA_COMPONENTS,
+                                &floats_needed) ||
+                            !forge_gltf__safe_mul(floats_needed,
+                                sizeof(float), &d_bytes)) {
+                            SDL_Log("forge_gltf: morph target %d "
+                                    "position delta size overflow", ti);
+                            return false;
+                        }
+                        mt->position_deltas = (float *)
+                            forge_arena_alloc(arena, d_bytes);
+                        if (!mt->position_deltas) {
+                            SDL_Log("forge_gltf: failed to allocate "
+                                    "morph target %d position deltas",
+                                    ti);
+                            return false;
+                        }
+                        SDL_memcpy(mt->position_deltas, mt_data, d_bytes);
+                    }
+
+                    /* NORMAL deltas (optional — fail if present but invalid) */
+                    const cJSON *mt_norm_acc = cJSON_GetObjectItemCaseSensitive(
+                        tgt, "NORMAL");
+                    if (mt_norm_acc && !cJSON_IsNumber(mt_norm_acc)) {
+                        SDL_Log("forge_gltf: morph target %d has non-numeric "
+                                "NORMAL accessor", ti);
+                        return false;
+                    }
+                    if (cJSON_IsNumber(mt_norm_acc)) {
+                        int mt_count = 0, mt_comp = 0, mt_num = 0;
+                        const float *mt_data = (const float *)
+                            forge_gltf__get_accessor(root, scene,
+                                mt_norm_acc->valueint,
+                                &mt_count, &mt_comp, &mt_num);
+                        if (!mt_data
+                            || mt_comp != FORGE_GLTF_FLOAT
+                            || mt_num != FORGE_GLTF_MORPH_DELTA_COMPONENTS
+                            || mt_count != (int)gp->vertex_count) {
+                            SDL_Log("forge_gltf: morph target %d has "
+                                    "invalid NORMAL deltas (count=%d, "
+                                    "comp_type=%d, num_components=%d, "
+                                    "vertex_count=%u)",
+                                    ti, mt_count, mt_comp, mt_num,
+                                    gp->vertex_count);
+                            return false;
+                        }
+                        size_t floats_needed, d_bytes;
+                        if (!forge_gltf__safe_mul((size_t)mt_count,
+                                FORGE_GLTF_MORPH_DELTA_COMPONENTS,
+                                &floats_needed) ||
+                            !forge_gltf__safe_mul(floats_needed,
+                                sizeof(float), &d_bytes)) {
+                            SDL_Log("forge_gltf: morph target %d "
+                                    "normal delta size overflow", ti);
+                            return false;
+                        }
+                        mt->normal_deltas = (float *)
+                            forge_arena_alloc(arena, d_bytes);
+                        if (!mt->normal_deltas) {
+                            SDL_Log("forge_gltf: failed to allocate "
+                                    "morph target %d normal deltas",
+                                    ti);
+                            return false;
+                        }
+                        SDL_memcpy(mt->normal_deltas, mt_data, d_bytes);
+                    }
+
+                    /* TANGENT deltas (optional, VEC3 — no handedness delta) */
+                    const cJSON *mt_tan_acc = cJSON_GetObjectItemCaseSensitive(
+                        tgt, "TANGENT");
+                    if (mt_tan_acc && !cJSON_IsNumber(mt_tan_acc)) {
+                        SDL_Log("forge_gltf: morph target %d has non-numeric "
+                                "TANGENT accessor", ti);
+                        return false;
+                    }
+                    if (cJSON_IsNumber(mt_tan_acc)) {
+                        int mt_count = 0, mt_comp = 0, mt_num = 0;
+                        const float *mt_data = (const float *)
+                            forge_gltf__get_accessor(root, scene,
+                                mt_tan_acc->valueint,
+                                &mt_count, &mt_comp, &mt_num);
+                        if (!mt_data
+                            || mt_comp != FORGE_GLTF_FLOAT
+                            || mt_num != FORGE_GLTF_MORPH_DELTA_COMPONENTS
+                            || mt_count != (int)gp->vertex_count) {
+                            SDL_Log("forge_gltf: morph target %d has "
+                                    "invalid TANGENT deltas (count=%d, "
+                                    "comp_type=%d, num_components=%d, "
+                                    "vertex_count=%u)",
+                                    ti, mt_count, mt_comp, mt_num,
+                                    gp->vertex_count);
+                            return false;
+                        }
+                        size_t floats_needed, d_bytes;
+                        if (!forge_gltf__safe_mul((size_t)mt_count,
+                                FORGE_GLTF_MORPH_DELTA_COMPONENTS,
+                                &floats_needed) ||
+                            !forge_gltf__safe_mul(floats_needed,
+                                sizeof(float), &d_bytes)) {
+                            SDL_Log("forge_gltf: morph target %d "
+                                    "tangent delta size overflow", ti);
+                            return false;
+                        }
+                        mt->tangent_deltas = (float *)
+                            forge_arena_alloc(arena, d_bytes);
+                        if (!mt->tangent_deltas) {
+                            SDL_Log("forge_gltf: failed to allocate "
+                                    "morph target %d tangent deltas",
+                                    ti);
+                            return false;
+                        }
+                        SDL_memcpy(mt->tangent_deltas, mt_data, d_bytes);
                     }
                 }
             }
@@ -2001,14 +2233,20 @@ static bool forge_gltf__parse_animations(const cJSON *root,
                 root, scene, output_json->valueint,
                 &out_count, &out_comp, &out_num);
             if (!values || out_comp != FORGE_GLTF_FLOAT
-                || out_count != in_count) {
+                || out_count < in_count
+                || (out_count % in_count) != 0) {
                 continue;
             }
 
             temp_samp.timestamps      = timestamps;
             temp_samp.values           = values;
             temp_samp.keyframe_count   = in_count;
-            temp_samp.value_components = out_num;
+            /* For TRS samplers out_count == in_count, so the multiplier
+             * is 1 and value_components equals out_num (3 or 4).  For
+             * morph-weight samplers the output accessor is SCALAR with
+             * count = keyframe_count × target_count, giving the actual
+             * number of weights per keyframe. */
+            temp_samp.value_components = out_num * (out_count / in_count);
 
             /* Track max timestamp for clip duration. */
             float last_t = timestamps[in_count - 1];
@@ -2069,8 +2307,10 @@ static bool forge_gltf__parse_animations(const cJSON *root,
                 anim_path = FORGE_GLTF_ANIM_ROTATION;
             } else if (SDL_strcmp(path_json->valuestring, "scale") == 0) {
                 anim_path = FORGE_GLTF_ANIM_SCALE;
+            } else if (SDL_strcmp(path_json->valuestring, "weights") == 0) {
+                anim_path = FORGE_GLTF_ANIM_MORPH_WEIGHTS;
             } else {
-                /* Skip "weights" and unknown paths. */
+                /* Skip unknown paths. */
                 continue;
             }
 
@@ -2087,15 +2327,30 @@ static bool forge_gltf__parse_animations(const cJSON *root,
              * A mismatch would cause out-of-bounds reads in evaluation. */
             const ForgeGltfAnimSampler *ref_samp = &anim->samplers[si];
             if (!ref_samp->timestamps || !ref_samp->values) continue;
-            int expected_comp = (anim_path == FORGE_GLTF_ANIM_ROTATION)
-                              ? FORGE_GLTF_ANIM_QUAT_COMPONENTS
-                              : FORGE_GLTF_ANIM_VEC3_COMPONENTS;
-            if (ref_samp->value_components != expected_comp) {
-                SDL_Log("forge_gltf: animation %d channel %d: sampler has "
-                        "%d components, expected %d for '%s'",
-                        ai, ci, ref_samp->value_components,
-                        expected_comp, path_json->valuestring);
-                continue;
+            /* Morph weights have variable component count (= target_count).
+             * Validate width against supported morph target limits. */
+            if (anim_path == FORGE_GLTF_ANIM_MORPH_WEIGHTS) {
+                if (ref_samp->value_components < 1
+                    || ref_samp->value_components
+                       > FORGE_GLTF_MAX_MORPH_TARGETS) {
+                    SDL_Log("forge_gltf: animation %d channel %d: "
+                            "sampler has %d morph weights "
+                            "(valid range 1..%d)",
+                            ai, ci, ref_samp->value_components,
+                            FORGE_GLTF_MAX_MORPH_TARGETS);
+                    continue;
+                }
+            } else {
+                int expected_comp = (anim_path == FORGE_GLTF_ANIM_ROTATION)
+                                  ? FORGE_GLTF_ANIM_QUAT_COMPONENTS
+                                  : FORGE_GLTF_ANIM_VEC3_COMPONENTS;
+                if (ref_samp->value_components != expected_comp) {
+                    SDL_Log("forge_gltf: animation %d channel %d: sampler has "
+                            "%d components, expected %d for '%s'",
+                            ai, ci, ref_samp->value_components,
+                            expected_comp, path_json->valuestring);
+                    continue;
+                }
             }
 
             int ni = node_json->valueint;
@@ -2114,7 +2369,7 @@ static bool forge_gltf__parse_animations(const cJSON *root,
         anim->channel_count = stored;
 
         /* Skip animations with no usable channels (e.g. all CUBICSPLINE
-         * samplers or all "weights" channels).  Without this check,
+         * samplers or channels that failed validation).  Without this check,
          * animation_count would include empty placeholder clips. */
         if (anim->channel_count <= 0) {
             SDL_Log("forge_gltf: animation %d has no usable channels, "
