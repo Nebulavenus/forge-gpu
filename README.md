@@ -30,8 +30,8 @@ Planar Reflections
 </tr>
 <tr>
 <td align="center" valign="top">
-<a href="lessons/gpu/32-skinning-animations/"><img src="lessons/gpu/32-skinning-animations/assets/screenshot.png" width="330" alt="Skinning Animations" /></a><br />
-Skinning Animations
+<a href="lessons/gpu/43-pipeline-skinned-animations/"><img src="lessons/gpu/43-pipeline-skinned-animations/assets/screenshot.png" width="330" alt="Pipeline Skinned Animations" /></a><br />
+Pipeline Skinned Animations
 </td>
 <td align="center" valign="top">
 <a href="lessons/gpu/28-ui-rendering/"><img src="lessons/gpu/28-ui-rendering/assets/screenshot.png" width="330" alt="UI Rendering" /></a><br />
