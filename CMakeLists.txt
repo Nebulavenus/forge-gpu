@@ -167,6 +167,11 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/physics/06-resting-contacts-and-friction)
 endif()
 
+# ── Audio Lessons ─────────────────────────────────────────────────────────
+if(NOT FORGE_USE_SHIM)
+    add_subdirectory(lessons/audio/01-audio-basics)
+endif()
+
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────
 # Reusable C tools for the asset pipeline (invoked as subprocesses by Python
 # plugins).  These live at the project level — not scoped to individual
@@ -209,5 +214,6 @@ add_subdirectory(tests/scene)
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(tests/obj)
     add_subdirectory(tests/gltf)
+    add_subdirectory(tests/audio)
     add_subdirectory(tests/pipeline)
 endif()

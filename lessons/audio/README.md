@@ -38,7 +38,7 @@ serve to illustrate and control what the listener hears.
 
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
-| | *Coming soon* | See [PLAN.md](../../PLAN.md) for the roadmap |
+| [01](01-audio-basics/) | Audio Basics | PCM fundamentals, WAV loading, F32 conversion, mixing, SDL audio streams |
 
 ## Shared library
 
@@ -55,10 +55,9 @@ standard camera controls; all lessons include audio-specific controls:
 |---|---|
 | WASD / Arrows | Move camera (3D lessons) |
 | Mouse | Look around (3D lessons) |
+| Space / Shift | Fly up / down (3D lessons) |
 | R | Reset / replay sound |
-| Space | Pause / resume audio |
-| 1–9 | Trigger sound effects (where applicable) |
-| +/- | Adjust master volume |
+| 1–9 | Toggle sound sources (where applicable) |
 | Escape | Release mouse / quit |
 
 ## Prerequisites

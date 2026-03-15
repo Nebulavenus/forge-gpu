@@ -14,20 +14,31 @@ documents its purpose, handles edge cases, and has corresponding tests in
 #include "audio/forge_audio.h"
 ```
 
-The library depends on SDL3 for audio stream management and WAV loading. It
-uses `common/math/forge_math.h` for spatial audio calculations (vectors,
-distance, dot products).
+The library depends on SDL3 for WAV loading and format conversion. It provides
+decode/conversion helpers and a mixer function (`forge_audio_source_mix`) that
+mixes into caller-provided buffers — the audio device and output stream are
+created by lesson code. Later lessons will add spatial audio using
+`common/math/forge_math.h` for vector calculations.
 
 ## API Reference
 
-*The audio library grows with each lesson. API documentation will be added
-as functions are implemented.*
+### Lesson 01 — Audio Basics
 
-### Planned API (from Audio Lessons)
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_load_wav` | `(const char *path, ForgeAudioBuffer *buf) → bool` | Load WAV, convert to F32 stereo 44100 Hz |
+| `forge_audio_buffer_free` | `(ForgeAudioBuffer *buf)` | Free buffer sample data |
+| `forge_audio_buffer_frames` | `(const ForgeAudioBuffer *buf) → int` | Frame count (samples / channels) |
+| `forge_audio_buffer_duration` | `(const ForgeAudioBuffer *buf) → float` | Duration in seconds |
+| `forge_audio_source_create` | `(const ForgeAudioBuffer *buf, float vol, bool loop) → ForgeAudioSource` | Create playback source |
+| `forge_audio_source_reset` | `(ForgeAudioSource *src)` | Rewind cursor to start |
+| `forge_audio_source_progress` | `(const ForgeAudioSource *src) → float` | Playback fraction [0..1] |
+| `forge_audio_source_mix` | `(ForgeAudioSource *src, float *out, int frames)` | Additive mix with volume and pan |
+
+### Planned API (future lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 01 — Audio Basics | `forge_audio_init()`, `forge_audio_load_wav()`, `forge_audio_play()` | Initialization, WAV loading, basic playback |
 | 02 — Sound Effects | `forge_audio_play_oneshot()`, `forge_audio_set_volume()`, `forge_audio_fade()` | One-shot and looping sounds, volume, fading |
 | 03 — Audio Mixing | `forge_audio_mixer_create()`, `forge_audio_mixer_set_volume()`, `forge_audio_mixer_set_pan()` | Multi-source mixing, panning, master volume |
 | 04 — Spatial Audio | `forge_audio_source_set_position()`, `forge_audio_listener_set()`, `forge_audio_attenuation()` | 3D positioning, distance attenuation, Doppler |
@@ -36,12 +47,10 @@ as functions are implemented.*
 ## Design
 
 - **Header-only** — `static inline` functions, no separate compilation unit
-- **Uses SDL3 audio** — `SDL_AudioStream` as the backend for all playback
-- **Uses forge_math** — Vectors (`vec3`) for spatial audio calculations
+- **Uses SDL3 audio** — `SDL_LoadWAV` for decoding and `SDL_AudioStream` for format conversion
+- **No external dependencies** — SDL3 only (WAV loading via `SDL_LoadWAV`);
+  later lessons will add `forge_math.h` for spatial audio calculations
 - **Naming** — `forge_audio_` prefix for functions, `ForgeAudio` for types
-- **No external dependencies** — SDL3 only (WAV loading via `SDL_LoadWAV`)
-- **Thread-safe where needed** — Audio callbacks run on a separate thread;
-  shared state uses SDL atomics or mutexes
 - **Tested** — Every function has tests for correctness and edge cases in
   `tests/audio/`
 
@@ -49,4 +58,4 @@ as functions are implemented.*
 
 | Lesson | What it uses |
 |---|---|
-| *Coming soon* | See [PLAN.md](../../PLAN.md) for the roadmap |
+| [Audio 01](../../lessons/audio/01-audio-basics/) | `forge_audio_load_wav`, `ForgeAudioBuffer`, `ForgeAudioSource`, `forge_audio_source_mix` |

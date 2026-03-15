@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import sys
 
-LESSON_TRACKS = ["gpu", "physics", "ui", "math", "engine", "assets"]
+LESSON_TRACKS = ["gpu", "physics", "ui", "math", "engine", "assets", "audio"]
 
 
 def find_executable(target_name, lesson_dir=None):
@@ -163,8 +163,8 @@ def capture_screenshot(
     output_bmp = os.path.abspath(output_bmp)
     headless = _should_use_headless(headless)
 
-    # Run from the executable's directory so asset paths resolve correctly.
-    exe_dir = os.path.dirname(exe_path)
+    # Run from the repo root so asset paths (assets/...) resolve correctly.
+    repo_root = os.getcwd()
 
     cmd = [exe_path, "--screenshot", output_bmp, "--capture-frame", str(capture_frame)]
     if extra_args:
@@ -193,7 +193,7 @@ def capture_screenshot(
             text=True,
             timeout=120,
             env=env,
-            cwd=exe_dir,
+            cwd=repo_root,
         )
     except subprocess.TimeoutExpired:
         print("Capture timed out after 120 seconds")
@@ -218,8 +218,8 @@ def capture_gif_frames(
     output_dir = os.path.abspath(output_dir)
     headless = _should_use_headless(headless)
 
-    # Run from the executable's directory so asset paths resolve correctly.
-    exe_dir = os.path.dirname(exe_path)
+    # Run from the repo root so asset paths (assets/...) resolve correctly.
+    repo_root = os.getcwd()
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -268,7 +268,7 @@ def capture_gif_frames(
             text=True,
             timeout=300,
             env=env,
-            cwd=exe_dir,
+            cwd=repo_root,
         )
     except subprocess.TimeoutExpired:
         print("GIF capture timed out after 300 seconds")

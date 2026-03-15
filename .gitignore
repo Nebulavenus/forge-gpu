@@ -79,6 +79,12 @@ dist/
 .venv/
 venv/
 
+# Audio files — user-supplied, not distributed (copyright/size)
+assets/audio/*.wav
+assets/audio/*.mp3
+assets/audio/*.ogg
+assets/audio/*.flac
+
 # Audio lesson config — local paths to user-supplied audio files
 lessons/**/audio.conf
 

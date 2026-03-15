@@ -9,6 +9,7 @@ Usage:
     python scripts/run.py gpu/03                  # explicit GPU lesson 03
     python scripts/run.py engine/01               # engine lesson 01
     python scripts/run.py physics/01               # physics lesson 01
+    python scripts/run.py audio/01                # audio lesson 01
     python scripts/run.py                         # list available lessons
 
 Extra arguments after the lesson name are forwarded to the executable:
@@ -24,7 +25,7 @@ LESSONS_DIR = os.path.join(REPO_ROOT, "lessons")
 BUILD_DIR = os.path.join(REPO_ROOT, "build")
 
 # Supported lesson tracks — add new tracks here
-LESSON_TYPES = ("gpu", "math", "engine", "physics")
+LESSON_TYPES = ("gpu", "math", "engine", "physics", "audio")
 
 # Build configurations to search, in priority order
 BUILD_CONFIGS = ["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]
