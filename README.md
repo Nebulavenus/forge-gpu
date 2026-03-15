@@ -1,4 +1,8 @@
-# forge-gpu
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/forge-gpu-logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/forge-gpu-logo-light.svg">
+  <img alt="forge-gpu" src="assets/forge-gpu-logo-dark.svg" width="440">
+</picture>
 
 forge-gpu aims to be a helpful guide to developing real-time graphics with
 SDL3's GPU API and building games. The project is written using C99, and
