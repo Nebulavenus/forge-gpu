@@ -172,12 +172,20 @@ $$
 h = \text{clamp}\!\left(\frac{1}{2} + \frac{d_2 - d_1}{2k}, 0, 1\right)
 $$
 
+The `sdf_smooth_union` function blends the two distances:
+
 $$
-\text{sdf}\_\text{smooth}\_\text{union}(d_1, d_2, k) = \text{lerp}(d_2, d_1, h) - k \cdot h \cdot (1 - h)
+f(d_1, d_2, k) = \text{lerp}(d_2, d_1, h) - k \cdot h \cdot (1 - h)
 $$
 
-The parameter $k$ controls the blend radius.  When $k = 0$ the result is
-identical to hard `min`.  Larger $k$ values produce wider, more organic blends.
+where:
+
+- $d_1$, $d_2$ — signed distances to the two shapes being combined
+- $k$ — blend radius controlling how wide the smooth transition is
+- $h$ — the blend factor computed by the clamp expression above
+
+When $k = 0$ the result is identical to hard `min`.  Larger $k$ values
+produce wider, more organic blends.
 This is the technique behind **metaballs** — the blobby, organic shapes used in
 fluid simulation, procedural modeling, and demoscene effects.
 
