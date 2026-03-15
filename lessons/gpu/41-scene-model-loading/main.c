@@ -73,10 +73,11 @@
 /* ── Application state ─────────────────────────────────────────────────── */
 
 typedef struct {
-    ForgeScene      scene;    /* rendering stack (device, pipelines, camera, UI) */
-    ForgeSceneModel truck;    /* CesiumMilkTruck — 4 materials, 6-node hierarchy  */
-    ForgeSceneModel suzanne;  /* Suzanne — baseColor + metallicRoughness textures */
-    ForgeSceneModel duck;     /* Duck — single textured material, 3-node hierarchy */
+    ForgeScene         scene;      /* rendering stack (device, pipelines, camera, UI) */
+    ForgeSceneModel    truck;      /* CesiumMilkTruck — 4 materials, 6-node hierarchy */
+    ForgeSceneModel    suzanne;    /* Suzanne — baseColor + metallicRoughness textures */
+    ForgeSceneModel    duck;       /* Duck — single textured material, 3-node hierarchy */
+    ForgeUiWindowState ui_window;  /* draggable window state */
 } app_state;
 
 /* Maximum path buffer for base_path + relative asset path */
@@ -174,8 +175,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         }
     }
 
+    /* ── UI window state ──────────────────────────────────────────── */
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+
     return SDL_APP_CONTINUE;
 }
+
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
     app_state *state = (app_state *)appstate;
@@ -221,54 +227,59 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* UI pass — show model stats panel */
     float mx, my;
     Uint32 buttons = SDL_GetMouseState(&mx, &my);
-    bool mouse_down = (buttons & SDL_BUTTON_LMASK) != 0;
+    bool mouse_down = !state->scene.mouse_captured
+                    && (buttons & SDL_BUTTON_LMASK) != 0;
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            float scroll_y = 0.0f;
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            forge_ui_ctx_panel_begin(ui, "Model Stats", panel, &scroll_y);
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Model Stats",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
+                char buf[128];
 
-            char buf[128];
+                /* Per-model stats */
+                SDL_snprintf(buf, sizeof(buf),
+                             "Truck:   %u nodes, %u mats, %u draws",
+                             state->truck.scene_data.node_count,
+                             state->truck.materials.material_count,
+                             state->truck.draw_calls);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            /* Per-model stats */
-            SDL_snprintf(buf, sizeof(buf), "Truck:   %u nodes, %u mats, %u draws",
-                         state->truck.scene_data.node_count,
-                         state->truck.materials.material_count,
-                         state->truck.draw_calls);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf),
+                             "Suzanne: %u nodes, %u mats, %u draws",
+                             state->suzanne.scene_data.node_count,
+                             state->suzanne.materials.material_count,
+                             state->suzanne.draw_calls);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            SDL_snprintf(buf, sizeof(buf), "Suzanne: %u nodes, %u mats, %u draws",
-                         state->suzanne.scene_data.node_count,
-                         state->suzanne.materials.material_count,
-                         state->suzanne.draw_calls);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf),
+                             "Duck:    %u nodes, %u mats, %u draws",
+                             state->duck.scene_data.node_count,
+                             state->duck.materials.material_count,
+                             state->duck.draw_calls);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            SDL_snprintf(buf, sizeof(buf), "Duck:    %u nodes, %u mats, %u draws",
-                         state->duck.scene_data.node_count,
-                         state->duck.materials.material_count,
-                         state->duck.draw_calls);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                /* Totals */
+                uint32_t total_draws = state->truck.draw_calls +
+                                       state->suzanne.draw_calls +
+                                       state->duck.draw_calls;
+                SDL_snprintf(buf, sizeof(buf), "Total draw calls: %u",
+                             total_draws);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            /* Totals */
-            uint32_t total_draws = state->truck.draw_calls +
-                                   state->suzanne.draw_calls +
-                                   state->duck.draw_calls;
-            SDL_snprintf(buf, sizeof(buf), "Total draw calls: %u", total_draws);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                /* Separator + timing */
+                forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
 
-            /* Separator + timing */
-            forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "dt: %.1f ms  (%.0f FPS)",
+                             (double)(forge_scene_dt(s) * MS_PER_SEC),
+                             (double)(forge_scene_dt(s) > 0.0f
+                                      ? 1.0f / forge_scene_dt(s) : 0.0f));
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            SDL_snprintf(buf, sizeof(buf), "dt: %.1f ms  (%.0f FPS)",
-                         (double)(forge_scene_dt(s) * MS_PER_SEC),
-                         (double)(forge_scene_dt(s) > 0.0f
-                                  ? 1.0f / forge_scene_dt(s) : 0.0f));
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            forge_ui_ctx_panel_end(ui);
+                forge_ui_wctx_window_end(wctx);
+            }
         }
     }
     forge_scene_end_ui(s);

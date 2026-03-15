@@ -61,7 +61,8 @@ if (!forge_scene_init(&scene, &cfg, argc, argv)) {
 | `forge_scene_main_pass(s)` | Current main render pass |
 | `forge_scene_swapchain_format(s)` | Swapchain texture format |
 | `forge_scene_window(s)` | `SDL_Window *` |
-| `forge_scene_ui(s)` | `ForgeUiContext *` (valid between begin_ui/end_ui) |
+| `forge_scene_ui(s)` | `ForgeUiContext *` (NULL if UI disabled, valid between begin_ui/end_ui) |
+| `forge_scene_window_ui(s)` | `ForgeUiWindowContext *` (NULL if UI disabled, valid between begin_ui/end_ui) |
 
 ## Error handling
 

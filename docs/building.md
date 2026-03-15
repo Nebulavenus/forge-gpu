@@ -128,6 +128,22 @@ Linux) produces a `compile_commands.json` in the build directory, which
 gives editors and language servers (clangd, VS Code, etc.) full knowledge
 of include paths and compiler flags.
 
+### Full rebuild from scratch
+
+If you delete the build directory (or are starting fresh), this rebuilds
+everything — shaders, SDL3, all lessons, and all tests:
+
+```bash
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+python scripts/compile_shaders.py && cmake --build build
+```
+
+The shader step recompiles all HLSL to SPIR-V + DXIL and regenerates the C
+byte-array headers. It requires the Vulkan SDK (see
+[Shader compilation](#shader-compilation)). Pre-compiled headers are checked
+in, so this step is only needed if you modified shader source or want to
+verify a clean state.
+
 ### Common issues
 
 **"CMake not found"** — Install from [cmake.org](https://cmake.org/download/)

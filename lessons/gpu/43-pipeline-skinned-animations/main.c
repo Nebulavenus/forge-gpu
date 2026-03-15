@@ -105,6 +105,7 @@ typedef struct {
     float                   cesium_speed;    /* CesiumMan playback rate (0..SPEED_MAX) */
     float                   brain_speed;     /* BrainStem playback rate (0..SPEED_MAX) */
     float                   cube_speed_ui;   /* AnimatedCube playback rate (0..SPEED_MAX) */
+    ForgeUiWindowState      ui_window;       /* draggable window state */
 } AppState;
 
 /* Build an absolute asset path: exe_dir + relative. */
@@ -230,6 +231,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             state->cesium_man.active_joint_count,
             state->brain_stem.active_joint_count);
 
+    /* ── UI window state ──────────────────────────────────────────── */
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+
     return SDL_APP_CONTINUE;
 }
 
@@ -314,57 +319,73 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* ── UI pass ──────────────────────────────────────────────────────── */
     float mx, my;
     Uint32 buttons = SDL_GetMouseState(&mx, &my);
-    bool mouse_down = (buttons & SDL_BUTTON_LMASK) != 0;
+    bool mouse_down = !state->scene.mouse_captured
+                    && (buttons & SDL_BUTTON_LMASK) != 0;
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            char buf[128];
-            float scroll_y = 0.0f;
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            forge_ui_ctx_panel_begin(ui, "Skinned Animations", panel, &scroll_y);
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Skinned Animations",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
+                char buf[128];
 
-            /* CesiumMan section */
-            forge_ui_ctx_label_layout(ui, "CesiumMan (19 joints)", LABEL_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Time: %.2f s", state->cesium_man.anim_time);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Draws: %u", state->cesium_man.draw_calls);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-            forge_ui_ctx_slider_layout(ui, "cm_speed",
-                                       &state->cesium_speed,
-                                       SPEED_MIN, SPEED_MAX, SLIDER_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Speed: %.1fx", state->cesium_speed);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                /* CesiumMan section */
+                forge_ui_ctx_label_layout(ui, "CesiumMan (19 joints)",
+                                           LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Time: %.2f s",
+                             state->cesium_man.anim_time);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Draws: %u",
+                             state->cesium_man.draw_calls);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                forge_ui_ctx_slider_layout(ui, "cm_speed",
+                                           &state->cesium_speed,
+                                           SPEED_MIN, SPEED_MAX,
+                                           SLIDER_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Speed: %.1fx",
+                             state->cesium_speed);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
+                forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
 
-            /* BrainStem section */
-            forge_ui_ctx_label_layout(ui, "BrainStem (18 joints)", LABEL_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Time: %.2f s", state->brain_stem.anim_time);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Draws: %u", state->brain_stem.draw_calls);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-            forge_ui_ctx_slider_layout(ui, "bs_speed",
-                                       &state->brain_speed,
-                                       SPEED_MIN, SPEED_MAX, SLIDER_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Speed: %.1fx", state->brain_speed);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                /* BrainStem section */
+                forge_ui_ctx_label_layout(ui, "BrainStem (18 joints)",
+                                           LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Time: %.2f s",
+                             state->brain_stem.anim_time);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Draws: %u",
+                             state->brain_stem.draw_calls);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                forge_ui_ctx_slider_layout(ui, "bs_speed",
+                                           &state->brain_speed,
+                                           SPEED_MIN, SPEED_MAX,
+                                           SLIDER_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Speed: %.1fx",
+                             state->brain_speed);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
+                forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
 
-            /* AnimatedCube section */
-            forge_ui_ctx_label_layout(ui, "AnimatedCube (transform)", LABEL_HEIGHT);
-            SDL_snprintf(buf, sizeof(buf), "  Time: %.2f s", state->cube_anim_time);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-            forge_ui_ctx_slider_layout(ui, "cube_speed",
-                                       &state->cube_speed_ui,
-                                       SPEED_MIN, SPEED_MAX, SLIDER_HEIGHT);
-            state->cube_anim_speed = state->cube_speed_ui;
-            SDL_snprintf(buf, sizeof(buf), "  Speed: %.1fx", state->cube_speed_ui);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                /* AnimatedCube section */
+                forge_ui_ctx_label_layout(ui, "AnimatedCube (transform)",
+                                           LABEL_HEIGHT);
+                SDL_snprintf(buf, sizeof(buf), "  Time: %.2f s",
+                             state->cube_anim_time);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                forge_ui_ctx_slider_layout(ui, "cube_speed",
+                                           &state->cube_speed_ui,
+                                           SPEED_MIN, SPEED_MAX,
+                                           SLIDER_HEIGHT);
+                state->cube_anim_speed = state->cube_speed_ui;
+                SDL_snprintf(buf, sizeof(buf), "  Speed: %.1fx",
+                             state->cube_speed_ui);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            forge_ui_ctx_panel_end(ui);
+                forge_ui_wctx_window_end(wctx);
+            }
         }
     }
     forge_scene_end_ui(s);

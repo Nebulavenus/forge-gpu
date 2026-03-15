@@ -84,9 +84,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* UI pass (optional) */
     float mx, my;
     Uint32 buttons = SDL_GetMouseState(&mx, &my);
-    bool mouse_down = (buttons & SDL_BUTTON_LMASK) != 0;
+    bool mouse_down = !state->scene.mouse_captured
+                    && (buttons & SDL_BUTTON_LMASK) != 0;
     forge_scene_begin_ui(s, mx, my, mouse_down);
-    /* ... forge_ui_* widget calls on forge_scene_ui(s) ... */
+    ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+    if (wctx) {
+        if (forge_ui_wctx_window_begin(wctx, "Title", &state->ui_window)) {
+            ForgeUiContext *ui = wctx->ctx;
+            /* ... forge_ui_ctx_* widget calls ... */
+            forge_ui_wctx_window_end(wctx);
+        }
+    }
     forge_scene_end_ui(s);
 
     return forge_scene_end_frame(s);
@@ -154,7 +162,7 @@ SDL_GPUDevice  *dev = forge_scene_device(s);
 float           dt  = forge_scene_dt(s);
 mat4            vp  = forge_scene_view_proj(s);
 vec3            cam = forge_scene_cam_pos(s);
-ForgeUiContext *ui  = forge_scene_ui(s);
+ForgeUiContext *ui  = forge_scene_ui(s);   /* NULL if UI disabled */
 ```
 
 ## Common mistakes

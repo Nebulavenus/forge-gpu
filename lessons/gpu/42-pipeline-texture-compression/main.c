@@ -78,7 +78,8 @@ typedef struct {
     ForgeSceneModel chess;   /* ABeautifulGame — 15 materials, 49 nodes         */
 
     /* Load timing */
-    float load_time_ms;      /* time to load and transcode textures */
+    float              load_time_ms; /* time to load and transcode textures */
+    ForgeUiWindowState ui_window;    /* draggable window state */
 } AppState;
 
 /* Build an absolute asset path: exe_dir + relative.
@@ -167,6 +168,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             (float)state->chess.vram.compressed_bytes / BYTES_PER_MB,
             (float)state->chess.vram.uncompressed_bytes / BYTES_PER_MB);
 
+    /* ── UI window state ──────────────────────────────────────────── */
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+
     return SDL_APP_CONTINUE;
 }
 
@@ -206,62 +211,72 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* ── UI pass: compression stats ──────────────────────────────────── */
     float mx, my;
     Uint32 buttons = SDL_GetMouseState(&mx, &my);
-    bool mouse_down = (buttons & SDL_BUTTON_LMASK) != 0;
+    bool mouse_down = !state->scene.mouse_captured
+                    && (buttons & SDL_BUTTON_LMASK) != 0;
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            ForgeSceneModel *m = &state->chess;
-            float compressed_mb   = (float)m->vram.compressed_bytes / BYTES_PER_MB;
-            float uncompressed_mb = (float)m->vram.uncompressed_bytes / BYTES_PER_MB;
-            float savings_pct     = 0.0f;
-            if (uncompressed_mb > VRAM_EPSILON) {
-                savings_pct = (1.0f - compressed_mb / uncompressed_mb) * 100.0f;
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Texture Compression",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
+                ForgeSceneModel *m = &state->chess;
+                float compressed_mb   = (float)m->vram.compressed_bytes
+                                        / BYTES_PER_MB;
+                float uncompressed_mb = (float)m->vram.uncompressed_bytes
+                                        / BYTES_PER_MB;
+                float savings_pct     = 0.0f;
+                if (uncompressed_mb > VRAM_EPSILON) {
+                    savings_pct = (1.0f - compressed_mb / uncompressed_mb)
+                                  * 100.0f;
+                }
+
+                char buf[128];
+
+                SDL_snprintf(buf, sizeof(buf), "Model: ABeautifulGame");
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf),
+                             "Textures: %u total, %u compressed",
+                             m->vram.total_texture_count,
+                             m->vram.compressed_texture_count);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf), "VRAM (compressed):   %.1f MB",
+                             compressed_mb);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf),
+                             "VRAM (uncompressed): %.1f MB",
+                             uncompressed_mb);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf), "Savings: %.0f%%",
+                             savings_pct);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf),
+                             "Format: BC7 (color), BC5 (normals)");
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf), "Source: UASTC (KTX2)");
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf), "Load time: %.0f ms",
+                             state->load_time_ms);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf), "Draw calls: %u",
+                             m->draw_calls);
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                forge_ui_wctx_window_end(wctx);
             }
-
-            char buf[128];
-            float scroll_y = 0.0f;
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            forge_ui_ctx_panel_begin(ui, "Texture Compression", panel, &scroll_y);
-
-            SDL_snprintf(buf, sizeof(buf), "Model: ABeautifulGame");
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "Textures: %u total, %u compressed",
-                         m->vram.total_texture_count,
-                         m->vram.compressed_texture_count);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "VRAM (compressed):   %.1f MB",
-                         compressed_mb);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "VRAM (uncompressed): %.1f MB",
-                         uncompressed_mb);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "Savings: %.0f%%", savings_pct);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "Format: BC7 (color), BC5 (normals)");
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "Source: UASTC (KTX2)");
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "Load time: %.0f ms",
-                         state->load_time_ms);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            SDL_snprintf(buf, sizeof(buf), "Draw calls: %u", m->draw_calls);
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-
-            forge_ui_ctx_panel_end(ui);
         }
     }
     forge_scene_end_ui(s);

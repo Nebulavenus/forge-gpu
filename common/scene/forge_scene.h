@@ -42,6 +42,7 @@
 #include "math/forge_math.h"
 #include "ui/forge_ui.h"
 #include "ui/forge_ui_ctx.h"
+#include "ui/forge_ui_window.h"
 
 #ifdef FORGE_CAPTURE
 #include "capture/forge_capture.h"
@@ -375,21 +376,23 @@ typedef struct ForgeScene {
     SDL_GPUBuffer *grid_ib;
 
     /* ── UI resources ───────────────────────────────────────────────── */
-    ForgeUiFont      ui_font;
-    ForgeUiFontAtlas ui_atlas;
-    ForgeUiContext   ui_ctx;
-    SDL_GPUTexture  *ui_atlas_texture;
-    SDL_GPUBuffer   *ui_vb;
-    SDL_GPUBuffer   *ui_ib;
-    Uint32           ui_vb_capacity;           /* current GPU VB size (bytes) */
-    Uint32           ui_ib_capacity;           /* current GPU IB size (bytes) */
-    bool             ui_enabled;               /* false if no font was loaded */
+    ForgeUiFont          ui_font;
+    ForgeUiFontAtlas     ui_atlas;
+    ForgeUiContext       ui_ctx;
+    ForgeUiWindowContext ui_wctx;              /* draggable window support    */
+    SDL_GPUTexture      *ui_atlas_texture;
+    SDL_GPUBuffer       *ui_vb;
+    SDL_GPUBuffer       *ui_ib;
+    Uint32               ui_vb_capacity;       /* current GPU VB size (bytes) */
+    Uint32               ui_ib_capacity;       /* current GPU IB size (bytes) */
+    bool                 ui_enabled;           /* false if no font was loaded */
 
     /* ── Camera ─────────────────────────────────────────────────────── */
     vec3  cam_position;
     float cam_yaw;
     float cam_pitch;
     bool  mouse_captured;
+    float frame_scroll_delta;                 /* accumulated wheel input     */
 
     /* ── Timing ─────────────────────────────────────────────────────── */
     Uint64 last_ticks;
@@ -520,15 +523,20 @@ static void forge_scene_end_main_pass(ForgeScene *scene);
 
 /* ── UI pass ────────────────────────────────────────────────── */
 
-/* Begin UI for this frame.  After calling this, use forge_scene_ui()
- * to access the ForgeUiContext and call widget functions on it.
+/* Begin UI for this frame.  After calling this, use forge_scene_window_ui()
+ * for draggable windows or forge_scene_ui() for direct context access.
  * mouse_x, mouse_y are pixel coordinates; mouse_down is left-button state. */
 static void forge_scene_begin_ui(ForgeScene *scene,
                                   float mouse_x, float mouse_y,
                                   bool mouse_down);
 
-/* Get the UI context for widget calls.  Valid between begin_ui/end_ui. */
+/* Get the UI context for widget calls.  Valid between begin_ui/end_ui.
+ * Returns NULL if UI is not enabled (no font_path configured). */
 static inline ForgeUiContext *forge_scene_ui(ForgeScene *scene);
+
+/* Get the window context for draggable windows.  Valid between
+ * begin_ui/end_ui.  Returns NULL if UI is not enabled. */
+static inline ForgeUiWindowContext *forge_scene_window_ui(ForgeScene *scene);
 
 /* Finalize UI, upload draw data, and render in a separate pass. */
 static void forge_scene_end_ui(ForgeScene *scene);
@@ -749,7 +757,14 @@ static inline ForgeSceneConfig forge_scene_default_config(const char *title)
 
 static inline ForgeUiContext *forge_scene_ui(ForgeScene *scene)
 {
+    if (!scene->ui_enabled) return NULL;
     return &scene->ui_ctx;
+}
+
+static inline ForgeUiWindowContext *forge_scene_window_ui(ForgeScene *scene)
+{
+    if (!scene->ui_enabled) return NULL;
+    return &scene->ui_wctx;
 }
 
 static inline SDL_GPUDevice *forge_scene_device(const ForgeScene *s)
@@ -1834,6 +1849,12 @@ static bool forge_scene_init(ForgeScene *scene,
             return false;
         }
 
+        /* Initialize window context for draggable windows */
+        if (!forge_ui_wctx_init(&scene->ui_wctx, &scene->ui_ctx)) {
+            SDL_Log("forge_scene: forge_ui_wctx_init failed");
+            return false;
+        }
+
         /* Create UI GPU buffers (dynamic, resizable) */
         {
             SDL_GPUBufferCreateInfo bi;
@@ -2031,6 +2052,11 @@ static SDL_AppResult forge_scene_handle_event(ForgeScene *scene,
             if (scene->cam_pitch < -FORGE_SCENE_PITCH_CLAMP)
                 scene->cam_pitch = -FORGE_SCENE_PITCH_CLAMP;
         }
+        break;
+
+    case SDL_EVENT_MOUSE_WHEEL:
+        /* Accumulate scroll delta for UI scrolling. */
+        scene->frame_scroll_delta += event->wheel.y;
         break;
 
     default:
@@ -2444,12 +2470,21 @@ static void forge_scene_begin_ui(ForgeScene *scene,
     if (!scene->ui_enabled) return;
 
     forge_ui_ctx_begin(&scene->ui_ctx, mouse_x, mouse_y, mouse_down);
+
+    /* Pass accumulated scroll delta from SDL_EVENT_MOUSE_WHEEL events. */
+    scene->ui_ctx.scroll_delta = scene->frame_scroll_delta;
+    scene->frame_scroll_delta  = 0.0f;
+
+    /* Begin window context (determines hovered window from prev frame) */
+    forge_ui_wctx_begin(&scene->ui_wctx);
 }
 
 static void forge_scene_end_ui(ForgeScene *scene)
 {
     if (!scene->ui_enabled || !scene->cmd) return;
 
+    /* Merge window draw lists into main context before ending */
+    forge_ui_wctx_end(&scene->ui_wctx);
     forge_ui_ctx_end(&scene->ui_ctx);
 
     /* Skip if no draw data this frame */
@@ -2741,6 +2776,7 @@ static void forge_scene_destroy(ForgeScene *scene)
         if (scene->atlas_sampler)
             SDL_ReleaseGPUSampler(scene->device, scene->atlas_sampler);
 
+        forge_ui_wctx_free(&scene->ui_wctx);
         forge_ui_ctx_free(&scene->ui_ctx);
         forge_ui_atlas_free(&scene->ui_atlas);
         forge_ui_ttf_free(&scene->ui_font);

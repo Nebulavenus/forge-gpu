@@ -209,8 +209,8 @@ typedef struct app_state {
     float ui_constraint_iters; /* Gauss-Seidel iterations, from slider */
     float ui_gravity;          /* gravity magnitude (m/s^2, positive), from slider */
 
-    /* UI scroll */
-    float panel_scroll;  /* vertical scroll offset for UI panel (px) */
+    /* UI window state */
+    ForgeUiWindowState ui_window;
 } app_state;
 
 /* ── Helper: upload_shape_vb ─────────────────────────────────────── */
@@ -524,7 +524,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->sim_time     = 0.0f;
     state->paused       = false;
     state->speed_scale  = 1.0f;
-    state->panel_scroll = 0.0f;
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
 
     /* Initialize first scene */
     init_current_scene(state);
@@ -831,11 +832,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            if (forge_ui_ctx_panel_begin(ui, "Springs & Constraints",
-                                         panel, &state->panel_scroll)) {
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Springs & Constraints",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
 
                 /* Scene selection label */
                 {
@@ -1004,7 +1005,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     reset_simulation(state);
                 }
 
-                forge_ui_ctx_panel_end(ui);
+                forge_ui_wctx_window_end(wctx);
             }
         }
     }

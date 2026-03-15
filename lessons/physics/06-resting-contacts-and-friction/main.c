@@ -218,8 +218,8 @@ typedef struct app_state {
     float ui_restitution;     /* coefficient of restitution */
     float ui_solver_iters_f;  /* solver iterations (float for slider) */
     float ui_init_velocity;   /* Scene 2: initial sliding velocity */
-    /* UI scroll */
-    float panel_scroll;
+    /* UI window state */
+    ForgeUiWindowState ui_window;
 } app_state;
 
 /* ── Helper: upload_shape_vb ─────────────────────────────────────── */
@@ -607,7 +607,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->accumulator       = 0.0f;
     state->paused            = false;
     state->speed_scale       = NORMAL_SPEED_SCALE;
-    state->panel_scroll      = 0.0f;
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
     state->ui_gravity        = DEFAULT_GRAVITY;
     state->ui_mu_s           = DEFAULT_MU_S;
     state->ui_mu_d           = DEFAULT_MU_D;
@@ -750,11 +751,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            if (forge_ui_ctx_panel_begin(ui, "Contacts & Friction",
-                                         panel, &state->panel_scroll)) {
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Contacts & Friction",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
 
                 /* Scene selection */
                 {
@@ -922,7 +923,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     reset_simulation(state);
                 }
 
-                forge_ui_ctx_panel_end(ui);
+                forge_ui_wctx_window_end(wctx);
             }
         }
     }

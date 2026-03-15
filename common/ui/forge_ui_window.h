@@ -110,6 +110,19 @@ typedef struct ForgeUiWindowState {
     int         z_order;    /* draw priority (higher = on top) */
 } ForgeUiWindowState;
 
+/* Create a default window state with the given position and size.
+ * scroll_y = 0, collapsed = false, z_order = 0. */
+static inline ForgeUiWindowState forge_ui_window_state_default(
+    float x, float y, float w, float h)
+{
+    ForgeUiWindowState ws;
+    ws.rect      = (ForgeUiRect){ x, y, w, h };
+    ws.scroll_y  = 0.0f;
+    ws.collapsed = false;
+    ws.z_order   = 0;
+    return ws;
+}
+
 /* Per-window draw list entry.  Each window gets its own vertex/index
  * buffers during the declaration phase.  forge_ui_wctx_end() sorts
  * these by z_order and appends to the main context buffers in

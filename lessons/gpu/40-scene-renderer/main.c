@@ -85,6 +85,7 @@ typedef struct {
     SDL_GPUBuffer *torus_vb;       /* interleaved position+normal vertex buffer       */
     SDL_GPUBuffer *torus_ib;       /* uint32 index buffer                             */
     Uint32         torus_index_count;  /* number of indices to draw                   */
+    ForgeUiWindowState ui_window;      /* draggable window state                      */
 } app_state;
 
 /* ── Helper: interleave ForgeShape into ForgeSceneVertex buffer ──────── */
@@ -169,6 +170,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     state->torus_index_count = (Uint32)torus.index_count;
     forge_shapes_free(&torus);
 
+    /* ── UI window state ──────────────────────────────────────────── */
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+
     return SDL_APP_CONTINUE;
 }
 
@@ -231,24 +236,27 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     float mx, my;
     Uint32 buttons = SDL_GetMouseState(&mx, &my);
-    bool mouse_down = (buttons & SDL_BUTTON_LMASK) != 0;
+    bool mouse_down = !state->scene.mouse_captured
+                    && (buttons & SDL_BUTTON_LMASK) != 0;
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            float scroll_y = 0.0f;
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            forge_ui_ctx_panel_begin(ui, "Scene Info", panel, &scroll_y);
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Scene Info",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
 
-            forge_ui_ctx_label_layout(ui, "forge_scene.h demo", LABEL_HEIGHT);
+                forge_ui_ctx_label_layout(ui, "forge_scene.h demo",
+                                           LABEL_HEIGHT);
 
-            char buf[64];
-            SDL_snprintf(buf, sizeof(buf), "dt: %.1f ms",
-                         (double)(forge_scene_dt(s) * MS_PER_SEC));
-            forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                char buf[64];
+                SDL_snprintf(buf, sizeof(buf), "dt: %.1f ms",
+                             (double)(forge_scene_dt(s) * MS_PER_SEC));
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-            forge_ui_ctx_panel_end(ui);
+                forge_ui_wctx_window_end(wctx);
+            }
         }
     }
     forge_scene_end_ui(s);

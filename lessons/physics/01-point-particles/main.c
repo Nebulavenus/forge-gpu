@@ -116,7 +116,7 @@ typedef struct app_state {
     float  speed_scale;    /* simulation speed multiplier [0..2]       */
 
     /* UI state (persistent across frames) */
-    float panel_scroll;
+    ForgeUiWindowState ui_window;
 } app_state;
 
 /* ── Helper: upload_shape_vb ─────────────────────────────────────── */
@@ -269,7 +269,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->sim_time     = 0.0f;
     state->paused       = false;
     state->speed_scale  = SPEED_DEFAULT;
-    state->panel_scroll = 0.0f;
+    state->ui_window = forge_ui_window_state_default(
+        PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
 
     return SDL_APP_CONTINUE;
 }
@@ -399,11 +400,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     forge_scene_begin_ui(s, mx, my, mouse_down);
     {
-        ForgeUiContext *ui = forge_scene_ui(s);
-        if (ui) {
-            ForgeUiRect panel = { PANEL_X, PANEL_Y, PANEL_W, PANEL_H };
-            if (forge_ui_ctx_panel_begin(ui, "Simulation", panel,
-                                         &state->panel_scroll)) {
+        ForgeUiWindowContext *wctx = forge_scene_window_ui(s);
+        if (wctx) {
+            if (forge_ui_wctx_window_begin(wctx, "Simulation",
+                                            &state->ui_window)) {
+                ForgeUiContext *ui = wctx->ctx;
+
                 /* Pause toggle */
                 forge_ui_ctx_checkbox_layout(ui, "Paused",
                                              &state->paused, LABEL_HEIGHT);
@@ -444,7 +446,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
                 }
 
-                forge_ui_ctx_panel_end(ui);
+                forge_ui_wctx_window_end(wctx);
             }
         }
     }
