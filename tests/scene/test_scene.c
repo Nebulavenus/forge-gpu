@@ -36,6 +36,9 @@ bool gpu_available = false;
 /* ── Model tests (Groups 10–17) ─────────────────────────────────────────── */
 #include "test_scene_model.c"
 
+/* ── Skinned model tests (Groups 18–26) ────────────────────────────────── */
+#include "test_scene_skinned.c"
+
 /* ── Shared constants ────────────────────────────────────────────────────── */
 
 /* Default config expected values (from forge_scene.h constants) */
@@ -1378,6 +1381,9 @@ int main(int argc, char **argv)
 
     /* ── Groups 10–17: Model tests (in test_scene_model.c) ──── */
     run_model_tests();
+
+    /* ── Groups 18–26: Skinned model tests (in test_scene_skinned.c) ── */
+    run_skinned_tests();
 
     /* ── Summary ─────────────────────────────────────────────── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed, %d skipped ===",

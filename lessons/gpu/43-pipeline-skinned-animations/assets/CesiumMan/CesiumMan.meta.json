@@ -1,0 +1,150 @@
+{
+  "source": "CesiumMan.gltf",
+  "format_version": 1,
+  "node_count": 22,
+  "mesh_count": 1,
+  "root_count": 1,
+  "mesh_node_count": 1,
+  "total_children": 21,
+  "meshes": [
+    {
+      "name": "Cesium_Man",
+      "first_submesh": 0,
+      "submesh_count": 1
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Z_UP",
+      "parent": -1,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Armature",
+      "parent": 0,
+      "mesh_index": -1,
+      "child_count": 2
+    },
+    {
+      "name": "Cesium_Man",
+      "parent": 1,
+      "mesh_index": 0,
+      "child_count": 0
+    },
+    {
+      "name": "Skeleton_torso_joint_1",
+      "parent": 1,
+      "mesh_index": -1,
+      "child_count": 3
+    },
+    {
+      "name": "leg_joint_R_1",
+      "parent": 3,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "leg_joint_R_2",
+      "parent": 4,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "leg_joint_R_3",
+      "parent": 5,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "leg_joint_R_5",
+      "parent": 6,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "leg_joint_L_1",
+      "parent": 3,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "leg_joint_L_2",
+      "parent": 8,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "leg_joint_L_3",
+      "parent": 9,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "leg_joint_L_5",
+      "parent": 10,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "Skeleton_torso_joint_2",
+      "parent": 3,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "torso_joint_3",
+      "parent": 12,
+      "mesh_index": -1,
+      "child_count": 3
+    },
+    {
+      "name": "Skeleton_arm_joint_R",
+      "parent": 13,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Skeleton_arm_joint_R__2_",
+      "parent": 14,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Skeleton_arm_joint_R__3_",
+      "parent": 15,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "Skeleton_arm_joint_L__4_",
+      "parent": 13,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Skeleton_arm_joint_L__3_",
+      "parent": 17,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Skeleton_arm_joint_L__2_",
+      "parent": 18,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "Skeleton_neck_joint_1",
+      "parent": 13,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "Skeleton_neck_joint_2",
+      "parent": 20,
+      "mesh_index": -1,
+      "child_count": 0
+    }
+  ]
+}

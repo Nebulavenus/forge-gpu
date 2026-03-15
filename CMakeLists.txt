@@ -136,6 +136,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/40-scene-renderer)
     add_subdirectory(lessons/gpu/41-scene-model-loading)
     add_subdirectory(lessons/gpu/42-pipeline-texture-compression)
+    add_subdirectory(lessons/gpu/43-pipeline-skinned-animations)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────

@@ -1,0 +1,150 @@
+{
+  "source": "BrainStem.gltf",
+  "format_version": 1,
+  "node_count": 22,
+  "mesh_count": 1,
+  "root_count": 1,
+  "mesh_node_count": 1,
+  "total_children": 21,
+  "meshes": [
+    {
+      "name": "Figure_2_geometry",
+      "first_submesh": 0,
+      "submesh_count": 59
+    }
+  ],
+  "nodes": [
+    {
+      "name": "",
+      "parent": -1,
+      "mesh_index": -1,
+      "child_count": 2
+    },
+    {
+      "name": "",
+      "parent": 0,
+      "mesh_index": 0,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 21,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 2,
+      "mesh_index": -1,
+      "child_count": 3
+    },
+    {
+      "name": "",
+      "parent": 3,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 4,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 5,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 6,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 3,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 8,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 9,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 10,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 3,
+      "mesh_index": -1,
+      "child_count": 3
+    },
+    {
+      "name": "",
+      "parent": 12,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 13,
+      "mesh_index": -1,
+      "child_count": 3
+    },
+    {
+      "name": "",
+      "parent": 14,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 14,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 14,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 12,
+      "mesh_index": -1,
+      "child_count": 1
+    },
+    {
+      "name": "",
+      "parent": 18,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 12,
+      "mesh_index": -1,
+      "child_count": 0
+    },
+    {
+      "name": "",
+      "parent": 0,
+      "mesh_index": -1,
+      "child_count": 1
+    }
+  ]
+}

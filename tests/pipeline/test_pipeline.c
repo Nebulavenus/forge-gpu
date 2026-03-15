@@ -12,7 +12,10 @@
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
+#include <math.h>
 /* SDL provides SDL_memset, SDL_memcpy, SDL_strcmp, etc. — no <string.h> needed */
+
+#include "math/forge_math.h"
 
 #define FORGE_PIPELINE_IMPLEMENTATION
 #include "pipeline/forge_pipeline.h"
@@ -5119,6 +5122,799 @@ static void test_load_skin_zero_joints(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Helper: initialise a scene node to identity
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void init_identity_node(ForgePipelineSceneNode *node, int32_t parent)
+{
+    mat4 id;
+    SDL_memset(node, 0, sizeof(*node));
+    node->parent = parent;
+    node->mesh_index = -1;
+    node->skin_index = -1;
+    node->has_trs = 1;
+    node->translation[0] = 0.0f; node->translation[1] = 0.0f; node->translation[2] = 0.0f;
+    node->rotation[0] = 0.0f; node->rotation[1] = 0.0f; node->rotation[2] = 0.0f; node->rotation[3] = 1.0f;
+    node->scale[0] = 1.0f; node->scale[1] = 1.0f; node->scale[2] = 1.0f;
+    /* Set local_transform and world_transform to identity */
+    id = mat4_identity();
+    SDL_memcpy(node->local_transform, &id, sizeof(node->local_transform));
+    SDL_memcpy(node->world_transform, &id, sizeof(node->world_transform));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Animation runtime (8 tests)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_anim_apply_null_args(void)
+{
+    TEST("anim_apply_null_args");
+    /* NULL anim */
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+    forge_pipeline_anim_apply(NULL, &node, 1, 0.0f, false);
+    /* NULL nodes */
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    forge_pipeline_anim_apply(&anim, NULL, 1, 0.0f, false);
+    /* node_count 0 */
+    forge_pipeline_anim_apply(&anim, &node, 0, 0.0f, false);
+    /* channel_count 0 */
+    anim.channel_count = 0;
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.0f, false);
+    /* If we get here, nothing crashed */
+    ASSERT_TRUE(true);
+    END_TEST();
+}
+
+static void test_anim_apply_translation(void)
+{
+    TEST("anim_apply_translation");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Sampler: 2 keyframes, translation (3 components) */
+    static float timestamps[2] = { 0.0f, 1.0f };
+    static float values[6] = { 0.0f, 0.0f, 0.0f,   /* t=0: origin */
+                                10.0f, 0.0f, 0.0f }; /* t=1: x=10 */
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 5.0f));
+    ASSERT_TRUE(float_eq(node.translation[1], 0.0f));
+    ASSERT_TRUE(float_eq(node.translation[2], 0.0f));
+    END_TEST();
+}
+
+static void test_anim_apply_rotation(void)
+{
+    TEST("anim_apply_rotation");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Sampler: 2 keyframes, rotation (4 components, quaternion xyzw) */
+    float sin45 = SDL_sinf(45.0f * FORGE_DEG2RAD);
+    float cos45 = SDL_cosf(45.0f * FORGE_DEG2RAD);
+    static float timestamps[2] = { 0.0f, 1.0f };
+    float values[8];
+    /* t=0: identity quaternion */
+    values[0] = 0.0f; values[1] = 0.0f; values[2] = 0.0f; values[3] = 1.0f;
+    /* t=1: 90deg around Y */
+    values[4] = 0.0f; values[5] = sin45; values[6] = 0.0f; values[7] = cos45;
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 4;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_ROTATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* At t=0, rotation should stay identity */
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.0f, false);
+    ASSERT_TRUE(float_eq(node.rotation[0], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[1], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[2], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[3], 1.0f));
+
+    /* At t=0.5, rotation should be halfway (slerp between identity and
+     * 90deg around Y).  Half of 90deg = 45deg, so:
+     *   q = (0, sin(22.5deg), 0, cos(22.5deg))                        */
+    float sin22 = SDL_sinf(22.5f * FORGE_DEG2RAD);
+    float cos22 = SDL_cosf(22.5f * FORGE_DEG2RAD);
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    ASSERT_TRUE(float_eq(node.rotation[0], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[1], sin22));
+    ASSERT_TRUE(float_eq(node.rotation[2], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[3], cos22));
+
+    /* At t=1.0, rotation should be the full 90deg around Y */
+    forge_pipeline_anim_apply(&anim, &node, 1, 1.0f, false);
+    ASSERT_TRUE(float_eq(node.rotation[0], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[1], sin45));
+    ASSERT_TRUE(float_eq(node.rotation[2], 0.0f));
+    ASSERT_TRUE(float_eq(node.rotation[3], cos45));
+    END_TEST();
+}
+
+static void test_anim_apply_exceeds_max_nodes(void)
+{
+    TEST("anim_apply_exceeds_max_nodes");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+    node.translation[0] = 42.0f;
+
+    static float timestamps[2] = { 0.0f, 1.0f };
+    static float values[6] = { 0.0f, 0.0f, 0.0f, 10.0f, 0.0f, 0.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* Call with node_count exceeding max — should return without modifying */
+    forge_pipeline_anim_apply(&anim, &node, FORGE_PIPELINE_MAX_NODES + 1,
+                              0.5f, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 42.0f));
+    END_TEST();
+}
+
+static void test_anim_apply_loop(void)
+{
+    TEST("anim_apply_loop");
+    ForgePipelineSceneNode node_loop, node_direct;
+    init_identity_node(&node_loop, -1);
+    init_identity_node(&node_direct, -1);
+
+    static float timestamps[2] = { 0.0f, 2.0f };
+    static float values[6] = { 0.0f, 0.0f, 0.0f, 10.0f, 0.0f, 0.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 2.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* t=3.0 with loop wraps to t=1.0 */
+    forge_pipeline_anim_apply(&anim, &node_loop, 1, 3.0f, true);
+    /* t=1.0 directly */
+    forge_pipeline_anim_apply(&anim, &node_direct, 1, 1.0f, false);
+    ASSERT_TRUE(float_eq(node_loop.translation[0], node_direct.translation[0]));
+    END_TEST();
+}
+
+static void test_anim_apply_clamp(void)
+{
+    TEST("anim_apply_clamp");
+    ForgePipelineSceneNode node_clamp, node_end;
+    init_identity_node(&node_clamp, -1);
+    init_identity_node(&node_end, -1);
+
+    static float timestamps[2] = { 0.0f, 2.0f };
+    static float values[6] = { 0.0f, 0.0f, 0.0f, 10.0f, 0.0f, 0.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 2.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* t=3.0 without loop clamps to t=2.0 */
+    forge_pipeline_anim_apply(&anim, &node_clamp, 1, 3.0f, false);
+    /* t=2.0 directly */
+    forge_pipeline_anim_apply(&anim, &node_end, 1, 2.0f, false);
+    ASSERT_TRUE(float_eq(node_clamp.translation[0], node_end.translation[0]));
+    ASSERT_TRUE(float_eq(node_clamp.translation[0], 10.0f));
+    END_TEST();
+}
+
+static void test_anim_apply_step_interpolation(void)
+{
+    TEST("anim_apply_step_interpolation");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Sampler: 3 keyframes with STEP interpolation — should hold the
+     * preceding keyframe's value, not interpolate between them. */
+    static float timestamps[3] = { 0.0f, 1.0f, 2.0f };
+    static float values[9] = { 1.0f, 0.0f, 0.0f,   /* t=0: x=1 */
+                                5.0f, 0.0f, 0.0f,   /* t=1: x=5 */
+                                9.0f, 0.0f, 0.0f };  /* t=2: x=9 */
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 3;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_STEP;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 2.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* t=0.5 should hold at keyframe 0 value (x=1), not interpolate to x=3 */
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 1.0f));
+
+    /* t=1.5 should hold at keyframe 1 value (x=5), not interpolate to x=7 */
+    init_identity_node(&node, -1);
+    forge_pipeline_anim_apply(&anim, &node, 1, 1.5f, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 5.0f));
+    END_TEST();
+}
+
+static void test_anim_apply_scale(void)
+{
+    TEST("anim_apply_scale");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Sampler: 2 keyframes, scale (3 components) */
+    static float timestamps[2] = { 0.0f, 1.0f };
+    static float values[6] = { 1.0f, 1.0f, 1.0f,   /* t=0: unit scale */
+                                2.0f, 3.0f, 4.0f };  /* t=1: non-uniform */
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_SCALE;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* t=0.5: should interpolate to (1.5, 2.0, 2.5) */
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    ASSERT_TRUE(float_eq(node.scale[0], 1.5f));
+    ASSERT_TRUE(float_eq(node.scale[1], 2.0f));
+    ASSERT_TRUE(float_eq(node.scale[2], 2.5f));
+
+    /* Verify TRS rebuild produced a local_transform with the scale.
+     * Column-major layout: m[0]=sx, m[5]=sy, m[10]=sz for a pure scale. */
+    ASSERT_TRUE(float_eq(node.local_transform[0],  1.5f));
+    ASSERT_TRUE(float_eq(node.local_transform[5],  2.0f));
+    ASSERT_TRUE(float_eq(node.local_transform[10], 2.5f));
+    END_TEST();
+}
+
+static void test_anim_apply_non_finite_time(void)
+{
+    TEST("anim_apply_non_finite_time");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Two keyframes: t=0 → (0,0,0), t=1 → (10,10,10).
+     * NaN/Inf time should be sanitized to 0, producing (0,0,0). */
+    static float timestamps[2] = { 0.0f, 1.0f };
+    static float values[6] = { 0.0f, 0.0f, 0.0f,
+                                10.0f, 10.0f, 10.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    /* NaN time — should be sanitized to 0 */
+    float nan_val = NAN;
+    forge_pipeline_anim_apply(&anim, &node, 1, nan_val, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 0.0f));
+    ASSERT_TRUE(float_eq(node.translation[1], 0.0f));
+
+    /* Inf time — should be sanitized to 0 */
+    init_identity_node(&node, -1);
+    float inf_val = INFINITY;
+    forge_pipeline_anim_apply(&anim, &node, 1, inf_val, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 0.0f));
+    ASSERT_TRUE(float_eq(node.translation[1], 0.0f));
+    END_TEST();
+}
+
+static void test_anim_apply_single_keyframe(void)
+{
+    TEST("anim_apply_single_keyframe");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Sampler with exactly 1 keyframe — the find_keyframe binary search
+     * returns 0 for count<2, but eval functions handle this via boundary
+     * checks (t <= ts[0]).  Verify the single value IS applied. */
+    static float timestamps[1] = { 0.0f };
+    static float values[3] = { 7.0f, 8.0f, 9.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 1;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = FORGE_PIPELINE_ANIM_TRANSLATION;
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    ASSERT_TRUE(float_eq(node.translation[0], 7.0f));
+    ASSERT_TRUE(float_eq(node.translation[1], 8.0f));
+    ASSERT_TRUE(float_eq(node.translation[2], 9.0f));
+    END_TEST();
+}
+
+static void test_anim_apply_invalid_path(void)
+{
+    TEST("anim_apply_invalid_path");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Save original TRS to verify no modification */
+    float orig_tx = node.translation[0];
+    float orig_s0 = node.scale[0];
+
+    static float timestamps[2] = { 0.0f, 1.0f };
+    static float values[6] = { 1.0f, 2.0f, 3.0f,
+                                4.0f, 5.0f, 6.0f };
+
+    ForgePipelineAnimSampler sampler;
+    SDL_memset(&sampler, 0, sizeof(sampler));
+    sampler.timestamps = timestamps;
+    sampler.values = values;
+    sampler.keyframe_count = 2;
+    sampler.value_components = 3;
+    sampler.interpolation = FORGE_PIPELINE_INTERP_LINEAR;
+
+    ForgePipelineAnimChannel channel;
+    SDL_memset(&channel, 0, sizeof(channel));
+    channel.target_node = 0;
+    channel.target_path = 99; /* invalid path — hits default case */
+    channel.sampler_index = 0;
+
+    ForgePipelineAnimation anim;
+    SDL_memset(&anim, 0, sizeof(anim));
+    anim.duration = 1.0f;
+    anim.samplers = &sampler;
+    anim.sampler_count = 1;
+    anim.channels = &channel;
+    anim.channel_count = 1;
+
+    forge_pipeline_anim_apply(&anim, &node, 1, 0.5f, false);
+    /* Node should be unchanged — invalid path hits the default continue */
+    ASSERT_TRUE(float_eq(node.translation[0], orig_tx));
+    ASSERT_TRUE(float_eq(node.scale[0], orig_s0));
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * World transform computation (5 tests)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_world_transform_single_root(void)
+{
+    TEST("world_transform_single_root");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Set local_transform to translate(5,0,0) */
+    mat4 t = mat4_translate(vec3_create(5.0f, 0.0f, 0.0f));
+    SDL_memcpy(node.local_transform, &t, sizeof(node.local_transform));
+
+    uint32_t roots[1] = { 0 };
+    forge_pipeline_scene_compute_world_transforms(&node, 1, roots, 1, NULL, 0);
+
+    /* World should match local for a root node */
+    mat4 world;
+    SDL_memcpy(&world, node.world_transform, sizeof(world));
+    ASSERT_TRUE(float_eq(world.m[12], 5.0f));
+    ASSERT_TRUE(float_eq(world.m[13], 0.0f));
+    ASSERT_TRUE(float_eq(world.m[14], 0.0f));
+    END_TEST();
+}
+
+static void test_world_transform_parent_child(void)
+{
+    TEST("world_transform_parent_child");
+    ForgePipelineSceneNode nodes[2];
+    init_identity_node(&nodes[0], -1);
+    init_identity_node(&nodes[1], 0);
+
+    /* Parent: translate(5,0,0) */
+    mat4 t0 = mat4_translate(vec3_create(5.0f, 0.0f, 0.0f));
+    SDL_memcpy(nodes[0].local_transform, &t0, sizeof(nodes[0].local_transform));
+
+    /* Child: translate(0,3,0) */
+    mat4 t1 = mat4_translate(vec3_create(0.0f, 3.0f, 0.0f));
+    SDL_memcpy(nodes[1].local_transform, &t1, sizeof(nodes[1].local_transform));
+
+    /* Set up hierarchy: node 0 has 1 child (node 1) */
+    nodes[0].first_child = 0;
+    nodes[0].child_count = 1;
+    uint32_t children[1] = { 1 };
+    uint32_t roots[1] = { 0 };
+
+    forge_pipeline_scene_compute_world_transforms(
+        nodes, 2, roots, 1, children, 1);
+
+    /* Child world should be translate(5,3,0) */
+    mat4 world;
+    SDL_memcpy(&world, nodes[1].world_transform, sizeof(world));
+    ASSERT_TRUE(float_eq(world.m[12], 5.0f));
+    ASSERT_TRUE(float_eq(world.m[13], 3.0f));
+    ASSERT_TRUE(float_eq(world.m[14], 0.0f));
+    END_TEST();
+}
+
+static void test_world_transform_cycle_detection(void)
+{
+    TEST("world_transform_cycle_detection");
+    ForgePipelineSceneNode nodes[2];
+    init_identity_node(&nodes[0], -1);
+    init_identity_node(&nodes[1], -1);
+
+    /* Create a cycle: node 0 -> child 1, node 1 -> child 0 */
+    nodes[0].first_child = 0;
+    nodes[0].child_count = 1;
+    nodes[1].first_child = 1;
+    nodes[1].child_count = 1;
+    uint32_t children[2] = { 1, 0 };
+    uint32_t roots[2] = { 0, 1 };
+
+    /* Should not hang — cycle detection should prevent infinite recursion */
+    forge_pipeline_scene_compute_world_transforms(
+        nodes, 2, roots, 2, children, 2);
+
+    /* If we get here, no hang occurred */
+    ASSERT_TRUE(true);
+    END_TEST();
+}
+
+static void test_world_transform_null_args(void)
+{
+    TEST("world_transform_null_args");
+    /* NULL nodes */
+    forge_pipeline_scene_compute_world_transforms(NULL, 0, NULL, 0, NULL, 0);
+    /* node_count 0 */
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+    forge_pipeline_scene_compute_world_transforms(&node, 0, NULL, 0, NULL, 0);
+    /* Should not crash */
+    ASSERT_TRUE(true);
+    END_TEST();
+}
+
+static void test_world_transform_no_roots(void)
+{
+    TEST("world_transform_no_roots");
+    ForgePipelineSceneNode nodes[2];
+    init_identity_node(&nodes[0], -1);
+    init_identity_node(&nodes[1], -1);
+
+    /* Both nodes are roots (parent=-1) but no explicit root array */
+    mat4 t0 = mat4_translate(vec3_create(1.0f, 0.0f, 0.0f));
+    mat4 t1 = mat4_translate(vec3_create(0.0f, 2.0f, 0.0f));
+    SDL_memcpy(nodes[0].local_transform, &t0, sizeof(nodes[0].local_transform));
+    SDL_memcpy(nodes[1].local_transform, &t1, sizeof(nodes[1].local_transform));
+
+    /* Pass NULL root array — should use fallback (parent == -1) */
+    forge_pipeline_scene_compute_world_transforms(nodes, 2, NULL, 0, NULL, 0);
+
+    mat4 w0, w1;
+    SDL_memcpy(&w0, nodes[0].world_transform, sizeof(w0));
+    SDL_memcpy(&w1, nodes[1].world_transform, sizeof(w1));
+    ASSERT_TRUE(float_eq(w0.m[12], 1.0f));
+    ASSERT_TRUE(float_eq(w1.m[13], 2.0f));
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Joint matrix computation (5 tests)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void test_joint_matrices_null_args(void)
+{
+    TEST("joint_matrices_null_args");
+    mat4 out;
+    /* NULL skin */
+    uint32_t r = forge_pipeline_compute_joint_matrices(NULL, NULL, 0, 0, &out, 1);
+    ASSERT_UINT_EQ(r, 0);
+    /* NULL nodes */
+    ForgePipelineSkin skin;
+    SDL_memset(&skin, 0, sizeof(skin));
+    r = forge_pipeline_compute_joint_matrices(&skin, NULL, 0, 0, &out, 1);
+    ASSERT_UINT_EQ(r, 0);
+    /* NULL out_matrices */
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+    r = forge_pipeline_compute_joint_matrices(&skin, &node, 1, 0, NULL, 1);
+    ASSERT_UINT_EQ(r, 0);
+    END_TEST();
+}
+
+static void test_joint_matrices_identity(void)
+{
+    TEST("joint_matrices_identity");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* 1 joint at node 0, IBM is identity */
+    static int32_t joints[1] = { 0 };
+    static float ibm[16] = {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+    };
+
+    ForgePipelineSkin skin;
+    SDL_memset(&skin, 0, sizeof(skin));
+    skin.joints = joints;
+    skin.inverse_bind_matrices = ibm;
+    skin.joint_count = 1;
+
+    mat4 out;
+    uint32_t r = forge_pipeline_compute_joint_matrices(
+        &skin, &node, 1, 0, &out, 1);
+    ASSERT_UINT_EQ(r, 1);
+
+    /* Result should be identity: inv(I) * I * I = I */
+    {
+        mat4 id = mat4_identity();
+        int i;
+        for (i = 0; i < 16; i++) {
+            ASSERT_TRUE(float_eq(out.m[i], id.m[i]));
+        }
+    }
+    END_TEST();
+}
+
+static void test_joint_matrices_with_transform(void)
+{
+    TEST("joint_matrices_with_transform");
+    ForgePipelineSceneNode nodes[2];
+    init_identity_node(&nodes[0], -1);  /* mesh node — translate(2,0,0) */
+    init_identity_node(&nodes[1], -1);  /* joint node — translate(5,0,0) */
+
+    mat4 mesh_world = mat4_translate(vec3_create(2.0f, 0.0f, 0.0f));
+    mat4 joint_world = mat4_translate(vec3_create(5.0f, 0.0f, 0.0f));
+    SDL_memcpy(nodes[0].world_transform, &mesh_world,
+               sizeof(nodes[0].world_transform));
+    SDL_memcpy(nodes[1].world_transform, &joint_world,
+               sizeof(nodes[1].world_transform));
+
+    /* 1 joint at node 1, IBM is identity */
+    static int32_t joints[1] = { 1 };
+    static float ibm[16] = {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+    };
+
+    ForgePipelineSkin skin;
+    SDL_memset(&skin, 0, sizeof(skin));
+    skin.joints = joints;
+    skin.inverse_bind_matrices = ibm;
+    skin.joint_count = 1;
+
+    mat4 out;
+    uint32_t r = forge_pipeline_compute_joint_matrices(
+        &skin, nodes, 2, 0, &out, 1);
+    ASSERT_UINT_EQ(r, 1);
+
+    /* Result: inv(translate(2,0,0)) * translate(5,0,0) * I = translate(3,0,0) */
+    ASSERT_TRUE(float_eq(out.m[12], 3.0f));
+    ASSERT_TRUE(float_eq(out.m[13], 0.0f));
+    ASSERT_TRUE(float_eq(out.m[14], 0.0f));
+    END_TEST();
+}
+
+static void test_joint_matrices_invalid_joint_index(void)
+{
+    TEST("joint_matrices_invalid_joint_index");
+    ForgePipelineSceneNode node;
+    init_identity_node(&node, -1);
+
+    /* Joint points to node index 999 (out of range) */
+    static int32_t joints[1] = { 999 };
+    static float ibm[16] = {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+    };
+
+    ForgePipelineSkin skin;
+    SDL_memset(&skin, 0, sizeof(skin));
+    skin.joints = joints;
+    skin.inverse_bind_matrices = ibm;
+    skin.joint_count = 1;
+
+    mat4 out;
+    uint32_t r = forge_pipeline_compute_joint_matrices(
+        &skin, &node, 1, 0, &out, 1);
+    ASSERT_UINT_EQ(r, 1);
+
+    /* Should write identity for invalid joint */
+    {
+        mat4 id = mat4_identity();
+        int i;
+        for (i = 0; i < 16; i++) {
+            ASSERT_TRUE(float_eq(out.m[i], id.m[i]));
+        }
+    }
+    END_TEST();
+}
+
+static void test_joint_matrices_max_cap(void)
+{
+    TEST("joint_matrices_max_cap");
+    ForgePipelineSceneNode nodes[3];
+    init_identity_node(&nodes[0], -1);
+    init_identity_node(&nodes[1], -1);
+    init_identity_node(&nodes[2], -1);
+
+    static int32_t joints[3] = { 0, 1, 2 };
+    static float ibm[48] = {
+        1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+    };
+
+    ForgePipelineSkin skin;
+    SDL_memset(&skin, 0, sizeof(skin));
+    skin.joints = joints;
+    skin.inverse_bind_matrices = ibm;
+    skin.joint_count = 3;
+
+    /* Only request 2 matrices even though skin has 3 joints.
+     * Allocate a third slot with a sentinel to verify no overwrite. */
+    mat4 out[3];
+    mat4 sentinel = mat4_translate(vec3_create(123.0f, 456.0f, 789.0f));
+    out[2] = sentinel;
+    uint32_t r = forge_pipeline_compute_joint_matrices(
+        &skin, nodes, 3, 0, out, 2);
+    ASSERT_UINT_EQ(r, 2);
+    /* Sentinel must be untouched — proves the cap prevented overwrite */
+    ASSERT_TRUE(float_eq(out[2].m[12], sentinel.m[12]));
+    ASSERT_TRUE(float_eq(out[2].m[13], sentinel.m[13]));
+    ASSERT_TRUE(float_eq(out[2].m[14], sentinel.m[14]));
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -5408,6 +6204,36 @@ int main(int argc, char *argv[])
     /* ── Zero-joint skin (1 test) ── */
     SDL_Log("\nZero-joint skin:");
     test_load_skin_zero_joints();
+
+    /* ── Animation runtime (11 tests) ── */
+    SDL_Log("\nAnimation runtime:");
+    test_anim_apply_null_args();
+    test_anim_apply_translation();
+    test_anim_apply_rotation();
+    test_anim_apply_exceeds_max_nodes();
+    test_anim_apply_loop();
+    test_anim_apply_clamp();
+    test_anim_apply_step_interpolation();
+    test_anim_apply_scale();
+    test_anim_apply_non_finite_time();
+    test_anim_apply_single_keyframe();
+    test_anim_apply_invalid_path();
+
+    /* ── World transform computation (5 tests) ── */
+    SDL_Log("\nWorld transform computation:");
+    test_world_transform_single_root();
+    test_world_transform_parent_child();
+    test_world_transform_cycle_detection();
+    test_world_transform_null_args();
+    test_world_transform_no_roots();
+
+    /* ── Joint matrix computation (5 tests) ── */
+    SDL_Log("\nJoint matrix computation:");
+    test_joint_matrices_null_args();
+    test_joint_matrices_identity();
+    test_joint_matrices_with_transform();
+    test_joint_matrices_invalid_joint_index();
+    test_joint_matrices_max_cap();
 
     /* ── Summary ── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

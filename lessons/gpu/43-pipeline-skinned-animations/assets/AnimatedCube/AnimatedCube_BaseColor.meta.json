@@ -1,0 +1,12 @@
+{
+  "source": "AnimatedCube_BaseColor.png",
+  "output": "AnimatedCube_BaseColor.png",
+  "output_width": 512,
+  "output_height": 512,
+  "compression": {
+    "codec": "uastc",
+    "container": "ktx2",
+    "compressed_file": "AnimatedCube_BaseColor.ktx2",
+    "ratio": 0.95
+  }
+}

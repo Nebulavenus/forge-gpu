@@ -1,0 +1,14 @@
+{
+  "source": "AnimatedCube.gltf",
+  "format_version": 1,
+  "clip_count": 1,
+  "clips": [
+    {
+      "name": "animation_AnimatedCube",
+      "duration": 2.000000,
+      "sampler_count": 1,
+      "channel_count": 1,
+      "total_keyframes": 3
+    }
+  ]
+}

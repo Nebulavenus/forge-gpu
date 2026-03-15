@@ -1,3 +1,4 @@
+/* This is production-quality library code, not a lesson demo. See CLAUDE.md "Library quality standards". */
 /*
  * forge_pipeline.h — Asset pipeline runtime library for forge-gpu
  *
@@ -32,6 +33,7 @@
 #define FORGE_PIPELINE_H
 
 #include <SDL3/SDL.h>
+#include <float.h>
 #include <stdint.h>
 /* string.h no longer needed — all mem ops use SDL equivalents */
 
@@ -51,6 +53,11 @@
 #define FORGE_PIPELINE_MAX_NODES      4096
 #define FORGE_PIPELINE_MAX_ROOTS      256
 #define FORGE_PIPELINE_MAX_SCENE_MESHES 1024
+
+/* Visit states for cycle detection in world transform propagation */
+#define FORGE_PIPELINE_VISIT_UNVISITED    0
+#define FORGE_PIPELINE_VISIT_IN_PROGRESS  1
+#define FORGE_PIPELINE_VISIT_DONE         2
 
 /* .fmesh binary format identifiers */
 #define FORGE_PIPELINE_FMESH_MAGIC   "FMSH"
@@ -704,6 +711,81 @@ void forge_pipeline_free_skins(ForgePipelineSkinSet *skins);
  * forge_pipeline_has_skin_data — Check if the mesh has skinned vertices.
  */
 bool forge_pipeline_has_skin_data(const ForgePipelineMesh *mesh);
+
+/* ── Animation evaluation ─────────────────────────────────────────────── */
+
+/* These functions require forge_math.h (vec3, quat, mat4).  They are only
+ * declared when forge_math.h has already been included.  forge_scene.h
+ * includes forge_math.h before this header, so they are always available
+ * when using the scene renderer. */
+#ifdef FORGE_MATH_H
+
+/* Small epsilon for timestamp comparisons in pipeline animation. */
+#define FORGE_PIPELINE_ANIM_EPSILON 1e-7f
+
+/*
+ * forge_pipeline_anim_apply — Evaluate animation at time t, update node TRS.
+ *
+ * For each channel in the animation, samples the keyframe data at time t
+ * using binary search + interpolation (vec3_lerp for translation/scale,
+ * quat_slerp for rotation).  Updates the target node's translation,
+ * rotation, scale, and recomputes its local_transform = T × R × S.
+ *
+ * Only nodes targeted by animation channels have their local_transform
+ * rebuilt.  Non-animated nodes keep their existing local_transform, so
+ * callers must ensure local_transform is consistent with TRS before the
+ * first call (the scene loader sets this up automatically).
+ *
+ * If loop is true, wraps t to [0, duration).  Otherwise clamps.
+ * After calling this, call forge_pipeline_scene_compute_world_transforms()
+ * to propagate changes through the hierarchy.
+ */
+void forge_pipeline_anim_apply(
+    const ForgePipelineAnimation *anim,
+    ForgePipelineSceneNode *nodes, uint32_t node_count,
+    float t, bool loop);
+
+/*
+ * forge_pipeline_scene_compute_world_transforms — Rebuild world transforms.
+ *
+ * Walks the scene hierarchy from root nodes downward, computing
+ * world_transform = parent_world × local_transform for each node.
+ * Root nodes use the identity as their parent transform.
+ *
+ * `children` / `child_count` are the flat child index array from
+ * ForgePipelineScene (scene.children, scene.child_count).  Each node's
+ * first_child + child_count index into this array.  Pass NULL / 0 when
+ * no child array is available — nodes with child_count > 0 will not
+ * recurse (only root-level nodes get their world transforms set).
+ *
+ * Must be called after forge_pipeline_anim_apply() to propagate
+ * updated local transforms through the hierarchy.
+ */
+void forge_pipeline_scene_compute_world_transforms(
+    ForgePipelineSceneNode *nodes, uint32_t node_count,
+    const uint32_t *root_nodes, uint32_t root_count,
+    const uint32_t *children, uint32_t child_count);
+
+/*
+ * forge_pipeline_compute_joint_matrices — Compute skinning joint matrices.
+ *
+ * For each joint in the skin, computes:
+ *   joint_matrix[i] = inv(mesh_world) × joint_world × IBM[i]
+ *
+ * where mesh_world is the world transform of the node that owns the mesh,
+ * joint_world is the world transform of the joint node, and IBM is the
+ * inverse bind matrix from the skin data.
+ *
+ * Writes to out_matrices[] (up to max_joints entries).
+ * Returns the number of joint matrices written.
+ */
+uint32_t forge_pipeline_compute_joint_matrices(
+    const ForgePipelineSkin *skin,
+    const ForgePipelineSceneNode *nodes, uint32_t node_count,
+    int mesh_node_index,
+    mat4 *out_matrices, uint32_t max_joints);
+
+#endif /* FORGE_MATH_H — animation evaluation requires forge_math.h */
 
 /* ── Implementation ────────────────────────────────────────────────────── */
 
@@ -3405,6 +3487,355 @@ bool forge_pipeline_load_clip(const ForgePipelineAnimSet *set,
 
     return forge_pipeline_load_animation(full_path, file);
 }
+
+#ifdef FORGE_MATH_H /* animation evaluation requires forge_math.h */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Animation evaluation
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Binary search for keyframe interval: find lo such that
+ * timestamps[lo] <= t < timestamps[lo+1].  O(log n). */
+static int forge_pipeline__anim_find_keyframe(
+    const float *timestamps, uint32_t count, float t)
+{
+    if (count < 2) return 0; /* Need at least two keyframes for interpolation */
+    int lo = 0;
+    int hi = (int)count - 1;
+    while (lo + 1 < hi) {
+        int mid = (lo + hi) / 2;
+        if (timestamps[mid] <= t) lo = mid;
+        else                      hi = mid;
+    }
+    return lo;
+}
+
+/* Evaluate a vec3 sampler (translation or scale) at time t. */
+static vec3 forge_pipeline__anim_eval_vec3(
+    const ForgePipelineAnimSampler *sampler, float t)
+{
+    const float *ts   = sampler->timestamps;
+    const float *vals = sampler->values;
+    uint32_t count    = sampler->keyframe_count;
+
+    if (count == 0) return vec3_create(0.0f, 0.0f, 0.0f);
+    if (t <= ts[0])         return vec3_create(vals[0], vals[1], vals[2]);
+    if (t >= ts[count - 1]) {
+        const float *v = vals + (count - 1) * 3;
+        return vec3_create(v[0], v[1], v[2]);
+    }
+
+    int lo = forge_pipeline__anim_find_keyframe(ts, count, t);
+
+    /* STEP interpolation */
+    if (sampler->interpolation == FORGE_PIPELINE_INTERP_STEP) {
+        const float *v = vals + lo * 3;
+        return vec3_create(v[0], v[1], v[2]);
+    }
+
+    /* LINEAR interpolation */
+    float t0   = ts[lo];
+    float t1   = ts[lo + 1];
+    float span = t1 - t0;
+    float alpha = (span > FORGE_PIPELINE_ANIM_EPSILON)
+                ? (t - t0) / span : 0.0f;
+
+    const float *a = vals + lo * 3;
+    const float *b = vals + (lo + 1) * 3;
+    return vec3_lerp(vec3_create(a[0], a[1], a[2]),
+                     vec3_create(b[0], b[1], b[2]), alpha);
+}
+
+/* Evaluate a quaternion sampler (rotation) at time t.
+ * Pipeline stores quaternions as [x,y,z,w]; forge_math uses quat(w,x,y,z). */
+static quat forge_pipeline__anim_eval_quat(
+    const ForgePipelineAnimSampler *sampler, float t)
+{
+    const float *ts   = sampler->timestamps;
+    const float *vals = sampler->values;
+    uint32_t count    = sampler->keyframe_count;
+
+    if (count == 0) return quat_create(1.0f, 0.0f, 0.0f, 0.0f);
+    if (t <= ts[0])
+        return quat_create(vals[3], vals[0], vals[1], vals[2]);
+    if (t >= ts[count - 1]) {
+        const float *v = vals + (count - 1) * 4;
+        return quat_create(v[3], v[0], v[1], v[2]);
+    }
+
+    int lo = forge_pipeline__anim_find_keyframe(ts, count, t);
+
+    const float *a = vals + lo * 4;
+    quat qa = quat_create(a[3], a[0], a[1], a[2]);
+
+    if (sampler->interpolation == FORGE_PIPELINE_INTERP_STEP)
+        return qa;
+
+    float t0   = ts[lo];
+    float t1   = ts[lo + 1];
+    float span = t1 - t0;
+    float alpha = (span > FORGE_PIPELINE_ANIM_EPSILON)
+                ? (t - t0) / span : 0.0f;
+
+    const float *b = vals + (lo + 1) * 4;
+    quat qb = quat_create(b[3], b[0], b[1], b[2]);
+    return quat_slerp(qa, qb, alpha);
+}
+
+/* Rebuild a node's local_transform from its TRS components.
+ * local_transform = T × R × S (column-major, stored as float[16]). */
+static void forge_pipeline__rebuild_local(ForgePipelineSceneNode *node)
+{
+    mat4 t_mat = mat4_translate(vec3_create(
+        node->translation[0], node->translation[1], node->translation[2]));
+    quat rot = quat_create(
+        node->rotation[3], node->rotation[0],
+        node->rotation[1], node->rotation[2]);
+    mat4 r_mat = quat_to_mat4(rot);
+    mat4 s_mat = mat4_scale(vec3_create(
+        node->scale[0], node->scale[1], node->scale[2]));
+    mat4 result = mat4_multiply(t_mat, mat4_multiply(r_mat, s_mat));
+    SDL_memcpy(node->local_transform, &result, sizeof(node->local_transform));
+}
+
+void forge_pipeline_anim_apply(
+    const ForgePipelineAnimation *anim,
+    ForgePipelineSceneNode *nodes, uint32_t node_count,
+    float t, bool loop)
+{
+    if (!anim || !nodes || node_count == 0 || anim->channel_count == 0)
+        return;
+
+    if (node_count > FORGE_PIPELINE_MAX_NODES) {
+        SDL_Log("forge_pipeline_anim_apply: node_count %u exceeds max %u — "
+                "animation not applied",
+                node_count, FORGE_PIPELINE_MAX_NODES);
+        return;
+    }
+
+    /* Reject non-finite time to prevent NaN propagation through
+     * SDL_fmodf, alpha math, and downstream transforms. */
+    if (t != t || t > FLT_MAX || t < -FLT_MAX) {
+        SDL_Log("forge_pipeline_anim_apply: non-finite time input; using 0");
+        t = 0.0f;
+    }
+
+    /* Wrap or clamp time */
+    if (anim->duration > FORGE_PIPELINE_ANIM_EPSILON) {
+        if (loop) {
+            t = SDL_fmodf(t, anim->duration);
+            if (t < 0.0f) t += anim->duration;
+        } else {
+            if (t < 0.0f) t = 0.0f;
+            if (t > anim->duration) t = anim->duration;
+        }
+    } else {
+        t = 0.0f;
+    }
+
+    /* Track which nodes were modified to avoid redundant rebuilds.
+     * Fixed-size (4096 bytes) because MSVC C99 does not support VLAs. */
+    uint8_t modified[FORGE_PIPELINE_MAX_NODES];
+    SDL_memset(modified, 0, node_count * sizeof(uint8_t));
+
+    for (uint32_t ci = 0; ci < anim->channel_count; ci++) {
+        const ForgePipelineAnimChannel *ch = &anim->channels[ci];
+
+        if (ch->target_node < 0 || (uint32_t)ch->target_node >= node_count)
+            continue;
+        if (ch->sampler_index >= anim->sampler_count) continue;
+
+        const ForgePipelineAnimSampler *samp =
+            &anim->samplers[ch->sampler_index];
+        if (!samp->timestamps || !samp->values || samp->keyframe_count == 0)
+            continue;
+
+        ForgePipelineSceneNode *node = &nodes[ch->target_node];
+
+        switch (ch->target_path) {
+        case FORGE_PIPELINE_ANIM_TRANSLATION: {
+            vec3 v = forge_pipeline__anim_eval_vec3(samp, t);
+            node->translation[0] = v.x;
+            node->translation[1] = v.y;
+            node->translation[2] = v.z;
+            break;
+        }
+        case FORGE_PIPELINE_ANIM_ROTATION: {
+            quat q = forge_pipeline__anim_eval_quat(samp, t);
+            /* Store back as xyzw (pipeline format) */
+            node->rotation[0] = q.x;
+            node->rotation[1] = q.y;
+            node->rotation[2] = q.z;
+            node->rotation[3] = q.w;
+            break;
+        }
+        case FORGE_PIPELINE_ANIM_SCALE: {
+            vec3 v = forge_pipeline__anim_eval_vec3(samp, t);
+            node->scale[0] = v.x;
+            node->scale[1] = v.y;
+            node->scale[2] = v.z;
+            break;
+        }
+        default:
+            /* Morph target weights not yet supported — skip silently */
+            continue; /* skip modified[] flag below */
+        }
+
+        modified[ch->target_node] = 1;
+    }
+
+    /* Rebuild local_transform for modified nodes */
+    for (uint32_t i = 0; i < node_count; i++) {
+        if (modified[i])
+            forge_pipeline__rebuild_local(&nodes[i]);
+    }
+}
+
+/* ── World transform computation ─────────────────────────────────────── */
+
+/* Recursive helper: propagate parent_world × local → world for a subtree.
+ * Uses the indexed child array for O(child_count) traversal instead of
+ * scanning all nodes. Cycle detection via visit_state prevents unbounded
+ * recursion on malformed input: 0 = unvisited, 1 = in-progress, 2 = done. */
+static void forge_pipeline__propagate_world(
+    ForgePipelineSceneNode *nodes, uint32_t node_count,
+    const uint32_t *children, uint32_t child_array_count,
+    uint32_t node_idx, const mat4 *parent_world, uint8_t *visit_state)
+{
+    if (node_idx >= node_count) {
+        SDL_Log("forge_pipeline: world transform traversal: node index %u "
+                "out of range (node_count=%u)",
+                (unsigned)node_idx, (unsigned)node_count);
+        return;
+    }
+    if (visit_state[node_idx] == FORGE_PIPELINE_VISIT_IN_PROGRESS) {
+        SDL_Log("forge_pipeline: cycle detected at node %u — "
+                "skipping to prevent infinite recursion",
+                (unsigned)node_idx);
+        return;
+    }
+    if (visit_state[node_idx] == FORGE_PIPELINE_VISIT_DONE) return;
+    visit_state[node_idx] = FORGE_PIPELINE_VISIT_IN_PROGRESS;
+
+    ForgePipelineSceneNode *node = &nodes[node_idx];
+    mat4 local;
+    SDL_memcpy(&local, node->local_transform, sizeof(local));
+    mat4 world = mat4_multiply(*parent_world, local);
+    SDL_memcpy(node->world_transform, &world, sizeof(world));
+
+    /* Recurse into children using the indexed child array (O(child_count),
+     * matching forge_pipeline__compute_world_transforms). */
+    if (children && node->child_count > 0) {
+        for (uint32_t ci = 0; ci < node->child_count; ci++) {
+            uint32_t arr_idx = node->first_child + ci;
+            if (arr_idx >= child_array_count) {
+                SDL_Log("forge_pipeline: world transform traversal: "
+                        "child array index %u out of range "
+                        "(child_array_count=%u) for node %u",
+                        (unsigned)arr_idx, (unsigned)child_array_count,
+                        (unsigned)node_idx);
+                break;
+            }
+            uint32_t child_idx = children[arr_idx];
+            forge_pipeline__propagate_world(
+                nodes, node_count, children, child_array_count,
+                child_idx, &world, visit_state);
+        }
+    }
+
+    visit_state[node_idx] = FORGE_PIPELINE_VISIT_DONE;
+}
+
+void forge_pipeline_scene_compute_world_transforms(
+    ForgePipelineSceneNode *nodes, uint32_t node_count,
+    const uint32_t *root_nodes, uint32_t root_count,
+    const uint32_t *children, uint32_t child_count)
+{
+    if (!nodes || node_count == 0) return;
+
+    if (node_count > FORGE_PIPELINE_MAX_NODES) {
+        SDL_Log("forge_pipeline: compute_world_transforms: node_count %u "
+                "exceeds FORGE_PIPELINE_MAX_NODES (%u) — skipping",
+                node_count, FORGE_PIPELINE_MAX_NODES);
+        return;
+    }
+
+    /* Stack-allocated visit state (4096 bytes max) for cycle detection.
+     * MSVC C99 does not support VLAs, so we use the fixed upper bound. */
+    uint8_t visit_state[FORGE_PIPELINE_MAX_NODES];
+    SDL_memset(visit_state, FORGE_PIPELINE_VISIT_UNVISITED,
+               node_count * sizeof(uint8_t));
+
+    mat4 identity = mat4_identity();
+
+    if (root_nodes && root_count > 0) {
+        for (uint32_t i = 0; i < root_count; i++) {
+            forge_pipeline__propagate_world(
+                nodes, node_count, children, child_count,
+                root_nodes[i], &identity, visit_state);
+        }
+    } else {
+        /* No explicit roots — process nodes with parent == -1 */
+        for (uint32_t i = 0; i < node_count; i++) {
+            if (nodes[i].parent < 0) {
+                forge_pipeline__propagate_world(
+                    nodes, node_count, children, child_count,
+                    i, &identity, visit_state);
+            }
+        }
+    }
+}
+
+/* ── Joint matrix computation ────────────────────────────────────────── */
+
+uint32_t forge_pipeline_compute_joint_matrices(
+    const ForgePipelineSkin *skin,
+    const ForgePipelineSceneNode *nodes, uint32_t node_count,
+    int mesh_node_index,
+    mat4 *out_matrices, uint32_t max_joints)
+{
+    if (!skin || !nodes || !out_matrices || max_joints == 0)
+        return 0;
+    if (skin->joint_count == 0 || !skin->joints ||
+        !skin->inverse_bind_matrices)
+        return 0;
+
+    /* Get mesh node world transform and compute its inverse */
+    mat4 mesh_world = mat4_identity();
+    if (mesh_node_index >= 0 && (uint32_t)mesh_node_index < node_count) {
+        SDL_memcpy(&mesh_world,
+                   nodes[mesh_node_index].world_transform, sizeof(mesh_world));
+    }
+    mat4 inv_mesh_world = mat4_inverse(mesh_world);
+
+    uint32_t count = skin->joint_count;
+    if (count > max_joints) count = max_joints;
+
+    for (uint32_t i = 0; i < count; i++) {
+        int32_t joint_idx = skin->joints[i];
+
+        /* Skip invalid joint indices — identity prevents deformation */
+        if (joint_idx < 0 || (uint32_t)joint_idx >= node_count) {
+            out_matrices[i] = mat4_identity();
+            continue;
+        }
+
+        mat4 joint_world;
+        SDL_memcpy(&joint_world, nodes[joint_idx].world_transform, sizeof(joint_world));
+
+        /* Inverse bind matrix from the skin data */
+        mat4 ibm;
+        SDL_memcpy(&ibm, &skin->inverse_bind_matrices[i * 16], sizeof(ibm));
+
+        /* joint_matrix = inv(mesh_world) × joint_world × IBM */
+        out_matrices[i] = mat4_multiply(
+            inv_mesh_world, mat4_multiply(joint_world, ibm));
+    }
+
+    return count;
+}
+
+#endif /* FORGE_MATH_H — animation evaluation implementation */
 
 #endif /* FORGE_PIPELINE_IMPLEMENTATION */
 

@@ -410,11 +410,11 @@ cleanup:
  * Group 17: Max materials constant
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#define EXPECTED_MODEL_MAX_MATERIALS 32
+#define EXPECTED_MODEL_MAX_MATERIALS 64
 
 static void test_max_materials_constant(void)
 {
-    TEST("FORGE_SCENE_MODEL_MAX_MATERIALS is 32")
+    TEST("FORGE_SCENE_MODEL_MAX_MATERIALS is 64")
     ASSERT_INT_EQ(FORGE_SCENE_MODEL_MAX_MATERIALS, EXPECTED_MODEL_MAX_MATERIALS);
     END_TEST();
 }

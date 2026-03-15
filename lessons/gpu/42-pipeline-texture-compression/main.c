@@ -162,10 +162,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_Log("Lesson 42: loaded ABeautifulGame in %.1f ms — "
             "%u/%u textures compressed, VRAM %.1f MB (uncompressed would be %.1f MB)",
             state->load_time_ms,
-            state->chess.compressed_texture_count,
-            state->chess.total_texture_count,
-            (float)state->chess.vram_compressed_bytes / BYTES_PER_MB,
-            (float)state->chess.vram_uncompressed_bytes / BYTES_PER_MB);
+            state->chess.vram.compressed_texture_count,
+            state->chess.vram.total_texture_count,
+            (float)state->chess.vram.compressed_bytes / BYTES_PER_MB,
+            (float)state->chess.vram.uncompressed_bytes / BYTES_PER_MB);
 
     return SDL_APP_CONTINUE;
 }
@@ -213,8 +213,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         ForgeUiContext *ui = forge_scene_ui(s);
         if (ui) {
             ForgeSceneModel *m = &state->chess;
-            float compressed_mb   = (float)m->vram_compressed_bytes / BYTES_PER_MB;
-            float uncompressed_mb = (float)m->vram_uncompressed_bytes / BYTES_PER_MB;
+            float compressed_mb   = (float)m->vram.compressed_bytes / BYTES_PER_MB;
+            float uncompressed_mb = (float)m->vram.uncompressed_bytes / BYTES_PER_MB;
             float savings_pct     = 0.0f;
             if (uncompressed_mb > VRAM_EPSILON) {
                 savings_pct = (1.0f - compressed_mb / uncompressed_mb) * 100.0f;
@@ -229,7 +229,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
             SDL_snprintf(buf, sizeof(buf), "Textures: %u total, %u compressed",
-                         m->total_texture_count, m->compressed_texture_count);
+                         m->vram.total_texture_count,
+                         m->vram.compressed_texture_count);
             forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
             forge_ui_ctx_label_layout(ui, "---", LABEL_HEIGHT);

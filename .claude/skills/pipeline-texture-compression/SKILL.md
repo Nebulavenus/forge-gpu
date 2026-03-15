@@ -107,9 +107,9 @@ forge_scene_load_model(&scene, &model,
 
 /* Check compression stats */
 SDL_Log("Textures: %u/%u compressed, VRAM: %.1f MB (%.1f MB uncompressed)",
-        model.compressed_texture_count, model.total_texture_count,
-        (float)model.vram_compressed_bytes / (1024.0f * 1024.0f),
-        (float)model.vram_uncompressed_bytes / (1024.0f * 1024.0f));
+        model.vram.compressed_texture_count, model.vram.total_texture_count,
+        (float)model.vram.compressed_bytes / (1024.0f * 1024.0f),
+        (float)model.vram.uncompressed_bytes / (1024.0f * 1024.0f));
 ```
 
 ## .ftex binary format
