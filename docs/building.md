@@ -13,9 +13,6 @@ and [Lesson 06 (Reading Error Messages)](../lessons/engine/06-reading-error-mess
 - **A C compiler** — MSVC on Windows, GCC or Clang on Linux/macOS
 - **A GPU** with Vulkan, Direct3D 12, or Metal support
 - **Python 3.10+** — for helper scripts and the asset pipeline
-- **Git LFS** — binary assets (`.bin`, `.glb`, `.gif`) are stored with
-  [Git Large File Storage](https://git-lfs.com)
-
 SDL3 is fetched automatically via CMake's FetchContent — no manual
 installation required.
 
@@ -28,45 +25,6 @@ repository, so Metal support works out of the box with no extra tooling.
 
 If you modify shader source (`.hlsl` files), you'll need `spirv-cross` to
 regenerate the MSL headers (see [Shader compilation](#shader-compilation)).
-
-### Installing Git LFS
-
-Git LFS must be installed and initialized **before cloning** the repository.
-Cloning without LFS leaves binary assets as small pointer stubs instead of
-real data, and the working tree may appear corrupted with files showing as
-modified or deleted.
-
-```bash
-git lfs install
-```
-
-If the `git lfs` command is not found, install it first:
-
-**Windows:**
-
-```bash
-winget install GitHub.GitLFS
-```
-
-**Linux:**
-
-```bash
-sudo apt install git-lfs    # Debian / Ubuntu
-sudo dnf install git-lfs    # Fedora
-```
-
-**macOS:**
-
-```bash
-brew install git-lfs
-```
-
-If you ran `git lfs install` before cloning, LFS files are downloaded
-automatically during checkout. If the files were not fetched (e.g. you
-cloned with `GIT_LFS_SKIP_SMUDGE=1`), run `git lfs pull` to download them.
-Without the actual binary data, lessons that load 3D models will fail at
-runtime because the `.bin` files will be LFS pointer files instead of actual
-data.
 
 ### Installing Python
 
