@@ -713,6 +713,14 @@ static SDL_GPUTexture *forge_scene_upload_texture(
 #include "scene/shaders/compiled/scene_skinned_shadow_vert_msl.h"
 #endif
 
+/* ── D3D12 texture alignment constants ─────────────────────────────────── */
+
+/* D3D12 requires texture upload row pitch aligned to 256 bytes
+ * (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT).  We pad rows unconditionally
+ * (harmless on Vulkan/Metal) so the D3D12 backend takes the fast copy
+ * path instead of hitting its buggy realignment code. */
+#define FORGE_SCENE_D3D12_PITCH_ALIGN     256
+
 /* ── Inline accessors ───────────────────────────────────────────────────── */
 
 static inline ForgeSceneConfig forge_scene_default_config(const char *title)
@@ -1043,7 +1051,10 @@ static SDL_GPUTexture *forge_scene_upload_texture(
         return NULL;
     }
 
-    Uint32 total_bytes = (Uint32)(tex_w * tex_h * 4);
+    Uint32 row_bytes_raw  = (Uint32)(tex_w * 4);
+    Uint32 aligned_pitch  = (row_bytes_raw + FORGE_SCENE_D3D12_PITCH_ALIGN - 1)
+                          & ~(FORGE_SCENE_D3D12_PITCH_ALIGN - 1);
+    Uint32 total_bytes    = aligned_pitch * (Uint32)tex_h;
 
     SDL_GPUTransferBufferCreateInfo xfer_info;
     SDL_zero(xfer_info);
@@ -1069,13 +1080,16 @@ static SDL_GPUTexture *forge_scene_upload_texture(
         return NULL;
     }
 
-    Uint32 row_bytes = (Uint32)(tex_w * 4);
     const Uint8 *row_src = (const Uint8 *)converted->pixels;
     Uint8 *row_dst = (Uint8 *)mapped;
     for (Uint32 row = 0; row < (Uint32)tex_h; row++) {
-        SDL_memcpy(row_dst + row * row_bytes,
+        SDL_memcpy(row_dst + row * aligned_pitch,
                    row_src + row * converted->pitch,
-                   row_bytes);
+                   row_bytes_raw);
+        if (aligned_pitch > row_bytes_raw) {
+            SDL_memset(row_dst + row * aligned_pitch + row_bytes_raw,
+                       0, aligned_pitch - row_bytes_raw);
+        }
     }
     SDL_UnmapGPUTransferBuffer(scene->device, xfer);
     SDL_DestroySurface(converted);
@@ -1105,7 +1119,7 @@ static SDL_GPUTexture *forge_scene_upload_texture(
     SDL_GPUTextureTransferInfo tex_src;
     SDL_zero(tex_src);
     tex_src.transfer_buffer = xfer;
-    tex_src.pixels_per_row  = (Uint32)tex_w;
+    tex_src.pixels_per_row  = aligned_pitch / 4;
     tex_src.rows_per_layer  = (Uint32)tex_h;
 
     SDL_GPUTextureRegion tex_dst;
@@ -1177,7 +1191,9 @@ static SDL_GPUTexture *forge_scene__upload_atlas(SDL_GPUDevice *device,
         return NULL;
     }
 
-    Uint32 total = w * h;
+    Uint32 aligned_pitch = (w + FORGE_SCENE_D3D12_PITCH_ALIGN - 1)
+                         & ~(FORGE_SCENE_D3D12_PITCH_ALIGN - 1);
+    Uint32 total = aligned_pitch * h;
     SDL_GPUTransferBufferCreateInfo xfer_info;
     SDL_zero(xfer_info);
     xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
@@ -1198,7 +1214,17 @@ static SDL_GPUTexture *forge_scene__upload_atlas(SDL_GPUDevice *device,
         SDL_ReleaseGPUTexture(device, tex);
         return NULL;
     }
-    SDL_memcpy(mapped, pixels, total);
+    const Uint8 *src_row = pixels;
+    Uint8 *dst_row = (Uint8 *)mapped;
+    for (Uint32 row = 0; row < h; row++) {
+        SDL_memcpy(dst_row + row * aligned_pitch,
+                   src_row + row * w,
+                   w);
+        if (aligned_pitch > w) {
+            SDL_memset(dst_row + row * aligned_pitch + w,
+                       0, aligned_pitch - w);
+        }
+    }
     SDL_UnmapGPUTransferBuffer(device, xfer);
 
     SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
@@ -1224,7 +1250,7 @@ static SDL_GPUTexture *forge_scene__upload_atlas(SDL_GPUDevice *device,
     SDL_GPUTextureTransferInfo src;
     SDL_zero(src);
     src.transfer_buffer = xfer;
-    src.pixels_per_row  = w;
+    src.pixels_per_row  = aligned_pitch;
     src.rows_per_layer  = h;
 
     SDL_GPUTextureRegion dst;
@@ -3064,14 +3090,11 @@ static SDL_GPUTexture *forge_scene_upload_compressed_texture(
         return NULL;
     }
 
-    /* D3D12 requires texture upload row pitch aligned to 256 bytes
-     * (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) and mip offsets aligned to
-     * 512 bytes (D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT).  For BC formats
-     * (4x4 blocks, 16 bytes/block), small mips have row pitches below 256.
-     * We pad rows and align offsets unconditionally (harmless on Vulkan/Metal)
-     * so the D3D12 backend takes the fast copy path instead of hitting its
-     * buggy realignment code. */
-#define FORGE_SCENE_D3D12_PITCH_ALIGN     256
+    /* D3D12 mip offsets must be aligned to 512 bytes
+     * (D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT).  For BC formats (4x4
+     * blocks, 16 bytes/block), small mips have row pitches below 256.
+     * Row pitch alignment (FORGE_SCENE_D3D12_PITCH_ALIGN) is defined at
+     * file scope and shared with the uncompressed upload functions. */
 #define FORGE_SCENE_D3D12_PLACEMENT_ALIGN 512
 #define FORGE_SCENE_BC_BLOCK_SIZE         16  /* BC7 and BC5: 16 bytes per 4x4 block */
 #define FORGE_SCENE_BC_BLOCK_DIM          4   /* 4x4 pixel blocks */
@@ -3202,7 +3225,6 @@ static SDL_GPUTexture *forge_scene_upload_compressed_texture(
         SDL_UploadToGPUTexture(copy, &src, &dst, false);
     }
 
-#undef FORGE_SCENE_D3D12_PITCH_ALIGN
 #undef FORGE_SCENE_D3D12_PLACEMENT_ALIGN
 #undef FORGE_SCENE_BC_BLOCK_SIZE
 #undef FORGE_SCENE_BC_BLOCK_DIM
