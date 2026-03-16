@@ -75,17 +75,18 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 ### Collision Detection
 
-- [ ] **Physics Lesson 07 — Collision Shapes and Broadphase** — Sphere, AABB, OBB, capsule, convex hull representations; support functions for each shape; broadphase with sweep-and-prune or BVH; pairing broadphase with simple narrowphase from earlier lessons
-- [ ] **Physics Lesson 08 — GJK Intersection Testing** — Gilbert-Johnson-Keerthi algorithm for boolean intersection testing; Minkowski difference intuition; simplex evolution; support function interface for convex shapes
-- [ ] **Physics Lesson 09 — EPA Penetration Depth** — Expanding Polytope Algorithm for penetration depth and contact normal from a GJK simplex; polytope expansion and convergence; connecting EPA output to contact generation
-- [ ] **Physics Lesson 10 — Contact Manifold** — Generating contact points from GJK/EPA results; contact point reduction (Sutherland-Hodgman clipping); manifold caching and persistent contact IDs across frames
+- [x] **Physics Lesson 07 — Collision Shapes and Support Functions** — Collision shape tagged union (sphere, box, capsule); support functions for each shape (GJK foundation); AABB computation from oriented shapes; AABB overlap testing; capsule inertia via composite body theorem; shape-based collision dispatch
+- [ ] **Physics Lesson 08 — Sweep-and-Prune Broadphase** — Sort-and-sweep broadphase using L07's AABBs; axis projection and pair tracking; incremental updates for moving objects
+- [ ] **Physics Lesson 09 — GJK Intersection Testing** — Gilbert-Johnson-Keerthi algorithm for boolean intersection testing; Minkowski difference intuition; simplex evolution; support function interface from L07
+- [ ] **Physics Lesson 10 — EPA Penetration Depth** — Expanding Polytope Algorithm for penetration depth and contact normal from a GJK simplex; polytope expansion and convergence; connecting EPA output to contact generation
+- [ ] **Physics Lesson 11 — Contact Manifold** — Generating contact points from GJK/EPA results; contact point reduction (Sutherland-Hodgman clipping); manifold caching and persistent contact IDs across frames
 
 ### Rigid Body Dynamics
 
-- [ ] **Physics Lesson 11 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses; sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
-- [ ] **Physics Lesson 12 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
-- [ ] **Physics Lesson 13 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
-- [ ] **Physics Lesson 14 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance
+- [ ] **Physics Lesson 12 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses; sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
+- [ ] **Physics Lesson 13 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
+- [ ] **Physics Lesson 14 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
+- [ ] **Physics Lesson 15 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance
 
 ## Audio Lessons — New Track
 

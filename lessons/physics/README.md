@@ -45,6 +45,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="04-rigid-body-state/assets/screenshot.png" width="480" alt="Rigid Body State"/>](04-rigid-body-state/) | [**04 — Rigid Body State**](04-rigid-body-state/) | Rigid body mass properties, inertia tensors, quaternion orientation, angular velocity, torque, integration |
 | [<img src="05-forces-and-torques/assets/screenshot.png" width="480" alt="Forces and Torques"/>](05-forces-and-torques/) | [**05 — Forces and Torques**](05-forces-and-torques/) | Force generators (gravity, drag, friction), forces at arbitrary points, torque from off-center forces, gyroscopic stability |
 | [<img src="06-resting-contacts-and-friction/assets/screenshot.png" width="480" alt="Resting Contacts and Friction"/>](06-resting-contacts-and-friction/) | [**06 — Resting Contacts and Friction**](06-resting-contacts-and-friction/) | Sphere-plane and box-plane contact detection, Coulomb friction (static and dynamic), iterative contact solver, Baumgarte stabilization, stacking |
+| [<img src="07-collision-shapes/assets/screenshot.png" width="480" alt="Collision Shapes and Support Functions"/>](07-collision-shapes/) | [**07 — Collision Shapes and Support Functions**](07-collision-shapes/) | Collision shape tagged union, support functions (sphere, box, capsule), AABB computation from oriented shapes, AABB overlap testing, capsule inertia |
 
 ## Shared library
 

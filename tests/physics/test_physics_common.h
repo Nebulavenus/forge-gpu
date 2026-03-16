@@ -1,7 +1,7 @@
 /*
  * Physics Test Framework — shared macros and counters
  *
- * Included by test_physics.c and test_physics_rbc.c
+ * Included by test_physics.c, test_physics_rbc.c, and test_physics_shapes.c
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -23,6 +23,7 @@ extern int fail_count;
 /* ── Test runners (defined in separate translation units) ───────────── */
 
 void run_rbc_tests(void);
+void run_collision_shape_tests(void);
 
 /* ── Shared test constants ─────────────────────────────────────────────── */
 

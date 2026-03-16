@@ -1,4 +1,4 @@
-add_executable(test_physics test_physics.c test_physics_rbc.c)
+add_executable(test_physics test_physics.c test_physics_rbc.c test_physics_shapes.c)
 target_include_directories(test_physics PRIVATE ${FORGE_COMMON_DIR})
 target_link_libraries(test_physics PRIVATE SDL3::SDL3 $<$<NOT:$<C_COMPILER_ID:MSVC>>:m>)
 

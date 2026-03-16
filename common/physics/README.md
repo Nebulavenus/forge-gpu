@@ -107,11 +107,34 @@ Constants: `FORGE_PHYSICS_MAX_RB_CONTACTS` (64),
 `FORGE_PHYSICS_PENETRATION_SLOP` (0.01 m),
 `FORGE_PHYSICS_RB_RESTING_THRESHOLD` (0.5 m/s).
 
+### Lesson 07 — Collision Shapes and Support Functions
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_shape_sphere()` | Create sphere collision shape |
+| `forge_physics_shape_box()` | Create box collision shape |
+| `forge_physics_shape_capsule()` | Create capsule collision shape (Y-axis) |
+| `forge_physics_shape_is_valid()` | Validate shape type and dimensions |
+| `forge_physics_rigid_body_set_inertia_capsule()` | Set inertia tensor for capsule (cylinder + 2 hemispheres) |
+| `forge_physics_rigid_body_set_inertia_from_shape()` | Dispatch to correct per-shape inertia setter |
+| `forge_physics_shape_support()` | Farthest point on shape in a direction (GJK foundation) |
+| `forge_physics_shape_compute_aabb()` | World-space AABB from shape, position, orientation |
+| `forge_physics_aabb_overlap()` | Boolean AABB overlap test (broadphase primitive) |
+| `forge_physics_aabb_expand()` | Grow AABB by uniform margin |
+| `forge_physics_aabb_center()` | Center point of AABB |
+| `forge_physics_aabb_extents()` | Half-extents of AABB |
+
+Types: `ForgePhysicsShapeType` (enum), `ForgePhysicsCollisionShape` (tagged union),
+`ForgePhysicsAABB` (min/max pair).
+
+Constants: `FORGE_PHYSICS_SHAPE_MIN_DIM` (1e-5),
+`FORGE_PHYSICS_CAPSULE_HEMI_CENTROID_FRAC` (3/8).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 07–14 | *See [PLAN.md](../../PLAN.md)* | Contacts, GJK/EPA, constraints, solver |
+| 08–14 | *See [PLAN.md](../../PLAN.md)* | Broadphase, GJK/EPA, constraints, solver |
 
 ## Design
 
@@ -136,3 +159,4 @@ Constants: `FORGE_PHYSICS_MAX_RB_CONTACTS` (64),
 | [Physics L04](../../lessons/physics/04-rigid-body-state/) | `ForgePhysicsRigidBody`, `forge_physics_rigid_body_create()`, `forge_physics_rigid_body_integrate()`, inertia setters, force/torque application |
 | [Physics L05](../../lessons/physics/05-forces-and-torques/) | `forge_physics_rigid_body_apply_gravity()`, `forge_physics_rigid_body_apply_linear_drag()`, `forge_physics_rigid_body_apply_angular_drag()`, `forge_physics_rigid_body_apply_friction()` |
 | [Physics L06](../../lessons/physics/06-resting-contacts-and-friction/) | `ForgePhysicsRBContact`, `forge_physics_rb_collide_sphere_plane()`, `forge_physics_rb_collide_sphere_sphere()`, `forge_physics_rb_collide_box_plane()`, `forge_physics_rb_resolve_contact()`, `forge_physics_rb_resolve_contacts()` |
+| [Physics L07](../../lessons/physics/07-collision-shapes/) | `ForgePhysicsCollisionShape`, `forge_physics_shape_sphere()`, `forge_physics_shape_box()`, `forge_physics_shape_capsule()`, `forge_physics_shape_support()`, `forge_physics_shape_compute_aabb()`, `forge_physics_aabb_overlap()`, `forge_physics_rigid_body_set_inertia_from_shape()` |

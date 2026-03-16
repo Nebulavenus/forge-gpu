@@ -2765,4 +2765,633 @@ static inline void forge_physics_rb_resolve_contacts(
     }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LESSON 07 — Collision Shapes and Support Functions
+ *
+ * This section introduces three foundational primitives for collision
+ * detection: a tagged union for shape parameters, support functions (the
+ * geometric core of the GJK algorithm), and axis-aligned bounding box
+ * (AABB) computation.
+ *
+ * Shapes are separate structs, NOT embedded in ForgePhysicsRigidBody.
+ * Demos keep shapes[] parallel to bodies[], matching the existing
+ * parallel-array pattern from L06.
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Collision shape constants ─────────────────────────────────────────── */
+
+/* Minimum allowed dimension for shape parameters (radius, half-extent).
+ * Prevents degenerate zero-volume shapes that break support functions
+ * and AABB computation. */
+#define FORGE_PHYSICS_SHAPE_MIN_DIM  1e-5f
+
+/* Hemisphere inertia coefficients for capsule inertia.
+ *
+ * A solid hemisphere has different moments about its symmetry axis and
+ * transverse axes (unlike a full sphere):
+ *   - Symmetry axis (Y):   I_yy = (2/5) m r²  (same as full sphere)
+ *   - Transverse axes (X,Z): I_xx = I_zz = (83/320) m r²
+ *
+ * The parallel axis theorem shifts each hemisphere by the distance from
+ * its centroid to the capsule center. The centroid of a hemisphere is at
+ * (3/8)r from the flat face. */
+#define FORGE_PHYSICS_CAPSULE_HEMI_CENTROID_FRAC    (3.0f / 8.0f)
+#define FORGE_PHYSICS_HEMI_TRANSVERSE_INERTIA_COEFF (83.0f / 320.0f)
+
+/* ── Types ─────────────────────────────────────────────────────────────── */
+
+/* Collision shape type tag.
+ *
+ * Each type defines a convex shape with a known support function and
+ * AABB computation. Sphere, box, and capsule cover the vast majority
+ * of game physics needs.
+ */
+typedef enum ForgePhysicsShapeType {
+    FORGE_PHYSICS_SHAPE_SPHERE  = 0,
+    FORGE_PHYSICS_SHAPE_BOX     = 1,
+    FORGE_PHYSICS_SHAPE_CAPSULE = 2
+} ForgePhysicsShapeType;
+
+/* Tagged union for collision shape parameters.
+ *
+ * Stores the geometric parameters needed for collision detection without
+ * embedding them in the rigid body struct. This keeps shape data separate
+ * from dynamics data, following the parallel-array pattern.
+ *
+ * - Sphere:  defined by radius
+ * - Box:     defined by half-extents (half-width, half-height, half-depth)
+ * - Capsule: defined by radius and half-height (cylinder half-height,
+ *            not including the hemisphere caps)
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+typedef struct ForgePhysicsCollisionShape {
+    ForgePhysicsShapeType type;
+    union {
+        struct { float radius; }                     sphere;
+        struct { vec3 half_extents; }                box;
+        struct { float radius; float half_height; }  capsule;
+    } data;
+} ForgePhysicsCollisionShape;
+
+/* Axis-Aligned Bounding Box (AABB).
+ *
+ * A rectangular box aligned with the world axes, defined by its minimum
+ * and maximum corners. AABBs are the standard broadphase primitive:
+ * cheap to compute, cheap to test for overlap, and they tightly enclose
+ * the shape when axis-aligned.
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+typedef struct ForgePhysicsAABB {
+    vec3 min;
+    vec3 max;
+} ForgePhysicsAABB;
+
+/* ── Shape constructors ────────────────────────────────────────────────── */
+
+/* Create a sphere collision shape.
+ *
+ * Parameters:
+ *   radius — sphere radius (m), clamped to FORGE_PHYSICS_SHAPE_MIN_DIM minimum
+ *
+ * Usage:
+ *   ForgePhysicsCollisionShape s = forge_physics_shape_sphere(0.5f);
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline ForgePhysicsCollisionShape forge_physics_shape_sphere(float radius)
+{
+    ForgePhysicsCollisionShape shape;
+    shape.type = FORGE_PHYSICS_SHAPE_SPHERE;
+    if (!forge_isfinite(radius) || radius < FORGE_PHYSICS_SHAPE_MIN_DIM)
+        radius = FORGE_PHYSICS_SHAPE_MIN_DIM;
+    shape.data.sphere.radius = radius;
+    return shape;
+}
+
+/* Create a box collision shape.
+ *
+ * Parameters:
+ *   half_extents — half-width, half-height, half-depth (m),
+ *                  each component clamped to FORGE_PHYSICS_SHAPE_MIN_DIM minimum
+ *
+ * Usage:
+ *   ForgePhysicsCollisionShape s = forge_physics_shape_box(
+ *       vec3_create(0.5f, 0.5f, 0.5f));
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline ForgePhysicsCollisionShape forge_physics_shape_box(vec3 half_extents)
+{
+    ForgePhysicsCollisionShape shape;
+    shape.type = FORGE_PHYSICS_SHAPE_BOX;
+
+    if (!forge_isfinite(half_extents.x) || half_extents.x < FORGE_PHYSICS_SHAPE_MIN_DIM)
+        half_extents.x = FORGE_PHYSICS_SHAPE_MIN_DIM;
+    if (!forge_isfinite(half_extents.y) || half_extents.y < FORGE_PHYSICS_SHAPE_MIN_DIM)
+        half_extents.y = FORGE_PHYSICS_SHAPE_MIN_DIM;
+    if (!forge_isfinite(half_extents.z) || half_extents.z < FORGE_PHYSICS_SHAPE_MIN_DIM)
+        half_extents.z = FORGE_PHYSICS_SHAPE_MIN_DIM;
+
+    shape.data.box.half_extents = half_extents;
+    return shape;
+}
+
+/* Create a capsule collision shape (Y-axis aligned).
+ *
+ * A capsule is a cylinder capped with hemispheres. The half_height
+ * parameter describes the cylindrical portion only — the total height
+ * from tip to tip is 2 * (half_height + radius).
+ *
+ * Parameters:
+ *   radius      — capsule radius (m)
+ *   half_height — half-height of the cylindrical portion (m)
+ *
+ * Usage:
+ *   ForgePhysicsCollisionShape s = forge_physics_shape_capsule(0.3f, 0.5f);
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline ForgePhysicsCollisionShape forge_physics_shape_capsule(
+    float radius, float half_height)
+{
+    ForgePhysicsCollisionShape shape;
+    shape.type = FORGE_PHYSICS_SHAPE_CAPSULE;
+
+    if (!forge_isfinite(radius) || radius < FORGE_PHYSICS_SHAPE_MIN_DIM)
+        radius = FORGE_PHYSICS_SHAPE_MIN_DIM;
+    if (!forge_isfinite(half_height) || half_height < FORGE_PHYSICS_SHAPE_MIN_DIM)
+        half_height = FORGE_PHYSICS_SHAPE_MIN_DIM;
+
+    shape.data.capsule.radius      = radius;
+    shape.data.capsule.half_height = half_height;
+    return shape;
+}
+
+/* Validate a collision shape.
+ *
+ * Checks that the type tag is recognized and all dimensions are positive
+ * and finite.
+ *
+ * Parameters:
+ *   shape — pointer to the shape to validate
+ *
+ * Returns: true if valid, false otherwise
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline bool forge_physics_shape_is_valid(
+    const ForgePhysicsCollisionShape *shape)
+{
+    if (!shape) return false;
+
+    switch (shape->type) {
+    case FORGE_PHYSICS_SHAPE_SPHERE:
+        return forge_isfinite(shape->data.sphere.radius) &&
+               shape->data.sphere.radius > 0.0f;
+    case FORGE_PHYSICS_SHAPE_BOX:
+        return forge_isfinite(shape->data.box.half_extents.x) &&
+               forge_isfinite(shape->data.box.half_extents.y) &&
+               forge_isfinite(shape->data.box.half_extents.z) &&
+               shape->data.box.half_extents.x > 0.0f &&
+               shape->data.box.half_extents.y > 0.0f &&
+               shape->data.box.half_extents.z > 0.0f;
+    case FORGE_PHYSICS_SHAPE_CAPSULE:
+        return forge_isfinite(shape->data.capsule.radius) &&
+               forge_isfinite(shape->data.capsule.half_height) &&
+               shape->data.capsule.radius > 0.0f &&
+               shape->data.capsule.half_height > 0.0f;
+    default:
+        return false;
+    }
+}
+
+/* ── Capsule inertia ───────────────────────────────────────────────────── */
+
+/* Set the inertia tensor for a solid capsule (Y-axis aligned).
+ *
+ * A capsule is a cylinder of radius r and half-height h, capped with two
+ * hemispheres of radius r. The total mass is split proportionally between
+ * the cylinder and the two hemisphere caps based on their volumes:
+ *
+ *   V_cyl  = π r² (2h)
+ *   V_hemi = (2/3) π r³   (one hemisphere; two caps = (4/3) π r³ = sphere)
+ *
+ * Cylinder inertia (about its own center):
+ *   I_cyl_yy = (1/2) m_cyl r²
+ *   I_cyl_xx = I_cyl_zz = (1/12) m_cyl (3r² + (2h)²)
+ *
+ * Hemisphere inertia (about capsule center, using parallel axis theorem):
+ *   I_hemi_xx_com = (83/320) m_hemi r²  (transverse axes, about centroid)
+ *   I_hemi_yy_com = (2/5) m_hemi r²     (symmetry axis, about centroid)
+ *   offset = h + (3/8)r                  (capsule center to hemisphere centroid)
+ *   I_hemi_xx = I_hemi_zz = I_hemi_xx_com + m_hemi offset²  (parallel axis)
+ *   I_hemi_yy = I_hemi_yy_com            (no shift needed on symmetry axis)
+ *
+ * Parameters:
+ *   rb          — rigid body (mass must be set first)
+ *   radius      — capsule radius (m)
+ *   half_height — half-height of the cylindrical portion (m)
+ *
+ * Usage:
+ *   forge_physics_rigid_body_set_inertia_capsule(&rb, 0.3f, 0.5f);
+ *
+ * Reference: "Inertia Tensor of a Capsule" — standard derivation via
+ * composite body theorem (cylinder + 2 hemispheres with parallel axis).
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline void forge_physics_rigid_body_set_inertia_capsule(
+    ForgePhysicsRigidBody *rb, float radius, float half_height)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!forge_isfinite(radius) || !forge_isfinite(half_height)) return;
+    radius      = SDL_fabsf(radius);
+    half_height = SDL_fabsf(half_height);
+    if (radius < FORGE_PHYSICS_SHAPE_MIN_DIM) radius = FORGE_PHYSICS_SHAPE_MIN_DIM;
+    if (half_height < FORGE_PHYSICS_SHAPE_MIN_DIM) half_height = FORGE_PHYSICS_SHAPE_MIN_DIM;
+
+    float m = rb->mass;
+    float r2 = radius * radius;
+    float h  = half_height;  /* half-height of cylinder */
+
+    /* Volume-proportional mass split */
+    float v_cyl  = FORGE_PI * r2 * (2.0f * h);
+    float v_caps = (4.0f / 3.0f) * FORGE_PI * r2 * radius;  /* two hemispheres = sphere */
+    float v_total = v_cyl + v_caps;
+    if (v_total < FORGE_PHYSICS_EPSILON) v_total = FORGE_PHYSICS_EPSILON;
+
+    float m_cyl  = m * (v_cyl / v_total);
+    float m_caps = m * (v_caps / v_total);  /* total mass of both caps */
+    float m_hemi = m_caps * 0.5f;           /* mass of one hemisphere */
+
+    /* Cylinder contribution (centered at origin) */
+    float cyl_Iyy = FORGE_PHYSICS_INERTIA_CYLINDER_COEFF * m_cyl * r2;
+    float full_h2 = 4.0f * h * h;  /* (2h)² */
+    float cyl_Ixx = FORGE_PHYSICS_INERTIA_BOX_COEFF * m_cyl * (3.0f * r2 + full_h2);
+
+    /* Hemisphere contribution (parallel axis theorem).
+     * Transverse axes (X/Z) use 83/320 m r², not 2/5, because a hemisphere
+     * is not symmetric about those axes. The symmetry axis (Y) uses 2/5. */
+    float hemi_Ixx_com = FORGE_PHYSICS_HEMI_TRANSVERSE_INERTIA_COEFF * m_hemi * r2;
+    float hemi_Iyy_com = FORGE_PHYSICS_INERTIA_SPHERE_COEFF * m_hemi * r2;
+    float offset = h + FORGE_PHYSICS_CAPSULE_HEMI_CENTROID_FRAC * radius;
+    float hemi_Ixx = hemi_Ixx_com + m_hemi * offset * offset;  /* per hemisphere */
+    float hemi_Iyy = hemi_Iyy_com;  /* no parallel axis shift on symmetry axis */
+
+    /* Sum contributions (two hemispheres) */
+    float Ixx = cyl_Ixx + 2.0f * hemi_Ixx;
+    float Iyy = cyl_Iyy + 2.0f * hemi_Iyy;
+    float Izz = Ixx;  /* symmetric about Y */
+
+    /* Guard against degenerate inertia */
+    if (Ixx < FORGE_PHYSICS_EPSILON) Ixx = FORGE_PHYSICS_EPSILON;
+    if (Iyy < FORGE_PHYSICS_EPSILON) Iyy = FORGE_PHYSICS_EPSILON;
+    if (Izz < FORGE_PHYSICS_EPSILON) Izz = FORGE_PHYSICS_EPSILON;
+
+    rb->inertia_local     = mat3_from_diagonal(Ixx, Iyy, Izz);
+    rb->inv_inertia_local = mat3_from_diagonal(1.0f / Ixx, 1.0f / Iyy, 1.0f / Izz);
+
+    /* Transform to world space using current orientation */
+    mat3 R  = quat_to_mat3(rb->orientation);
+    mat3 Rt = mat3_transpose(R);
+    rb->inertia_world     = mat3_multiply(mat3_multiply(R, rb->inertia_local), Rt);
+    rb->inv_inertia_world = mat3_multiply(mat3_multiply(R, rb->inv_inertia_local), Rt);
+}
+
+/* Set the inertia tensor from a collision shape.
+ *
+ * Dispatches to the correct per-shape inertia setter based on shape type.
+ * This eliminates the need to match shape types manually when setting up
+ * rigid bodies.
+ *
+ * Parameters:
+ *   rb    — rigid body (mass must be set first)
+ *   shape — collision shape describing the geometry
+ *
+ * Usage:
+ *   ForgePhysicsCollisionShape shape = forge_physics_shape_sphere(0.5f);
+ *   forge_physics_rigid_body_set_inertia_from_shape(&rb, &shape);
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline void forge_physics_rigid_body_set_inertia_from_shape(
+    ForgePhysicsRigidBody *rb, const ForgePhysicsCollisionShape *shape)
+{
+    if (!rb || !shape || !forge_physics_shape_is_valid(shape)) return;
+
+    switch (shape->type) {
+    case FORGE_PHYSICS_SHAPE_SPHERE:
+        forge_physics_rigid_body_set_inertia_sphere(
+            rb, shape->data.sphere.radius);
+        break;
+    case FORGE_PHYSICS_SHAPE_BOX:
+        forge_physics_rigid_body_set_inertia_box(
+            rb, shape->data.box.half_extents);
+        break;
+    case FORGE_PHYSICS_SHAPE_CAPSULE:
+        forge_physics_rigid_body_set_inertia_capsule(
+            rb, shape->data.capsule.radius,
+            shape->data.capsule.half_height);
+        break;
+    default:
+        break;
+    }
+}
+
+/* ── Support function ──────────────────────────────────────────────────── */
+
+/* Compute the support point of a collision shape in a given direction.
+ *
+ * The support function returns the point on the shape's surface that is
+ * farthest in a given direction. This is the geometric foundation of the
+ * GJK (Gilbert-Johnson-Keerthi) algorithm for convex intersection testing.
+ *
+ * For each shape type:
+ *
+ *   Sphere:  support = center + normalize(dir) * radius
+ *     The farthest point on a sphere is always along the query direction.
+ *
+ *   Box:     For each local axis, pick the sign that aligns with dir,
+ *            giving one of the 8 corners. Transform that corner to world
+ *            space.
+ *
+ *   Capsule: Project dir onto the local Y axis to determine which
+ *            hemisphere cap is farthest. Then find the support of that
+ *            hemisphere (center + normalize(dir) * radius).
+ *
+ * If dir is zero or near-zero, returns the shape center (pos).
+ *
+ * Parameters:
+ *   shape  — collision shape
+ *   pos    — world-space position of the body
+ *   orient — orientation quaternion of the body
+ *   dir    — world-space direction to query (need not be normalized)
+ *
+ * Returns: world-space support point
+ *
+ * Reference: Gilbert, Johnson, Keerthi, "A Fast Procedure for Computing
+ * the Distance Between Complex Objects in Three-Dimensional Space" (1988).
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline vec3 forge_physics_shape_support(
+    const ForgePhysicsCollisionShape *shape,
+    vec3 pos, quat orient, vec3 dir)
+{
+    /* Safe fallback: use pos if finite, otherwise origin */
+    vec3 fallback = vec3_create(0.0f, 0.0f, 0.0f);
+    if (forge_isfinite(pos.x) && forge_isfinite(pos.y) && forge_isfinite(pos.z))
+        fallback = pos;
+
+    if (!shape || !forge_physics_shape_is_valid(shape)) return fallback;
+
+    /* Guard against non-finite inputs to prevent NaN propagation */
+    if (!forge_isfinite(pos.x) || !forge_isfinite(pos.y) || !forge_isfinite(pos.z))
+        return fallback;
+    if (!forge_isfinite(dir.x) || !forge_isfinite(dir.y) || !forge_isfinite(dir.z))
+        return fallback;
+    if (!forge_isfinite(orient.w) || !forge_isfinite(orient.x) ||
+        !forge_isfinite(orient.y) || !forge_isfinite(orient.z))
+        return fallback;
+
+    float dir_len = vec3_length(dir);
+    if (!forge_isfinite(dir_len) || dir_len < FORGE_PHYSICS_EPSILON) return fallback;
+
+    vec3 dir_n = vec3_scale(dir, 1.0f / dir_len);
+
+    switch (shape->type) {
+    case FORGE_PHYSICS_SHAPE_SPHERE: {
+        /* Farthest point is center + radius along direction */
+        return vec3_add(pos, vec3_scale(dir_n, shape->data.sphere.radius));
+    }
+
+    case FORGE_PHYSICS_SHAPE_BOX: {
+        /* Rotate direction into local space */
+        quat inv_orient = quat_conjugate(orient);
+        vec3 local_dir = quat_rotate_vec3(inv_orient, dir_n);
+
+        /* Pick the corner that maximizes dot(corner, local_dir) */
+        vec3 he = shape->data.box.half_extents;
+        vec3 corner;
+        corner.x = (local_dir.x >= 0.0f) ?  he.x : -he.x;
+        corner.y = (local_dir.y >= 0.0f) ?  he.y : -he.y;
+        corner.z = (local_dir.z >= 0.0f) ?  he.z : -he.z;
+
+        /* Transform corner to world space */
+        return vec3_add(pos, quat_rotate_vec3(orient, corner));
+    }
+
+    case FORGE_PHYSICS_SHAPE_CAPSULE: {
+        /* Capsule = line segment + sphere sweep.
+         * Project dir onto local Y to pick which hemisphere cap. */
+        vec3 local_y = quat_rotate_vec3(orient, vec3_create(0, 1, 0));
+        float dot_y = vec3_dot(dir_n, local_y);
+
+        /* Center of the chosen hemisphere cap */
+        vec3 cap_center;
+        if (dot_y >= 0.0f)
+            cap_center = vec3_add(pos, vec3_scale(local_y, shape->data.capsule.half_height));
+        else
+            cap_center = vec3_sub(pos, vec3_scale(local_y, shape->data.capsule.half_height));
+
+        /* Support of sphere at cap center */
+        return vec3_add(cap_center, vec3_scale(dir_n, shape->data.capsule.radius));
+    }
+
+    default:
+        return pos;
+    }
+}
+
+/* ── AABB computation ──────────────────────────────────────────────────── */
+
+/* Compute the world-space AABB for a collision shape.
+ *
+ * The AABB (axis-aligned bounding box) is the tightest box aligned with
+ * the world axes that fully encloses the shape at its current position
+ * and orientation. AABBs are recomputed every frame because rotation
+ * changes the enclosure.
+ *
+ * For each shape type:
+ *
+ *   Sphere:  AABB = center ± radius on each axis. Orientation-independent
+ *            because a sphere looks the same from every angle.
+ *
+ *   Box:     Rotate the 3 half-extent axes to world space, take absolute
+ *            values, and sum the contributions per world axis. This gives
+ *            the tightest AABB for an oriented box without testing all 8
+ *            corners.
+ *
+ *   Capsule: Compute the two hemisphere cap centers in world space,
+ *            take their component-wise min/max, then expand by radius.
+ *
+ * Parameters:
+ *   shape  — collision shape
+ *   pos    — world-space position
+ *   orient — orientation quaternion
+ *
+ * Returns: world-space AABB
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline ForgePhysicsAABB forge_physics_shape_compute_aabb(
+    const ForgePhysicsCollisionShape *shape,
+    vec3 pos, quat orient)
+{
+    /* Safe fallback center: use pos if finite, otherwise origin */
+    vec3 fallback_center = vec3_create(0.0f, 0.0f, 0.0f);
+    if (forge_isfinite(pos.x) && forge_isfinite(pos.y) && forge_isfinite(pos.z))
+        fallback_center = pos;
+
+    ForgePhysicsAABB aabb;
+    aabb.min = fallback_center;
+    aabb.max = fallback_center;
+
+    if (!shape || !forge_physics_shape_is_valid(shape)) return aabb;
+
+    /* Guard against non-finite position or orientation to prevent NaN propagation */
+    if (!forge_isfinite(pos.x) || !forge_isfinite(pos.y) || !forge_isfinite(pos.z))
+        return aabb;
+    if (!forge_isfinite(orient.w) || !forge_isfinite(orient.x) ||
+        !forge_isfinite(orient.y) || !forge_isfinite(orient.z))
+        return aabb;
+
+    switch (shape->type) {
+    case FORGE_PHYSICS_SHAPE_SPHERE: {
+        float r = shape->data.sphere.radius;
+        vec3 rv = vec3_create(r, r, r);
+        aabb.min = vec3_sub(pos, rv);
+        aabb.max = vec3_add(pos, rv);
+        break;
+    }
+
+    case FORGE_PHYSICS_SHAPE_BOX: {
+        /* Rotate each local axis to world space, take absolute components,
+         * sum to get the world-space half-extents of the AABB.
+         *
+         * For a rotation matrix R and local half-extents h:
+         *   aabb_half.x = |R[0][0]|*h.x + |R[0][1]|*h.y + |R[0][2]|*h.z
+         *   (similarly for y, z)
+         */
+        mat3 R = quat_to_mat3(orient);
+        vec3 he = shape->data.box.half_extents;
+
+        vec3 world_half;
+        world_half.x = SDL_fabsf(R.m[0]) * he.x + SDL_fabsf(R.m[3]) * he.y + SDL_fabsf(R.m[6]) * he.z;
+        world_half.y = SDL_fabsf(R.m[1]) * he.x + SDL_fabsf(R.m[4]) * he.y + SDL_fabsf(R.m[7]) * he.z;
+        world_half.z = SDL_fabsf(R.m[2]) * he.x + SDL_fabsf(R.m[5]) * he.y + SDL_fabsf(R.m[8]) * he.z;
+
+        aabb.min = vec3_sub(pos, world_half);
+        aabb.max = vec3_add(pos, world_half);
+        break;
+    }
+
+    case FORGE_PHYSICS_SHAPE_CAPSULE: {
+        /* Two cap centers along local Y axis */
+        vec3 local_y = quat_rotate_vec3(orient, vec3_create(0, 1, 0));
+        vec3 top_center = vec3_add(pos, vec3_scale(local_y, shape->data.capsule.half_height));
+        vec3 bot_center = vec3_sub(pos, vec3_scale(local_y, shape->data.capsule.half_height));
+
+        /* Min/max of cap centers */
+        vec3 mn, mx;
+        mn.x = (top_center.x < bot_center.x) ? top_center.x : bot_center.x;
+        mn.y = (top_center.y < bot_center.y) ? top_center.y : bot_center.y;
+        mn.z = (top_center.z < bot_center.z) ? top_center.z : bot_center.z;
+        mx.x = (top_center.x > bot_center.x) ? top_center.x : bot_center.x;
+        mx.y = (top_center.y > bot_center.y) ? top_center.y : bot_center.y;
+        mx.z = (top_center.z > bot_center.z) ? top_center.z : bot_center.z;
+
+        /* Expand by radius */
+        float r = shape->data.capsule.radius;
+        vec3 rv = vec3_create(r, r, r);
+        aabb.min = vec3_sub(mn, rv);
+        aabb.max = vec3_add(mx, rv);
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return aabb;
+}
+
+/* ── AABB utility functions ────────────────────────────────────────────── */
+
+/* Test whether two AABBs overlap.
+ *
+ * Two AABBs overlap if and only if their projections overlap on all three
+ * axes. This is the separating axis test for axis-aligned boxes.
+ *
+ * Parameters:
+ *   a, b — AABBs to test
+ *
+ * Returns: true if the AABBs overlap (including touching)
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline bool forge_physics_aabb_overlap(
+    ForgePhysicsAABB a, ForgePhysicsAABB b)
+{
+    if (a.max.x < b.min.x || a.min.x > b.max.x) return false;
+    if (a.max.y < b.min.y || a.min.y > b.max.y) return false;
+    if (a.max.z < b.min.z || a.min.z > b.max.z) return false;
+    return true;
+}
+
+/* Expand an AABB by a uniform margin on all sides.
+ *
+ * Used to create "fat" AABBs for broadphase — a small margin avoids
+ * recomputation when objects move slightly between frames.
+ *
+ * Parameters:
+ *   aabb   — AABB to expand
+ *   margin — distance to expand on each side (m)
+ *
+ * Returns: expanded AABB
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline ForgePhysicsAABB forge_physics_aabb_expand(
+    ForgePhysicsAABB aabb, float margin)
+{
+    if (!forge_isfinite(margin) || margin < 0.0f) return aabb;
+    vec3 m = vec3_create(margin, margin, margin);
+    aabb.min = vec3_sub(aabb.min, m);
+    aabb.max = vec3_add(aabb.max, m);
+    return aabb;
+}
+
+/* Compute the center point of an AABB.
+ *
+ * Parameters:
+ *   aabb — the AABB
+ *
+ * Returns: center point (midpoint of min and max)
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline vec3 forge_physics_aabb_center(ForgePhysicsAABB aabb)
+{
+    return vec3_scale(vec3_add(aabb.min, aabb.max), 0.5f);
+}
+
+/* Compute the half-extents of an AABB.
+ *
+ * Parameters:
+ *   aabb — the AABB
+ *
+ * Returns: half-extents ((max - min) / 2)
+ *
+ * See: Physics Lesson 07 — Collision Shapes and Support Functions
+ */
+static inline vec3 forge_physics_aabb_extents(ForgePhysicsAABB aabb)
+{
+    return vec3_scale(vec3_sub(aabb.max, aabb.min), 0.5f);
+}
+
 #endif /* FORGE_PHYSICS_H */

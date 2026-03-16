@@ -166,6 +166,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/physics/04-rigid-body-state)
     add_subdirectory(lessons/physics/05-forces-and-torques)
     add_subdirectory(lessons/physics/06-resting-contacts-and-friction)
+    add_subdirectory(lessons/physics/07-collision-shapes)
 endif()
 
 # ── Audio Lessons ─────────────────────────────────────────────────────────

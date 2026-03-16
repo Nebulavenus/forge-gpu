@@ -5188,6 +5188,9 @@ int main(int argc, char *argv[])
     /* ── Rigid Body Contacts (test_physics_rbc.c) ────────────────────────── */
     run_rbc_tests();
 
+    /* ── Collision Shapes (test_physics_shapes.c) ─────────────────────── */
+    run_collision_shape_tests();
+
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",
             pass_count, test_count, fail_count);
