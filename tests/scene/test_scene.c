@@ -7,6 +7,7 @@
  * error handling for invalid configurations.
  *
  * Model-specific tests (Groups 10–17) are in test_scene_model.c.
+ * Transparency sorting tests (Groups 27–30) are in test_scene_transparency.c.
  *
  * Most tests exercise the pure-math / configuration layer that does NOT
  * require a GPU device.  GPU-integration tests (group 9) require a
@@ -38,6 +39,9 @@ bool gpu_available = false;
 
 /* ── Skinned model tests (Groups 18–26) ────────────────────────────────── */
 #include "test_scene_skinned.c"
+
+/* ── Transparency sorting tests (Groups 27–30) ────────────────────────── */
+#include "test_scene_transparency.c"
 
 /* ── Shared constants ────────────────────────────────────────────────────── */
 
@@ -1384,6 +1388,9 @@ int main(int argc, char **argv)
 
     /* ── Groups 18–26: Skinned model tests (in test_scene_skinned.c) ── */
     run_skinned_tests();
+
+    /* ── Groups 27–30: Transparency sorting tests ─────────────── */
+    run_transparency_tests();
 
     /* ── Summary ─────────────────────────────────────────────── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed, %d skipped ===",

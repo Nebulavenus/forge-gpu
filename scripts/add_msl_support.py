@@ -27,7 +27,7 @@ def add_msl_includes(content: str) -> str:
         # After a _dxil.h include, add matching _msl.h if not already present
         m = re.match(r'^#include\s+"(shaders/compiled/(\w+)_dxil\.h)"', line)
         if m:
-            msl_header = f'shaders/compiled/{m.group(2)}_msl.h'
+            msl_header = f"shaders/compiled/{m.group(2)}_msl.h"
             msl_include = f'#include "{msl_header}"'
             # Check if next line already has the MSL include
             if i + 1 < len(lines) and "_msl.h" in lines[i + 1]:
@@ -62,7 +62,7 @@ def add_msl_to_create_shader(content: str) -> str:
     # Add MSL branch to the format selection in create_shader
     # Match: } else {\n        SDL_Log("No supported shader format (need SPIRV or DXIL)");
     content = re.sub(
-        r'(\} else if \(formats & SDL_GPU_SHADERFORMAT_DXIL\) \{[^}]+\})'
+        r"(\} else if \(formats & SDL_GPU_SHADERFORMAT_DXIL\) \{[^}]+\})"
         r'(\s*else\s*\{\s*\n\s*SDL_Log\("No supported shader format \(need SPIRV or DXIL\)"\);)',
         r"""\1 else if ((formats & SDL_GPU_SHADERFORMAT_MSL) && msl_code) {
         info.format     = SDL_GPU_SHADERFORMAT_MSL;
@@ -246,8 +246,7 @@ def main():
 
     # Find all lesson directories with a main.c
     lesson_dirs = sorted(
-        d for d in lessons_gpu.iterdir()
-        if d.is_dir() and (d / "main.c").exists()
+        d for d in lessons_gpu.iterdir() if d.is_dir() and (d / "main.c").exists()
     )
 
     print(f"Found {len(lesson_dirs)} GPU lessons with main.c")

@@ -109,6 +109,18 @@
 /* Maximum materials per loaded model (BrainStem has 59 color-only materials) */
 #define FORGE_SCENE_MODEL_MAX_MATERIALS 64
 
+/* Maximum submeshes per loaded model (for centroid precomputation).
+ * Used by transparency sorting to compute object-space centroids at load time
+ * rather than walking vertex data every frame. */
+#define FORGE_SCENE_MODEL_MAX_SUBMESHES 512
+
+/* Maximum transparent draws that can be sorted per draw_model call.
+ * Overflow BLEND submeshes fall back to immediate unsorted drawing. */
+#define FORGE_SCENE_MAX_TRANSPARENT_DRAWS 256
+
+/* Default alpha cutoff for MASK materials when the material lacks one */
+#define FORGE_SCENE_DEFAULT_ALPHA_CUTOFF 0.5f
+
 #ifdef FORGE_SCENE_MODEL_SUPPORT
 /* Joint buffer size for skinned models: MAX_JOINTS × sizeof(mat4).
  * Each mat4 is 64 bytes → 256 × 64 = 16384 bytes. */
@@ -238,6 +250,23 @@ typedef struct ForgeSceneModelTextures {
     SDL_GPUTexture *emissive;            /* NULL -> black fallback (0.0)   */
 } ForgeSceneModelTextures;
 
+/* A sortable draw command for back-to-front transparent rendering.
+ * Collected during draw_model, sorted by view depth, then drawn. */
+typedef struct ForgeSceneTransparentDraw {
+    uint32_t node_index;    /* index into scene_data.nodes              */
+    uint32_t submesh_index; /* global submesh index within the mesh     */
+    float    sort_depth;    /* projected depth along camera forward     */
+    mat4     final_world;   /* precomputed placement * node world       */
+} ForgeSceneTransparentDraw;
+
+/* Fragment uniforms for the alpha-masked shadow pass.  Smaller than the
+ * full model fragment uniforms — only the fields needed for the discard. */
+typedef struct ForgeSceneShadowMaskFragUniforms {
+    float base_color_factor[4]; /* RGBA multiplier from material */
+    float alpha_cutoff;         /* discard threshold             */
+    float _pad[3];              /* pad to 16-byte alignment      */
+} ForgeSceneShadowMaskFragUniforms;
+
 /* A loaded pipeline model with GPU resources. */
 typedef struct ForgeSceneModel {
     /* Pipeline data (owns memory — freed by forge_scene_free_model) */
@@ -253,8 +282,15 @@ typedef struct ForgeSceneModel {
     ForgeSceneModelTextures mat_textures[FORGE_SCENE_MODEL_MAX_MATERIALS];
     uint32_t                mat_texture_count;
 
+    /* Object-space submesh centroids for transparency sorting.
+     * Precomputed at load time by averaging vertex positions per submesh
+     * so we avoid walking index data every frame during draw. */
+    vec3     submesh_centroids[FORGE_SCENE_MODEL_MAX_SUBMESHES];
+    uint32_t submesh_centroid_count;
+
     /* Stats (updated per draw_model call) */
     uint32_t draw_calls;
+    uint32_t transparent_draw_calls; /* subset of draw_calls that were sorted */
 
     /* VRAM tracking for texture compression comparison.
      * Updated during texture loading — includes all material textures. */
@@ -295,8 +331,13 @@ typedef struct ForgeSceneSkinnedModel {
     int      current_clip;
     bool     looping;          /* default true */
 
+    /* Object-space submesh centroids for transparency sorting */
+    vec3     submesh_centroids[FORGE_SCENE_MODEL_MAX_SUBMESHES];
+    uint32_t submesh_centroid_count;
+
     /* Stats */
     uint32_t draw_calls;
+    uint32_t transparent_draw_calls;
     ForgeSceneVramStats vram;
 } ForgeSceneSkinnedModel;
 
@@ -448,6 +489,9 @@ typedef struct ForgeScene {
     vec3 light_dir;                            /* normalized, toward light    */
     mat4 light_vp;                             /* light view-projection       */
 
+    /* ── Transparency sorting ───────────────────────────────────────── */
+    bool transparency_sorting;  /* true = sort BLEND back-to-front (default) */
+
     /* ── Per-frame state ────────────────────────────────────────────── */
     SDL_GPUCommandBuffer *cmd;
     SDL_GPUCopyPass      *model_copy_pass;   /* batched model data upload pass */
@@ -474,6 +518,7 @@ typedef struct ForgeScene {
     SDL_GPUGraphicsPipeline *model_pipeline_double;      /* cull none for double_sided            */
     SDL_GPUGraphicsPipeline *model_pipeline_blend_double; /* alpha blend + cull none              */
     SDL_GPUGraphicsPipeline *model_shadow_pipeline;      /* depth-only, 48-byte stride           */
+    SDL_GPUGraphicsPipeline *model_shadow_mask_pipeline; /* depth + alpha test for MASK shadows  */
     SDL_GPUSampler          *model_tex_sampler;      /* linear wrap for diffuse/emissive */
     SDL_GPUSampler          *model_normal_sampler;   /* linear wrap for normal maps      */
     SDL_GPUSampler          *model_shadow_cmp_sampler; /* comparison sampler for PCF     */
@@ -488,6 +533,7 @@ typedef struct ForgeScene {
     SDL_GPUGraphicsPipeline *skinned_pipeline_double;      /* cull none, depth write           */
     SDL_GPUGraphicsPipeline *skinned_pipeline_blend_double; /* alpha blend + cull none         */
     SDL_GPUGraphicsPipeline *skinned_shadow_pipeline;      /* depth-only, 72-byte stride       */
+    SDL_GPUGraphicsPipeline *skinned_shadow_mask_pipeline; /* depth + alpha test, 72-byte      */
     bool                     skinned_pipelines_ready;      /* lazy init flag                   */
 
     /* Morph target model pipelines (lazy-initialized on first morph model load) */
@@ -742,6 +788,17 @@ static SDL_GPUBuffer *forge_scene_upload_buffer(
 static SDL_GPUTexture *forge_scene_upload_texture(
     ForgeScene *scene, SDL_Surface *surface, bool srgb);
 
+#ifdef FORGE_SCENE_MODEL_SUPPORT
+/* Compute per-submesh centroids for transparency sorting.
+ * Averages the position of every vertex in each LOD 0 submesh.
+ * Results are written to out_centroids[0..submesh_count-1].
+ * Handles malformed metadata gracefully (misaligned offsets, OOB indices,
+ * overflowing index spans) by producing vec3(0,0,0) for bad submeshes. */
+static void forge_scene_compute_centroids(
+    const ForgePipelineMesh *mesh,
+    vec3 *out_centroids, uint32_t max_submeshes);
+#endif /* FORGE_SCENE_MODEL_SUPPORT */
+
 /* ══════════════════════════════════════════════════════════════════════════
  *                         IMPLEMENTATION
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -803,6 +860,15 @@ static SDL_GPUTexture *forge_scene_upload_texture(
 #include "scene/shaders/compiled/scene_morph_shadow_vert_spirv.h"
 #include "scene/shaders/compiled/scene_morph_shadow_vert_dxil.h"
 #include "scene/shaders/compiled/scene_morph_shadow_vert_msl.h"
+#include "scene/shaders/compiled/shadow_mask_vert_spirv.h"
+#include "scene/shaders/compiled/shadow_mask_vert_dxil.h"
+#include "scene/shaders/compiled/shadow_mask_vert_msl.h"
+#include "scene/shaders/compiled/shadow_mask_frag_spirv.h"
+#include "scene/shaders/compiled/shadow_mask_frag_dxil.h"
+#include "scene/shaders/compiled/shadow_mask_frag_msl.h"
+#include "scene/shaders/compiled/shadow_mask_skinned_vert_spirv.h"
+#include "scene/shaders/compiled/shadow_mask_skinned_vert_dxil.h"
+#include "scene/shaders/compiled/shadow_mask_skinned_vert_msl.h"
 #endif
 
 /* ── D3D12 texture alignment constants ─────────────────────────────────── */
@@ -1480,6 +1546,7 @@ static bool forge_scene_init(ForgeScene *scene,
     SDL_memset(scene, 0, sizeof(*scene));
     if (!forge_scene__validate_config(config)) return false;
     scene->config = *config;
+    scene->transparency_sorting = true; /* sort BLEND back-to-front by default */
 
     /* ── 1. SDL + window + device ────────────────────────────────── */
 
@@ -2974,6 +3041,8 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_blend_double);
     if (scene->model_shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_shadow_pipeline);
+    if (scene->model_shadow_mask_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_shadow_mask_pipeline);
     if (scene->model_tex_sampler)
         SDL_ReleaseGPUSampler(scene->device, scene->model_tex_sampler);
     if (scene->model_normal_sampler)
@@ -3007,6 +3076,8 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_blend_double);
     if (scene->morph_shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_shadow_pipeline);
+    if (scene->skinned_shadow_mask_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_shadow_mask_pipeline);
 #endif
 
     /* Window — release claim first, then destroy.
@@ -3675,6 +3746,73 @@ static bool forge_scene_init_model_pipelines(ForgeScene *scene)
         scene->model_shadow_pipeline = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
     }
 
+    /* Shadow mask pipeline: depth + alpha test for MASK materials.
+     * Uses the shadow_mask shaders which sample the base color texture
+     * and discard fragments below the material's alpha_cutoff. */
+    SDL_GPUShader *smask_vs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_VERTEX,
+        shadow_mask_vert_spirv, sizeof(shadow_mask_vert_spirv),
+        shadow_mask_vert_dxil,  sizeof(shadow_mask_vert_dxil),
+        shadow_mask_vert_msl, shadow_mask_vert_msl_size,
+        0, 0, 0, 1);  /* 0 samplers, 0 storage tex, 0 storage buf, 1 uniform */
+
+    SDL_GPUShader *smask_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        shadow_mask_frag_spirv, sizeof(shadow_mask_frag_spirv),
+        shadow_mask_frag_dxil,  sizeof(shadow_mask_frag_dxil),
+        shadow_mask_frag_msl, shadow_mask_frag_msl_size,
+        1, 0, 0, 1);  /* 1 sampler (base color), 0 storage, 0 buf, 1 uniform */
+
+    if (smask_vs && smask_fs) {
+        /* Vertex input: position + normal (unused) + uv from 48-byte stride */
+        SDL_GPUVertexAttribute smask_attrs[3];
+        SDL_zero(smask_attrs);
+        smask_attrs[0].location = 0;
+        smask_attrs[0].format   = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        smask_attrs[0].offset   = 0;   /* position */
+        smask_attrs[1].location = 1;
+        smask_attrs[1].format   = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        smask_attrs[1].offset   = 12;  /* normal (passed through but unused) */
+        smask_attrs[2].location = 2;
+        smask_attrs[2].format   = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+        smask_attrs[2].offset   = 24;  /* uv */
+
+        SDL_GPUVertexInputState smask_input;
+        SDL_zero(smask_input);
+        smask_input.vertex_buffer_descriptions = &model_vbd;
+        smask_input.num_vertex_buffers         = 1;
+        smask_input.vertex_attributes          = smask_attrs;
+        smask_input.num_vertex_attributes      = 3;
+
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = smask_vs;
+        pi.fragment_shader    = smask_fs;
+        pi.vertex_input_state = smask_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.enable_depth_bias = true;
+        pi.rasterizer_state.depth_bias_constant_factor = FORGE_SCENE_SHADOW_BIAS_CONST;
+        pi.rasterizer_state.depth_bias_slope_factor    = FORGE_SCENE_SHADOW_BIAS_SLOPE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.num_color_targets        = 0;
+        pi.target_info.depth_stencil_format     = scene->shadow_fmt;
+        pi.target_info.has_depth_stencil_target = true;
+        scene->model_shadow_mask_pipeline =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->model_shadow_mask_pipeline) {
+            SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                    "(model_shadow_mask_pipeline) failed: %s",
+                    SDL_GetError());
+        }
+    }
+    if (smask_vs) SDL_ReleaseGPUShader(scene->device, smask_vs);
+    if (smask_fs) SDL_ReleaseGPUShader(scene->device, smask_fs);
+
     /* Release shaders */
     SDL_ReleaseGPUShader(scene->device, model_vs);
     SDL_ReleaseGPUShader(scene->device, model_fs);
@@ -3754,6 +3892,8 @@ init_model_fail:
         { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_pipeline_blend_double); scene->model_pipeline_blend_double = NULL; }
     if (scene->model_shadow_pipeline)
         { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_shadow_pipeline); scene->model_shadow_pipeline = NULL; }
+    if (scene->model_shadow_mask_pipeline)
+        { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_shadow_mask_pipeline); scene->model_shadow_mask_pipeline = NULL; }
     if (scene->model_tex_sampler)
         { SDL_ReleaseGPUSampler(scene->device, scene->model_tex_sampler); scene->model_tex_sampler = NULL; }
     if (scene->model_normal_sampler)
@@ -3770,6 +3910,75 @@ init_model_fail:
 }
 
 /* ── Load model ─────────────────────────────────────────────────────────── */
+
+/* ── Centroid computation helper ──────────────────────────────────────── */
+
+static void forge_scene_compute_centroids(
+    const ForgePipelineMesh *mesh,
+    vec3 *out_centroids, uint32_t max_submeshes)
+{
+    if (!mesh || !out_centroids) return;
+    if (!mesh->vertices || !mesh->indices) return;
+    if (mesh->lod_count == 0 || !mesh->lods) return;
+
+    uint32_t sc = mesh->submesh_count;
+    if (sc > max_submeshes) sc = max_submeshes;
+
+    const uint8_t  *verts   = (const uint8_t *)mesh->vertices;
+    uint32_t        stride  = mesh->vertex_stride;
+    uint32_t lod0_off       = mesh->lods[0].index_offset;
+    uint32_t lod0_idx_count = mesh->lods[0].index_count;
+
+    /* Guard against undersized/misaligned stride or misaligned index offset */
+    if (stride < (uint32_t)(3 * sizeof(float)) ||
+        (stride % sizeof(float)) != 0 ||
+        (lod0_off % sizeof(uint32_t)) != 0) {
+        for (uint32_t s = 0; s < sc; s++)
+            out_centroids[s] = vec3_create(0, 0, 0);
+        return;
+    }
+
+    /* Rebase indices to the LOD 0 start so first_idx is relative */
+    const uint32_t *indices = (const uint32_t *)(
+        (const uint8_t *)mesh->indices + lod0_off);
+
+    for (uint32_t s = 0; s < sc; s++) {
+        const ForgePipelineSubmesh *sub =
+            forge_pipeline_lod_submesh(mesh, 0, s);
+        if (!sub || sub->index_count == 0) {
+            out_centroids[s] = vec3_create(0, 0, 0);
+            continue;
+        }
+        float cx = 0.0f, cy = 0.0f, cz = 0.0f;
+        if (sub->index_offset < lod0_off ||
+            ((sub->index_offset - lod0_off) % sizeof(uint32_t)) != 0) {
+            out_centroids[s] = vec3_create(0, 0, 0);
+            continue;
+        }
+        uint32_t first_idx =
+            (sub->index_offset - lod0_off) / sizeof(uint32_t);
+        if (first_idx >= lod0_idx_count ||
+            sub->index_count > (lod0_idx_count - first_idx)) {
+            out_centroids[s] = vec3_create(0, 0, 0);
+            continue;
+        }
+        uint32_t valid_samples = 0;
+        for (uint32_t i = 0; i < sub->index_count; i++) {
+            uint32_t vi = indices[first_idx + i];
+            if (vi >= mesh->vertex_count) continue;
+            const float *pos =
+                (const float *)(verts + (uint64_t)vi * stride);
+            cx += pos[0]; cy += pos[1]; cz += pos[2];
+            valid_samples++;
+        }
+        if (valid_samples == 0) {
+            out_centroids[s] = vec3_create(0, 0, 0);
+            continue;
+        }
+        float inv = 1.0f / (float)valid_samples;
+        out_centroids[s] = vec3_create(cx * inv, cy * inv, cz * inv);
+    }
+}
 
 /* Extract just the filename from a path (everything after the last / or \). */
 static const char *forge_scene__basename(const char *path)
@@ -3897,6 +4106,13 @@ static bool forge_scene_load_model(ForgeScene *scene,
             goto fail;
         }
     }
+
+    /* Precompute per-submesh centroids for transparency sorting */
+    model->submesh_centroid_count = model->mesh.submesh_count;
+    if (model->submesh_centroid_count > FORGE_SCENE_MODEL_MAX_SUBMESHES)
+        model->submesh_centroid_count = FORGE_SCENE_MODEL_MAX_SUBMESHES;
+    forge_scene_compute_centroids(&model->mesh, model->submesh_centroids,
+                                   FORGE_SCENE_MODEL_MAX_SUBMESHES);
 
     /* Load per-material textures.
      * Uses forge_scene_load_pipeline_texture which checks for .meta.json
@@ -4065,7 +4281,26 @@ static void forge_scene__fill_model_frag_uniforms(
     fu->ambient      = scene->config.ambient;
 }
 
-/* ── Draw model ─────────────────────────────────────────────────────────── */
+/* ── Transparent draw sort ───────────────────────────────────────────────── */
+
+/* Comparison function for SDL_qsort: back-to-front (farther draws first). */
+static int forge_scene__transparent_cmp(const void *a, const void *b)
+{
+    const ForgeSceneTransparentDraw *ta = (const ForgeSceneTransparentDraw *)a;
+    const ForgeSceneTransparentDraw *tb = (const ForgeSceneTransparentDraw *)b;
+    float da = ta->sort_depth;
+    float db = tb->sort_depth;
+    if (da > db) return -1; /* farther first */
+    if (da < db) return  1;
+    /* Deterministic tie-break: node index, then submesh index */
+    if (ta->node_index < tb->node_index) return -1;
+    if (ta->node_index > tb->node_index) return  1;
+    if (ta->submesh_index < tb->submesh_index) return -1;
+    if (ta->submesh_index > tb->submesh_index) return  1;
+    return 0;
+}
+
+/* ── Draw model (two-pass: opaque first, then sorted transparent) ───────── */
 
 static void forge_scene_draw_model(ForgeScene *scene,
                                     ForgeSceneModel *model,
@@ -4076,6 +4311,11 @@ static void forge_scene_draw_model(ForgeScene *scene,
     if (model->mesh.lod_count == 0) return;
 
     model->draw_calls = 0;
+    model->transparent_draw_calls = 0;
+
+    /* Precompute camera forward for view-depth sorting (invariant per call) */
+    quat cam_q = quat_from_euler(scene->cam_yaw, scene->cam_pitch, 0.0f);
+    vec3 cam_fwd = quat_forward(cam_q);
 
     /* LOD 0 base index offset (in bytes) — we uploaded from this offset,
      * so GPU-side indices start at 0 relative to our uploaded buffer. */
@@ -4088,99 +4328,14 @@ static void forge_scene_draw_model(ForgeScene *scene,
     SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
                            SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
-    SDL_GPUGraphicsPipeline *last_pipeline = NULL; /* track to skip redundant binds */
+    SDL_GPUGraphicsPipeline *last_pipeline = NULL;
 
-    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
-        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
-        if (node->mesh_index < 0) continue;  /* transform-only node */
+    /* Collect BLEND submeshes for deferred sorted drawing.
+     * ~19 KB on the stack (256 × 76 bytes) — acceptable for desktop. */
+    ForgeSceneTransparentDraw blend_draws[FORGE_SCENE_MAX_TRANSPARENT_DRAWS];
+    uint32_t blend_count = 0;
 
-        /* Compose placement × node world transform */
-        mat4 node_world;
-        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
-        mat4 final_world = mat4_multiply(placement, node_world);
-
-        /* Look up submesh range for this mesh */
-        const ForgePipelineSceneMesh *smesh =
-            forge_pipeline_scene_get_mesh(&model->scene_data,
-                                          (uint32_t)node->mesh_index);
-        if (!smesh) continue;
-
-        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
-            uint32_t submesh_idx = smesh->first_submesh + si;
-            const ForgePipelineSubmesh *sub =
-                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
-            if (!sub || sub->index_count == 0) continue;
-
-            /* Select material */
-            const ForgePipelineMaterial *mat = NULL;
-            const ForgeSceneModelTextures *textures = NULL;
-            if (sub->material_index >= 0 &&
-                (uint32_t)sub->material_index < model->materials.material_count &&
-                (uint32_t)sub->material_index < model->mat_texture_count) {
-                mat = &model->materials.materials[sub->material_index];
-                textures = &model->mat_textures[sub->material_index];
-            }
-
-            /* Select pipeline variant */
-            SDL_GPUGraphicsPipeline *pipeline;
-            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND && mat->double_sided)
-                pipeline = scene->model_pipeline_blend_double;
-            else if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND)
-                pipeline = scene->model_pipeline_blend;
-            else if (mat && mat->double_sided)
-                pipeline = scene->model_pipeline_double;
-            else
-                pipeline = scene->model_pipeline;
-
-            if (pipeline != last_pipeline) {
-                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
-                last_pipeline = pipeline;
-            }
-
-            forge_scene__bind_model_textures(scene, textures);
-
-            /* Vertex uniforms */
-            ForgeSceneVertUniforms vu;
-            vu.mvp      = mat4_multiply(scene->cam_vp, final_world);
-            vu.model    = final_world;
-            vu.light_vp = mat4_multiply(scene->light_vp, final_world);
-            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
-
-            /* Fragment uniforms */
-            ForgeSceneModelFragUniforms fu;
-            forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
-            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
-
-            /* Draw indexed: offset into our uploaded index buffer */
-            uint32_t first_index =
-                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
-            SDL_DrawGPUIndexedPrimitives(scene->pass,
-                sub->index_count, 1, first_index, 0, 0);
-            model->draw_calls++;
-        }
-    }
-}
-
-/* ── Draw model shadows ─────────────────────────────────────────────────── */
-
-static void forge_scene_draw_model_shadows(ForgeScene *scene,
-                                            ForgeSceneModel *model,
-                                            mat4 placement)
-{
-    if (!scene || !model || !scene->pass) return;
-    if (!model->vertex_buffer || !model->index_buffer) return;
-    if (model->mesh.lod_count == 0) return;
-
-    SDL_BindGPUGraphicsPipeline(scene->pass, scene->model_shadow_pipeline);
-
-    /* Bind vertex + index buffers */
-    SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
-    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
-    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
-    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
-                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
-
-    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+    /* ── Pass 1: draw opaque + MASK submeshes immediately ──────────── */
 
     for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
         const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
@@ -4201,20 +4356,236 @@ static void forge_scene_draw_model_shadows(ForgeScene *scene,
                 forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
             if (!sub || sub->index_count == 0) continue;
 
-            /* Skip non-opaque submeshes — transparent materials should not
-             * cast shadows, and alpha-masked materials need a mask-aware
-             * shadow shader (planned for Lesson 44). */
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count &&
+                (uint32_t)sub->material_index < model->mat_texture_count) {
+                mat = &model->materials.materials[sub->material_index];
+                textures = &model->mat_textures[sub->material_index];
+            }
+
+            /* Defer BLEND submeshes to pass 2 (unless sorting is disabled) */
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND) {
+                if (scene->transparency_sorting) {
+                    if (blend_count < FORGE_SCENE_MAX_TRANSPARENT_DRAWS) {
+                        ForgeSceneTransparentDraw *td =
+                            &blend_draws[blend_count++];
+                        td->node_index    = n;
+                        td->submesh_index = submesh_idx;
+                        td->final_world   = final_world;
+
+                        vec3 centroid =
+                            (submesh_idx < model->submesh_centroid_count)
+                            ? model->submesh_centroids[submesh_idx]
+                            : vec3_create(0, 0, 0);
+                        vec4 wc4 = mat4_multiply_vec4(final_world,
+                            vec4_create(centroid.x, centroid.y,
+                                        centroid.z, 1.0f));
+                        vec3 wc = vec3_create(wc4.x, wc4.y, wc4.z);
+                        td->sort_depth = vec3_dot(
+                            vec3_sub(wc, scene->cam_position), cam_fwd);
+                        continue; /* deferred to pass 2 */
+                    }
+                    /* Queue full — fall through to draw unsorted */
+                }
+                /* Sorting disabled or queue full: draw immediately */
+            }
+
+            /* Select pipeline variant */
+            SDL_GPUGraphicsPipeline *pipeline;
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND &&
+                mat->double_sided)
+                pipeline = scene->model_pipeline_blend_double;
+            else if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND)
+                pipeline = scene->model_pipeline_blend;
+            else if (mat && mat->double_sided)
+                pipeline = scene->model_pipeline_double;
+            else
+                pipeline = scene->model_pipeline;
+
+            if (pipeline != last_pipeline) {
+                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
+                last_pipeline = pipeline;
+            }
+
+            forge_scene__bind_model_textures(scene, textures);
+
+            ForgeSceneVertUniforms vu;
+            vu.mvp      = mat4_multiply(scene->cam_vp, final_world);
+            vu.model    = final_world;
+            vu.light_vp = mat4_multiply(scene->light_vp, final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+            ForgeSceneModelFragUniforms fu;
+            forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
+            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+            model->draw_calls++;
+        }
+    }
+
+    /* ── Pass 2: sort and draw BLEND submeshes back-to-front ───────── */
+
+    if (blend_count > 0) {
+        SDL_qsort(blend_draws, blend_count,
+                  sizeof(ForgeSceneTransparentDraw),
+                  forge_scene__transparent_cmp);
+
+        for (uint32_t i = 0; i < blend_count; i++) {
+            const ForgeSceneTransparentDraw *td = &blend_draws[i];
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, td->submesh_index);
+            if (!sub || sub->index_count == 0) continue;
+
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count &&
+                (uint32_t)sub->material_index < model->mat_texture_count) {
+                mat = &model->materials.materials[sub->material_index];
+                textures = &model->mat_textures[sub->material_index];
+            }
+
+            SDL_GPUGraphicsPipeline *pipeline;
+            if (mat && mat->double_sided)
+                pipeline = scene->model_pipeline_blend_double;
+            else
+                pipeline = scene->model_pipeline_blend;
+
+            if (pipeline != last_pipeline) {
+                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
+                last_pipeline = pipeline;
+            }
+
+            forge_scene__bind_model_textures(scene, textures);
+
+            ForgeSceneVertUniforms vu;
+            vu.mvp      = mat4_multiply(scene->cam_vp, td->final_world);
+            vu.model    = td->final_world;
+            vu.light_vp = mat4_multiply(scene->light_vp, td->final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+            ForgeSceneModelFragUniforms fu;
+            forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
+            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+            model->draw_calls++;
+            model->transparent_draw_calls++;
+        }
+    }
+}
+
+/* ── Draw model shadows ─────────────────────────────────────────────────── */
+
+static void forge_scene_draw_model_shadows(ForgeScene *scene,
+                                            ForgeSceneModel *model,
+                                            mat4 placement)
+{
+    if (!scene || !model || !scene->pass) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0) return;
+
+    /* Bind vertex + index buffers */
+    SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    /* Track which pipeline is bound to avoid redundant switches */
+    SDL_GPUGraphicsPipeline *last_shadow_pipe = NULL;
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;
+
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+        mat4 final_world = mat4_multiply(placement, node_world);
+
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            /* Determine alpha mode for this submesh */
+            int amode = FORGE_PIPELINE_ALPHA_OPAQUE;
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
             if (sub->material_index >= 0 &&
                 (uint32_t)sub->material_index < model->materials.material_count) {
-                int amode = model->materials.materials[sub->material_index].alpha_mode;
-                if (amode == FORGE_PIPELINE_ALPHA_BLEND ||
-                    amode == FORGE_PIPELINE_ALPHA_MASK)
-                    continue;
+                mat = &model->materials.materials[sub->material_index];
+                amode = mat->alpha_mode;
+                if ((uint32_t)sub->material_index < model->mat_texture_count)
+                    textures = &model->mat_textures[sub->material_index];
             }
+
+            /* Skip BLEND — transparent materials should not cast shadows */
+            if (amode == FORGE_PIPELINE_ALPHA_BLEND)
+                continue;
 
             ForgeSceneShadowVertUniforms su;
             su.light_vp = mat4_multiply(scene->light_vp, final_world);
-            SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+            if (amode == FORGE_PIPELINE_ALPHA_MASK &&
+                scene->model_shadow_mask_pipeline) {
+                /* MASK: use shadow mask pipeline with alpha test */
+                if (last_shadow_pipe != scene->model_shadow_mask_pipeline) {
+                    SDL_BindGPUGraphicsPipeline(scene->pass,
+                        scene->model_shadow_mask_pipeline);
+                    last_shadow_pipe = scene->model_shadow_mask_pipeline;
+                }
+                SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+                /* Bind base color texture for alpha sampling */
+                SDL_GPUTextureSamplerBinding mask_tex;
+                mask_tex.texture = (textures && textures->base_color)
+                    ? textures->base_color : scene->model_white_texture;
+                mask_tex.sampler = scene->model_tex_sampler;
+                SDL_BindGPUFragmentSamplers(scene->pass, 0, &mask_tex, 1);
+
+                /* Push alpha cutoff uniform */
+                ForgeSceneShadowMaskFragUniforms mfu;
+                SDL_zero(mfu);
+                if (mat) {
+                    SDL_memcpy(mfu.base_color_factor,
+                               mat->base_color_factor, 4 * sizeof(float));
+                    mfu.alpha_cutoff = mat->alpha_cutoff;
+                } else {
+                    mfu.base_color_factor[0] = 1.0f;
+                    mfu.base_color_factor[1] = 1.0f;
+                    mfu.base_color_factor[2] = 1.0f;
+                    mfu.base_color_factor[3] = 1.0f;
+                    mfu.alpha_cutoff = FORGE_SCENE_DEFAULT_ALPHA_CUTOFF;
+                }
+                SDL_PushGPUFragmentUniformData(scene->cmd, 0,
+                                               &mfu, sizeof(mfu));
+            } else {
+                /* OPAQUE: use standard depth-only shadow pipeline */
+                if (last_shadow_pipe != scene->model_shadow_pipeline) {
+                    SDL_BindGPUGraphicsPipeline(scene->pass,
+                        scene->model_shadow_pipeline);
+                    last_shadow_pipe = scene->model_shadow_pipeline;
+                }
+                SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+            }
 
             uint32_t first_index =
                 (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
@@ -4478,6 +4849,55 @@ static bool forge_scene_init_skinned_pipelines(ForgeScene *scene)
         scene->skinned_shadow_pipeline = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
     }
 
+    /* Skinned shadow mask pipeline: depth + alpha test for MASK materials.
+     * Uses the skinned shadow mask vertex shader (applies skinning + passes UV)
+     * and the same shadow_mask fragment shader as the non-skinned variant. */
+    {
+        SDL_GPUShader *sk_smask_vs = forge_scene_create_shader(scene,
+            SDL_GPU_SHADERSTAGE_VERTEX,
+            shadow_mask_skinned_vert_spirv, sizeof(shadow_mask_skinned_vert_spirv),
+            shadow_mask_skinned_vert_dxil,  sizeof(shadow_mask_skinned_vert_dxil),
+            shadow_mask_skinned_vert_msl, shadow_mask_skinned_vert_msl_size,
+            0, 0, 1, 1);  /* 0 samplers, 0 storage_tex, 1 storage_buf, 1 uniform */
+
+        SDL_GPUShader *sk_smask_fs = forge_scene_create_shader(scene,
+            SDL_GPU_SHADERSTAGE_FRAGMENT,
+            shadow_mask_frag_spirv, sizeof(shadow_mask_frag_spirv),
+            shadow_mask_frag_dxil,  sizeof(shadow_mask_frag_dxil),
+            shadow_mask_frag_msl, shadow_mask_frag_msl_size,
+            1, 0, 0, 1);
+
+        if (sk_smask_vs && sk_smask_fs) {
+            SDL_GPUGraphicsPipelineCreateInfo pi;
+            SDL_zero(pi);
+            pi.vertex_shader      = sk_smask_vs;
+            pi.fragment_shader    = sk_smask_fs;
+            pi.vertex_input_state = skinned_input;
+            pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+            pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+            pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+            pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+            pi.rasterizer_state.enable_depth_bias = true;
+            pi.rasterizer_state.depth_bias_constant_factor = FORGE_SCENE_SHADOW_BIAS_CONST;
+            pi.rasterizer_state.depth_bias_slope_factor    = FORGE_SCENE_SHADOW_BIAS_SLOPE;
+            pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+            pi.depth_stencil_state.enable_depth_test  = true;
+            pi.depth_stencil_state.enable_depth_write = true;
+            pi.target_info.num_color_targets        = 0;
+            pi.target_info.depth_stencil_format     = scene->shadow_fmt;
+            pi.target_info.has_depth_stencil_target = true;
+            scene->skinned_shadow_mask_pipeline =
+                SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+            if (!scene->skinned_shadow_mask_pipeline) {
+                SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                        "(skinned_shadow_mask_pipeline) failed: %s",
+                        SDL_GetError());
+            }
+        }
+        if (sk_smask_vs) SDL_ReleaseGPUShader(scene->device, sk_smask_vs);
+        if (sk_smask_fs) SDL_ReleaseGPUShader(scene->device, sk_smask_fs);
+    }
+
     /* Release shaders */
     SDL_ReleaseGPUShader(scene->device, skinned_vs);
     SDL_ReleaseGPUShader(scene->device, skinned_fs);
@@ -4498,6 +4918,8 @@ static bool forge_scene_init_skinned_pipelines(ForgeScene *scene)
             { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_pipeline_blend_double); scene->skinned_pipeline_blend_double = NULL; }
         if (scene->skinned_shadow_pipeline)
             { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_shadow_pipeline); scene->skinned_shadow_pipeline = NULL; }
+        if (scene->skinned_shadow_mask_pipeline)
+            { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_shadow_mask_pipeline); scene->skinned_shadow_mask_pipeline = NULL; }
         return false;
     }
 
@@ -4717,6 +5139,17 @@ static bool forge_scene_load_skinned_model(
         }
     }
 
+    /* Precompute per-submesh centroids for transparency sorting.
+     * These are bind-pose (object-space) centroids — joint transforms are
+     * not applied.  For most skinned meshes the transparent submeshes are
+     * small relative to the model, so bind-pose centroids give a reasonable
+     * sort key without the cost of per-frame skinned readback. */
+    model->submesh_centroid_count = model->mesh.submesh_count;
+    if (model->submesh_centroid_count > FORGE_SCENE_MODEL_MAX_SUBMESHES)
+        model->submesh_centroid_count = FORGE_SCENE_MODEL_MAX_SUBMESHES;
+    forge_scene_compute_centroids(&model->mesh, model->submesh_centroids,
+                                   FORGE_SCENE_MODEL_MAX_SUBMESHES);
+
     /* Load per-material textures — pass &model->vram directly for
      * VRAM tracking (no temporary wrapper needed). */
     {
@@ -4895,6 +5328,11 @@ static void forge_scene_draw_skinned_model(
     if (model->mesh.lod_count == 0) return;
 
     model->draw_calls = 0;
+    model->transparent_draw_calls = 0;
+
+    /* Precompute camera forward for view-depth sorting (invariant per call) */
+    quat cam_q = quat_from_euler(scene->cam_yaw, scene->cam_pitch, 0.0f);
+    vec3 cam_fwd = quat_forward(cam_q);
 
     uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
 
@@ -4911,12 +5349,17 @@ static void forge_scene_draw_skinned_model(
 
     SDL_GPUGraphicsPipeline *last_pipeline = NULL;
 
+    /* Collect BLEND submeshes for deferred sorted drawing.
+     * ~19 KB on the stack (256 × 76 bytes) — acceptable for desktop. */
+    ForgeSceneTransparentDraw blend_draws[FORGE_SCENE_MAX_TRANSPARENT_DRAWS];
+    uint32_t blend_count = 0;
+
+    /* ── Pass 1: draw opaque + MASK submeshes immediately ──────────── */
+
     for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
         const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
         if (node->mesh_index < 0) continue;
 
-        /* placement * node_world positions the mesh; the joint matrices
-         * contain inv(mesh_world), so the two cancel in the final chain. */
         mat4 node_world;
         SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
         mat4 final_world = mat4_multiply(placement, node_world);
@@ -4941,9 +5384,36 @@ static void forge_scene_draw_skinned_model(
                 textures = &model->mat_textures[sub->material_index];
             }
 
+            /* Defer BLEND submeshes to pass 2 (unless sorting is disabled) */
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND) {
+                if (scene->transparency_sorting) {
+                    if (blend_count < FORGE_SCENE_MAX_TRANSPARENT_DRAWS) {
+                        ForgeSceneTransparentDraw *td =
+                            &blend_draws[blend_count++];
+                        td->node_index    = n;
+                        td->submesh_index = submesh_idx;
+                        td->final_world   = final_world;
+
+                        vec3 centroid =
+                            (submesh_idx < model->submesh_centroid_count)
+                            ? model->submesh_centroids[submesh_idx]
+                            : vec3_create(0, 0, 0);
+                        vec4 wc4 = mat4_multiply_vec4(final_world,
+                            vec4_create(centroid.x, centroid.y,
+                                        centroid.z, 1.0f));
+                        vec3 wc = vec3_create(wc4.x, wc4.y, wc4.z);
+                        td->sort_depth = vec3_dot(
+                            vec3_sub(wc, scene->cam_position), cam_fwd);
+                        continue; /* deferred to pass 2 */
+                    }
+                    /* Queue full — fall through to draw unsorted */
+                }
+            }
+
             /* Select pipeline variant */
             SDL_GPUGraphicsPipeline *pipeline;
-            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND && mat->double_sided)
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND &&
+                mat->double_sided)
                 pipeline = scene->skinned_pipeline_blend_double;
             else if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND)
                 pipeline = scene->skinned_pipeline_blend;
@@ -4959,14 +5429,12 @@ static void forge_scene_draw_skinned_model(
 
             forge_scene__bind_model_textures(scene, textures);
 
-            /* Vertex uniforms */
             ForgeSceneVertUniforms vu;
             vu.mvp      = mat4_multiply(scene->cam_vp, final_world);
             vu.model    = final_world;
             vu.light_vp = mat4_multiply(scene->light_vp, final_world);
             SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
 
-            /* Fragment uniforms */
             ForgeSceneModelFragUniforms fu;
             forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
             SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
@@ -4976,6 +5444,60 @@ static void forge_scene_draw_skinned_model(
             SDL_DrawGPUIndexedPrimitives(scene->pass,
                 sub->index_count, 1, first_index, 0, 0);
             model->draw_calls++;
+        }
+    }
+
+    /* ── Pass 2: sort and draw BLEND submeshes back-to-front ───────── */
+
+    if (blend_count > 0) {
+        SDL_qsort(blend_draws, blend_count,
+                  sizeof(ForgeSceneTransparentDraw),
+                  forge_scene__transparent_cmp);
+
+        for (uint32_t i = 0; i < blend_count; i++) {
+            const ForgeSceneTransparentDraw *td = &blend_draws[i];
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, td->submesh_index);
+            if (!sub || sub->index_count == 0) continue;
+
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count &&
+                (uint32_t)sub->material_index < model->mat_texture_count) {
+                mat = &model->materials.materials[sub->material_index];
+                textures = &model->mat_textures[sub->material_index];
+            }
+
+            SDL_GPUGraphicsPipeline *pipeline;
+            if (mat && mat->double_sided)
+                pipeline = scene->skinned_pipeline_blend_double;
+            else
+                pipeline = scene->skinned_pipeline_blend;
+
+            if (pipeline != last_pipeline) {
+                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
+                last_pipeline = pipeline;
+            }
+
+            forge_scene__bind_model_textures(scene, textures);
+
+            ForgeSceneVertUniforms vu;
+            vu.mvp      = mat4_multiply(scene->cam_vp, td->final_world);
+            vu.model    = td->final_world;
+            vu.light_vp = mat4_multiply(scene->light_vp, td->final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+            ForgeSceneModelFragUniforms fu;
+            forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
+            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+            model->draw_calls++;
+            model->transparent_draw_calls++;
         }
     }
 }
@@ -4990,8 +5512,6 @@ static void forge_scene_draw_skinned_model_shadows(
     if (!model->vertex_buffer || !model->index_buffer) return;
     if (model->mesh.lod_count == 0) return;
 
-    SDL_BindGPUGraphicsPipeline(scene->pass, scene->skinned_shadow_pipeline);
-
     /* Bind vertex + index buffers */
     SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
     SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
@@ -5004,6 +5524,7 @@ static void forge_scene_draw_skinned_model_shadows(
                                     &model->joint_buffer, 1);
 
     uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+    SDL_GPUGraphicsPipeline *last_shadow_pipe = NULL;
 
     for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
         const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
@@ -5024,18 +5545,61 @@ static void forge_scene_draw_skinned_model_shadows(
                 forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
             if (!sub || sub->index_count == 0) continue;
 
-            /* Skip non-opaque submeshes */
+            int amode = FORGE_PIPELINE_ALPHA_OPAQUE;
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
             if (sub->material_index >= 0 &&
                 (uint32_t)sub->material_index < model->materials.material_count) {
-                int amode = model->materials.materials[sub->material_index].alpha_mode;
-                if (amode == FORGE_PIPELINE_ALPHA_BLEND ||
-                    amode == FORGE_PIPELINE_ALPHA_MASK)
-                    continue;
+                mat = &model->materials.materials[sub->material_index];
+                amode = mat->alpha_mode;
+                if ((uint32_t)sub->material_index < model->mat_texture_count)
+                    textures = &model->mat_textures[sub->material_index];
             }
+
+            if (amode == FORGE_PIPELINE_ALPHA_BLEND)
+                continue;
 
             ForgeSceneShadowVertUniforms su;
             su.light_vp = mat4_multiply(scene->light_vp, final_world);
-            SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+            if (amode == FORGE_PIPELINE_ALPHA_MASK &&
+                scene->skinned_shadow_mask_pipeline) {
+                if (last_shadow_pipe != scene->skinned_shadow_mask_pipeline) {
+                    SDL_BindGPUGraphicsPipeline(scene->pass,
+                        scene->skinned_shadow_mask_pipeline);
+                    last_shadow_pipe = scene->skinned_shadow_mask_pipeline;
+                }
+                SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+                SDL_GPUTextureSamplerBinding mask_tex;
+                mask_tex.texture = (textures && textures->base_color)
+                    ? textures->base_color : scene->model_white_texture;
+                mask_tex.sampler = scene->model_tex_sampler;
+                SDL_BindGPUFragmentSamplers(scene->pass, 0, &mask_tex, 1);
+
+                ForgeSceneShadowMaskFragUniforms mfu;
+                SDL_zero(mfu);
+                if (mat) {
+                    SDL_memcpy(mfu.base_color_factor,
+                               mat->base_color_factor, 4 * sizeof(float));
+                    mfu.alpha_cutoff = mat->alpha_cutoff;
+                } else {
+                    mfu.base_color_factor[0] = 1.0f;
+                    mfu.base_color_factor[1] = 1.0f;
+                    mfu.base_color_factor[2] = 1.0f;
+                    mfu.base_color_factor[3] = 1.0f;
+                    mfu.alpha_cutoff = FORGE_SCENE_DEFAULT_ALPHA_CUTOFF;
+                }
+                SDL_PushGPUFragmentUniformData(scene->cmd, 0,
+                                               &mfu, sizeof(mfu));
+            } else {
+                if (last_shadow_pipe != scene->skinned_shadow_pipeline) {
+                    SDL_BindGPUGraphicsPipeline(scene->pass,
+                        scene->skinned_shadow_pipeline);
+                    last_shadow_pipe = scene->skinned_shadow_pipeline;
+                }
+                SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+            }
 
             uint32_t first_index =
                 (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);

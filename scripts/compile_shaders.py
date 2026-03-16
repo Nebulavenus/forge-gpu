@@ -325,7 +325,9 @@ def main():
     spirv_cross_path = args.spirv_cross or find_spirv_cross()
     if spirv_cross_path is None:
         print("Warning: spirv-cross not found — MSL shaders will not be generated.")
-        print("Install via: brew install spirv-cross (macOS), apt install spirv-cross (Linux),")
+        print(
+            "Install via: brew install spirv-cross (macOS), apt install spirv-cross (Linux),"
+        )
         print("or the Vulkan SDK (all platforms).")
 
     print(f"Using dxc: {dxc_path}")
@@ -356,7 +358,9 @@ def main():
             total_shaders += 1
             shader_name = os.path.basename(shader)
             print(f"  {shader_name}")
-            if not compile_shader(dxc_path, spirv_cross_path, shader, verbose=args.verbose):
+            if not compile_shader(
+                dxc_path, spirv_cross_path, shader, verbose=args.verbose
+            ):
                 failed += 1
 
     if total_shaders == 0:

@@ -139,6 +139,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/gpu/42-pipeline-texture-compression)
     add_subdirectory(lessons/gpu/43-pipeline-skinned-animations)
     add_subdirectory(lessons/gpu/44-pipeline-morph-animations)
+    add_subdirectory(lessons/gpu/45-scene-transparency-sorting)
 endif()
 
 # ── UI Lessons ─────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–43** — From Hello Window through Pipeline Skinned Animations
+- **GPU Lessons 01–43, 45** — From Hello Window through Scene Transparency Sorting
 - **Math Lessons 01–18** — From Vectors through Scalar Field Gradients
 - **Engine Lessons 01–12** — From Intro to C through Memory Arenas
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
@@ -30,7 +30,7 @@ The following foundations, tooling, and lesson ranges are complete:
 
 ### Scene Transparency
 
-- [ ] **Lesson 45 — Scene Transparency Sorting** — Extends `forge_scene.h` with correct transparent rendering: two-pass draw splitting opaque and blend submeshes; back-to-front depth sorting for transparent draws; alpha-tested shadow pass that skips `ALPHA_MASK` materials (and optionally uses a mask-aware shadow shader with `alpha_cutoff`); `ForgeSceneTransparentDraw` queue with centroid depth; integrates with `forge_scene_draw_model()` / `forge_scene_draw_model_shadows()`; demonstrates order-dependent vs order-independent results with CesiumMilkTruck windshield and foliage test assets. (depends on GPU Lessons 16, 41)
+- [x] **Lesson 45 — Scene Transparency Sorting** — Extends `forge_scene.h` with correct transparent rendering: two-pass draw splitting opaque and blend submeshes; back-to-front depth sorting for transparent draws via precomputed submesh centroids; alpha-masked shadow casting with `shadow_mask` shaders that sample base color and discard below `alpha_cutoff`; `ForgeSceneTransparentDraw` queue sorted by camera distance; `transparency_sorting` toggle for A/B comparison; integrates with `forge_scene_draw_model()` / `forge_scene_draw_model_shadows()` and skinned model variants; demonstrates with CesiumMilkTruck (glass material set to BLEND). (depends on GPU Lessons 16, 41)
 
 ### Advanced Rendering
 

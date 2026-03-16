@@ -27,8 +27,7 @@ def diagram_support_function():
     for idx, (ax, name, color) in enumerate(zip(axes, shapes, colors, strict=True)):
         setup_axes(ax, xlim=(-2.2, 2.2), ylim=(-2.2, 2.2), aspect="equal")
         ax.axis("off")
-        ax.set_title(name, color=STYLE["text"], fontsize=14, fontweight="bold",
-                     pad=10)
+        ax.set_title(name, color=STYLE["text"], fontsize=14, fontweight="bold", pad=10)
 
         # Direction angles
         theta = np.linspace(0, 2 * np.pi, 200)
@@ -69,16 +68,20 @@ def diagram_support_function():
             # right wall bottom→top, top semicircle right→left,
             # left wall top→bottom, bottom semicircle left→right
             n_arc = 50
-            top_arc = np.linspace(0, np.pi, n_arc)       # 0 → π
+            top_arc = np.linspace(0, np.pi, n_arc)  # 0 → π
             bot_arc = np.linspace(np.pi, 2 * np.pi, n_arc)  # π → 2π
-            outline_x = np.concatenate([
-                r * np.cos(top_arc),       # top semicircle
-                r * np.cos(bot_arc),       # bottom semicircle
-            ])
-            outline_y = np.concatenate([
-                h + r * np.sin(top_arc),   # centered at +h
-                -h + r * np.sin(bot_arc),  # centered at -h
-            ])
+            outline_x = np.concatenate(
+                [
+                    r * np.cos(top_arc),  # top semicircle
+                    r * np.cos(bot_arc),  # bottom semicircle
+                ]
+            )
+            outline_y = np.concatenate(
+                [
+                    h + r * np.sin(top_arc),  # centered at +h
+                    -h + r * np.sin(bot_arc),  # centered at -h
+                ]
+            )
             # Close explicitly
             outline_x = np.append(outline_x, outline_x[0])
             outline_y = np.append(outline_y, outline_y[0])
@@ -101,37 +104,59 @@ def diagram_support_function():
             sy = np.array(sy)
 
         # Draw support trace
-        ax.plot(sx, sy, color=STYLE["warn"], lw=2.5, linestyle="--",
-                alpha=0.9, label="Support trace")
+        ax.plot(
+            sx,
+            sy,
+            color=STYLE["warn"],
+            lw=2.5,
+            linestyle="--",
+            alpha=0.9,
+            label="Support trace",
+        )
 
         # Draw a few sample direction arrows and support points
-        sample_angles = [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4,
-                         np.pi, 5 * np.pi / 4]
+        sample_angles = [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4, np.pi, 5 * np.pi / 4]
         for sa in sample_angles:
             di = int(sa / (2 * np.pi) * len(theta)) % len(theta)
             # Direction arrow from center
             dx, dy = 0.6 * np.cos(sa), 0.6 * np.sin(sa)
-            ax.annotate("", xy=(dx, dy), xytext=(0, 0),
-                        arrowprops={"arrowstyle": "->", "color": STYLE["text_dim"],
-                                    "lw": 1.0, "alpha": 0.4})
+            ax.annotate(
+                "",
+                xy=(dx, dy),
+                xytext=(0, 0),
+                arrowprops={
+                    "arrowstyle": "->",
+                    "color": STYLE["text_dim"],
+                    "lw": 1.0,
+                    "alpha": 0.4,
+                },
+            )
             # Support point
-            ax.plot(sx[di], sy[di], "o", color=STYLE["warn"], markersize=5,
-                    zorder=5)
+            ax.plot(sx[di], sy[di], "o", color=STYLE["warn"], markersize=5, zorder=5)
 
         # Center dot
         ax.plot(0, 0, "o", color=STYLE["text"], markersize=4, zorder=5)
 
-    fig.suptitle("Support Function — Farthest Point in Each Direction",
-                 color=STYLE["text"], fontsize=13, fontweight="bold", y=0.98)
+    fig.suptitle(
+        "Support Function — Farthest Point in Each Direction",
+        color=STYLE["text"],
+        fontsize=13,
+        fontweight="bold",
+        y=0.98,
+    )
 
     # Legend
-    axes[2].plot([], [], color=STYLE["warn"], lw=2.5, linestyle="--",
-                 label="Support trace")
-    axes[2].plot([], [], "o", color=STYLE["warn"], markersize=5,
-                 label="Support point")
-    axes[2].legend(loc="lower right", fontsize=9,
-                   facecolor=STYLE["surface"], edgecolor=STYLE["grid"],
-                   labelcolor=STYLE["text"])
+    axes[2].plot(
+        [], [], color=STYLE["warn"], lw=2.5, linestyle="--", label="Support trace"
+    )
+    axes[2].plot([], [], "o", color=STYLE["warn"], markersize=5, label="Support point")
+    axes[2].legend(
+        loc="lower right",
+        fontsize=9,
+        facecolor=STYLE["surface"],
+        edgecolor=STYLE["grid"],
+        labelcolor=STYLE["text"],
+    )
 
     plt.tight_layout(rect=[0, 0, 1, 0.94])
     save(fig, _LESSON, "support_function.png")
@@ -155,24 +180,28 @@ def diagram_aabb_from_obb():
 
     for ax, angle_deg, title in zip(axes, rotations, titles, strict=True):
         setup_axes(ax, xlim=(-2.5, 2.5), ylim=(-2.5, 2.5), aspect="equal")
-        ax.set_title(title, color=STYLE["text"], fontsize=12, fontweight="bold",
-                     pad=8)
+        ax.set_title(title, color=STYLE["text"], fontsize=12, fontweight="bold", pad=8)
 
         angle_rad = np.radians(angle_deg)
         c, s = np.cos(angle_rad), np.sin(angle_rad)
 
         # Rotated box corners
-        corners_local = np.array([
-            [-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy], [-hx, -hy]
-        ])
+        corners_local = np.array(
+            [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy], [-hx, -hy]]
+        )
         R = np.array([[c, -s], [s, c]])
         corners_world = (R @ corners_local.T).T
 
         # Draw rotated box
-        ax.fill(corners_world[:-1, 0], corners_world[:-1, 1],
-                color=STYLE["accent2"], alpha=0.2)
-        ax.plot(corners_world[:, 0], corners_world[:, 1],
-                color=STYLE["accent2"], lw=2.5)
+        ax.fill(
+            corners_world[:-1, 0],
+            corners_world[:-1, 1],
+            color=STYLE["accent2"],
+            alpha=0.2,
+        )
+        ax.plot(
+            corners_world[:, 0], corners_world[:, 1], color=STYLE["accent2"], lw=2.5
+        )
 
         # Compute AABB
         aabb_min_x = corners_world[:-1, 0].min()
@@ -185,7 +214,10 @@ def diagram_aabb_from_obb():
             (aabb_min_x, aabb_min_y),
             aabb_max_x - aabb_min_x,
             aabb_max_y - aabb_min_y,
-            fill=False, edgecolor=STYLE["accent3"], lw=2.0, linestyle="--",
+            fill=False,
+            edgecolor=STYLE["accent3"],
+            lw=2.0,
+            linestyle="--",
             zorder=4,
         )
         ax.add_patch(aabb_rect)
@@ -198,23 +230,37 @@ def diagram_aabb_from_obb():
         # Rotated local axes
         ax_x = R @ np.array([hx, 0])
         ax_y = R @ np.array([0, hy])
-        ax.annotate("", xy=ax_x, xytext=(0, 0),
-                    arrowprops={"arrowstyle": "->", "color": STYLE["accent1"],
-                                "lw": 1.5})
-        ax.annotate("", xy=ax_y, xytext=(0, 0),
-                    arrowprops={"arrowstyle": "->", "color": STYLE["accent4"],
-                                "lw": 1.5})
+        ax.annotate(
+            "",
+            xy=ax_x,
+            xytext=(0, 0),
+            arrowprops={"arrowstyle": "->", "color": STYLE["accent1"], "lw": 1.5},
+        )
+        ax.annotate(
+            "",
+            xy=ax_y,
+            xytext=(0, 0),
+            arrowprops={"arrowstyle": "->", "color": STYLE["accent4"], "lw": 1.5},
+        )
 
-    fig.suptitle("AABB from Oriented Box — Tightest Axis-Aligned Enclosure",
-                 color=STYLE["text"], fontsize=13, fontweight="bold", y=0.98)
+    fig.suptitle(
+        "AABB from Oriented Box — Tightest Axis-Aligned Enclosure",
+        color=STYLE["text"],
+        fontsize=13,
+        fontweight="bold",
+        y=0.98,
+    )
 
     # Legend
     axes[0].plot([], [], color=STYLE["accent2"], lw=2.5, label="OBB")
-    axes[0].plot([], [], color=STYLE["accent3"], lw=2.0, linestyle="--",
-                 label="AABB")
-    axes[0].legend(loc="lower left", fontsize=9,
-                   facecolor=STYLE["surface"], edgecolor=STYLE["grid"],
-                   labelcolor=STYLE["text"])
+    axes[0].plot([], [], color=STYLE["accent3"], lw=2.0, linestyle="--", label="AABB")
+    axes[0].legend(
+        loc="lower left",
+        fontsize=9,
+        facecolor=STYLE["surface"],
+        edgecolor=STYLE["grid"],
+        labelcolor=STYLE["text"],
+    )
 
     plt.tight_layout(rect=[0, 0, 1, 0.94])
     save(fig, _LESSON, "aabb_from_obb.png")
