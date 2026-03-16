@@ -232,6 +232,9 @@ typedef struct BodyRenderInfo {
 typedef struct app_state {
     ForgeScene scene;  /* rendering: device, window, pipelines, camera, UI */
 
+    /* Double-sided pipeline for open geometry (uncapped cylinders) */
+    SDL_GPUGraphicsPipeline *double_sided_pipeline;
+
     /* GPU geometry — vertex/index buffers for each shape type */
     SDL_GPUBuffer *cube_vb;
     SDL_GPUBuffer *cube_ib;
@@ -690,6 +693,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
+    /* Double-sided pipeline for uncapped cylinder geometry */
+    state->double_sided_pipeline = forge_scene_create_pipeline(
+        &state->scene, SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_FILL);
+    if (!state->double_sided_pipeline) {
+        SDL_Log("ERROR: Failed to create double-sided pipeline: %s",
+                SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
     /* Generate and upload cube geometry (with flat normals) */
     ForgeShape cube = forge_shapes_cube(CUBE_SLICES, CUBE_STACKS);
     if (cube.vertex_count == 0) {
@@ -904,7 +916,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                   state->body_info[i].color);
             break;
         case SHAPE_CYLINDER:
-            forge_scene_draw_mesh_double_sided(s, state->cylinder_vb,
+            forge_scene_draw_mesh_ex(s, state->double_sided_pipeline,
+                                  state->cylinder_vb,
                                   state->cylinder_ib,
                                   state->cylinder_index_count, model,
                                   state->body_info[i].color);
@@ -1241,6 +1254,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         if (!SDL_WaitForGPUIdle(forge_scene_device(&state->scene))) {
             SDL_Log("ERROR: SDL_WaitForGPUIdle failed: %s", SDL_GetError());
         }
+        if (state->double_sided_pipeline)
+            SDL_ReleaseGPUGraphicsPipeline(forge_scene_device(&state->scene),
+                                           state->double_sided_pipeline);
         if (state->cube_vb)
             SDL_ReleaseGPUBuffer(forge_scene_device(&state->scene),
                                  state->cube_vb);

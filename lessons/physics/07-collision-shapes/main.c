@@ -196,6 +196,9 @@
 typedef struct app_state {
     ForgeScene scene;  /* rendering: device, window, pipelines, camera, UI */
 
+    /* Custom pipelines for non-default rasterizer state */
+    SDL_GPUGraphicsPipeline *wireframe_pipeline;  /* AABB wireframe overlay */
+
     /* GPU geometry — vertex/index buffers for each shape type */
     SDL_GPUBuffer *cube_vb;
     SDL_GPUBuffer *cube_ib;
@@ -627,7 +630,7 @@ static void draw_aabb_wireframe(app_state *state, ForgePhysicsAABB aabb)
         mat4_scale(he));
 
     float color[4] = {AABB_COLOR_R, AABB_COLOR_G, AABB_COLOR_B, AABB_COLOR_A};
-    forge_scene_draw_mesh_double_sided(&state->scene,
+    forge_scene_draw_mesh_ex(&state->scene, state->wireframe_pipeline,
         state->cube_vb, state->cube_ib,
         state->cube_index_count, model, color);
 }
@@ -780,6 +783,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     if (!forge_scene_init(&state->scene, &cfg, argc, argv)) {
         SDL_Log("ERROR: forge_scene_init failed");
+        return SDL_APP_FAILURE;
+    }
+
+    /* Wireframe pipeline for AABB visualization */
+    state->wireframe_pipeline = forge_scene_create_pipeline(
+        &state->scene, SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_LINE);
+    if (!state->wireframe_pipeline) {
+        SDL_Log("ERROR: Failed to create wireframe pipeline: %s",
+                SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -1130,6 +1142,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         if (!SDL_WaitForGPUIdle(dev)) {
             SDL_Log("ERROR: SDL_WaitForGPUIdle failed: %s", SDL_GetError());
         }
+        if (state->wireframe_pipeline)
+            SDL_ReleaseGPUGraphicsPipeline(dev, state->wireframe_pipeline);
         if (state->cube_vb)    SDL_ReleaseGPUBuffer(dev, state->cube_vb);
         if (state->cube_ib)    SDL_ReleaseGPUBuffer(dev, state->cube_ib);
         if (state->sphere_vb)  SDL_ReleaseGPUBuffer(dev, state->sphere_vb);

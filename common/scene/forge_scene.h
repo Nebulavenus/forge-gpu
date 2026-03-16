@@ -441,9 +441,14 @@ typedef struct ForgeScene {
     SDL_GPUDevice *device;
     bool           window_claimed;    /* true after SDL_ClaimWindowForGPUDevice */
 
+    /* ── Scene shaders + vertex layout (kept alive for create_pipeline) ── */
+    SDL_GPUShader                  *scene_vs;       /* Blinn-Phong vertex shader   */
+    SDL_GPUShader                  *scene_fs;       /* Blinn-Phong fragment shader  */
+    SDL_GPUVertexBufferDescription  scene_vb_desc;  /* pos+normal buffer layout    */
+    SDL_GPUVertexAttribute          scene_attrs[2]; /* position + normal attribs   */
+
     /* ── Internal pipelines ─────────────────────────────────────────── */
     SDL_GPUGraphicsPipeline *scene_pipeline;   /* Blinn-Phong (pos+normal)   */
-    SDL_GPUGraphicsPipeline *scene_pipeline_double; /* same, cull none        */
     SDL_GPUGraphicsPipeline *shadow_pipeline;  /* depth-only shadow pass     */
     SDL_GPUGraphicsPipeline *grid_pipeline;    /* procedural grid floor      */
     SDL_GPUGraphicsPipeline *sky_pipeline;     /* fullscreen sky gradient    */
@@ -597,8 +602,8 @@ static void forge_scene_end_shadow_pass(ForgeScene *scene);
 /* Begin the main color+depth pass.  Draws the sky background first. */
 static void forge_scene_begin_main_pass(ForgeScene *scene);
 
-/* Draw a lit mesh with Blinn-Phong shading and shadow.
- * base_color is RGBA [0..1]. */
+/* Draw a lit mesh with Blinn-Phong shading and shadow using the default
+ * pipeline (back-face culling, filled triangles).  base_color is RGBA [0..1]. */
 static void forge_scene_draw_mesh(ForgeScene *scene,
                                    SDL_GPUBuffer *vb,
                                    SDL_GPUBuffer *ib,
@@ -606,14 +611,30 @@ static void forge_scene_draw_mesh(ForgeScene *scene,
                                    mat4 model,
                                    const float base_color[4]);
 
-/* Draw a lit mesh with both faces visible (no back-face culling).
- * Use for open geometry like uncapped cylinders or discs. */
-static void forge_scene_draw_mesh_double_sided(ForgeScene *scene,
-                                                SDL_GPUBuffer *vb,
-                                                SDL_GPUBuffer *ib,
-                                                Uint32 index_count,
-                                                mat4 model,
-                                                const float base_color[4]);
+/* Draw a lit mesh with a caller-provided pipeline.  Use this when you need
+ * non-default rasterizer state (wireframe, double-sided, etc.).  Create
+ * the pipeline with forge_scene_create_pipeline(). */
+static void forge_scene_draw_mesh_ex(ForgeScene *scene,
+                                      SDL_GPUGraphicsPipeline *pipeline,
+                                      SDL_GPUBuffer *vb,
+                                      SDL_GPUBuffer *ib,
+                                      Uint32 index_count,
+                                      mat4 model,
+                                      const float base_color[4]);
+
+/* Create a scene pipeline with custom cull and fill modes.  The pipeline
+ * shares the same Blinn-Phong shaders, vertex layout, depth test, and
+ * shadow map binding as the default — only rasterizer state differs.
+ *
+ * The caller owns the returned pipeline and must release it with
+ * SDL_ReleaseGPUGraphicsPipeline() before destroying the scene.
+ *
+ * Common configurations:
+ *   double-sided:  SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_FILL
+ *   wireframe:     SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_LINE
+ */
+static SDL_GPUGraphicsPipeline *forge_scene_create_pipeline(
+    ForgeScene *scene, SDL_GPUCullMode cull_mode, SDL_GPUFillMode fill_mode);
 
 /* Draw the procedural grid floor. */
 static void forge_scene_draw_grid(ForgeScene *scene);
@@ -1499,13 +1520,14 @@ static bool forge_scene__validate_config(const ForgeSceneConfig *config)
 }
 
 /* Internal: create a scene (Blinn-Phong + shadow) pipeline with the given
- * cull mode.  All other state is identical between the normal and double-
- * sided variants, so this helper prevents drift if the layout changes. */
+ * cull mode and fill mode.  All other state is identical between the normal,
+ * double-sided, and wireframe variants, so this helper prevents drift. */
 static SDL_GPUGraphicsPipeline *forge_scene__create_scene_pipeline(
     ForgeScene *scene,
     SDL_GPUShader *vs, SDL_GPUShader *fs,
     SDL_GPUVertexInputState vertex_input,
-    SDL_GPUCullMode cull_mode)
+    SDL_GPUCullMode cull_mode,
+    SDL_GPUFillMode fill_mode)
 {
     SDL_GPUColorTargetDescription ctd;
     SDL_zero(ctd);
@@ -1517,7 +1539,7 @@ static SDL_GPUGraphicsPipeline *forge_scene__create_scene_pipeline(
     pi.fragment_shader = fs;
     pi.vertex_input_state = vertex_input;
     pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-    pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+    pi.rasterizer_state.fill_mode  = fill_mode;
     pi.rasterizer_state.cull_mode  = cull_mode;
     pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
@@ -1630,14 +1652,14 @@ static bool forge_scene_init(ForgeScene *scene,
 
     /* ── 3. Create shaders ───────────────────────────────────────── */
 
-    SDL_GPUShader *scene_vs = forge_scene_create_shader(scene,
+    scene->scene_vs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_VERTEX,
         scene_vert_spirv, sizeof(scene_vert_spirv),
         scene_vert_dxil,  sizeof(scene_vert_dxil),
         scene_vert_msl, scene_vert_msl_size,
         0, 0, 0, 1);
 
-    SDL_GPUShader *scene_fs = forge_scene_create_shader(scene,
+    scene->scene_fs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         scene_frag_spirv, sizeof(scene_frag_spirv),
         scene_frag_dxil,  sizeof(scene_frag_dxil),
@@ -1686,11 +1708,17 @@ static bool forge_scene_init(ForgeScene *scene,
         sky_frag_msl, sky_frag_msl_size,
         0, 0, 0, 0);
 
-    if (!scene_vs || !scene_fs || !shadow_vs || !shadow_fs ||
+    if (!scene->scene_vs || !scene->scene_fs || !shadow_vs || !shadow_fs ||
         !grid_vs || !grid_fs || !sky_vs || !sky_fs) {
         SDL_Log("forge_scene: one or more shaders failed");
-        if (scene_vs)  SDL_ReleaseGPUShader(scene->device, scene_vs);
-        if (scene_fs)  SDL_ReleaseGPUShader(scene->device, scene_fs);
+        if (scene->scene_vs) {
+            SDL_ReleaseGPUShader(scene->device, scene->scene_vs);
+            scene->scene_vs = NULL;
+        }
+        if (scene->scene_fs) {
+            SDL_ReleaseGPUShader(scene->device, scene->scene_fs);
+            scene->scene_fs = NULL;
+        }
         if (shadow_vs) SDL_ReleaseGPUShader(scene->device, shadow_vs);
         if (shadow_fs) SDL_ReleaseGPUShader(scene->device, shadow_fs);
         if (grid_vs)   SDL_ReleaseGPUShader(scene->device, grid_vs);
@@ -1797,12 +1825,16 @@ static bool forge_scene_init(ForgeScene *scene,
             SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
     }
 
-    /* Scene pipelines: Blinn-Phong with shadow map.
-     * Both variants share identical state except cull mode. */
+    /* Default scene pipeline: Blinn-Phong with shadow map, back-face culling.
+     * Applications needing other rasterizer state (wireframe, double-sided)
+     * create their own pipelines via forge_scene_create_pipeline(). */
+    /* Store vertex layout so forge_scene_create_pipeline() can reuse it */
+    scene->scene_vb_desc = vb_full;
+    SDL_memcpy(scene->scene_attrs, full_attrs, sizeof(full_attrs));
+
     scene->scene_pipeline = forge_scene__create_scene_pipeline(
-        scene, scene_vs, scene_fs, full_input, SDL_GPU_CULLMODE_BACK);
-    scene->scene_pipeline_double = forge_scene__create_scene_pipeline(
-        scene, scene_vs, scene_fs, full_input, SDL_GPU_CULLMODE_NONE);
+        scene, scene->scene_vs, scene->scene_fs, full_input,
+        SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
 
     /* Grid pipeline: procedural grid with alpha blending for distance fade.
      * LESS_OR_EQUAL prevents z-fighting at Y=0. */
@@ -1872,9 +1904,9 @@ static bool forge_scene_init(ForgeScene *scene,
             SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
     }
 
-    /* Release shaders (pipelines keep internal copies) */
-    SDL_ReleaseGPUShader(scene->device, scene_vs);
-    SDL_ReleaseGPUShader(scene->device, scene_fs);
+    /* Release non-scene shaders (pipelines keep internal copies).
+     * Scene shaders (scene_vs, scene_fs) are kept alive in the struct
+     * so forge_scene_create_pipeline() can create new pipelines later. */
     SDL_ReleaseGPUShader(scene->device, shadow_vs);
     SDL_ReleaseGPUShader(scene->device, shadow_fs);
     SDL_ReleaseGPUShader(scene->device, grid_vs);
@@ -1883,7 +1915,6 @@ static bool forge_scene_init(ForgeScene *scene,
     SDL_ReleaseGPUShader(scene->device, sky_fs);
 
     if (!scene->shadow_pipeline || !scene->scene_pipeline ||
-        !scene->scene_pipeline_double ||
         !scene->grid_pipeline || !scene->sky_pipeline) {
         SDL_Log("forge_scene: one or more pipelines failed: %s",
                 SDL_GetError());
@@ -2603,17 +2634,49 @@ static void forge_scene_draw_mesh(ForgeScene *scene,
                                     vb, ib, index_count, model, base_color);
 }
 
-/* ── Double-sided mesh (cull none) ─────────────────────────────────────── */
+/* ── Draw with caller-provided pipeline ───────────────────────────────── */
 
-static void forge_scene_draw_mesh_double_sided(ForgeScene *scene,
-                                                SDL_GPUBuffer *vb,
-                                                SDL_GPUBuffer *ib,
-                                                Uint32 index_count,
-                                                mat4 model,
-                                                const float base_color[4])
+static void forge_scene_draw_mesh_ex(ForgeScene *scene,
+                                      SDL_GPUGraphicsPipeline *pipeline,
+                                      SDL_GPUBuffer *vb,
+                                      SDL_GPUBuffer *ib,
+                                      Uint32 index_count,
+                                      mat4 model,
+                                      const float base_color[4])
 {
-    forge_scene__draw_mesh_internal(scene, scene->scene_pipeline_double,
+    if (!pipeline) {
+        SDL_Log("forge_scene_draw_mesh_ex: pipeline is NULL");
+        return;
+    }
+    forge_scene__draw_mesh_internal(scene, pipeline,
                                     vb, ib, index_count, model, base_color);
+}
+
+/* ── Public pipeline creation ─────────────────────────────────────────── */
+
+static SDL_GPUGraphicsPipeline *forge_scene_create_pipeline(
+    ForgeScene *scene, SDL_GPUCullMode cull_mode, SDL_GPUFillMode fill_mode)
+{
+    if (!scene || !scene->scene_vs || !scene->scene_fs ||
+        !scene->shadow_sampler || !scene->scene_pipeline) {
+        SDL_Log("forge_scene_create_pipeline: scene not fully initialized");
+        return NULL;
+    }
+
+    SDL_GPUVertexInputState vi;
+    SDL_zero(vi);
+    vi.vertex_buffer_descriptions = &scene->scene_vb_desc;
+    vi.num_vertex_buffers         = 1;
+    vi.vertex_attributes          = scene->scene_attrs;
+    vi.num_vertex_attributes      = 2;
+
+    SDL_GPUGraphicsPipeline *pipeline = forge_scene__create_scene_pipeline(
+        scene, scene->scene_vs, scene->scene_fs, vi, cull_mode, fill_mode);
+    if (!pipeline) {
+        SDL_Log("forge_scene_create_pipeline: SDL_CreateGPUGraphicsPipeline "
+                "failed: %s", SDL_GetError());
+    }
+    return pipeline;
 }
 
 /* ── Grid floor ────────────────────────────────────────────────────────── */
@@ -3024,10 +3087,14 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->grid_pipeline);
     if (scene->scene_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->scene_pipeline);
-    if (scene->scene_pipeline_double)
-        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->scene_pipeline_double);
     if (scene->shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->shadow_pipeline);
+
+    /* Scene shaders (kept alive for forge_scene_create_pipeline) */
+    if (scene->scene_vs)
+        SDL_ReleaseGPUShader(scene->device, scene->scene_vs);
+    if (scene->scene_fs)
+        SDL_ReleaseGPUShader(scene->device, scene->scene_fs);
 
 #ifdef FORGE_SCENE_MODEL_SUPPORT
     /* Model pipelines and resources */

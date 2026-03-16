@@ -734,6 +734,68 @@ cleanup:
     END_TEST_C();
 }
 
+/* ── 9b. Custom pipeline creation and draw_mesh_ex ─────────────────────── */
+
+static void test_gpu_create_pipeline_wireframe(void)
+{
+    if (!gpu_available) {
+        TEST("gpu — create_pipeline wireframe (SKIPPED)");
+        SKIP_TEST();
+        return;
+    }
+    TEST_C("gpu — create_pipeline returns non-NULL wireframe pipeline");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    ForgeSceneConfig cfg = forge_scene_default_config("Pipeline Test");
+    char *argv[] = { "test_scene", NULL };
+    /* Initialize before any ASSERT_TRUE_C that could goto cleanup */
+    SDL_GPUGraphicsPipeline *wireframe = NULL;
+    SDL_GPUGraphicsPipeline *double_sided = NULL;
+
+    ASSERT_TRUE_C(forge_scene_init(&scene, &cfg, 1, argv));
+
+    wireframe = forge_scene_create_pipeline(
+        &scene, SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_LINE);
+    ASSERT_TRUE_C(wireframe != NULL);
+
+    double_sided = forge_scene_create_pipeline(
+        &scene, SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_FILL);
+    ASSERT_TRUE_C(double_sided != NULL);
+
+    /* Pipelines should be distinct objects */
+    ASSERT_TRUE_C(wireframe != double_sided);
+    ASSERT_TRUE_C(wireframe != scene.scene_pipeline);
+
+cleanup:
+    if (wireframe)
+        SDL_ReleaseGPUGraphicsPipeline(scene.device, wireframe);
+    if (double_sided)
+        SDL_ReleaseGPUGraphicsPipeline(scene.device, double_sided);
+    forge_scene_destroy(&scene);
+    END_TEST_C();
+}
+
+static void test_gpu_create_pipeline_null_scene(void)
+{
+    TEST("gpu — create_pipeline with NULL scene returns NULL")
+    SDL_GPUGraphicsPipeline *p = forge_scene_create_pipeline(
+        NULL, SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
+    ASSERT_TRUE(p == NULL);
+    END_TEST();
+}
+
+static void test_gpu_create_pipeline_uninit_scene(void)
+{
+    TEST("gpu — create_pipeline with uninitialized scene returns NULL")
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    /* scene_vs and scene_fs are NULL — not initialized */
+    SDL_GPUGraphicsPipeline *p = forge_scene_create_pipeline(
+        &scene, SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
+    ASSERT_TRUE(p == NULL);
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * 6. Robustness — tests for fixes applied during PR review
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -1379,9 +1441,14 @@ int main(int argc, char **argv)
         test_gpu_accessors();
         test_gpu_light_vp_matches_manual();
         test_gpu_destroy_is_idempotent();
+        test_gpu_create_pipeline_wireframe();
         run_model_gpu_tests();
         SDL_Quit();
     }
+
+    /* ── Pipeline guard tests (no GPU required) ───────────────── */
+    test_gpu_create_pipeline_null_scene();
+    test_gpu_create_pipeline_uninit_scene();
 
     /* ── Groups 10–17: Model tests (in test_scene_model.c) ──── */
     run_model_tests();

@@ -41,7 +41,8 @@ if (!forge_scene_init(&scene, &cfg, argc, argv)) {
 | `forge_scene_end_shadow_pass(scene)` | End shadow pass |
 | `forge_scene_begin_main_pass(scene)` | Begin main color+depth pass (draws sky) |
 | `forge_scene_draw_mesh(scene, vb, ib, count, model, color)` | Draw a lit mesh with Blinn-Phong and shadow |
-| `forge_scene_draw_mesh_double_sided(scene, vb, ib, count, model, color)` | Draw a lit mesh without back-face culling |
+| `forge_scene_draw_mesh_ex(scene, pipeline, vb, ib, count, model, color)` | Draw a lit mesh with a caller-provided pipeline |
+| `forge_scene_create_pipeline(scene, cull_mode, fill_mode)` | Create a pipeline with custom rasterizer state |
 | `forge_scene_draw_grid(scene)` | Draw procedural grid floor |
 | `forge_scene_end_main_pass(scene)` | End main pass |
 | `forge_scene_begin_ui(scene, mx, my, down)` | Begin UI for this frame |
@@ -64,6 +65,33 @@ if (!forge_scene_init(&scene, &cfg, argc, argv)) {
 | `forge_scene_window(s)` | `SDL_Window *` |
 | `forge_scene_ui(s)` | `ForgeUiContext *` (NULL if UI disabled, valid between begin_ui/end_ui) |
 | `forge_scene_window_ui(s)` | `ForgeUiWindowContext *` (NULL if UI disabled, valid between begin_ui/end_ui) |
+
+### Custom pipelines
+
+`forge_scene_create_pipeline()` creates a Blinn-Phong pipeline with custom
+rasterizer state. The pipeline shares the scene's shaders, vertex layout,
+depth test, and shadow map binding — only the cull mode and fill mode differ.
+
+```c
+/* Create a wireframe pipeline (for debug overlays like AABBs) */
+SDL_GPUGraphicsPipeline *wireframe = forge_scene_create_pipeline(
+    &scene, SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_LINE);
+
+/* Create a double-sided pipeline (for open geometry like uncapped cylinders) */
+SDL_GPUGraphicsPipeline *double_sided = forge_scene_create_pipeline(
+    &scene, SDL_GPU_CULLMODE_NONE, SDL_GPU_FILLMODE_FILL);
+
+/* Draw with the custom pipeline */
+forge_scene_draw_mesh_ex(&scene, wireframe, vb, ib, count, model, color);
+
+/* The caller owns the pipeline — release it before destroying the scene */
+SDL_ReleaseGPUGraphicsPipeline(forge_scene_device(&scene), wireframe);
+SDL_ReleaseGPUGraphicsPipeline(forge_scene_device(&scene), double_sided);
+```
+
+Returns `NULL` if the scene is not initialized or if pipeline creation fails
+(e.g. GPU resource allocation error). The caller must release the pipeline
+with `SDL_ReleaseGPUGraphicsPipeline()` before calling `forge_scene_destroy()`.
 
 ### Model loading (`FORGE_SCENE_MODEL_SUPPORT`)
 
