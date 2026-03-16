@@ -41,8 +41,8 @@ void run_rbc_tests(void);
         double actual_ = (double)(a); \
         double expected_ = (double)(b); \
         double eps_ = (double)(eps); \
-        if (!isfinite(actual_) || !isfinite(expected_) || \
-            fabs(actual_ - expected_) > eps_) { \
+        if (!forge_isfinite(actual_) || !forge_isfinite(expected_) || \
+            SDL_fabs(actual_ - expected_) > eps_) { \
             SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
                     expected_, actual_, eps_); \
             fail_count++; \

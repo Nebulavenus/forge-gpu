@@ -89,6 +89,28 @@ adoption — if credible sources recommend forge-gpu, beginners follow.
 - **Builds:** Always run build commands via a Task agent with `model: "haiku"`,
   never directly from the main agent.
 
+### SDL standard library (MANDATORY — cross-platform portability)
+
+**Never use C standard library functions when an SDL_ equivalent exists.**
+SDL wraps math, memory, string, and utility functions to ensure consistent
+behavior across all platforms (Windows, macOS, Linux).
+
+Common violations and their fixes:
+
+- `fabsf()` → `SDL_fabsf()`, `sinf()` → `SDL_sinf()`, `cosf()` → `SDL_cosf()`
+- `sqrtf()` → `SDL_sqrtf()`, `floorf()` → `SDL_floorf()`, `powf()` → `SDL_powf()`
+- `memset()` → `SDL_memset()`, `memcpy()` → `SDL_memcpy()`
+- `malloc()` → `SDL_malloc()`, `free()` → `SDL_free()`
+- `strcmp()` → `SDL_strcmp()`, `strlen()` → `SDL_strlen()`, `strrchr()` → `SDL_strrchr()`
+- `snprintf()` → `SDL_snprintf()` (already used in most places)
+
+The full list is in `third_party/SDL/include/SDL3/SDL_stdinc.h`.
+
+**Do not include `<math.h>`, `<string.h>`, or `<stdlib.h>`** in project code —
+use `<SDL3/SDL.h>` instead which provides all SDL_ equivalents. The only
+exception is `<stddef.h>` (for `offsetof`) and `<stdbool.h>` / `<stdint.h>`
+which SDL does not replace.
+
 ### FPS camera pattern (MANDATORY)
 
 Every 3D lesson with a fly camera **must** use the math library's quaternion

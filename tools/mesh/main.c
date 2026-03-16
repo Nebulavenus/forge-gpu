@@ -29,8 +29,6 @@
 #include <SDL3/SDL.h>
 #include <stdint.h>
 /* stdio.h no longer needed — all I/O uses SDL_IOStream */
-#include <stdlib.h>
-#include <string.h>
 
 #include "obj/forge_obj.h"
 #include "gltf/forge_gltf.h"
@@ -117,7 +115,7 @@ typedef enum InputFormat {
  * Caller must check for -1 and handle the error. */
 static int detect_format(const char *path)
 {
-    const char *dot = strrchr(path, '.');
+    const char *dot = SDL_strrchr(path, '.');
     if (!dot) return -1; /* no extension = unsupported */
 
     if (SDL_strcasecmp(dot, ".obj") == 0) {
@@ -304,7 +302,7 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
 
     int positional = 0;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--lod-levels") == 0) {
+        if (SDL_strcmp(argv[i], "--lod-levels") == 0) {
             if (i + 1 >= argc) {
                 SDL_Log("Error: --lod-levels requires an argument");
                 return false;
@@ -313,13 +311,13 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
             if (!parse_lod_ratios(argv[i], opts->lod_ratios, &opts->lod_count)) {
                 return false;
             }
-        } else if (strcmp(argv[i], "--no-deduplicate") == 0) {
+        } else if (SDL_strcmp(argv[i], "--no-deduplicate") == 0) {
             opts->deduplicate = false;
-        } else if (strcmp(argv[i], "--no-tangents") == 0) {
+        } else if (SDL_strcmp(argv[i], "--no-tangents") == 0) {
             opts->generate_tangents = false;
-        } else if (strcmp(argv[i], "--no-optimize") == 0) {
+        } else if (SDL_strcmp(argv[i], "--no-optimize") == 0) {
             opts->optimize = false;
-        } else if (strcmp(argv[i], "--verbose") == 0) {
+        } else if (SDL_strcmp(argv[i], "--verbose") == 0) {
             opts->verbose = true;
         } else if (argv[i][0] == '-') {
             SDL_Log("Error: unknown option '%s'", argv[i]);
@@ -369,7 +367,7 @@ static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
     mc.index_count = index_count;
 
     SMikkTSpaceInterface iface;
-    memset(&iface, 0, sizeof(iface));
+    SDL_memset(&iface, 0, sizeof(iface));
     iface.m_getNumFaces          = mikk_get_num_faces;
     iface.m_getNumVerticesOfFace = mikk_get_num_verts_of_face;
     iface.m_getPosition          = mikk_get_position;
@@ -400,9 +398,9 @@ static const char *basename_from_path(const char *path)
 {
     if (!path) return "";
     const char *name = path;
-    const char *slash = strrchr(path, '/');
+    const char *slash = SDL_strrchr(path, '/');
     if (slash) name = slash + 1;
-    const char *backslash = strrchr(name, '\\');
+    const char *backslash = SDL_strrchr(name, '\\');
     if (backslash) name = backslash + 1;
     return name;
 }
@@ -432,8 +430,8 @@ static const char *path_relative_to_dir(const char *full_path,
     if (!base_path) return basename_from_path(full_path);
 
     /* Find the directory portion of base_path (up to last separator) */
-    const char *last_sep = strrchr(base_path, '/');
-    const char *last_bsep = strrchr(base_path, '\\');
+    const char *last_sep = SDL_strrchr(base_path, '/');
+    const char *last_bsep = SDL_strrchr(base_path, '\\');
     if (last_bsep && (!last_sep || last_bsep > last_sep))
         last_sep = last_bsep;
 
@@ -443,7 +441,7 @@ static const char *path_relative_to_dir(const char *full_path,
 
     /* Check if full_path starts with the same directory prefix,
      * treating '/' and '\\' as equivalent for cross-platform paths */
-    if (strlen(full_path) > dir_len) {
+    if (SDL_strlen(full_path) > dir_len) {
         size_t i;
         bool match = true;
         for (i = 0; i < dir_len; i++) {
@@ -997,7 +995,7 @@ static bool process_mesh(const ToolOptions *opts)
     ForgeArena      gltf_arena;
     bool            has_gltf_scene = false;
 
-    memset(submeshes, 0, sizeof(submeshes));
+    SDL_memset(submeshes, 0, sizeof(submeshes));
 
     /* ── Step 1–3: Load and deduplicate ──────────────────────────────────
      * OBJ: de-indexed -> deduplicate -> indexed mesh (single submesh)
@@ -1194,7 +1192,7 @@ static bool process_mesh(const ToolOptions *opts)
 
                 if (ratio >= 1.0f) {
                     /* Full detail: copy this submesh's indices directly */
-                    memcpy(dest, indices + sub_first,
+                    SDL_memcpy(dest, indices + sub_first,
                            sizeof(unsigned int) * sub_count);
 
                     lod_submeshes[entry_idx].index_count  = sub_count;
@@ -1379,7 +1377,7 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
      *   submesh_count:  4 bytes  uint32  (NEW in v2)
      *   reserved:       4 bytes  padding (shrunk from 8 to 4) */
     uint8_t reserved[4];
-    memset(reserved, 0, sizeof(reserved));
+    SDL_memset(reserved, 0, sizeof(reserved));
 
     bool ok = true;
     ok = ok && (SDL_WriteIO(io, FMESH_MAGIC, FMESH_MAGIC_SIZE) == FMESH_MAGIC_SIZE);
@@ -1409,7 +1407,7 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
         for (lod = 0; lod < lod_count; lod++) {
             /* Write target error as float bits */
             uint32_t error_bits;
-            memcpy(&error_bits, &lod_errors[lod], sizeof(error_bits));
+            SDL_memcpy(&error_bits, &lod_errors[lod], sizeof(error_bits));
             ok = ok && write_u32_le(io, error_bits);
 
             int s;
@@ -1647,8 +1645,8 @@ static bool write_fmat(const char *fmesh_path, const ForgeGltfScene *scene,
                        const char *gltf_path)
 {
     /* Build the .fmat path by replacing the .fmesh extension */
-    size_t path_len = strlen(fmesh_path);
-    const char *dot = strrchr(fmesh_path, '.');
+    size_t path_len = SDL_strlen(fmesh_path);
+    const char *dot = SDL_strrchr(fmesh_path, '.');
     size_t stem_len = dot ? (size_t)(dot - fmesh_path) : path_len;
 
     size_t fmat_len = stem_len + 6; /* ".fmat\0" */
@@ -1807,8 +1805,8 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
 {
     /* Build the .meta.json path by replacing the .fmesh extension.
      * Example: "model.fmesh" -> "model.meta.json" */
-    size_t path_len = strlen(fmesh_path);
-    const char *dot = strrchr(fmesh_path, '.');
+    size_t path_len = SDL_strlen(fmesh_path);
+    const char *dot = SDL_strrchr(fmesh_path, '.');
     size_t stem_len = dot ? (size_t)(dot - fmesh_path) : path_len;
 
     size_t meta_len = stem_len + 11; /* ".meta.json\0" */

@@ -85,14 +85,14 @@ static int fail_count = 0;
 #define ASSERT_NEAR(a, b, eps)                                    \
     do {                                                          \
         float _a = (a), _b = (b);                                 \
-        if (isnan(_a) || isnan(_b)) {                             \
+        if (SDL_isnan(_a) || SDL_isnan(_b)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (NaN, "      \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     __LINE__);                                    \
             fail_count++;                                         \
             return;                                               \
         }                                                         \
-        if (fabsf(_a - _b) > (eps)) {                             \
+        if (SDL_fabsf(_a - _b) > (eps)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (eps=%f, "   \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     (double)(eps), __LINE__);                     \
@@ -1411,8 +1411,8 @@ static void test_nan_mouse_clamped_to_zero(void)
 
     /* Pass NaN mouse coordinates */
     forge_ui_ctx_begin(&ctx, TEST_NAN_MOUSE_X, TEST_NAN_MOUSE_Y, false);
-    ASSERT_TRUE(isfinite(ctx.mouse_x));
-    ASSERT_TRUE(isfinite(ctx.mouse_y));
+    ASSERT_TRUE(forge_isfinite(ctx.mouse_x));
+    ASSERT_TRUE(forge_isfinite(ctx.mouse_y));
     ASSERT_NEAR(ctx.mouse_x, 0.0f, TEST_NEAR_EPS);
     ASSERT_NEAR(ctx.mouse_y, 0.0f, TEST_NEAR_EPS);
     forge_ui_ctx_end(&ctx);
@@ -1430,8 +1430,8 @@ static void test_inf_mouse_clamped_to_zero(void)
 
     /* Pass +Inf mouse coordinates */
     forge_ui_ctx_begin(&ctx, TEST_INF_MOUSE_X, TEST_INF_MOUSE_Y, false);
-    ASSERT_TRUE(isfinite(ctx.mouse_x));
-    ASSERT_TRUE(isfinite(ctx.mouse_y));
+    ASSERT_TRUE(forge_isfinite(ctx.mouse_x));
+    ASSERT_TRUE(forge_isfinite(ctx.mouse_y));
     ASSERT_NEAR(ctx.mouse_x, 0.0f, TEST_NEAR_EPS);
     ASSERT_NEAR(ctx.mouse_y, 0.0f, TEST_NEAR_EPS);
     forge_ui_ctx_end(&ctx);
@@ -1467,7 +1467,7 @@ static void test_nan_mouse_slider_safe(void)
                         TEST_SLIDER_MIN, TEST_SLIDER_MAX, slider_rect);
     forge_ui_ctx_end(&ctx);
 
-    ASSERT_TRUE(isfinite(value));
+    ASSERT_TRUE(forge_isfinite(value));
     ASSERT_TRUE(value >= TEST_SLIDER_MIN);
     ASSERT_TRUE(value <= TEST_SLIDER_MAX);
 

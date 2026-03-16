@@ -38,6 +38,10 @@ reviews:
     # and push once, instead of whack-a-mole with incremental re-reviews
     auto_pause_after_reviewed_commits: 1
 
+  # Review instructions (global rules applied to all files)
+  instructions:
+    - "Flag as critical any use of C standard library functions (math.h, string.h, stdlib.h) when an SDL_ equivalent exists in SDL_stdinc.h. Examples: fabsf() must be SDL_fabsf(), memset() must be SDL_memset(), strcmp() must be SDL_strcmp(), strlen() must be SDL_strlen(), malloc() must be SDL_malloc(). The only exception is third_party/ code. This ensures consistent behavior across all platforms (Windows, macOS, Linux) by routing through SDL's portable implementations."
+
   # Path-specific configuration
   path_instructions:
     - path: "lessons/**/*.c"

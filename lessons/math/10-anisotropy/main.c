@@ -17,7 +17,6 @@
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -58,7 +57,7 @@ static void print_mat2(const char *name, mat2 m)
 static mat2 jacobian_tilted_plane(float tilt_deg)
 {
     float tilt_rad = tilt_deg * FORGE_DEG2RAD;
-    float cos_tilt = cosf(tilt_rad);
+    float cos_tilt = SDL_cosf(tilt_rad);
     /* Clamp to avoid division by zero at 90 degrees */
     if (cos_tilt < 0.001f) cos_tilt = 0.001f;
     return mat2_create(
@@ -100,8 +99,8 @@ int main(int argc, char *argv[])
     for (int i = 0; i < 8; i++) {
         float angle_deg = (float)(i * 45);
         float angle_rad = angle_deg * FORGE_DEG2RAD;
-        float cos_a = cosf(angle_rad);
-        float sin_a = sinf(angle_rad);
+        float cos_a = SDL_cosf(angle_rad);
+        float sin_a = SDL_sinf(angle_rad);
 
         /* Circle: r = 1 in all directions */
         float circle_r = 1.0f;
@@ -109,7 +108,7 @@ int main(int argc, char *argv[])
         /* Ellipse: x = cos(t), y = sin(t) scaled by (a=1, b=0.5)
          * Point on ellipse: (cos(t), 0.5*sin(t))
          * Distance from origin: sqrt(cos^2 + 0.25*sin^2) */
-        float ellipse_r = sqrtf(cos_a * cos_a + 0.25f * sin_a * sin_a);
+        float ellipse_r = SDL_sqrtf(cos_a * cos_a + 0.25f * sin_a * sin_a);
 
         printf("  %5.0f deg     %.4f          %.4f\n",
                angle_deg, circle_r, ellipse_r);
@@ -143,8 +142,8 @@ int main(int argc, char *argv[])
 
     /* Rotation: preserves shape */
     float angle = 45.0f * FORGE_DEG2RAD;
-    mat2 rotate = mat2_create(cosf(angle), -sinf(angle),
-                               sinf(angle),  cosf(angle));
+    mat2 rotate = mat2_create(SDL_cosf(angle), -SDL_sinf(angle),
+                               SDL_sinf(angle),  SDL_cosf(angle));
     vec2 sv_rot = mat2_singular_values(rotate);
     printf("  45-degree rotation:\n");
     print_mat2("M", rotate);
@@ -230,7 +229,7 @@ int main(int argc, char *argv[])
 
         /* Anisotropic: mip from min singular value, multi-sample */
         float aniso_mip = forge_log2f(sv.y > 0.001f ? sv.y : 0.001f);
-        int aniso_samples = (int)ceilf(ratio);
+        int aniso_samples = (int)SDL_ceilf(ratio);
         if (aniso_samples < 1) aniso_samples = 1;
 
         printf("  %5.0f  | mip %5.2f (1 sample)   | mip %5.2f (%d samples)\n",

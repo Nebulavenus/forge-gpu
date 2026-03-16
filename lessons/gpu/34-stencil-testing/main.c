@@ -22,8 +22,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stddef.h>    /* offsetof */
-#include <string.h>    /* memset   */
-#include <math.h>      /* sinf, cosf for sphere generation */
 
 #include "math/forge_math.h"
 
@@ -470,13 +468,13 @@ static void generate_sphere(float radius,
     /* Generate vertices row by row from top pole to bottom pole */
     for (int i = 0; i <= lat; i++) {
         float theta = (float)i * FORGE_PI / (float)lat;
-        float sin_t = sinf(theta);
-        float cos_t = cosf(theta);
+        float sin_t = SDL_sinf(theta);
+        float cos_t = SDL_cosf(theta);
 
         for (int j = 0; j <= lon; j++) {
             float phi = (float)j * 2.0f * FORGE_PI / (float)lon;
-            float sin_p = sinf(phi);
-            float cos_p = cosf(phi);
+            float sin_p = SDL_sinf(phi);
+            float cos_p = SDL_cosf(phi);
 
             /* Position on unit sphere, then scale by radius */
             float x = cos_p * sin_t;

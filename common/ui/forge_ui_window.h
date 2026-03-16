@@ -607,12 +607,12 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     }
 
     /* ── Validate rect origin and dimensions ──────────────────────────── */
-    if (!isfinite(state->rect.x) || !isfinite(state->rect.y)) {
+    if (!forge_isfinite(state->rect.x) || !forge_isfinite(state->rect.y)) {
         SDL_Log("forge_ui_wctx_window_begin: rect origin must be finite");
         return false;
     }
-    if (!(state->rect.w > 0.0f) || !isfinite(state->rect.w) ||
-        !(state->rect.h > 0.0f) || !isfinite(state->rect.h)) {
+    if (!(state->rect.w > 0.0f) || !forge_isfinite(state->rect.w) ||
+        !(state->rect.h > 0.0f) || !forge_isfinite(state->rect.h)) {
         SDL_Log("forge_ui_wctx_window_begin: rect dimensions must be "
                 "positive and finite");
         return false;
@@ -863,13 +863,13 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
     if (content.h < 0.0f) content.h = 0.0f;
 
     /* ── Sanitize scroll_y ─────────────────────────────────────────────── */
-    if (!(state->scroll_y >= 0.0f) || !isfinite(state->scroll_y)) {
+    if (!(state->scroll_y >= 0.0f) || !forge_isfinite(state->scroll_y)) {
         state->scroll_y = 0.0f;
     }
 
     /* ── Apply mouse wheel scrolling ───────────────────────────────────── */
     if (can_receive_input &&
-        ctx->scroll_delta != 0.0f && isfinite(ctx->scroll_delta) &&
+        ctx->scroll_delta != 0.0f && forge_isfinite(ctx->scroll_delta) &&
         forge_ui__rect_contains(content, ctx->mouse_x, ctx->mouse_y)) {
         state->scroll_y += ctx->scroll_delta * FORGE_UI_SCROLL_SPEED;
         if (state->scroll_y < 0.0f) state->scroll_y = 0.0f;

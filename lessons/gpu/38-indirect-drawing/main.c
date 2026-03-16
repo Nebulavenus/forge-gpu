@@ -34,9 +34,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stddef.h>    /* offsetof */
-#include <string.h>    /* memset   */
 #include <stdio.h>     /* snprintf */
-#include <math.h>      /* sqrtf    */
 
 #include "math/forge_math.h"
 #include "gltf/forge_gltf.h"
@@ -1177,7 +1175,7 @@ static void extract_frustum_planes(mat4 vp, float planes[6][4])
      * the signed distance computation produce world-space distances,
      * which is required for correct sphere-vs-plane testing. */
     for (int i = 0; i < FRUSTUM_PLANES; i++) {
-        float len = sqrtf(planes[i][0] * planes[i][0] +
+        float len = SDL_sqrtf(planes[i][0] * planes[i][0] +
                           planes[i][1] * planes[i][1] +
                           planes[i][2] * planes[i][2]);
         if (len > PLANE_NORM_EPS) {
@@ -2391,8 +2389,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
             float y = BOX_GROUND_Y;
 
             /* Push boxes away from the truck at center */
-            if (fabsf(x) < BOX_MIN_CLEARANCE &&
-                fabsf(z) < BOX_MIN_CLEARANCE) {
+            if (SDL_fabsf(x) < BOX_MIN_CLEARANCE &&
+                SDL_fabsf(z) < BOX_MIN_CLEARANCE) {
                 x += (x >= 0.0f ? BOX_PUSH_DIST : -BOX_PUSH_DIST);
             }
 

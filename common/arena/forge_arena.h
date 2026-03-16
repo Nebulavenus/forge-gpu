@@ -40,7 +40,6 @@
 #include <SDL3/SDL.h>
 #include <stddef.h>  /* size_t, max_align_t */
 #include <stdint.h>  /* uintptr_t */
-#include <string.h>  /* memset (for zero-init) */
 
 /* ── Configuration ───────────────────────────────────────────────────────── */
 

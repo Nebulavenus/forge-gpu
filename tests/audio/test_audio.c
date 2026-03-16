@@ -13,6 +13,11 @@
 #include <math.h>
 #include "audio/forge_audio.h"
 
+/* Portable isfinite — SDL provides isinf/isnan but no isfinite */
+#ifndef forge_isfinite
+#define forge_isfinite(x) (!SDL_isinf(x) && !SDL_isnan(x))
+#endif
+
 /* ── Test framework (same pattern as physics tests) ────────────────── */
 
 static int test_count = 0;
@@ -31,8 +36,8 @@ static int fail_count = 0;
         double actual_ = (double)(a); \
         double expected_ = (double)(b); \
         double eps_ = (double)(eps); \
-        if (!isfinite(actual_) || !isfinite(expected_) || \
-            fabs(actual_ - expected_) > eps_) { \
+        if (!forge_isfinite(actual_) || !forge_isfinite(expected_) || \
+            SDL_fabs(actual_ - expected_) > eps_) { \
             SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
                     expected_, actual_, eps_); \
             fail_count++; \
@@ -108,7 +113,7 @@ static void test_silent_source(void)
     src.playing = true;
 
     float out[20];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 10);
 
     /* Output should remain zero — source is at volume 0 */
@@ -133,7 +138,7 @@ static void test_unity_volume(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* At unity volume, center pan: gain_l = gain_r = 0.5
@@ -156,7 +161,7 @@ static void test_volume_scaling(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* volume=0.6, pan=0: gain_l = gain_r = 0.6 * 0.5 = 0.3 */
@@ -178,7 +183,7 @@ static void test_pan_left(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* pan=-1: gain_l = 1.0*(1-(-1))/2 = 1.0, gain_r = 1.0*(1+(-1))/2 = 0.0 */
@@ -201,7 +206,7 @@ static void test_pan_right(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* pan=+1: gain_l = 0.0, gain_r = 1.0 */
@@ -223,7 +228,7 @@ static void test_cursor_advancement(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* Mixed 4 frames of stereo = 8 samples */
@@ -244,7 +249,7 @@ static void test_end_of_buffer_stop(void)
 
     /* Request more frames than the buffer contains */
     float out[16];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 8);
 
     ASSERT_TRUE(!src.playing);
@@ -268,7 +273,7 @@ static void test_looping_wrap(void)
 
     /* Mix 6 frames from a 4-frame buffer — should wrap and mix 2 more */
     float out[12];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 6);
 
     ASSERT_TRUE(src.playing);  /* looping, still going */
@@ -294,7 +299,7 @@ static void test_additive_mixing(void)
     src_b.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src_a, out, 4);
     forge_audio_source_mix(&src_b, out, 4);
 
@@ -319,7 +324,7 @@ static void test_progress(void)
     ASSERT_NEAR(forge_audio_source_progress(&src), 0.0f, EPSILON);
 
     float out[100];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 50);
 
     ASSERT_NEAR(forge_audio_source_progress(&src), 0.5f, EPSILON);
@@ -376,7 +381,7 @@ static void test_not_playing_produces_silence(void)
     /* playing defaults to false */
 
     float out[20];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 10);
 
     for (int i = 0; i < 20; i++) {
@@ -401,7 +406,7 @@ static void test_determinism(void)
         ForgeAudioSource src = forge_audio_source_create(&buf, 0.8f, false);
         src.pan = 0.5f;
         src.playing = true;
-        memset(out_a, 0, sizeof(out_a));
+        SDL_memset(out_a, 0, sizeof(out_a));
         forge_audio_source_mix(&src, out_a, 8);
     }
 
@@ -410,7 +415,7 @@ static void test_determinism(void)
         ForgeAudioSource src = forge_audio_source_create(&buf, 0.8f, false);
         src.pan = 0.5f;
         src.playing = true;
-        memset(out_b, 0, sizeof(out_b));
+        SDL_memset(out_b, 0, sizeof(out_b));
         forge_audio_source_mix(&src, out_b, 8);
     }
 
@@ -432,7 +437,7 @@ static void test_empty_buffer_no_hang(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* Must return immediately: no output, source stopped, no crash */
@@ -456,7 +461,7 @@ static void test_misaligned_cursor_no_hang(void)
     src.cursor = buf.sample_count - 1; /* intentionally odd — misaligned for stereo */
 
     float out[16];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* Cursor must be channel-aligned after normalization */
@@ -562,7 +567,7 @@ static void test_fade_independent_of_volume(void)
     src.playing = true;
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_source_mix(&src, out, 4);
 
     /* volume=0.5, fade=0.5, pan=0 → gain_l = gain_r = 0.5 * 0.5 * 0.5 = 0.125 */
@@ -715,7 +720,7 @@ static void test_pool_finished_sources_reclaimed(void)
 
     /* Mix more frames than the buffer has — source should stop */
     float out[16];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_pool_mix(&pool, out, 8);
 
     ASSERT_TRUE(!pool.sources[idx].playing);
@@ -741,7 +746,7 @@ static void test_pool_additive_mixing(void)
     forge_audio_pool_play(&pool, &buf, 1.0f, false);
 
     float out[8];
-    memset(out, 0, sizeof(out));
+    SDL_memset(out, 0, sizeof(out));
     forge_audio_pool_mix(&pool, out, 4);
 
     /* Two sources at volume 1.0, center pan → each adds 0.5 → total 1.0 */

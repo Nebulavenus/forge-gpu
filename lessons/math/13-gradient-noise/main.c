@@ -21,7 +21,6 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -88,7 +87,7 @@ static void demo_gradient_algorithm(void)
     print_header("2. THE GRADIENT NOISE ALGORITHM (1D example)");
 
     float x = 2.7f;
-    int ix = (int)floorf(x);
+    int ix = (int)SDL_floorf(x);
     float fx = x - (float)ix;
 
     printf("\n  Step 1 -- Find the grid cell:\n");

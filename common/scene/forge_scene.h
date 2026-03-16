@@ -1254,19 +1254,19 @@ static bool forge_scene__validate_config(const ForgeSceneConfig *config)
     /* Reject NaN / Infinity in any floating-point config field.
      * NaN comparisons are always false, so range checks below would
      * silently pass — catch non-finite values up front. */
-    if (!isfinite(config->fov_deg) || !isfinite(config->near_plane) ||
-        !isfinite(config->far_plane) || !isfinite(config->shadow_height) ||
-        !isfinite(config->shadow_ortho_size) || !isfinite(config->shadow_near) ||
-        !isfinite(config->shadow_far) || !isfinite(config->move_speed) ||
-        !isfinite(config->mouse_sensitivity) || !isfinite(config->light_intensity) ||
-        !isfinite(config->ambient) || !isfinite(config->shininess) ||
-        !isfinite(config->specular_str) || !isfinite(config->grid_half_size) ||
-        !isfinite(config->grid_spacing) || !isfinite(config->grid_line_width) ||
-        !isfinite(config->grid_fade_dist) || !isfinite(config->font_size) ||
-        !isfinite(config->cam_start_pos.x) || !isfinite(config->cam_start_pos.y) ||
-        !isfinite(config->cam_start_pos.z) || !isfinite(config->cam_start_yaw) ||
-        !isfinite(config->cam_start_pitch) || !isfinite(config->light_dir.x) ||
-        !isfinite(config->light_dir.y) || !isfinite(config->light_dir.z)) {
+    if (!forge_isfinite(config->fov_deg) || !forge_isfinite(config->near_plane) ||
+        !forge_isfinite(config->far_plane) || !forge_isfinite(config->shadow_height) ||
+        !forge_isfinite(config->shadow_ortho_size) || !forge_isfinite(config->shadow_near) ||
+        !forge_isfinite(config->shadow_far) || !forge_isfinite(config->move_speed) ||
+        !forge_isfinite(config->mouse_sensitivity) || !forge_isfinite(config->light_intensity) ||
+        !forge_isfinite(config->ambient) || !forge_isfinite(config->shininess) ||
+        !forge_isfinite(config->specular_str) || !forge_isfinite(config->grid_half_size) ||
+        !forge_isfinite(config->grid_spacing) || !forge_isfinite(config->grid_line_width) ||
+        !forge_isfinite(config->grid_fade_dist) || !forge_isfinite(config->font_size) ||
+        !forge_isfinite(config->cam_start_pos.x) || !forge_isfinite(config->cam_start_pos.y) ||
+        !forge_isfinite(config->cam_start_pos.z) || !forge_isfinite(config->cam_start_yaw) ||
+        !forge_isfinite(config->cam_start_pitch) || !forge_isfinite(config->light_dir.x) ||
+        !forge_isfinite(config->light_dir.y) || !forge_isfinite(config->light_dir.z)) {
         SDL_Log("forge_scene: config contains NaN or Inf values");
         return false;
     }
@@ -1780,7 +1780,7 @@ static bool forge_scene_init(ForgeScene *scene,
 
     {
         float dir_len = vec3_length(config->light_dir);
-        if (!isfinite(dir_len) || dir_len < FORGE_SCENE_LIGHT_DIR_EPSILON) {
+        if (!forge_isfinite(dir_len) || dir_len < FORGE_SCENE_LIGHT_DIR_EPSILON) {
             SDL_Log("forge_scene: light_dir is zero or non-finite, using default");
             scene->light_dir = vec3_normalize(
                 vec3_create(0.4f, 0.8f, 0.6f));
@@ -1799,7 +1799,7 @@ static bool forge_scene_init(ForgeScene *scene,
      * points straight up or down, the default (0,1,0) up would collapse
      * the look-at basis — switch to (1,0,0) instead. */
     vec3 light_up = vec3_create(0.0f, 1.0f, 0.0f);
-    if (fabsf(vec3_dot(scene->light_dir, light_up)) > FORGE_SCENE_LIGHT_UP_PARALLEL_COS) {
+    if (SDL_fabsf(vec3_dot(scene->light_dir, light_up)) > FORGE_SCENE_LIGHT_UP_PARALLEL_COS) {
         light_up = vec3_create(1.0f, 0.0f, 0.0f);
     }
     mat4 light_view = mat4_look_at(

@@ -20,7 +20,6 @@
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
-#include <string.h>  /* memcpy */
 #include <stdint.h>  /* uint32_t, uint64_t */
 #include <float.h>   /* FLT_EPSILON, FLT_MAX, FLT_MIN, DBL_EPSILON */
 #include "math/forge_math.h"
@@ -50,11 +49,11 @@
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
 /* Extract the bit representation of a 32-bit float.
- * We use memcpy instead of a union to be fully standards-compliant. */
+ * We use SDL_memcpy instead of a union to be fully standards-compliant. */
 static uint32_t float_to_bits(float f)
 {
     uint32_t bits;
-    memcpy(&bits, &f, sizeof(bits));
+    SDL_memcpy(&bits, &f, sizeof(bits));
     return bits;
 }
 
@@ -103,7 +102,7 @@ static float float_spacing_at(float f)
     uint32_t bits = float_to_bits(f);
     uint32_t next_bits = bits + 1;
     float next;
-    memcpy(&next, &next_bits, sizeof(next));
+    SDL_memcpy(&next, &next_bits, sizeof(next));
     return next - f;
 }
 
@@ -262,7 +261,7 @@ int main(int argc, char *argv[])
             float eps = float_spacing_at(v);
             /* Count digits: -log10(eps / v) */
             float rel = eps / v;
-            float digits = -log10f(rel);
+            float digits = -SDL_log10f(rel);
             SDL_Log("  %14.1f  |  %25.15f  |  ~%.1f", v, eps, digits);
         }
         printf("\n");
@@ -315,10 +314,10 @@ int main(int argc, char *argv[])
          * sqrt(2) * sqrt(2) should be exactly 2, but rounding in
          * sqrtf introduces a tiny error. This reliably demonstrates
          * the problem on all platforms. */
-        float a = sqrtf(2.0f) * sqrtf(2.0f);
+        float a = SDL_sqrtf(2.0f) * SDL_sqrtf(2.0f);
         float b = 2.0f;
         SDL_Log("  sqrt(2) * sqrt(2) == 2?");
-        SDL_Log("    sqrtf(2) * sqrtf(2) = %.20f", a);
+        SDL_Log("    SDL_sqrtf(2) * SDL_sqrtf(2) = %.20f", a);
         SDL_Log("    2.0f                = %.20f", b);
         SDL_Log("    Equal (==): %s", (a == b) ? "YES" : "NO");
         SDL_Log("    Difference: %.20f", a - b);

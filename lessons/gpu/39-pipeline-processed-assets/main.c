@@ -32,9 +32,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stddef.h>    /* offsetof */
-#include <string.h>    /* memset   */
 #include <stdio.h>     /* snprintf */
-#include <math.h>      /* sqrtf    */
 
 #include "math/forge_math.h"
 #include "gltf/forge_gltf.h"
@@ -943,8 +941,8 @@ static SDL_GPUTexture *create_flat_normal_texture(SDL_GPUDevice *device)
  * "some/dir/WaterBottle_baseColor.png" → "WaterBottle_baseColor.png" */
 static const char *filename_from_path(const char *path)
 {
-    const char *slash  = strrchr(path, '/');
-    const char *bslash = strrchr(path, '\\');
+    const char *slash  = SDL_strrchr(path, '/');
+    const char *bslash = SDL_strrchr(path, '\\');
     if (bslash && (!slash || bslash > slash)) slash = bslash;
     return slash ? slash + 1 : path;
 }

@@ -39,7 +39,7 @@
 #ifndef MY_VEC_H
 #define MY_VEC_H
 
-#include <math.h>  /* sqrtf */
+#include <SDL3/SDL_stdinc.h>  /* SDL_sqrtf */
 
 /* ── Constants ────────────────────────────────────────────────────────────
  *
@@ -115,7 +115,7 @@ static inline Vec2 Vec2_scale(Vec2 v, float s)
 /* Compute the length (magnitude) of a vector: sqrt(x^2 + y^2). */
 static inline float Vec2_length(Vec2 v)
 {
-    return sqrtf(v.x * v.x + v.y * v.y);
+    return SDL_sqrtf(v.x * v.x + v.y * v.y);
 }
 
 /* Return a unit-length vector pointing in the same direction.

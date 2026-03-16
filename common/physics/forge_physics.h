@@ -22,7 +22,6 @@
 #define FORGE_PHYSICS_H
 
 #include "math/forge_math.h"
-#include <math.h>      /* fabsf, sqrtf, fminf */
 #include <stdbool.h>   /* bool */
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
@@ -388,7 +387,7 @@ static inline void forge_physics_integrate(ForgePhysicsParticle *p, float dt)
 {
     /* Reject non-positive or non-finite timesteps.
      * NaN fails all comparisons, so check explicitly. */
-    if (!(dt > 0.0f) || !isfinite(dt)) {
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) {
         return;
     }
 
@@ -415,7 +414,7 @@ static inline void forge_physics_integrate(ForgePhysicsParticle *p, float dt)
     /* Step 4: Clamp velocity magnitude to prevent numerical explosions. */
     float speed_sq = vec3_length_squared(p->velocity);
     if (speed_sq > FORGE_PHYSICS_MAX_VELOCITY * FORGE_PHYSICS_MAX_VELOCITY) {
-        float speed = sqrtf(speed_sq);
+        float speed = SDL_sqrtf(speed_sq);
         /* Guard against zero speed (should not happen given the check above,
          * but defensive coding costs nothing). */
         if (speed > FORGE_PHYSICS_EPSILON) {
@@ -497,7 +496,7 @@ static inline bool forge_physics_collide_plane(
         return false;
     }
 
-    float inv_len = 1.0f / sqrtf(normal_len_sq);
+    float inv_len = 1.0f / SDL_sqrtf(normal_len_sq);
     plane_normal = vec3_scale(plane_normal, inv_len);
     plane_d *= inv_len;
 
@@ -1006,7 +1005,7 @@ static inline bool forge_physics_collide_sphere_sphere(
         return false;
     }
 
-    float dist = sqrtf(dist_sq);
+    float dist = SDL_sqrtf(dist_sq);
     vec3 normal;
 
     if (dist < FORGE_PHYSICS_EPSILON) {
@@ -1120,10 +1119,10 @@ static inline void forge_physics_resolve_contact(
 
     /* Combined restitution: use the minimum of the two particles.
      * This ensures that a perfectly inelastic object (e=0) dominates. */
-    float e = fminf(pa->restitution, pb->restitution);
+    float e = forge_fminf(pa->restitution, pb->restitution);
 
     /* Kill restitution for low-velocity contacts to prevent jitter. */
-    if (fabsf(v_closing) < FORGE_PHYSICS_RESTING_THRESHOLD) {
+    if (SDL_fabsf(v_closing) < FORGE_PHYSICS_RESTING_THRESHOLD) {
         e = 0.0f;
     }
 
@@ -1473,12 +1472,12 @@ static inline void forge_physics_rigid_body_set_inertia_box(
     ForgePhysicsRigidBody *rb, vec3 half_extents)
 {
     if (!rb || rb->inv_mass == 0.0f) return;
-    if (!isfinite(half_extents.x) || !isfinite(half_extents.y) ||
-        !isfinite(half_extents.z)) return;
+    if (!forge_isfinite(half_extents.x) || !forge_isfinite(half_extents.y) ||
+        !forge_isfinite(half_extents.z)) return;
 
-    float hw = fabsf(half_extents.x);
-    float hh = fabsf(half_extents.y);
-    float hd = fabsf(half_extents.z);
+    float hw = SDL_fabsf(half_extents.x);
+    float hh = SDL_fabsf(half_extents.y);
+    float hd = SDL_fabsf(half_extents.z);
     float m  = rb->mass;
 
     /* Full extents squared */
@@ -1529,8 +1528,8 @@ static inline void forge_physics_rigid_body_set_inertia_sphere(
     ForgePhysicsRigidBody *rb, float radius)
 {
     if (!rb || rb->inv_mass == 0.0f) return;
-    if (!isfinite(radius)) return;
-    radius = fabsf(radius);
+    if (!forge_isfinite(radius)) return;
+    radius = SDL_fabsf(radius);
 
     float I = FORGE_PHYSICS_INERTIA_SPHERE_COEFF * rb->mass * radius * radius;
     if (I < FORGE_PHYSICS_EPSILON) I = FORGE_PHYSICS_EPSILON;
@@ -1569,9 +1568,9 @@ static inline void forge_physics_rigid_body_set_inertia_cylinder(
     ForgePhysicsRigidBody *rb, float radius, float half_h)
 {
     if (!rb || rb->inv_mass == 0.0f) return;
-    if (!isfinite(radius) || !isfinite(half_h)) return;
-    radius = fabsf(radius);
-    half_h = fabsf(half_h);
+    if (!forge_isfinite(radius) || !forge_isfinite(half_h)) return;
+    radius = SDL_fabsf(radius);
+    half_h = SDL_fabsf(half_h);
 
     float m  = rb->mass;
     float r2 = radius * radius;
@@ -1782,7 +1781,7 @@ static inline void forge_physics_rigid_body_integrate(
     ForgePhysicsRigidBody *rb, float dt)
 {
     if (!rb || rb->inv_mass == 0.0f) return;
-    if (!(dt > 0.0f) || !isfinite(dt)) return;  /* rejects <= 0, NaN, +inf */
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) return;  /* rejects <= 0, NaN, +inf */
 
     /* ── Save previous state for render interpolation ─────────────────── */
     rb->prev_position    = rb->position;
@@ -1820,9 +1819,9 @@ static inline void forge_physics_rigid_body_integrate(
     if (ang_damp < 0.0f) ang_damp = 0.0f;
     if (ang_damp > 1.0f) ang_damp = 1.0f;
 
-    rb->velocity = vec3_scale(rb->velocity, powf(damp, dt));
+    rb->velocity = vec3_scale(rb->velocity, SDL_powf(damp, dt));
     rb->angular_velocity = vec3_scale(rb->angular_velocity,
-                                       powf(ang_damp, dt));
+                                       SDL_powf(ang_damp, dt));
 
     /* ── Clamp velocities to prevent numerical explosion ──────────────── */
     float v_len = vec3_length(rb->velocity);
@@ -1857,7 +1856,7 @@ static inline void forge_physics_rigid_body_integrate(
 
         /* Renormalize to prevent quaternion drift */
         float q_len_sq = quat_length_sq(rb->orientation);
-        if (fabsf(q_len_sq - 1.0f) > FORGE_PHYSICS_QUAT_RENORM_THRESHOLD) {
+        if (SDL_fabsf(q_len_sq - 1.0f) > FORGE_PHYSICS_QUAT_RENORM_THRESHOLD) {
             rb->orientation = quat_normalize(rb->orientation);
         }
     }
@@ -2028,7 +2027,7 @@ static inline void forge_physics_rigid_body_apply_friction(
     /* Guard and normalize the contact normal */
     float normal_len_sq = vec3_dot(normal, normal);
     if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return;
-    normal = vec3_scale(normal, 1.0f / sqrtf(normal_len_sq));
+    normal = vec3_scale(normal, 1.0f / SDL_sqrtf(normal_len_sq));
 
     /* Compute contact-point velocity: v_p = v + omega x r */
     vec3 r = vec3_sub(contact_point, rb->position);
@@ -2254,7 +2253,7 @@ static inline bool forge_physics_rb_collide_sphere_plane(
     if (!(radius > FORGE_PHYSICS_EPSILON)) return false;
     float normal_len_sq = vec3_length_squared(plane_normal);
     if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return false;
-    plane_normal = vec3_scale(plane_normal, 1.0f / sqrtf(normal_len_sq));
+    plane_normal = vec3_scale(plane_normal, 1.0f / SDL_sqrtf(normal_len_sq));
 
     /* Signed distance from sphere center to plane */
     vec3 diff = vec3_sub(body->position, plane_point);
@@ -2331,7 +2330,7 @@ static inline int forge_physics_rb_collide_box_plane(
     if (!body || !out || max_contacts <= 0) return 0;
     float normal_len_sq = vec3_length_squared(plane_normal);
     if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return 0;
-    plane_normal = vec3_scale(plane_normal, 1.0f / sqrtf(normal_len_sq));
+    plane_normal = vec3_scale(plane_normal, 1.0f / SDL_sqrtf(normal_len_sq));
 
     /* Rotation matrix from body orientation */
     mat3 R = quat_to_mat3(body->orientation);
@@ -2340,9 +2339,9 @@ static inline int forge_physics_rb_collide_box_plane(
     if (mu_s < 0.0f) mu_s = 0.0f;
     if (mu_d < 0.0f) mu_d = 0.0f;
 
-    float hx = fabsf(half_extents.x);
-    float hy = fabsf(half_extents.y);
-    float hz = fabsf(half_extents.z);
+    float hx = SDL_fabsf(half_extents.x);
+    float hy = SDL_fabsf(half_extents.y);
+    float hz = SDL_fabsf(half_extents.z);
 
     /* Signs for all 8 corners */
     float signs[8][3] = {
@@ -2441,7 +2440,7 @@ static inline bool forge_physics_rb_collide_sphere_sphere(
     /* No overlap — spheres are separated. */
     if (dist_sq >= sum_radii * sum_radii) return false;
 
-    float dist = sqrtf(dist_sq);
+    float dist = SDL_sqrtf(dist_sq);
     vec3 normal;
 
     if (dist < FORGE_PHYSICS_EPSILON) {
@@ -2520,7 +2519,7 @@ static inline void forge_physics_rb_resolve_contact(
     float dt)
 {
     if (!contact || !bodies || count <= 0) return;
-    if (!(dt > 0.0f) || !isfinite(dt)) return;
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) return;
 
     int ia = contact->body_a;
     int ib = contact->body_b;
@@ -2544,8 +2543,8 @@ static inline void forge_physics_rb_resolve_contact(
 
     vec3 n = contact->normal;
     float n_len_sq = vec3_length_squared(n);
-    if (!(n_len_sq > FORGE_PHYSICS_EPSILON) || !isfinite(n_len_sq)) return;
-    n = vec3_scale(n, 1.0f / sqrtf(n_len_sq));
+    if (!(n_len_sq > FORGE_PHYSICS_EPSILON) || !forge_isfinite(n_len_sq)) return;
+    n = vec3_scale(n, 1.0f / SDL_sqrtf(n_len_sq));
 
     /* Offsets from COM to contact point */
     vec3 r_a = vec3_sub(contact->point, a->position);
@@ -2589,10 +2588,10 @@ static inline void forge_physics_rb_resolve_contact(
 
     /* ── Normal impulse ───────────────────────────────────────────── */
     float e = a->restitution;
-    if (b) e = fminf(e, b->restitution);
+    if (b) e = forge_fminf(e, b->restitution);
 
     /* Kill restitution for resting contacts */
-    if (fabsf(v_n) < FORGE_PHYSICS_RB_RESTING_THRESHOLD) {
+    if (SDL_fabsf(v_n) < FORGE_PHYSICS_RB_RESTING_THRESHOLD) {
         e = 0.0f;
     }
 
@@ -2680,7 +2679,7 @@ static inline void forge_physics_rb_resolve_contact(
 
             /* Coulomb friction cone: clamp tangential impulse */
             float friction_limit;
-            if (fabsf(j_t) <= mu_s * j_n) {
+            if (SDL_fabsf(j_t) <= mu_s * j_n) {
                 /* Within static friction cone — full stop */
                 friction_limit = j_t;
             } else {

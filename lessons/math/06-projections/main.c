@@ -305,7 +305,7 @@ int main(int argc, char *argv[])
         float near = SEC3_NEAR;
         float far = SEC3_FAR;
 
-        float half_h = near * tanf(fov * 0.5f);
+        float half_h = near * SDL_tanf(fov * 0.5f);
         float half_w = half_h * aspect;
 
         SDL_Log("  FOV: %.0f°  Aspect: %.4f  Near: %.1f  Far: %.1f",
@@ -316,8 +316,8 @@ int main(int argc, char *argv[])
                 -half_w, half_w, -half_h, half_h);
 
         /* The perspective matrix scaling factors */
-        float sx = 1.0f / (aspect * tanf(fov * 0.5f));
-        float sy = 1.0f / tanf(fov * 0.5f);
+        float sx = 1.0f / (aspect * SDL_tanf(fov * 0.5f));
+        float sy = 1.0f / SDL_tanf(fov * 0.5f);
         SDL_Log("  Matrix scale X (m[0]):  %.6f = 1 / (aspect * tan(fov/2))", sx);
         SDL_Log("  Matrix scale Y (m[5]):  %.6f = 1 / tan(fov/2)", sy);
         printf("\n");
@@ -495,7 +495,7 @@ int main(int argc, char *argv[])
         float near = SEC3_NEAR;
         float far = SEC3_FAR;
 
-        float half_h = near * tanf(fov * 0.5f);
+        float half_h = near * SDL_tanf(fov * 0.5f);
         float half_w = half_h * aspect;
 
         mat4 sym_fov   = mat4_perspective(fov, aspect, near, far);
@@ -567,7 +567,7 @@ int main(int argc, char *argv[])
         /* For fair comparison, set ortho bounds to match the perspective
          * frustum at a reference depth */
         float ref_depth = SEC8_REF_DEPTH;
-        float half_h = ref_depth * tanf(fov * 0.5f);
+        float half_h = ref_depth * SDL_tanf(fov * 0.5f);
         mat4 ortho = mat4_orthographic(-half_h, half_h, -half_h, half_h,
                                         near, far);
 

@@ -1022,7 +1022,7 @@ static void generate_box_placements(app_state *state) {
   for (i = 0; i < BOX_GROUND_COUNT; i++) {
     float angle = (float)i * (2.0f * FORGE_PI / (float)BOX_GROUND_COUNT);
     state->box_placements[idx].position =
-        vec3_create(cosf(angle) * BOX_RING_RADIUS, BOX_GROUND_Y, sinf(angle) * BOX_RING_RADIUS);
+        vec3_create(SDL_cosf(angle) * BOX_RING_RADIUS, BOX_GROUND_Y, SDL_sinf(angle) * BOX_RING_RADIUS);
     state->box_placements[idx].y_rotation = angle + BOX_GROUND_ROT_OFFSET * (float)i;
     idx++;
   }
@@ -1090,7 +1090,7 @@ static void compute_cascade_splits(float near_plane, float far_plane, float spli
     float p = (float)(i + 1) / (float)NUM_CASCADES;
 
     /* Logarithmic split: near * (far/near)^p */
-    float log_split = near_plane * powf(far_plane / near_plane, p);
+    float log_split = near_plane * SDL_powf(far_plane / near_plane, p);
 
     /* Linear split: near + (far - near) * p */
     float lin_split = near_plane + (far_plane - near_plane) * p;

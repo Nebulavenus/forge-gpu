@@ -34,7 +34,12 @@
 #ifndef FORGE_UI_THEME_H
 #define FORGE_UI_THEME_H
 
-#include <math.h>
+#include <SDL3/SDL.h>
+
+/* Portable isfinite — SDL_stdinc.h does not yet provide this */
+#ifndef forge_isfinite
+#define forge_isfinite(x) (!SDL_isinf(x) && !SDL_isnan(x))
+#endif
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -129,7 +134,7 @@ static inline float forge_ui_theme_relative_luminance(float r, float g, float b)
      * so NaN would bypass the clamp logic and propagate through the
      * sRGB linearization, producing NaN luminance that silently passes
      * contrast validation (NaN < threshold is false). */
-    if (!isfinite(r) || !isfinite(g) || !isfinite(b)) return 0.0f;
+    if (!forge_isfinite(r) || !forge_isfinite(g) || !forge_isfinite(b)) return 0.0f;
 
     /* Clamp inputs to valid sRGB range [0, 1] to prevent undefined
      * behavior from powf with negative bases or out-of-range values. */
@@ -139,9 +144,9 @@ static inline float forge_ui_theme_relative_luminance(float r, float g, float b)
 
     /* sRGB → linear: if C <= 0.04045, Clinear = C / 12.92
      *                 else Clinear = ((C + 0.055) / 1.055) ^ 2.4 */
-    float rl = (r <= 0.04045f) ? r / 12.92f : powf((r + 0.055f) / 1.055f, 2.4f);
-    float gl = (g <= 0.04045f) ? g / 12.92f : powf((g + 0.055f) / 1.055f, 2.4f);
-    float bl = (b <= 0.04045f) ? b / 12.92f : powf((b + 0.055f) / 1.055f, 2.4f);
+    float rl = (r <= 0.04045f) ? r / 12.92f : SDL_powf((r + 0.055f) / 1.055f, 2.4f);
+    float gl = (g <= 0.04045f) ? g / 12.92f : SDL_powf((g + 0.055f) / 1.055f, 2.4f);
+    float bl = (b <= 0.04045f) ? b / 12.92f : SDL_powf((b + 0.055f) / 1.055f, 2.4f);
     return 0.2126f * rl + 0.7152f * gl + 0.0722f * bl;
 }
 
@@ -162,7 +167,7 @@ static inline float forge_ui_theme_contrast_ratio(float r1, float g1, float b1,
     /* If either luminance is non-finite (should not happen after the
      * guard in relative_luminance, but defensive), return 0 so the
      * caller treats the pair as failing contrast validation. */
-    if (!isfinite(l1) || !isfinite(l2)) return 0.0f;
+    if (!forge_isfinite(l1) || !forge_isfinite(l2)) return 0.0f;
 
     /* Ensure l1 >= l2 (lighter on top) */
     if (l2 > l1) {

@@ -42,7 +42,6 @@
 
 #include <SDL3/SDL.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "gltf/forge_gltf.h"
 
@@ -88,9 +87,9 @@ static const char *basename_from_path(const char *path)
 {
     if (!path) return "";
     const char *name = path;
-    const char *slash = strrchr(path, '/');
+    const char *slash = SDL_strrchr(path, '/');
     if (slash) name = slash + 1;
-    const char *backslash = strrchr(name, '\\');
+    const char *backslash = SDL_strrchr(name, '\\');
     if (backslash) name = backslash + 1;
     return name;
 }
@@ -137,11 +136,11 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
     int positional = 0;
     int i;
     for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
+        if (SDL_strcmp(argv[i], "--verbose") == 0 || SDL_strcmp(argv[i], "-v") == 0) {
             opts->verbose = true;
-        } else if (strcmp(argv[i], "--split") == 0) {
+        } else if (SDL_strcmp(argv[i], "--split") == 0) {
             opts->split = true;
-        } else if (strcmp(argv[i], "--output-dir") == 0) {
+        } else if (SDL_strcmp(argv[i], "--output-dir") == 0) {
             if (i + 1 >= argc) {
                 SDL_Log("Error: --output-dir requires an argument");
                 return false;
@@ -226,7 +225,7 @@ static bool write_fanim(const char *output_path,
 
         /* Name: 64 bytes, null-terminated, zero-padded */
         char name_buf[FORGE_GLTF_NAME_SIZE];
-        memset(name_buf, 0, sizeof(name_buf));
+        SDL_memset(name_buf, 0, sizeof(name_buf));
         SDL_strlcpy(name_buf, anim->name, sizeof(name_buf));
         ok = ok && (SDL_WriteIO(io, name_buf, sizeof(name_buf)) == sizeof(name_buf));
 
@@ -318,8 +317,8 @@ static bool write_meta_json(const char *fanim_path, const char *source_path,
                             const ForgeGltfScene *scene)
 {
     /* Build the .meta.json path by replacing the .fanim extension. */
-    size_t path_len = strlen(fanim_path);
-    const char *dot = strrchr(fanim_path, '.');
+    size_t path_len = SDL_strlen(fanim_path);
+    const char *dot = SDL_strrchr(fanim_path, '.');
     size_t stem_len = dot ? (size_t)(dot - fanim_path) : path_len;
 
     size_t meta_len = stem_len + 11; /* ".meta.json\0" */
@@ -448,7 +447,7 @@ static bool dedupe_clip_stem(const char *base,
         collision = false;
         int i;
         for (i = 0; i < *stem_count; i++) {
-            if (strcmp(stems[i], out) == 0) {
+            if (SDL_strcmp(stems[i], out) == 0) {
                 collision = true;
                 int n = SDL_snprintf(out, out_size, "%s_%d",
                                      base_trimmed, suffix++);
@@ -494,7 +493,7 @@ static bool write_fanim_single_clip(const char *output_path,
 
     /* Clip header */
     char name_buf[FORGE_GLTF_NAME_SIZE];
-    memset(name_buf, 0, sizeof(name_buf));
+    SDL_memset(name_buf, 0, sizeof(name_buf));
     SDL_strlcpy(name_buf, anim->name, sizeof(name_buf));
     ok = ok && (SDL_WriteIO(io, name_buf, sizeof(name_buf)) == sizeof(name_buf));
     ok = ok && write_float_le(io, anim->duration);
@@ -642,7 +641,7 @@ static void model_name_from_path(const char *path, char *out, size_t out_size)
     const char *name = basename_from_path(path);
     SDL_strlcpy(out, name, out_size);
     /* Strip extension */
-    char *dot = strrchr(out, '.');
+    char *dot = SDL_strrchr(out, '.');
     if (dot) *dot = '\0';
 }
 

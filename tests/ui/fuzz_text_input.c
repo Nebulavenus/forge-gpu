@@ -29,8 +29,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <string.h>
-#include <stdlib.h>
 
 /* We only need the ForgeUiTextInputState type -- pull it from the
  * context header.  The header also includes forge_ui.h and SDL.h. */
@@ -364,14 +362,14 @@ int main(int argc, char *argv[])
     /* Parse seed from argv[1], or use default */
     g_seed = DEFAULT_SEED;
     if (argc > 1) {
-        unsigned long parsed = strtoul(argv[1], NULL, 0);
+        unsigned long parsed = SDL_strtoul(argv[1], NULL, 0);
         g_seed = (Uint32)parsed;
     }
 
     /* Parse iteration count from argv[2], or use compile-time default */
     int iterations = FORGE_FUZZ_ITERATIONS;
     if (argc > 2) {
-        int parsed = atoi(argv[2]);
+        int parsed = SDL_atoi(argv[2]);
         if (parsed > 0) iterations = parsed;
     }
 

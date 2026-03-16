@@ -20,7 +20,6 @@
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -60,7 +59,7 @@ static void demo_gamma_correction(void)
     for (int i = 0; i < count; i++) {
         float s = test_values[i];
         float correct = color_srgb_to_linear(s);
-        float approx  = powf(s, 2.2f);
+        float approx  = SDL_powf(s, 2.2f);
         float diff    = correct - approx;
         printf("  %-12.4f %-12.4f %-12.4f %-+12.4f\n",
                s, correct, approx, diff);
@@ -196,9 +195,9 @@ static void demo_rgb_hsl(void)
     print_vec3("HSL:",          hsl);
     print_vec3("Back to RGB:",  back);
     printf("  Max error: %.8f\n",
-           fmaxf(fmaxf(fabsf(test.x - back.x),
-                        fabsf(test.y - back.y)),
-                 fabsf(test.z - back.z)));
+           forge_fmaxf(forge_fmaxf(SDL_fabsf(test.x - back.x),
+                        SDL_fabsf(test.y - back.y)),
+                 SDL_fabsf(test.z - back.z)));
 }
 
 /* ── 5. RGB <-> HSV ──────────────────────────────────────────────────── */
@@ -245,9 +244,9 @@ static void demo_rgb_hsv(void)
     print_vec3("HSV:",          hsv);
     print_vec3("Back to RGB:",  back);
     printf("  Max error: %.8f\n",
-           fmaxf(fmaxf(fabsf(test.x - back.x),
-                        fabsf(test.y - back.y)),
-                 fabsf(test.z - back.z)));
+           forge_fmaxf(forge_fmaxf(SDL_fabsf(test.x - back.x),
+                        SDL_fabsf(test.y - back.y)),
+                 SDL_fabsf(test.z - back.z)));
 }
 
 /* ── 6. RGB <-> CIE XYZ ─────────────────────────────────────────────── */
@@ -294,9 +293,9 @@ static void demo_rgb_xyz(void)
     print_vec3("XYZ:",          xyz);
     print_vec3("Back to RGB:",  back);
     printf("  Max error: %.8f\n",
-           fmaxf(fmaxf(fabsf(test.x - back.x),
-                        fabsf(test.y - back.y)),
-                 fabsf(test.z - back.z)));
+           forge_fmaxf(forge_fmaxf(SDL_fabsf(test.x - back.x),
+                        SDL_fabsf(test.y - back.y)),
+                 SDL_fabsf(test.z - back.z)));
 }
 
 /* ── 7. CIE xyY Chromaticity ────────────────────────────────────────── */
@@ -329,8 +328,8 @@ static void demo_chromaticity(void)
     for (int i = 0; i < count; i++) {
         vec3 xyz = color_linear_rgb_to_xyz(primaries[i].rgb);
         vec3 xyY = color_xyz_to_xyY(xyz);
-        float dx = fabsf(xyY.x - primaries[i].ex);
-        float dy = fabsf(xyY.y - primaries[i].ey);
+        float dx = SDL_fabsf(xyY.x - primaries[i].ex);
+        float dy = SDL_fabsf(xyY.y - primaries[i].ey);
         const char *ok = (dx < 0.002f && dy < 0.002f) ? "[OK]" : "[!]";
         printf("  %-15s  (%6.4f,%6.4f)  (%6.4f,%6.4f)  %s\n",
                primaries[i].name,
@@ -352,9 +351,9 @@ static void demo_chromaticity(void)
     print_vec3("xyY:",          xyY);
     print_vec3("Back to XYZ:",  back_xyz);
     printf("  Max error: %.8f\n",
-           fmaxf(fmaxf(fabsf(test_xyz.x - back_xyz.x),
-                        fabsf(test_xyz.y - back_xyz.y)),
-                 fabsf(test_xyz.z - back_xyz.z)));
+           forge_fmaxf(forge_fmaxf(SDL_fabsf(test_xyz.x - back_xyz.x),
+                        SDL_fabsf(test_xyz.y - back_xyz.y)),
+                 SDL_fabsf(test_xyz.z - back_xyz.z)));
 }
 
 /* ── 8. Gamut Boundaries ─────────────────────────────────────────────── */
@@ -427,7 +426,7 @@ static void demo_tone_mapping(void)
         vec3 hdr = vec3_create(x, x, x);
         vec3 reinhard = color_tonemap_reinhard(hdr);
         vec3 aces = color_tonemap_aces(hdr);
-        float clamped = fminf(x, 1.0f);
+        float clamped = forge_fminf(x, 1.0f);
         printf("  %-10.1f  %-12.4f  %-12.4f  %-10.4f\n",
                x, reinhard.x, aces.x, clamped);
     }
@@ -469,7 +468,7 @@ static void demo_exposure(void)
 
     for (int i = 0; i < count; i++) {
         vec3 exposed = color_apply_exposure(base, evs[i]);
-        float mult = powf(2.0f, evs[i]);
+        float mult = SDL_powf(2.0f, evs[i]);
         printf("  %-+8.1f  %-10.3f  (%7.4f, %7.4f, %7.4f)\n",
                evs[i], mult, exposed.x, exposed.y, exposed.z);
     }

@@ -1028,7 +1028,7 @@ static void generate_box_placements(app_state *state) {
 static void compute_cascade_splits(float near_plane, float far_plane, float splits[NUM_CASCADES]) {
   for (int i = 0; i < NUM_CASCADES; i++) {
     float p = (float)(i + 1) / (float)NUM_CASCADES;
-    float log_split = near_plane * powf(far_plane / near_plane, p);
+    float log_split = near_plane * SDL_powf(far_plane / near_plane, p);
     float lin_split = near_plane + (far_plane - near_plane) * p;
     splits[i] = CASCADE_LAMBDA * log_split + (1.0f - CASCADE_LAMBDA) * lin_split;
   }

@@ -461,9 +461,9 @@ static void fill_lights(const app_state *state, PointLight lights[MAX_POINT_LIGH
   SDL_memset(lights, 0, sizeof(PointLight) * MAX_POINT_LIGHTS);
 
   /* Light 0: cyan, orbiting. */
-  lights[0].position[0] = LIGHT0_ORBIT_RADIUS * forge_cosf(state->light0_angle);
+  lights[0].position[0] = LIGHT0_ORBIT_RADIUS * SDL_cosf(state->light0_angle);
   lights[0].position[1] = LIGHT0_ORBIT_HEIGHT;
-  lights[0].position[2] = LIGHT0_ORBIT_RADIUS * forge_sinf(state->light0_angle);
+  lights[0].position[2] = LIGHT0_ORBIT_RADIUS * SDL_sinf(state->light0_angle);
   lights[0].intensity = state->light_enabled[0] ? LIGHT0_INTENSITY : 0.0f;
   lights[0].color[0] = LIGHT0_COLOR_R;
   lights[0].color[1] = LIGHT0_COLOR_G;
@@ -1093,14 +1093,14 @@ static bool generate_and_upload_sphere(SDL_GPUDevice *device, app_state *state) 
 
   for (int stack = 0; stack <= SPHERE_STACKS; stack++) {
     float phi = FORGE_PI * (float)stack / (float)SPHERE_STACKS;
-    float sin_phi = forge_sinf(phi);
-    float cos_phi = forge_cosf(phi);
+    float sin_phi = SDL_sinf(phi);
+    float cos_phi = SDL_cosf(phi);
 
     for (int slice = 0; slice <= SPHERE_SLICES; slice++) {
       float theta = 2.0f * FORGE_PI * (float)slice / (float)SPHERE_SLICES;
-      float nx = sin_phi * forge_cosf(theta);
+      float nx = sin_phi * SDL_cosf(theta);
       float ny = cos_phi;
-      float nz = sin_phi * forge_sinf(theta);
+      float nz = sin_phi * SDL_sinf(theta);
 
       vertices[vi].position = vec3_create(
           SPHERE_RADIUS * nx, SPHERE_RADIUS * ny, SPHERE_RADIUS * nz);
@@ -1144,8 +1144,8 @@ static void generate_box_placements(app_state *state) {
   for (int i = 0; i < BOX_GROUND_COUNT; i++) {
     float angle = (float)i * (2.0f * FORGE_PI / BOX_GROUND_COUNT);
     state->box_placements[count].position = vec3_create(
-        BOX_RING_RADIUS * forge_cosf(angle), BOX_GROUND_Y,
-        BOX_RING_RADIUS * forge_sinf(angle));
+        BOX_RING_RADIUS * SDL_cosf(angle), BOX_GROUND_Y,
+        BOX_RING_RADIUS * SDL_sinf(angle));
     state->box_placements[count].y_rotation = angle;
     count++;
   }

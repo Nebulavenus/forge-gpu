@@ -30,8 +30,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stddef.h>    /* offsetof */
-#include <string.h>    /* memset   */
-#include <math.h>      /* sinf, cosf for sphere generation */
 
 #include "math/forge_math.h"
 
@@ -592,13 +590,13 @@ static void generate_sphere(Vertex *verts, Uint32 *vert_count,
     /* Generate vertices row by row from top pole to bottom pole */
     for (int i = 0; i <= lat; i++) {
         float theta = (float)i * FORGE_PI / (float)lat;
-        float sin_t = sinf(theta);
-        float cos_t = cosf(theta);
+        float sin_t = SDL_sinf(theta);
+        float cos_t = SDL_cosf(theta);
 
         for (int j = 0; j <= lon; j++) {
             float phi = (float)j * 2.0f * FORGE_PI / (float)lon;
-            float sin_p = sinf(phi);
-            float cos_p = cosf(phi);
+            float sin_p = SDL_sinf(phi);
+            float cos_p = SDL_cosf(phi);
 
             /* Position on unit sphere */
             float x = cos_p * sin_t;
@@ -1670,8 +1668,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * Pitch only affects view direction, not movement — this keeps the
      * camera moving along the XZ plane regardless of look angle. */
 
-    float sin_yaw = sinf(state->cam_yaw);
-    float cos_yaw = cosf(state->cam_yaw);
+    float sin_yaw = SDL_sinf(state->cam_yaw);
+    float cos_yaw = SDL_cosf(state->cam_yaw);
     vec3 forward = vec3_create(-sin_yaw, 0.0f, -cos_yaw);
     vec3 world_up = vec3_create(0.0f, 1.0f, 0.0f);
     vec3 right = vec3_normalize(
@@ -1696,8 +1694,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* ── 3. Matrix computation ────────────────────────────────────── */
 
     /* View matrix from camera position + yaw/pitch look direction */
-    float sin_pitch = sinf(state->cam_pitch);
-    float cos_pitch = cosf(state->cam_pitch);
+    float sin_pitch = SDL_sinf(state->cam_pitch);
+    float cos_pitch = SDL_cosf(state->cam_pitch);
     vec3 look_dir = vec3_create(-sin_yaw * cos_pitch,
                                       sin_pitch,
                                      -cos_yaw * cos_pitch);

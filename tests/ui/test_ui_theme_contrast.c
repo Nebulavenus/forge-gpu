@@ -57,14 +57,14 @@ static int fail_count = 0;
 #define ASSERT_NEAR(a, b, eps)                                    \
     do {                                                          \
         float _a = (a), _b = (b);                                 \
-        if (isnan(_a) || isnan(_b)) {                             \
+        if (SDL_isnan(_a) || SDL_isnan(_b)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (NaN, "      \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     __LINE__);                                    \
             fail_count++;                                         \
             return;                                               \
         }                                                         \
-        if (fabsf(_a - _b) > (eps)) {                             \
+        if (SDL_fabsf(_a - _b) > (eps)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (eps=%f, "   \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     (double)(eps), __LINE__);                      \
@@ -269,7 +269,7 @@ static void test_contrast_ratio_nan(void)
      * a finite, valid number — not NaN or Inf. */
     float ratio = forge_ui_theme_contrast_ratio(NAN, 0.0f, 0.0f,
                                                  1.0f, 1.0f, 1.0f);
-    ASSERT_TRUE(isfinite(ratio));
+    ASSERT_TRUE(forge_isfinite(ratio));
     ASSERT_NEAR(ratio, 21.0f, 0.1f);
 }
 
@@ -280,7 +280,7 @@ static void test_contrast_ratio_inf(void)
      * Black vs white -> ratio ~21:1. */
     float ratio = forge_ui_theme_contrast_ratio(INFINITY, 0.0f, 0.0f,
                                                  1.0f, 1.0f, 1.0f);
-    ASSERT_TRUE(isfinite(ratio));
+    ASSERT_TRUE(forge_isfinite(ratio));
     ASSERT_NEAR(ratio, 21.0f, 0.1f);
 }
 

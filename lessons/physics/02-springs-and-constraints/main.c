@@ -611,7 +611,7 @@ static mat4 cylinder_between(vec3 a, vec3 b)
 
         /* If direction is nearly parallel to up, use a different axis */
         float dot = vec3_dot(dir, up);
-        if (fabsf(dot) > NEAR_PARALLEL_DOT) {
+        if (SDL_fabsf(dot) > NEAR_PARALLEL_DOT) {
             /* Direction is nearly vertical — use identity rotation
              * (cylinder is already Y-aligned) or flip if pointing down */
             if (dot < 0.0f) {
@@ -620,7 +620,7 @@ static mat4 cylinder_between(vec3 a, vec3 b)
         } else {
             /* Cross product gives rotation axis, convert via quaternion */
             vec3 axis = vec3_normalize(vec3_cross(up, dir));
-            float angle = acosf(dot);
+            float angle = SDL_acosf(dot);
             quat q = quat_from_axis_angle(axis, angle);
             rot = quat_to_mat4(q);
         }
@@ -654,7 +654,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             if (state->scene_index == 3) {
                 /* Detect shear springs: they have diagonal rest length */
                 float diag = CLOTH_SPACING * SQRT2;
-                float diff = fabsf(state->springs[i].rest_length - diag);
+                float diff = SDL_fabsf(state->springs[i].rest_length - diag);
                 if (diff < SHEAR_DETECT_TOL) {
                     state->springs[i].stiffness = state->ui_stiffness * SHEAR_SPRING_FACTOR;
                     state->springs[i].damping   = state->ui_damping * SHEAR_SPRING_FACTOR;

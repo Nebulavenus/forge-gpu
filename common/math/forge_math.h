@@ -22,9 +22,29 @@
 #ifndef FORGE_MATH_H
 #define FORGE_MATH_H
 
-#include <math.h>    /* sqrtf, sinf, cosf, tanf, etc. */
-#include <stddef.h>  /* NULL */
-#include <stdint.h>  /* uint32_t for hash functions */
+#include <SDL3/SDL_stdinc.h> /* SDL_sinf, SDL_cosf, SDL_fabsf, etc. */
+#include <stddef.h>         /* NULL */
+#include <stdint.h>         /* uint32_t for hash functions */
+
+/* ── SDL stdinc gaps ────────────────────────────────────────────────────── */
+/* SDL_stdinc.h does not yet provide these.  Portable NaN-safe wrappers
+ * matching C99 fmaxf/fminf semantics: if one argument is NaN, return the
+ * other.  If both are NaN, return NaN. */
+static inline float forge_fmaxf(float a, float b) {
+    if (SDL_isnan(a)) return b;
+    if (SDL_isnan(b)) return a;
+    return (a > b) ? a : b;
+}
+static inline float forge_fminf(float a, float b) {
+    if (SDL_isnan(a)) return b;
+    if (SDL_isnan(b)) return a;
+    return (a < b) ? a : b;
+}
+
+/* isfinite — true if value is neither NaN nor infinity */
+#ifndef forge_isfinite
+#define forge_isfinite(x) (!SDL_isinf(x) && !SDL_isnan(x))
+#endif
 
 /* ── Scalar Helpers ──────────────────────────────────────────────────────── */
 
@@ -119,7 +139,8 @@ static inline float forge_bilerpf(float c00, float c10,
  */
 static inline float forge_log2f(float x)
 {
-    return log2f(x);
+    /* log2(x) = ln(x) / ln(2) — uses SDL_logf for portability */
+    return SDL_logf(x) / SDL_logf(2.0f);
 }
 
 /* Compute the sine of an angle in radians.
@@ -132,7 +153,7 @@ static inline float forge_log2f(float x)
  */
 static inline float forge_sinf(float x)
 {
-    return sinf(x);
+    return SDL_sinf(x);
 }
 
 /* Compute the cosine of an angle in radians.
@@ -145,7 +166,7 @@ static inline float forge_sinf(float x)
  */
 static inline float forge_cosf(float x)
 {
-    return cosf(x);
+    return SDL_cosf(x);
 }
 
 /* Clamp a scalar to a range [lo, hi].
@@ -281,7 +302,7 @@ static inline float forge_trilerpf(float c000, float c100,
  *   tolerance — maximum allowed absolute difference (must be > 0)
  *
  * Usage:
- *   float result = sinf(FORGE_PI);  // should be 0, but isn't exactly
+ *   float result = SDL_sinf(FORGE_PI);  // should be 0, but isn't exactly
  *   if (forge_approx_equalf(result, 0.0f, 1e-6f)) { ... }
  *
  * See: lessons/math/07-floating-point
@@ -318,8 +339,8 @@ static inline int forge_approx_equalf(float a, float b, float tolerance)
  */
 static inline int forge_rel_equalf(float a, float b, float tolerance)
 {
-    float diff = fabsf(a - b);
-    float larger = fmaxf(fabsf(a), fabsf(b));
+    float diff = SDL_fabsf(a - b);
+    float larger = forge_fmaxf(SDL_fabsf(a), SDL_fabsf(b));
 
     /* When both values are zero, diff is also zero — they're equal. */
     if (larger == 0.0f) return diff == 0.0f;
@@ -489,7 +510,7 @@ static inline float vec2_length_squared(vec2 v)
  */
 static inline float vec2_length(vec2 v)
 {
-    return sqrtf(vec2_length_squared(v));
+    return SDL_sqrtf(vec2_length_squared(v));
 }
 
 /* Normalize a 2D vector (make it unit length).
@@ -596,7 +617,7 @@ static inline float vec3_length_squared(vec3 v)
 /* Compute the length (magnitude) of a 3D vector. */
 static inline float vec3_length(vec3 v)
 {
-    return sqrtf(vec3_length_squared(v));
+    return SDL_sqrtf(vec3_length_squared(v));
 }
 
 /* Normalize a 3D vector (make it unit length).
@@ -973,7 +994,7 @@ static inline mat2 mat2_multiply(mat2 a, mat2 b)
 /* Multiply a 2×2 matrix by a 2D vector: result = m * v
  *
  * Usage:
- *   mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+ *   mat2 rot = mat2_create(SDL_cosf(a), -SDL_sinf(a), SDL_sinf(a), SDL_cosf(a));
  *   vec2 v = vec2_create(1, 0);
  *   vec2 rotated = mat2_multiply_vec2(rot, v);
  *
@@ -1065,7 +1086,7 @@ static inline vec2 mat2_singular_values(mat2 m)
     float det = s00 * s11 - s01 * s01;
     float disc = trace * trace - 4.0f * det;
     if (disc < 0.0f) disc = 0.0f;  /* numerical safety */
-    float sqrt_disc = sqrtf(disc);
+    float sqrt_disc = SDL_sqrtf(disc);
 
     float lambda1 = (trace + sqrt_disc) * 0.5f;
     float lambda2 = (trace - sqrt_disc) * 0.5f;
@@ -1073,8 +1094,8 @@ static inline vec2 mat2_singular_values(mat2 m)
     if (lambda2 < 0.0f) lambda2 = 0.0f;
 
     vec2 result;
-    result.x = sqrtf(lambda1);  /* major (larger) */
-    result.y = sqrtf(lambda2);  /* minor (smaller) */
+    result.x = SDL_sqrtf(lambda1);  /* major (larger) */
+    result.y = SDL_sqrtf(lambda2);  /* minor (smaller) */
     return result;
 }
 
@@ -1432,8 +1453,8 @@ static inline mat3 mat3_inverse(mat3 m)
  */
 static inline mat3 mat3_rotate(float angle_radians)
 {
-    float c = cosf(angle_radians);
-    float s = sinf(angle_radians);
+    float c = SDL_cosf(angle_radians);
+    float s = SDL_sinf(angle_radians);
 
     mat3 m = mat3_identity();
     m.m[0] =  c;  m.m[3] = -s;
@@ -1622,8 +1643,8 @@ static inline mat4 mat4_scale(vec3 scale)
  */
 static inline mat4 mat4_rotate_z(float angle_radians)
 {
-    float c = cosf(angle_radians);
-    float s = sinf(angle_radians);
+    float c = SDL_cosf(angle_radians);
+    float s = SDL_sinf(angle_radians);
 
     mat4 m = mat4_identity();
     m.m[0] =  c;  m.m[4] = -s;
@@ -1640,8 +1661,8 @@ static inline mat4 mat4_rotate_z(float angle_radians)
  */
 static inline mat4 mat4_rotate_x(float angle_radians)
 {
-    float c = cosf(angle_radians);
-    float s = sinf(angle_radians);
+    float c = SDL_cosf(angle_radians);
+    float s = SDL_sinf(angle_radians);
 
     mat4 m = mat4_identity();
     m.m[5] =  c;  m.m[9]  = -s;
@@ -1658,8 +1679,8 @@ static inline mat4 mat4_rotate_x(float angle_radians)
  */
 static inline mat4 mat4_rotate_y(float angle_radians)
 {
-    float c = cosf(angle_radians);
-    float s = sinf(angle_radians);
+    float c = SDL_cosf(angle_radians);
+    float s = SDL_sinf(angle_radians);
 
     mat4 m = mat4_identity();
     m.m[0] =  c;  m.m[8]  =  s;
@@ -1793,7 +1814,7 @@ static inline vec3 vec3_perspective_divide(vec4 clip)
 static inline mat4 mat4_perspective(float fov_y_radians, float aspect_ratio,
                                      float near_plane, float far_plane)
 {
-    float tan_half_fov = tanf(fov_y_radians * 0.5f);
+    float tan_half_fov = SDL_tanf(fov_y_radians * 0.5f);
 
     mat4 m = { 0 };  /* Zero-initialize */
 
@@ -2227,7 +2248,7 @@ static inline float quat_length_sq(quat q)
  */
 static inline float quat_length(quat q)
 {
-    return sqrtf(quat_length_sq(q));
+    return SDL_sqrtf(quat_length_sq(q));
 }
 
 /* ── Quaternion Operations ────────────────────────────────────────────── */
@@ -2391,8 +2412,8 @@ static inline vec3 quat_rotate_vec3(quat q, vec3 v)
 static inline quat quat_from_axis_angle(vec3 axis, float angle_radians)
 {
     float half = angle_radians * 0.5f;
-    float s = sinf(half);
-    return quat_create(cosf(half), s * axis.x, s * axis.y, s * axis.z);
+    float s = SDL_sinf(half);
+    return quat_create(SDL_cosf(half), s * axis.x, s * axis.y, s * axis.z);
 }
 
 /* Extract the axis and angle from a quaternion.
@@ -2414,10 +2435,10 @@ static inline void quat_to_axis_angle(quat q, vec3 *out_axis, float *out_angle)
 {
     /* Ensure w is in [-1, 1] for acos (clamp for numerical safety) */
     float w = forge_clampf(q.w, -1.0f, 1.0f);
-    *out_angle = 2.0f * acosf(w);
+    *out_angle = 2.0f * SDL_acosf(w);
 
     /* The vector part length = sin(angle/2) */
-    float s = sqrtf(1.0f - w * w);
+    float s = SDL_sqrtf(1.0f - w * w);
     if (s > 1e-6f) {
         float inv_s = 1.0f / s;
         *out_axis = vec3_create(q.x * inv_s, q.y * inv_s, q.z * inv_s);
@@ -2455,12 +2476,12 @@ static inline void quat_to_axis_angle(quat q, vec3 *out_axis, float *out_angle)
 static inline quat quat_from_euler(float yaw, float pitch, float roll)
 {
     /* Half angles */
-    float cy = cosf(yaw * 0.5f);
-    float sy = sinf(yaw * 0.5f);
-    float cp = cosf(pitch * 0.5f);
-    float sp = sinf(pitch * 0.5f);
-    float cr = cosf(roll * 0.5f);
-    float sr = sinf(roll * 0.5f);
+    float cy = SDL_cosf(yaw * 0.5f);
+    float sy = SDL_sinf(yaw * 0.5f);
+    float cp = SDL_cosf(pitch * 0.5f);
+    float sp = SDL_sinf(pitch * 0.5f);
+    float cr = SDL_cosf(roll * 0.5f);
+    float sr = SDL_sinf(roll * 0.5f);
 
     /* Expanded quaternion product: q_y * q_x * q_z */
     return quat_create(
@@ -2502,20 +2523,20 @@ static inline vec3 quat_to_euler(quat q)
     if (sinp >= 1.0f) {
         /* Gimbal lock: pitch = +90° */
         pitch = FORGE_PI * 0.5f;
-        yaw = atan2f(2.0f * (q.w * q.y - q.x * q.z),
+        yaw = SDL_atan2f(2.0f * (q.w * q.y - q.x * q.z),
                      1.0f - 2.0f * (q.y * q.y + q.z * q.z));
         roll = 0.0f;
     } else if (sinp <= -1.0f) {
         /* Gimbal lock: pitch = -90° */
         pitch = -FORGE_PI * 0.5f;
-        yaw = atan2f(2.0f * (q.w * q.y - q.x * q.z),
+        yaw = SDL_atan2f(2.0f * (q.w * q.y - q.x * q.z),
                      1.0f - 2.0f * (q.y * q.y + q.z * q.z));
         roll = 0.0f;
     } else {
-        pitch = asinf(sinp);
-        yaw = atan2f(2.0f * (q.x * q.z + q.w * q.y),
+        pitch = SDL_asinf(sinp);
+        yaw = SDL_atan2f(2.0f * (q.x * q.z + q.w * q.y),
                      1.0f - 2.0f * (q.x * q.x + q.y * q.y));
-        roll = atan2f(2.0f * (q.x * q.y + q.w * q.z),
+        roll = SDL_atan2f(2.0f * (q.x * q.y + q.w * q.z),
                       1.0f - 2.0f * (q.x * q.x + q.z * q.z));
     }
 
@@ -2655,25 +2676,25 @@ static inline quat quat_from_mat4(mat4 m)
     float w, x, y, z;
 
     if (trace > 0.0f) {
-        float s = sqrtf(trace + 1.0f) * 2.0f;  /* s = 4w */
+        float s = SDL_sqrtf(trace + 1.0f) * 2.0f;  /* s = 4w */
         w = s * 0.25f;
         x = (m.m[6] - m.m[9]) / s;   /* (R[2][1] - R[1][2]) / s */
         y = (m.m[8] - m.m[2]) / s;   /* (R[0][2] - R[2][0]) / s */
         z = (m.m[1] - m.m[4]) / s;   /* (R[1][0] - R[0][1]) / s */
     } else if (r00 > r11 && r00 > r22) {
-        float s = sqrtf(1.0f + r00 - r11 - r22) * 2.0f;  /* s = 4x */
+        float s = SDL_sqrtf(1.0f + r00 - r11 - r22) * 2.0f;  /* s = 4x */
         w = (m.m[6] - m.m[9]) / s;
         x = s * 0.25f;
         y = (m.m[4] + m.m[1]) / s;   /* (R[0][1] + R[1][0]) / s */
         z = (m.m[8] + m.m[2]) / s;   /* (R[0][2] + R[2][0]) / s */
     } else if (r11 > r22) {
-        float s = sqrtf(1.0f + r11 - r00 - r22) * 2.0f;  /* s = 4y */
+        float s = SDL_sqrtf(1.0f + r11 - r00 - r22) * 2.0f;  /* s = 4y */
         w = (m.m[8] - m.m[2]) / s;
         x = (m.m[4] + m.m[1]) / s;
         y = s * 0.25f;
         z = (m.m[9] + m.m[6]) / s;   /* (R[1][2] + R[2][1]) / s */
     } else {
-        float s = sqrtf(1.0f + r22 - r00 - r11) * 2.0f;  /* s = 4z */
+        float s = SDL_sqrtf(1.0f + r22 - r00 - r11) * 2.0f;  /* s = 4z */
         w = (m.m[1] - m.m[4]) / s;
         x = (m.m[8] + m.m[2]) / s;
         y = (m.m[9] + m.m[6]) / s;
@@ -2733,10 +2754,10 @@ static inline quat quat_slerp(quat a, quat b, float t)
         return quat_normalize(result);
     }
 
-    float theta = acosf(d);          /* angle between quaternions */
-    float sin_theta = sinf(theta);
-    float wa = sinf((1.0f - t) * theta) / sin_theta;
-    float wb = sinf(t * theta) / sin_theta;
+    float theta = SDL_acosf(d);          /* angle between quaternions */
+    float sin_theta = SDL_sinf(theta);
+    float wa = SDL_sinf((1.0f - t) * theta) / sin_theta;
+    float wb = SDL_sinf(t * theta) / sin_theta;
 
     return quat_create(
         wa * a.w + wb * b.w,
@@ -2956,8 +2977,8 @@ static inline mat4 mat4_view_from_quat(vec3 position, quat orientation)
 static inline vec3 vec3_rotate_axis_angle(vec3 v, vec3 axis,
                                            float angle_radians)
 {
-    float c = cosf(angle_radians);
-    float s = sinf(angle_radians);
+    float c = SDL_cosf(angle_radians);
+    float s = SDL_sinf(angle_radians);
     float k_dot_v = vec3_dot(axis, v);
     vec3 k_cross_v = vec3_cross(axis, v);
 
@@ -3016,7 +3037,7 @@ static inline float color_srgb_to_linear(float s)
     if (s <= 0.04045f) {
         return s / 12.92f;
     }
-    return powf((s + 0.055f) / 1.055f, 2.4f);
+    return SDL_powf((s + 0.055f) / 1.055f, 2.4f);
 }
 
 /* Convert a single linear-light component (0-1) to sRGB encoding.
@@ -3037,7 +3058,7 @@ static inline float color_linear_to_srgb(float linear)
     if (linear <= 0.0031308f) {
         return linear * 12.92f;
     }
-    return 1.055f * powf(linear, 1.0f / 2.4f) - 0.055f;
+    return 1.055f * SDL_powf(linear, 1.0f / 2.4f) - 0.055f;
 }
 
 /* Convert an RGB color from sRGB encoding to linear light.
@@ -3136,8 +3157,8 @@ static inline float color_luminance(vec3 linear_rgb)
 static inline vec3 color_rgb_to_hsl(vec3 rgb)
 {
     float r = rgb.x, g = rgb.y, b = rgb.z;
-    float max_c = fmaxf(fmaxf(r, g), b);
-    float min_c = fminf(fminf(r, g), b);
+    float max_c = forge_fmaxf(forge_fmaxf(r, g), b);
+    float min_c = forge_fminf(forge_fminf(r, g), b);
     float delta = max_c - min_c;
 
     /* Lightness is the average of the brightest and darkest channels */
@@ -3242,8 +3263,8 @@ static inline vec3 color_hsl_to_rgb(vec3 hsl)
 static inline vec3 color_rgb_to_hsv(vec3 rgb)
 {
     float r = rgb.x, g = rgb.y, b = rgb.z;
-    float max_c = fmaxf(fmaxf(r, g), b);
-    float min_c = fminf(fminf(r, g), b);
+    float max_c = forge_fmaxf(forge_fmaxf(r, g), b);
+    float min_c = forge_fminf(forge_fminf(r, g), b);
     float delta = max_c - min_c;
 
     float v = max_c;
@@ -3289,7 +3310,7 @@ static inline vec3 color_hsv_to_rgb(vec3 hsv)
         return vec3_create(v, v, v);
     }
 
-    int i = (int)floorf(h);
+    int i = (int)SDL_floorf(h);
     float f = h - (float)i; /* fractional part within sextant */
     float p = v * (1.0f - s);
     float q = v * (1.0f - s * f);
@@ -3481,7 +3502,7 @@ static inline vec3 color_tonemap_reinhard(vec3 hdr)
  */
 static inline vec3 color_apply_exposure(vec3 hdr, float exposure_ev)
 {
-    float scale = powf(2.0f, exposure_ev);
+    float scale = SDL_powf(2.0f, exposure_ev);
     return vec3_scale(hdr, scale);
 }
 
@@ -3799,7 +3820,7 @@ static inline float forge_hash_to_sfloat(uint32_t h)
  * dependent applications.
  *
  * Usage:
- *   float t = x - floorf(x);    // fractional part [0, 1]
+ *   float t = x - SDL_floorf(x);    // fractional part [0, 1]
  *   float u = forge_noise_fade(t);  // smooth interpolation weight
  *
  * See: lessons/math/13-gradient-noise
@@ -3920,7 +3941,7 @@ static inline float forge_noise_grad3d(uint32_t hash, float dx, float dy, float 
  */
 static inline float forge_noise_perlin1d(float x, uint32_t seed)
 {
-    int ix = (int)floorf(x);
+    int ix = (int)SDL_floorf(x);
     float fx = x - (float)ix;
 
     float u = forge_noise_fade(fx);
@@ -3961,8 +3982,8 @@ static inline float forge_noise_perlin1d(float x, uint32_t seed)
  */
 static inline float forge_noise_perlin2d(float x, float y, uint32_t seed)
 {
-    int ix = (int)floorf(x);
-    int iy = (int)floorf(y);
+    int ix = (int)SDL_floorf(x);
+    int iy = (int)SDL_floorf(y);
     float fx = x - (float)ix;
     float fy = y - (float)iy;
 
@@ -4010,9 +4031,9 @@ static inline float forge_noise_perlin2d(float x, float y, uint32_t seed)
  */
 static inline float forge_noise_perlin3d(float x, float y, float z, uint32_t seed)
 {
-    int ix = (int)floorf(x);
-    int iy = (int)floorf(y);
-    int iz = (int)floorf(z);
+    int ix = (int)SDL_floorf(x);
+    int iy = (int)SDL_floorf(y);
+    int iz = (int)SDL_floorf(z);
     float fx = x - (float)ix;
     float fy = y - (float)iy;
     float fz = z - (float)iz;
@@ -4106,8 +4127,8 @@ static inline float forge_noise_simplex2d(float x, float y, uint32_t seed)
 
     /* Skew input space to determine which simplex cell we're in */
     float s = (x + y) * F2;
-    int i = (int)floorf(x + s);
-    int j = (int)floorf(y + s);
+    int i = (int)SDL_floorf(x + s);
+    int j = (int)SDL_floorf(y + s);
 
     /* Unskew cell origin back to (x, y) space */
     float t = (float)(i + j) * G2;
@@ -4396,8 +4417,8 @@ static inline void forge_r2(uint32_t index, float *out_x, float *out_y)
     float y = 0.5f + (float)index * alpha2;
 
     /* frac(): subtract the integer part to keep in [0, 1) */
-    x = x - floorf(x);
-    y = y - floorf(y);
+    x = x - SDL_floorf(x);
+    y = y - SDL_floorf(y);
 
     *out_x = x;
     *out_y = y;
@@ -4430,7 +4451,7 @@ static inline float forge_r1(uint32_t index)
     const float inv_phi = 0.6180339887498949f;
 
     float x = 0.5f + (float)index * inv_phi;
-    return x - floorf(x);
+    return x - SDL_floorf(x);
 }
 
 /* ── Sobol 2D Sequence ───────────────────────────────────────────────── */
@@ -4632,7 +4653,7 @@ static inline float forge_star_discrepancy_2d(const float *xs, const float *ys,
             }
         }
 
-        float disc = fabsf((float)inside * inv_n - u * v);
+        float disc = SDL_fabsf((float)inside * inv_n - u * v);
         if (disc > max_disc) max_disc = disc;
     }
 
@@ -5234,7 +5255,7 @@ static inline void vec2_bezier_quadratic_flatten(vec2 p0, vec2 p1, vec2 p2,
     /* Guard against non-positive, NaN, or Inf tolerance which would never
      * satisfy the flatness test, causing infinite recursion.  Fall back to
      * the curve endpoint. */
-    if (!isfinite(tolerance) || tolerance <= 0.0f) {
+    if (SDL_isinf(tolerance) || SDL_isnan(tolerance) || tolerance <= 0.0f) {
         out[(*count)++] = p2;
         return;
     }
@@ -5284,7 +5305,7 @@ static inline void vec2_bezier_cubic_flatten(vec2 p0, vec2 p1, vec2 p2,
     /* Guard against non-positive, NaN, or Inf tolerance which would never
      * satisfy the flatness test, causing infinite recursion.  Fall back to
      * the curve endpoint. */
-    if (!isfinite(tolerance) || tolerance <= 0.0f) {
+    if (SDL_isinf(tolerance) || SDL_isnan(tolerance) || tolerance <= 0.0f) {
         out[(*count)++] = p3;
         return;
     }
@@ -5367,13 +5388,13 @@ static inline float sdf2_circle(vec2 p, float radius)
 static inline float sdf2_box(vec2 p, vec2 half_extents)
 {
     /* Work in the positive quadrant (box is symmetric) */
-    float dx = fabsf(p.x) - half_extents.x;
-    float dy = fabsf(p.y) - half_extents.y;
+    float dx = SDL_fabsf(p.x) - half_extents.x;
+    float dy = SDL_fabsf(p.y) - half_extents.y;
 
     /* Outside: Euclidean distance from nearest edge/corner */
     float ox = dx > 0.0f ? dx : 0.0f;
     float oy = dy > 0.0f ? dy : 0.0f;
-    float outside = sqrtf(ox * ox + oy * oy);
+    float outside = SDL_sqrtf(ox * ox + oy * oy);
 
     /* Inside: negative distance to nearest face */
     float inside = dx > dy ? dx : dy;

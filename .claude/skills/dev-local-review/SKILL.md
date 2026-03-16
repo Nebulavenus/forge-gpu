@@ -138,6 +138,9 @@ Based on project experience, this review reliably catches:
 - Resource cleanup gaps on error paths
 - Magic numbers that should be named constants
 - Naming convention violations
+- Bare C stdlib calls without `SDL_` prefix (fabsf, sinf, memset, strcmp,
+  malloc, etc.) — use SDL equivalents or approved project wrappers
+  (`forge_isfinite`, `forge_fmaxf`, `forge_fminf`) for cross-platform portability
 
 ## What it cannot do
 

@@ -22,8 +22,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stddef.h>    /* offsetof */
-#include <string.h>    /* memset   */
-#include <math.h>      /* sinf, cosf, sqrtf, fabsf, acosf */
 #include <stdint.h>    /* uint8_t  */
 
 #include "math/forge_math.h"
@@ -590,25 +588,25 @@ static void generate_decal_texture(int shape, uint8_t *pixels)
 
             switch (shape) {
             case 0: /* Circle */
-                dist = sqrtf(nx * nx + ny * ny);
+                dist = SDL_sqrtf(nx * nx + ny * ny);
                 alpha = 1.0f - smoothstepf(0.7f, 0.8f, dist);
                 break;
 
             case 1: { /* Heart */
-                float px = fabsf(nx) * 1.1f;
+                float px = SDL_fabsf(nx) * 1.1f;
                 float py = -ny * 1.1f + 0.3f;
                 float q = px * px + py * py - 0.5f;
-                dist = sqrtf(fabsf(q)) * (q < 0.0f ? -1.0f : 1.0f);
+                dist = SDL_sqrtf(SDL_fabsf(q)) * (q < 0.0f ? -1.0f : 1.0f);
                 float heart = px * px + py * py;
-                float h_val = heart - px * sqrtf(fabsf(py));
+                float h_val = heart - px * SDL_sqrtf(SDL_fabsf(py));
                 alpha = 1.0f - smoothstepf(-0.05f, 0.05f, h_val - 0.5f);
                 break;
             }
 
             case 2: { /* Star (5-point) */
-                float angle = atan2f(ny, nx);
-                float r = sqrtf(nx * nx + ny * ny);
-                float star_r = 0.3f + 0.5f * fabsf(cosf(angle * 2.5f));
+                float angle = SDL_atan2f(ny, nx);
+                float r = SDL_sqrtf(nx * nx + ny * ny);
+                float star_r = 0.3f + 0.5f * SDL_fabsf(SDL_cosf(angle * 2.5f));
                 alpha = 1.0f - smoothstepf(star_r - 0.05f, star_r + 0.05f, r);
                 break;
             }
@@ -617,13 +615,13 @@ static void generate_decal_texture(int shape, uint8_t *pixels)
                 int cx = (int)((nx * 0.5f + 0.5f) * 4.0f);
                 int cy = (int)((ny * 0.5f + 0.5f) * 4.0f);
                 float check = ((cx + cy) % 2 == 0) ? 1.0f : 0.0f;
-                dist = sqrtf(nx * nx + ny * ny);
+                dist = SDL_sqrtf(nx * nx + ny * ny);
                 alpha = check * (1.0f - smoothstepf(0.75f, 0.85f, dist));
                 break;
             }
 
             case 4: { /* Ring */
-                dist = sqrtf(nx * nx + ny * ny);
+                dist = SDL_sqrtf(nx * nx + ny * ny);
                 float inner = 1.0f - smoothstepf(0.45f, 0.55f, dist);
                 float outer = 1.0f - smoothstepf(0.7f, 0.8f, dist);
                 alpha = outer - inner;
@@ -632,16 +630,16 @@ static void generate_decal_texture(int shape, uint8_t *pixels)
             }
 
             case 5: { /* Diamond */
-                dist = fabsf(nx) + fabsf(ny);
+                dist = SDL_fabsf(nx) + SDL_fabsf(ny);
                 alpha = 1.0f - smoothstepf(0.65f, 0.75f, dist);
                 break;
             }
 
             case 6: { /* Cross/Plus */
-                float arm_x = (fabsf(nx) < 0.2f) ? 1.0f : 0.0f;
-                float arm_y = (fabsf(ny) < 0.2f) ? 1.0f : 0.0f;
+                float arm_x = (SDL_fabsf(nx) < 0.2f) ? 1.0f : 0.0f;
+                float arm_y = (SDL_fabsf(ny) < 0.2f) ? 1.0f : 0.0f;
                 float cross = (arm_x > 0.0f || arm_y > 0.0f) ? 1.0f : 0.0f;
-                dist = sqrtf(nx * nx + ny * ny);
+                dist = SDL_sqrtf(nx * nx + ny * ny);
                 alpha = cross * (1.0f - smoothstepf(0.7f, 0.8f, dist));
                 break;
             }
@@ -649,7 +647,7 @@ static void generate_decal_texture(int shape, uint8_t *pixels)
             case 7: { /* Triangle */
                 /* Equilateral triangle pointing up */
                 float tri_y = ny + 0.3f;
-                float tri_edge = fabsf(nx) - (0.8f - tri_y * 0.8f);
+                float tri_edge = SDL_fabsf(nx) - (0.8f - tri_y * 0.8f);
                 float top = tri_y - 0.8f;
                 float bottom = -tri_y - 0.3f;
                 float d_max = tri_edge;
@@ -700,14 +698,14 @@ static void generate_decals(app_state *state)
 
             /* Generate random direction on unit sphere (spherical coords) */
             hash = forge_hash_wang(hash);
-            float theta = acosf(1.0f - 2.0f * forge_hash_to_float(hash));
+            float theta = SDL_acosf(1.0f - 2.0f * forge_hash_to_float(hash));
             hash = forge_hash_wang(hash);
             float phi = 2.0f * FORGE_PI * forge_hash_to_float(hash);
 
-            float sin_t = sinf(theta);
-            float dir_x = sin_t * cosf(phi);
-            float dir_y = sin_t * sinf(phi);
-            float dir_z = cosf(theta);
+            float sin_t = SDL_sinf(theta);
+            float dir_x = sin_t * SDL_cosf(phi);
+            float dir_y = sin_t * SDL_sinf(phi);
+            float dir_z = SDL_cosf(theta);
 
             /* Position decal at the Suzanne surface (~0.9 radius from center) */
             float surface_dist = DECAL_SURFACE_DIST * so->scale;
@@ -720,7 +718,7 @@ static void generate_decals(app_state *state)
             vec3 forward = vec3_create(-dir_x, -dir_y, -dir_z);
             vec3 up = vec3_create(0.0f, 1.0f, 0.0f);
             /* Avoid degenerate case when forward is parallel to up */
-            if (fabsf(vec3_dot(forward, up)) > 0.99f) {
+            if (SDL_fabsf(vec3_dot(forward, up)) > 0.99f) {
                 up = vec3_create(1.0f, 0.0f, 0.0f);
             }
             vec3 right = vec3_normalize(vec3_cross(up, forward));
@@ -1426,8 +1424,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         const float base_scales[SUZANNE_COUNT] = { 1.0f, 0.8f, 1.2f, 0.9f, 1.1f, 0.7f };
         for (int i = 0; i < SUZANNE_COUNT; i++) {
             float angle = (float)i / (float)SUZANNE_COUNT * 2.0f * FORGE_PI;
-            float x = RING_RADIUS * sinf(angle);
-            float z = RING_RADIUS * cosf(angle);
+            float x = RING_RADIUS * SDL_sinf(angle);
+            float z = RING_RADIUS * SDL_cosf(angle);
             /* Face each Suzanne toward the center */
             float face_angle = angle + FORGE_PI;
             state->suzannes[i] = (SceneObject){

@@ -456,7 +456,7 @@ static void rigid_body_ground_collision(ForgePhysicsRigidBody *rb,
             rb->velocity.y = -rb->velocity.y * rb->restitution;
 
             /* Kill tiny bounces */
-            if (fabsf(rb->velocity.y) < BOUNCE_KILL_VEL) {
+            if (SDL_fabsf(rb->velocity.y) < BOUNCE_KILL_VEL) {
                 rb->velocity.y = 0.0f;
             }
         }
@@ -953,7 +953,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                                SLIDER_HEIGHT);
                     /* Apply only when slider changes — preserve current axis */
                     if (state->num_bodies > 0 &&
-                        fabsf(state->ui_spin_speed - prev_spin) >
+                        SDL_fabsf(state->ui_spin_speed - prev_spin) >
                             FORGE_PHYSICS_EPSILON) {
                         vec3 av = state->bodies[0].angular_velocity;
                         float len = vec3_length(av);

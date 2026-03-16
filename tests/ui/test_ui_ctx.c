@@ -68,14 +68,14 @@ static int fail_count = 0;
 #define ASSERT_NEAR(a, b, eps)                                    \
     do {                                                          \
         float _a = (a), _b = (b);                                 \
-        if (isnan(_a) || isnan(_b)) {                             \
+        if (SDL_isnan(_a) || SDL_isnan(_b)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (NaN, "      \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     __LINE__);                                    \
             fail_count++;                                         \
             return;                                               \
         }                                                         \
-        if (fabsf(_a - _b) > (eps)) {                             \
+        if (SDL_fabsf(_a - _b) > (eps)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (eps=%f, "   \
                     "line %d)", #a, _a, _b, (float)(eps),         \
                     __LINE__);                                    \
@@ -9380,8 +9380,8 @@ static void test_color_picker_sv_click_updates_sv(void)
     float expected_s = TEST_CP_SV_CLICK_OFFSET;
     float expected_v = 1.0f - TEST_CP_SV_CLICK_OFFSET;
     float tol = 0.05f;
-    ASSERT_TRUE(fabsf(s - expected_s) < tol);
-    ASSERT_TRUE(fabsf(v - expected_v) < tol);
+    ASSERT_TRUE(SDL_fabsf(s - expected_s) < tol);
+    ASSERT_TRUE(SDL_fabsf(v - expected_v) < tol);
 
     forge_ui_ctx_free(&ctx);
 }

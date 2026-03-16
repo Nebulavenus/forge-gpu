@@ -12,7 +12,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
@@ -203,7 +202,7 @@ static void demo_ratio(void)
 static float gaussian_pdf(float x, float mu, float sigma)
 {
     float z = (x - mu) / sigma;
-    return (1.0f / (sigma * sqrtf(2.0f * FORGE_PI))) * expf(-0.5f * z * z);
+    return (1.0f / (sigma * SDL_sqrtf(2.0f * FORGE_PI))) * SDL_expf(-0.5f * z * z);
 }
 
 /* Uniform PDF on [a, b]: f(x) = 1/(b-a) inside, 0 outside */
@@ -360,7 +359,7 @@ static void demo_graphics_applications(void)
     for (int i = 0; i < ns; i++) {
         float theta = ((float)i + 0.5f) / (float)ns * (FORGE_PI * 0.5f);
         float pdf = 1.0f / (FORGE_PI * 0.5f);  /* uniform on [0, pi/2] */
-        uniform_sum += cosf(theta) / pdf;
+        uniform_sum += SDL_cosf(theta) / pdf;
     }
     float uniform_est = uniform_sum / (float)ns;
 
@@ -369,18 +368,18 @@ static void demo_graphics_applications(void)
     for (int i = 0; i < ns; i++) {
         /* Inverse CDF: CDF = sin(theta), so theta = arcsin(u) */
         float u = ((float)i + 0.5f) / (float)ns;
-        float theta = asinf(u);
-        float pdf = cosf(theta);
-        cosine_sum += cosf(theta) / pdf;
+        float theta = SDL_asinf(u);
+        float pdf = SDL_cosf(theta);
+        cosine_sum += SDL_cosf(theta) / pdf;
     }
     float cosine_est = cosine_sum / (float)ns;
 
     float exact = 1.0f;  /* integral of cos(theta) d(theta) from 0 to pi/2 */
     SDL_Log("    Exact integral of cos(theta) over [0, pi/2] = %.4f", exact);
     SDL_Log("    Uniform sampling   (%d samples): %.4f  (error: %.4f)",
-            ns, uniform_est, fabsf(uniform_est - exact));
+            ns, uniform_est, SDL_fabsf(uniform_est - exact));
     SDL_Log("    Cosine-weighted    (%d samples): %.4f  (error: %.4f)",
-            ns, cosine_est, fabsf(cosine_est - exact));
+            ns, cosine_est, SDL_fabsf(cosine_est - exact));
     SDL_Log("    -> Importance sampling reduces error by matching the PDF to the integrand.");
 
     SDL_Log(" ");

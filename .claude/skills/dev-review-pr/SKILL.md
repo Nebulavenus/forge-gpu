@@ -300,6 +300,7 @@ codebase. Examples:
 | "No error check after fclose" in writer B | (same theme) |
 | "Test only checks return value, not side effects" × 4 tests | Weak test assertions |
 | "Division by zero if rect width is 0" | Missing zero-guard pattern |
+| "fabsf() should be SDL_fabsf()" × 5 files | Bare C stdlib calls (portability) |
 
 ```text
 ## PR Review Feedback Summary
@@ -343,6 +344,10 @@ For each theme, **before writing any fix**, spawn an analysis agent
      tests for the same weakness, not just the one cited
    - CodeRabbit says "division by zero if width is 0" → find ALL divisions
      by width, height, or any user-derived value in the function
+   - CodeRabbit says "fabsf() should be SDL_fabsf()" → grep for ALL bare
+     C stdlib calls (`fabsf`, `sinf`, `cosf`, `sqrtf`, `memset`, `memcpy`,
+     `strcmp`, `strlen`, `malloc`, `free`) across every `.c` and `.h` file
+     in the PR — this is a critical cross-platform portability issue
 
 2. **What documentation describes this code?** Identify every README,
    API doc, header comment, and inline comment that references the behavior

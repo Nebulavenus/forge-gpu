@@ -40,11 +40,19 @@
 #ifndef FORGE_UI_CTX_H
 #define FORGE_UI_CTX_H
 
-#include <math.h>
-#include <string.h>
 #include <SDL3/SDL.h>
 #include "forge_ui_theme.h"
 #include "forge_ui.h"
+
+/* Portable isfinite — SDL_stdinc.h does not yet provide this */
+#ifndef forge_isfinite
+#define forge_isfinite(x) (!SDL_isinf(x) && !SDL_isnan(x))
+#endif
+
+/* Largest float below 360.0 — replaces FORGE_UI_HUE_MAX so we
+ * don't need <math.h> for a single call.  360.0f in IEEE 754 is
+ * 0x43B40000; subtracting one ULP gives 0x43B3FFFF = 359.99997f. */
+#define FORGE_UI_HUE_MAX 359.99997f
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 
@@ -1046,7 +1054,7 @@ static inline bool forge_ui__rect_contains(ForgeUiRect rect,
 static inline float forge_ui__ascender_px(const ForgeUiFontAtlas *atlas)
 {
     if (!atlas || atlas->units_per_em == 0) return 0.0f;
-    if (!isfinite(atlas->pixel_height)) return 0.0f;
+    if (!forge_isfinite(atlas->pixel_height)) return 0.0f;
     float scale = atlas->pixel_height / (float)atlas->units_per_em;
     return (float)atlas->ascender * scale;
 }
@@ -1101,7 +1109,7 @@ static inline Uint32 forge_ui_hash_id(const ForgeUiContext *ctx,
     if (!label || label[0] == '\0') return 1;
 
     /* Find ## separator — hash the ## portion if present */
-    const char *sep = strstr(label, "##");
+    const char *sep = SDL_strstr(label, "##");
     const char *id_str = sep ? sep : label;
 
     /* Use top-of-stack seed, or FNV offset basis if stack is empty */
@@ -1122,8 +1130,8 @@ static inline Uint32 forge_ui_hash_id(const ForgeUiContext *ctx,
 static inline const char *forge_ui__display_end(const char *label)
 {
     if (!label) return label;
-    const char *sep = strstr(label, "##");
-    return sep ? sep : (label + strlen(label));
+    const char *sep = SDL_strstr(label, "##");
+    return sep ? sep : (label + SDL_strlen(label));
 }
 
 /* Push a named scope onto the ID seed stack.  All subsequent hash_id
@@ -1151,7 +1159,7 @@ static inline bool forge_ui_push_id(ForgeUiContext *ctx, const char *name)
     /* Apply the same ## identity extraction as forge_ui_hash_id:
      * if "Label##id" is passed, hash only "##id" so scope seeds
      * remain stable when only display text changes. */
-    const char *sep = strstr(scope_name, "##");
+    const char *sep = SDL_strstr(scope_name, "##");
     if (sep) scope_name = sep;
     if (scope_name[0] == '\0') {
         SDL_Log("forge_ui_push_id: empty scope name has no effect on IDs");
@@ -1505,7 +1513,7 @@ static inline bool forge_ui_ctx_init(ForgeUiContext *ctx,
 
     /* Validate atlas pixel_height: zero, negative, NaN, or Inf would
      * propagate through all text positioning via forge_ui__ascender_px. */
-    if (!isfinite(atlas->pixel_height) || atlas->pixel_height <= 0.0f) {
+    if (!forge_isfinite(atlas->pixel_height) || atlas->pixel_height <= 0.0f) {
         SDL_Log("forge_ui_ctx_init: atlas pixel_height must be positive "
                 "and finite (got %.2f)", (double)atlas->pixel_height);
         SDL_free(ctx->indices);
@@ -1588,8 +1596,8 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
      * if the OS delivers new input events between widget calls.
      * Clamp NaN/Inf to 0 so downstream slider and scrollbar drag
      * calculations never produce NaN values written to caller data. */
-    ctx->mouse_x = isfinite(mouse_x) ? mouse_x : 0.0f;
-    ctx->mouse_y = isfinite(mouse_y) ? mouse_y : 0.0f;
+    ctx->mouse_x = forge_isfinite(mouse_x) ? mouse_x : 0.0f;
+    ctx->mouse_y = forge_isfinite(mouse_y) ? mouse_y : 0.0f;
     ctx->mouse_down = mouse_down;
 
     /* Reset hot for this frame -- widgets will claim it during processing */
@@ -1612,7 +1620,7 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
 
     /* Validate scale: NaN, Inf, zero, or negative would corrupt all
      * widget dimensions through FORGE_UI_SCALED.  Clamp to 1.0. */
-    if (!isfinite(ctx->scale) || ctx->scale <= 0.0f) {
+    if (!forge_isfinite(ctx->scale) || ctx->scale <= 0.0f) {
         SDL_Log("forge_ui_ctx_begin: invalid scale %.4f, resetting to 1.0",
                 (double)ctx->scale);
         ctx->scale = 1.0f;
@@ -1636,7 +1644,7 @@ static inline void forge_ui_ctx_begin(ForgeUiContext *ctx,
             { &ctx->spacing.scrollbar_width,     FORGE_UI_SCROLLBAR_WIDTH,     "scrollbar_width" },
         };
         for (int i = 0; i < (int)(sizeof(checks) / sizeof(checks[0])); i++) {
-            if (!isfinite(*checks[i].field) || *checks[i].field < 0.0f) {
+            if (!forge_isfinite(*checks[i].field) || *checks[i].field < 0.0f) {
                 SDL_Log("forge_ui_ctx_begin: invalid spacing.%s = %.4f, "
                         "resetting to %.1f",
                         checks[i].name, (double)*checks[i].field,
@@ -1753,8 +1761,8 @@ static inline void forge_ui_ctx_label_colored(ForgeUiContext *ctx,
                                                float r, float g, float b, float a)
 {
     if (!ctx || !text || !ctx->atlas) return;
-    if (!isfinite(x) || !isfinite(y)) return;
-    if (!isfinite(r) || !isfinite(g) || !isfinite(b) || !isfinite(a)) return;
+    if (!forge_isfinite(x) || !forge_isfinite(y)) return;
+    if (!forge_isfinite(r) || !forge_isfinite(g) || !forge_isfinite(b) || !forge_isfinite(a)) return;
 
     /* Clamp to valid [0, 1] range to prevent invalid vertex color data */
     if (r < 0.0f) r = 0.0f; else if (r > 1.0f) r = 1.0f;
@@ -1809,8 +1817,8 @@ static inline bool forge_ui_ctx_button(ForgeUiContext *ctx,
                                        ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !text || text[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
     Uint32 id = forge_ui_hash_id(ctx, text);
 
     bool clicked = false;
@@ -1884,8 +1892,8 @@ static inline bool forge_ui_ctx_checkbox(ForgeUiContext *ctx,
                                           ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !label || !value || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
     Uint32 id = forge_ui_hash_id(ctx, label);
 
     bool toggled = false;
@@ -1979,13 +1987,13 @@ static inline bool forge_ui_ctx_slider(ForgeUiContext *ctx,
                                         ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
-    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return false;
     if (!(max_val > min_val)) return false;  /* also rejects equal */
     /* Sanitize *value: NaN/Inf would poison the thumb position and
      * propagate into vertex data.  Clamp to min_val as a safe default. */
-    if (!isfinite(*value)) *value = min_val;
+    if (!forge_isfinite(*value)) *value = min_val;
     Uint32 id = forge_ui_hash_id(ctx, label);
 
     bool changed = false;
@@ -2093,10 +2101,10 @@ static inline void forge_ui_ctx_rect(ForgeUiContext *ctx,
                                       ForgeUiColor color)
 {
     if (!ctx || !ctx->atlas) return;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return;
-    if (!isfinite(color.r) || !isfinite(color.g) ||
-        !isfinite(color.b) || !isfinite(color.a)) return;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return;
+    if (!forge_isfinite(color.r) || !forge_isfinite(color.g) ||
+        !forge_isfinite(color.b) || !forge_isfinite(color.a)) return;
 
     /* Clamp color components to [0,1] */
     float r = color.r < 0.0f ? 0.0f : (color.r > 1.0f ? 1.0f : color.r);
@@ -2114,8 +2122,8 @@ static inline void forge_ui_ctx_rect_layout(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas) return;
     if (ctx->layout_depth <= 0) return;
-    if (!isfinite(color.r) || !isfinite(color.g) ||
-        !isfinite(color.b) || !isfinite(color.a)) return;
+    if (!forge_isfinite(color.r) || !forge_isfinite(color.g) ||
+        !forge_isfinite(color.b) || !forge_isfinite(color.a)) return;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     forge_ui_ctx_rect(ctx, rect, color);
 }
@@ -2129,14 +2137,14 @@ static inline void forge_ui_ctx_progress_bar(ForgeUiContext *ctx,
                                               ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas) return;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return;
-    if (!isfinite(max_val) || !(max_val > 0.0f)) return;  /* rejects NaN and +Inf */
-    if (!isfinite(value)) value = 0.0f;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return;
+    if (!forge_isfinite(max_val) || !(max_val > 0.0f)) return;  /* rejects NaN and +Inf */
+    if (!forge_isfinite(value)) value = 0.0f;
 
     /* Sanitize fill_color — reject non-finite components, clamp to [0,1] */
-    if (!isfinite(fill_color.r) || !isfinite(fill_color.g) ||
-        !isfinite(fill_color.b) || !isfinite(fill_color.a)) return;
+    if (!forge_isfinite(fill_color.r) || !forge_isfinite(fill_color.g) ||
+        !forge_isfinite(fill_color.b) || !forge_isfinite(fill_color.a)) return;
     if (fill_color.r < 0.0f) fill_color.r = 0.0f;
     if (fill_color.r > 1.0f) fill_color.r = 1.0f;
     if (fill_color.g < 0.0f) fill_color.g = 0.0f;
@@ -2196,8 +2204,8 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !state || !state->buffer
         || !label || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
     Uint32 id = forge_ui_hash_id(ctx, label);
 
     /* Validate state invariants to prevent out-of-bounds access.
@@ -2294,7 +2302,7 @@ static inline bool forge_ui_ctx_text_input(ForgeUiContext *ctx,
          * at the cursor position.  Trailing bytes shift right to make
          * room, then the new bytes are written at cursor. */
         if (!did_edit && ctx->text_input && ctx->text_input[0] != '\0') {
-            size_t raw_len = strlen(ctx->text_input);
+            size_t raw_len = SDL_strlen(ctx->text_input);
             /* Guard: reject input longer than the buffer can ever hold.
              * Cast is safe because capacity > 0 (validated above). */
             if (raw_len <= (size_t)(state->capacity - 1)) {
@@ -2437,8 +2445,8 @@ static inline bool forge_ui_ctx_layout_push(ForgeUiContext *ctx,
     }
 
     /* Reject NaN/Inf in rect fields */
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) {
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) {
         return false;
     }
 
@@ -2447,8 +2455,8 @@ static inline bool forge_ui_ctx_layout_push(ForgeUiContext *ctx,
      * zero" — clamped to 0 without default substitution.  This lets
      * internal code (panel_begin, window_begin) opt out of defaults
      * by passing a negative value. */
-    if (isnan(padding) || isinf(padding)) padding = 0.0f;
-    if (isnan(spacing) || isinf(spacing)) spacing = 0.0f;
+    if (SDL_isnan(padding) || SDL_isinf(padding)) padding = 0.0f;
+    if (SDL_isnan(spacing) || SDL_isinf(spacing)) spacing = 0.0f;
     if (padding == 0.0f) {
         padding = FORGE_UI_SCALED(ctx, ctx->spacing.widget_padding);
     } else if (padding < 0.0f) {
@@ -2514,7 +2522,7 @@ static inline ForgeUiRect forge_ui_ctx_layout_next(ForgeUiContext *ctx,
     }
 
     /* Clamp negative or invalid sizes to zero */
-    if (size < 0.0f || isnan(size) || isinf(size)) size = 0.0f;
+    if (size < 0.0f || SDL_isnan(size) || SDL_isinf(size)) size = 0.0f;
 
     ForgeUiLayout *layout = &ctx->layout_stack[ctx->layout_depth - 1];
     ForgeUiRect result;
@@ -2633,7 +2641,7 @@ static inline bool forge_ui_ctx_slider_layout(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
     if (ctx->layout_depth <= 0) return false;  /* no active layout — no-op */
-    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return false;
     if (!(max_val > min_val)) return false;  /* also rejects equal */
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_slider(ctx, label, value, min_val, max_val, rect);
@@ -2647,9 +2655,9 @@ static inline void forge_ui_ctx_progress_bar_layout(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas) return;
     if (ctx->layout_depth <= 0) return;  /* no active layout — no-op */
-    if (!isfinite(max_val) || !(max_val > 0.0f)) return;  /* rejects NaN and +Inf */
-    if (!isfinite(fill_color.r) || !isfinite(fill_color.g) ||
-        !isfinite(fill_color.b) || !isfinite(fill_color.a)) return;
+    if (!forge_isfinite(max_val) || !(max_val > 0.0f)) return;  /* rejects NaN and +Inf */
+    if (!forge_isfinite(fill_color.r) || !forge_isfinite(fill_color.g) ||
+        !forge_isfinite(fill_color.b) || !forge_isfinite(fill_color.a)) return;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     forge_ui_ctx_progress_bar(ctx, value, max_val, fill_color, rect);
 }
@@ -2679,7 +2687,7 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
     /* Reject non-finite origin.  NaN or ±Inf in rect.x/rect.y would
      * propagate into every vertex position, clip rect, and content area
      * computation, corrupting the draw data. */
-    if (!isfinite(rect.x) || !isfinite(rect.y)) {
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y)) {
         SDL_Log("forge_ui_ctx_panel_begin: rect origin must be finite");
         return false;
     }
@@ -2687,8 +2695,8 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
     /* Reject non-positive or non-finite rect dimensions.  !(x > 0) catches
      * NaN and ≤ 0; !isfinite catches ±Inf.  +Inf would produce infinite
      * vertex positions, corrupting the draw data. */
-    if (!(rect.w > 0.0f) || !isfinite(rect.w) ||
-        !(rect.h > 0.0f) || !isfinite(rect.h)) {
+    if (!(rect.w > 0.0f) || !forge_isfinite(rect.w) ||
+        !(rect.h > 0.0f) || !forge_isfinite(rect.h)) {
         SDL_Log("forge_ui_ctx_panel_begin: rect dimensions must be "
                 "positive and finite");
         return false;
@@ -2699,7 +2707,7 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
      * every layout_next position, and +Inf would push all widgets to
      * -Inf.  The !(x >= 0) form catches NaN and negatives; !isfinite
      * catches ±Inf. */
-    if (!(*scroll_y >= 0.0f) || !isfinite(*scroll_y)) *scroll_y = 0.0f;
+    if (!(*scroll_y >= 0.0f) || !forge_isfinite(*scroll_y)) *scroll_y = 0.0f;
 
     /* ── Draw panel background ────────────────────────────────────────── */
     forge_ui__emit_rect(ctx, rect,
@@ -2807,7 +2815,7 @@ static inline bool forge_ui_ctx_panel_begin(ForgeUiContext *ctx,
     /* Validate scroll_delta: a NaN or ±Inf delta (from a corrupt input
      * event or driver bug) would make *scroll_y non-finite, poisoning
      * every subsequent layout position.  Treat non-finite as zero. */
-    if (ctx->scroll_delta != 0.0f && isfinite(ctx->scroll_delta) &&
+    if (ctx->scroll_delta != 0.0f && forge_isfinite(ctx->scroll_delta) &&
         forge_ui__rect_contains(content, ctx->mouse_x, ctx->mouse_y)) {
         *scroll_y += ctx->scroll_delta * FORGE_UI_SCROLL_SPEED;
         if (*scroll_y < 0.0f) *scroll_y = 0.0f;
@@ -2865,7 +2873,7 @@ static inline void forge_ui_ctx_panel_end(ForgeUiContext *ctx)
     if (ctx->layout_depth > 0) {
         float cursor_now = ctx->layout_stack[ctx->layout_depth - 1].cursor_y;
         content_h = cursor_now - ctx->_panel_content_start_y;
-        if (!isfinite(content_h) || content_h < 0.0f) content_h = 0.0f;
+        if (!forge_isfinite(content_h) || content_h < 0.0f) content_h = 0.0f;
     }
     ctx->_panel.content_height = content_h;
 
@@ -2981,8 +2989,8 @@ static inline void forge_ui_ctx_separator(ForgeUiContext *ctx,
                                            ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas) return;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return;
     if (rect.w <= 0.0f || rect.h <= 0.0f) return;
 
     /* 1px line centered vertically within the rect — clamp thickness
@@ -3033,8 +3041,8 @@ static inline bool forge_ui_ctx_tree_push(ForgeUiContext *ctx,
         ctx->_tree_call_depth++;
         return false;
     }
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) {
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) {
         pushed_scope = forge_ui_push_id(ctx, label);
         ctx->_tree_scope_pushed[call_idx] = pushed_scope;
         ctx->_tree_call_depth++;
@@ -3150,13 +3158,13 @@ static inline void forge_ui_ctx_sparkline(ForgeUiContext *ctx,
                                            ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !values || count < 2) return;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return;
     if (rect.w <= 0.0f || rect.h <= 0.0f) return;
-    if (!isfinite(min_val) || !isfinite(max_val)) return;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return;
     if (max_val <= min_val) return;
-    if (!isfinite(line_color.r) || !isfinite(line_color.g) ||
-        !isfinite(line_color.b) || !isfinite(line_color.a)) return;
+    if (!forge_isfinite(line_color.r) || !forge_isfinite(line_color.g) ||
+        !forge_isfinite(line_color.b) || !forge_isfinite(line_color.a)) return;
 
     /* Clamp color components to [0,1] for consistency with other widgets */
     if (line_color.r < 0.0f) line_color.r = 0.0f;
@@ -3186,8 +3194,8 @@ static inline void forge_ui_ctx_sparkline(ForgeUiContext *ctx,
     for (int i = 0; i < count - 1; i++) {
         float v0 = values[i];
         float v1 = values[i + 1];
-        if (!isfinite(v0)) v0 = min_val;
-        if (!isfinite(v1)) v1 = min_val;
+        if (!forge_isfinite(v0)) v0 = min_val;
+        if (!forge_isfinite(v1)) v1 = min_val;
         if (v0 < min_val) v0 = min_val;
         if (v0 > max_val) v0 = max_val;
         if (v1 < min_val) v1 = min_val;
@@ -3246,9 +3254,9 @@ static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
     /* Validate widget inputs before layout_next() to avoid advancing
      * the layout cursor for widgets that cannot render. */
     if (!values || count < 2) return;
-    if (!isfinite(min_val) || !isfinite(max_val) || max_val <= min_val) return;
-    if (!isfinite(line_color.r) || !isfinite(line_color.g) ||
-        !isfinite(line_color.b) || !isfinite(line_color.a)) return;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val) || max_val <= min_val) return;
+    if (!forge_isfinite(line_color.r) || !forge_isfinite(line_color.g) ||
+        !forge_isfinite(line_color.b) || !forge_isfinite(line_color.a)) return;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     forge_ui_ctx_sparkline(ctx, values, count, min_val, max_val, line_color, rect);
 }
@@ -3260,18 +3268,18 @@ static inline void forge_ui_hsv_to_rgb(float h, float s, float v,
 {
     if (!r || !g || !b) return;
     /* Replace non-finite inputs with zero before clamping */
-    if (!isfinite(h)) h = 0.0f;
-    if (!isfinite(s)) s = 0.0f;
-    if (!isfinite(v)) v = 0.0f;
+    if (!forge_isfinite(h)) h = 0.0f;
+    if (!forge_isfinite(s)) s = 0.0f;
+    if (!forge_isfinite(v)) v = 0.0f;
     /* Clamp s and v to [0, 1] */
     if (s < 0.0f) s = 0.0f; else if (s > 1.0f) s = 1.0f;
     if (v < 0.0f) v = 0.0f; else if (v > 1.0f) v = 1.0f;
     /* Wrap hue to [0, 360) */
-    h = fmodf(h, 360.0f);
+    h = SDL_fmodf(h, 360.0f);
     if (h < 0.0f) h += 360.0f;
 
     float c = v * s;
-    float x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
+    float x = c * (1.0f - SDL_fabsf(SDL_fmodf(h / 60.0f, 2.0f) - 1.0f));
     float m = v - c;
     float r1 = 0.0f, g1 = 0.0f, b1 = 0.0f;
 
@@ -3291,9 +3299,9 @@ static inline void forge_ui_rgb_to_hsv(float r, float g, float b,
                                         float *h, float *s, float *v)
 {
     if (!h || !s || !v) return;
-    if (!isfinite(r)) r = 0.0f;
-    if (!isfinite(g)) g = 0.0f;
-    if (!isfinite(b)) b = 0.0f;
+    if (!forge_isfinite(r)) r = 0.0f;
+    if (!forge_isfinite(g)) g = 0.0f;
+    if (!forge_isfinite(b)) b = 0.0f;
     if (r < 0.0f) r = 0.0f; else if (r > 1.0f) r = 1.0f;
     if (g < 0.0f) g = 0.0f; else if (g > 1.0f) g = 1.0f;
     if (b < 0.0f) b = 0.0f; else if (b > 1.0f) b = 1.0f;
@@ -3308,7 +3316,7 @@ static inline void forge_ui_rgb_to_hsv(float r, float g, float b,
     if (delta < 1e-6f) {
         *h = 0.0f;
     } else if (cmax == r) {
-        *h = 60.0f * fmodf((g - b) / delta, 6.0f);
+        *h = 60.0f * SDL_fmodf((g - b) / delta, 6.0f);
     } else if (cmax == g) {
         *h = 60.0f * ((b - r) / delta + 2.0f);
     } else {
@@ -3326,12 +3334,12 @@ static inline bool forge_ui_ctx_drag_float(ForgeUiContext *ctx,
                                             ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
-    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return false;
     if (!(max_val > min_val)) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
-    if (!isfinite(*value)) *value = min_val;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(*value)) *value = min_val;
     Uint32 id = forge_ui_hash_id(ctx, label);
 
     bool changed = false;
@@ -3388,9 +3396,9 @@ static inline bool forge_ui_ctx_drag_float_layout(ForgeUiContext *ctx,
                                                     float size)
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
-    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return false;
     if (!(max_val > min_val)) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
     if (ctx->layout_depth <= 0) return false;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_drag_float(ctx, label, value, speed, min_val, max_val, rect);
@@ -3407,11 +3415,11 @@ static inline bool forge_ui_ctx_drag_float_n(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
     if (count < 1 || count > 4) return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
-    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return false;
     if (!(max_val > min_val)) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
 
     /* Component labels and colors (X=red, Y=green, Z=blue, W=yellow) */
     static const char *comp_labels[] = { "X", "Y", "Z", "W" };
@@ -3486,9 +3494,9 @@ static inline bool forge_ui_ctx_drag_float_n_layout(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
     if (count < 1 || count > 4) return false;
-    if (!isfinite(min_val) || !isfinite(max_val)) return false;
+    if (!forge_isfinite(min_val) || !forge_isfinite(max_val)) return false;
     if (!(max_val > min_val)) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
     if (ctx->layout_depth <= 0) return false;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_drag_float_n(ctx, label, values, count,
@@ -3504,10 +3512,10 @@ static inline bool forge_ui_ctx_drag_int(ForgeUiContext *ctx,
                                           ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
     if (max_val <= min_val) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
     Uint32 id = forge_ui_hash_id(ctx, label);
 
     bool changed = false;
@@ -3573,7 +3581,7 @@ static inline bool forge_ui_ctx_drag_int_layout(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !value || !label || label[0] == '\0') return false;
     if (max_val <= min_val) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
     if (ctx->layout_depth <= 0) return false;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_drag_int(ctx, label, value, speed, min_val, max_val, rect);
@@ -3590,10 +3598,10 @@ static inline bool forge_ui_ctx_drag_int_n(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
     if (count < 1 || count > 4) return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
     if (max_val <= min_val) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
 
     /* Component labels and colors (X=red, Y=green, Z=blue, W=yellow) */
     static const char *comp_labels[] = { "X", "Y", "Z", "W" };
@@ -3665,7 +3673,7 @@ static inline bool forge_ui_ctx_drag_int_n_layout(ForgeUiContext *ctx,
     if (!ctx || !ctx->atlas || !values || !label || label[0] == '\0') return false;
     if (count < 1 || count > 4) return false;
     if (max_val <= min_val) return false;
-    if (!isfinite(speed) || !(speed > 0.0f)) return false;
+    if (!forge_isfinite(speed) || !(speed > 0.0f)) return false;
     if (ctx->layout_depth <= 0) return false;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     return forge_ui_ctx_drag_int_n(ctx, label, values, count,
@@ -3683,8 +3691,8 @@ static inline bool forge_ui_ctx_listbox(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !label || !selected || !items) return false;
     if (item_count <= 0 || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
 
     /* Allow -1 as "no selection"; clamp only upper bound */
     if (*selected >= item_count) *selected = item_count - 1;
@@ -3798,8 +3806,8 @@ static inline bool forge_ui_ctx_dropdown(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !label || !selected || !open || !items) return false;
     if (item_count <= 0 || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
 
     /* Clamp *selected into valid range */
     if (*selected < 0) *selected = 0;
@@ -3923,7 +3931,7 @@ static inline bool forge_ui_ctx_dropdown_layout(ForgeUiContext *ctx,
     float default_h = FORGE_UI_SCALED(ctx, FORGE_UI_DD_HEADER_HEIGHT);
     ForgeUiLayoutDirection dir =
         ctx->layout_stack[ctx->layout_depth - 1].direction;
-    float header_h = (dir == FORGE_UI_LAYOUT_VERTICAL && isfinite(size) && size > 0.0f)
+    float header_h = (dir == FORGE_UI_LAYOUT_VERTICAL && forge_isfinite(size) && size > 0.0f)
         ? size : default_h;
     /* Reserve extra height for the open menu so subsequent widgets
      * do not overlap the dropdown items.  We predict the post-toggle
@@ -3983,8 +3991,8 @@ static inline bool forge_ui_ctx_radio(ForgeUiContext *ctx,
                                        ForgeUiRect rect)
 {
     if (!ctx || !ctx->atlas || !label || !selected || label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
     Uint32 id = forge_ui_hash_id(ctx, label);
 
     bool changed = false;
@@ -4167,16 +4175,16 @@ static inline bool forge_ui_ctx_color_picker(ForgeUiContext *ctx,
 {
     if (!ctx || !ctx->atlas || !label || !h || !s || !v) return false;
     if (label[0] == '\0') return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) ||
-        !isfinite(rect.w) || !isfinite(rect.h)) return false;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return false;
 
     /* Clamp inputs */
-    if (!isfinite(*h)) *h = 0.0f;
-    if (!isfinite(*s)) *s = 1.0f;
-    if (!isfinite(*v)) *v = 1.0f;
-    *h = fmodf(*h, 360.0f);
+    if (!forge_isfinite(*h)) *h = 0.0f;
+    if (!forge_isfinite(*s)) *s = 1.0f;
+    if (!forge_isfinite(*v)) *v = 1.0f;
+    *h = SDL_fmodf(*h, 360.0f);
     if (*h < 0.0f) *h += 360.0f;
-    if (*h >= 360.0f) *h = nextafterf(360.0f, 0.0f);
+    if (*h >= 360.0f) *h = FORGE_UI_HUE_MAX;
     if (*s < 0.0f) *s = 0.0f; else if (*s > 1.0f) *s = 1.0f;
     if (*v < 0.0f) *v = 0.0f; else if (*v > 1.0f) *v = 1.0f;
 
@@ -4292,7 +4300,7 @@ static inline bool forge_ui_ctx_color_picker(ForgeUiContext *ctx,
             float t = (ctx->mouse_x - hue_rect.x) / hue_rect.w;
             if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
             float new_h = t * 360.0f;
-            if (new_h >= 360.0f) new_h = nextafterf(360.0f, 0.0f);
+            if (new_h >= 360.0f) new_h = FORGE_UI_HUE_MAX;
             if (new_h != *h) { *h = new_h; changed = true; }
         }
         if (ctx->active == hue_id && !ctx->mouse_down) ctx->active = FORGE_UI_ID_NONE;

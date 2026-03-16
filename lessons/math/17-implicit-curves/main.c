@@ -11,7 +11,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
@@ -228,7 +227,7 @@ static void demo_gradient(void)
                     / (2.0f * eps);
         float gy = (sdf2_circle(py_pos, 1.0f) - sdf2_circle(py_neg, 1.0f))
                     / (2.0f * eps);
-        float grad_len = sqrtf(gx * gx + gy * gy);
+        float grad_len = SDL_sqrtf(gx * gx + gy * gy);
 
         SDL_Log("  (%5.2f, %5.2f) %6.3f   (%7.4f, %7.4f)     %.4f",
                 p.x, p.y, d, gx, gy, grad_len);
@@ -540,9 +539,9 @@ static void demo_isolines(void)
             vec2 p = { x, y };
             float d = sdf2_circle(p, 1.0f);
 
-            if (fabsf(d) < 0.15f)              row[i] = '0';
-            else if (fabsf(d + 0.5f) < 0.15f)   row[i] = '-';
-            else if (fabsf(d - 0.5f) < 0.15f)   row[i] = '+';
+            if (SDL_fabsf(d) < 0.15f)              row[i] = '0';
+            else if (SDL_fabsf(d + 0.5f) < 0.15f)   row[i] = '-';
+            else if (SDL_fabsf(d - 0.5f) < 0.15f)   row[i] = '+';
             else                                  row[i] = ' ';
         }
         SDL_Log("  %s", row);

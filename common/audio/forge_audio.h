@@ -18,7 +18,6 @@
 #define FORGE_AUDIO_H
 
 #include <SDL3/SDL.h>
-#include <string.h>  /* memset */
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -93,7 +92,7 @@ static inline bool forge_audio_load_wav(const char *path,
     Uint8 *wav_data = NULL;
     Uint32 wav_len = 0;
 
-    memset(buf, 0, sizeof(*buf));
+    SDL_memset(buf, 0, sizeof(*buf));
 
     /* Decode WAV file — SDL handles RIFF parsing and basic decompression */
     if (!SDL_LoadWAV(path, &wav_spec, &wav_data, &wav_len)) {
@@ -211,7 +210,7 @@ static inline ForgeAudioSource forge_audio_source_create(
     const ForgeAudioBuffer *buffer, float volume, bool looping)
 {
     ForgeAudioSource src;
-    memset(&src, 0, sizeof(src));
+    SDL_memset(&src, 0, sizeof(src));
     src.buffer      = buffer;
     src.volume      = volume;
     src.pan         = 0.0f;
@@ -467,7 +466,7 @@ typedef struct ForgeAudioPool {
 static inline void forge_audio_pool_init(ForgeAudioPool *pool)
 {
     if (!pool) return;
-    memset(pool, 0, sizeof(*pool));
+    SDL_memset(pool, 0, sizeof(*pool));
 }
 
 /* Start playing a buffer in the first available slot.

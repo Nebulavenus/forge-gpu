@@ -45,7 +45,6 @@
 
 #include <SDL3/SDL.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "gltf/forge_gltf.h"
 #include "pipeline/forge_pipeline.h"  /* FORGE_PIPELINE_MAX_NODES etc. */
@@ -79,9 +78,9 @@ static const char *basename_from_path(const char *path)
 {
     if (!path) return "";
     const char *name = path;
-    const char *slash = strrchr(path, '/');
+    const char *slash = SDL_strrchr(path, '/');
     if (slash) name = slash + 1;
-    const char *backslash = strrchr(name, '\\');
+    const char *backslash = SDL_strrchr(name, '\\');
     if (backslash) name = backslash + 1;
     return name;
 }
@@ -127,9 +126,9 @@ static bool parse_args(int argc, char *argv[], ToolOptions *opts)
     int positional = 0;
     int i;
     for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
+        if (SDL_strcmp(argv[i], "--verbose") == 0 || SDL_strcmp(argv[i], "-v") == 0) {
             opts->verbose = true;
-        } else if (strcmp(argv[i], "--skins") == 0) {
+        } else if (SDL_strcmp(argv[i], "--skins") == 0) {
             opts->skins = true;
         } else if (argv[i][0] == '-') {
             SDL_Log("Error: unknown option '%s'", argv[i]);
@@ -255,7 +254,7 @@ static bool write_fscene(const char *output_path,
 
         /* Name: 64 bytes, null-terminated, zero-padded */
         char name_buf[FORGE_GLTF_NAME_SIZE];
-        memset(name_buf, 0, sizeof(name_buf));
+        SDL_memset(name_buf, 0, sizeof(name_buf));
         SDL_strlcpy(name_buf, node->name, sizeof(name_buf));
         ok = ok && (SDL_WriteIO(io, name_buf, sizeof(name_buf)) == sizeof(name_buf));
 
@@ -344,8 +343,8 @@ static bool write_meta_json(const char *fscene_path,
                             const MeshEntry *mesh_table)
 {
     /* Build the .meta.json path by replacing the .fscene extension. */
-    size_t path_len = strlen(fscene_path);
-    const char *dot = strrchr(fscene_path, '.');
+    size_t path_len = SDL_strlen(fscene_path);
+    const char *dot = SDL_strrchr(fscene_path, '.');
     size_t stem_len = dot ? (size_t)(dot - fscene_path) : path_len;
 
     size_t meta_len = stem_len + 11; /* ".meta.json\0" */
@@ -442,8 +441,8 @@ static bool write_meta_json(const char *fscene_path,
 /* Build a .fskin path by replacing the .fscene extension. */
 static char *make_fskin_path(const char *fscene_path)
 {
-    const char *dot = strrchr(fscene_path, '.');
-    size_t stem_len = dot ? (size_t)(dot - fscene_path) : strlen(fscene_path);
+    const char *dot = SDL_strrchr(fscene_path, '.');
+    size_t stem_len = dot ? (size_t)(dot - fscene_path) : SDL_strlen(fscene_path);
     size_t path_len = stem_len + 7; /* ".fskin\0" */
     char *path = (char *)SDL_malloc(path_len);
     if (!path) return NULL;
@@ -513,7 +512,7 @@ static bool write_fskin(const char *output_path,
 
         /* Name: 64 bytes, null-terminated, zero-padded */
         char name_buf[FORGE_GLTF_NAME_SIZE];
-        memset(name_buf, 0, sizeof(name_buf));
+        SDL_memset(name_buf, 0, sizeof(name_buf));
         SDL_strlcpy(name_buf, skin->name, sizeof(name_buf));
         ok = ok && (SDL_WriteIO(io, name_buf, sizeof(name_buf)) ==
                     sizeof(name_buf));

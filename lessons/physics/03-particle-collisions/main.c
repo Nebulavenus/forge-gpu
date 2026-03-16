@@ -275,13 +275,13 @@ static mat4 cylinder_between(vec3 a, vec3 b)
         vec3 up = vec3_create(0.0f, 1.0f, 0.0f);
 
         float dot = vec3_dot(dir, up);
-        if (fabsf(dot) > NEAR_PARALLEL_DOT) {
+        if (SDL_fabsf(dot) > NEAR_PARALLEL_DOT) {
             if (dot < 0.0f) {
                 rot = mat4_rotate_z(FORGE_PI);
             }
         } else {
             vec3 axis = vec3_normalize(vec3_cross(up, dir));
-            float angle = acosf(dot);
+            float angle = SDL_acosf(dot);
             quat q = quat_from_axis_angle(axis, angle);
             rot = quat_to_mat4(q);
         }

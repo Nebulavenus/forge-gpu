@@ -323,7 +323,7 @@ static void rigid_body_ground_collision(ForgePhysicsRigidBody *rb,
         if (rb->velocity.y < 0.0f) {
             rb->velocity.y = -rb->velocity.y * rb->restitution;
 
-            if (fabsf(rb->velocity.y) < BOUNCE_KILL_VEL) {
+            if (SDL_fabsf(rb->velocity.y) < BOUNCE_KILL_VEL) {
                 rb->velocity.y = 0.0f;
             }
         }
@@ -664,7 +664,7 @@ static float compute_tilt_from_vertical(const ForgePhysicsRigidBody *rb)
     float dot = vec3_dot(up_body, world_up);
     if (dot > 1.0f) dot = 1.0f;
     if (dot < -1.0f) dot = -1.0f;
-    return acosf(dot);
+    return SDL_acosf(dot);
 }
 
 /* ── SDL_AppInit ─────────────────────────────────────────────────── */

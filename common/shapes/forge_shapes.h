@@ -535,13 +535,13 @@ ForgeShape forge_shapes_sphere(int slices, int stacks)
     int v = 0;
     for (int row = 0; row < rows; row++) {
         float theta = FORGE_SHAPES_PI * (float)row / (float)stacks;
-        float sin_theta = sinf(theta);
-        float cos_theta = cosf(theta);
+        float sin_theta = SDL_sinf(theta);
+        float cos_theta = SDL_cosf(theta);
 
         for (int col = 0; col < cols; col++) {
             float phi = FORGE_SHAPES_TAU * (float)col / (float)slices;
-            float sin_phi = sinf(phi);
-            float cos_phi = cosf(phi);
+            float sin_phi = SDL_sinf(phi);
+            float cos_phi = SDL_cosf(phi);
 
             float x = cos_phi * sin_theta;
             float y = cos_theta;
@@ -635,8 +635,8 @@ ForgeShape forge_shapes_icosphere(int subdivisions)
     }
 
     /* Golden ratio for icosahedron vertex positions */
-    const float t = (1.0f + sqrtf(5.0f)) / 2.0f;
-    const float len = sqrtf(1.0f + t * t);
+    const float t = (1.0f + SDL_sqrtf(5.0f)) / 2.0f;
+    const float len = SDL_sqrtf(1.0f + t * t);
     const float a = 1.0f / len;
     const float b = t / len;
 
@@ -795,8 +795,8 @@ ForgeShape forge_shapes_icosphere(int subdivisions)
         s.normals[i] = verts[i];
 
         /* Spherical UV from position */
-        float u = 0.5f + atan2f(verts[i].z, verts[i].x) / FORGE_SHAPES_TAU;
-        float v_coord = 0.5f + asinf(verts[i].y) / FORGE_SHAPES_PI;
+        float u = 0.5f + SDL_atan2f(verts[i].z, verts[i].x) / FORGE_SHAPES_TAU;
+        float v_coord = 0.5f + SDL_asinf(verts[i].y) / FORGE_SHAPES_PI;
         s.uvs[i] = vec2_create(u, v_coord);
     }
 
@@ -836,9 +836,9 @@ ForgeShape forge_shapes_icosphere(int subdivisions)
             uint32_t *ti = &s.indices[tri * 3];
             float u0 = s.uvs[ti[0]].x, u1 = s.uvs[ti[1]].x, u2 = s.uvs[ti[2]].x;
 
-            float du01 = fabsf(u0 - u1);
-            float du12 = fabsf(u1 - u2);
-            float du20 = fabsf(u2 - u0);
+            float du01 = SDL_fabsf(u0 - u1);
+            float du12 = SDL_fabsf(u1 - u2);
+            float du20 = SDL_fabsf(u2 - u0);
             if (du01 <= 0.5f && du12 <= 0.5f && du20 <= 0.5f)
                 continue;
 
@@ -962,8 +962,8 @@ ForgeShape forge_shapes_cylinder(int slices, int stacks)
         for (int col = 0; col < cols; col++) {
             float fu  = (float)col / (float)slices;
             float phi = FORGE_SHAPES_TAU * fu;
-            float cp  = cosf(phi);
-            float sp  = sinf(phi);
+            float cp  = SDL_cosf(phi);
+            float sp  = SDL_sinf(phi);
 
             s.positions[v] = vec3_create(cp, y, sp);
             s.normals[v]   = vec3_create(cp, 0.0f, sp);
@@ -1034,9 +1034,9 @@ ForgeShape forge_shapes_cone(int slices, int stacks)
     if (s.vertex_count == 0) return s;  /* alloc failed */
 
     /* Slant normal: half-angle of the cone */
-    float half_angle = atan2f(1.0f, 2.0f);
-    float sin_ha = sinf(half_angle);
-    float cos_ha = cosf(half_angle);
+    float half_angle = SDL_atan2f(1.0f, 2.0f);
+    float sin_ha = SDL_sinf(half_angle);
+    float cos_ha = SDL_cosf(half_angle);
 
     /* Generate vertices */
     int v = 0;
@@ -1048,8 +1048,8 @@ ForgeShape forge_shapes_cone(int slices, int stacks)
         for (int col = 0; col < cols; col++) {
             float fu  = (float)col / (float)slices;
             float phi = FORGE_SHAPES_TAU * fu;
-            float cp  = cosf(phi);
-            float sp  = sinf(phi);
+            float cp  = SDL_cosf(phi);
+            float sp  = SDL_sinf(phi);
 
             s.positions[v] = vec3_create(r * cp, y, r * sp);
 
@@ -1131,8 +1131,8 @@ ForgeShape forge_shapes_capsule(int slices, int stacks, int cap_stacks,
         /* theta goes from PI (south pole) to PI/2 (equator) */
         float frac = (float)row / (float)cap_stacks;
         float theta = FORGE_SHAPES_PI - frac * (FORGE_SHAPES_PI * 0.5f);
-        float sin_t = sinf(theta);
-        float cos_t = cosf(theta);
+        float sin_t = SDL_sinf(theta);
+        float cos_t = SDL_cosf(theta);
         float y_off = -half_height;
 
         float fv = (float)row / (float)(total_rows - 1);
@@ -1140,8 +1140,8 @@ ForgeShape forge_shapes_capsule(int slices, int stacks, int cap_stacks,
         for (int col = 0; col < cols; col++) {
             float fu  = (float)col / (float)slices;
             float phi = FORGE_SHAPES_TAU * fu;
-            float cp  = cosf(phi);
-            float sp  = sinf(phi);
+            float cp  = SDL_cosf(phi);
+            float sp  = SDL_sinf(phi);
 
             s.positions[v] = vec3_create(sin_t * cp, cos_t + y_off, sin_t * sp);
             s.normals[v]   = vec3_create(sin_t * cp, cos_t, sin_t * sp);
@@ -1160,8 +1160,8 @@ ForgeShape forge_shapes_capsule(int slices, int stacks, int cap_stacks,
         for (int col = 0; col < cols; col++) {
             float fu  = (float)col / (float)slices;
             float phi = FORGE_SHAPES_TAU * fu;
-            float cp  = cosf(phi);
-            float sp  = sinf(phi);
+            float cp  = SDL_cosf(phi);
+            float sp  = SDL_sinf(phi);
 
             s.positions[v] = vec3_create(cp, y, sp);
             s.normals[v]   = vec3_create(cp, 0.0f, sp);
@@ -1174,8 +1174,8 @@ ForgeShape forge_shapes_capsule(int slices, int stacks, int cap_stacks,
     for (int row = 1; row <= cap_stacks; row++) {
         float frac = (float)row / (float)cap_stacks;
         float theta = (FORGE_SHAPES_PI * 0.5f) - frac * (FORGE_SHAPES_PI * 0.5f);
-        float sin_t = sinf(theta);
-        float cos_t = cosf(theta);
+        float sin_t = SDL_sinf(theta);
+        float cos_t = SDL_cosf(theta);
         float y_off = half_height;
 
         float fv = (float)(cap_stacks + stacks + row) / (float)(total_rows - 1);
@@ -1183,8 +1183,8 @@ ForgeShape forge_shapes_capsule(int slices, int stacks, int cap_stacks,
         for (int col = 0; col < cols; col++) {
             float fu  = (float)col / (float)slices;
             float phi = FORGE_SHAPES_TAU * fu;
-            float cp  = cosf(phi);
-            float sp  = sinf(phi);
+            float cp  = SDL_cosf(phi);
+            float sp  = SDL_sinf(phi);
 
             s.positions[v] = vec3_create(sin_t * cp, cos_t + y_off, sin_t * sp);
             s.normals[v]   = vec3_create(sin_t * cp, cos_t, sin_t * sp);
@@ -1275,14 +1275,14 @@ ForgeShape forge_shapes_torus(int slices, int stacks,
     for (int row = 0; row < rows; row++) {
         float fv    = (float)row / (float)stacks;
         float theta = FORGE_SHAPES_TAU * fv;
-        float cos_t = cosf(theta);
-        float sin_t = sinf(theta);
+        float cos_t = SDL_cosf(theta);
+        float sin_t = SDL_sinf(theta);
 
         for (int col = 0; col < cols; col++) {
             float fu  = (float)col / (float)slices;
             float phi = FORGE_SHAPES_TAU * fu;
-            float cos_p = cosf(phi);
-            float sin_p = sinf(phi);
+            float cos_p = SDL_cosf(phi);
+            float sin_p = SDL_sinf(phi);
 
             float r = major_radius + tube_radius * cos_t;
 

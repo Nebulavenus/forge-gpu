@@ -11,7 +11,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
@@ -72,7 +71,7 @@ static float field_paraboloid(float x, float y, void *ctx)
 static float field_sincos(float x, float y, void *ctx)
 {
     (void)ctx;
-    return sinf(x) * cosf(y);
+    return SDL_sinf(x) * SDL_cosf(y);
 }
 
 /* f(x,y) = (x - 2)^2 + (y + 1)^2  (bowl centered at (2, -1)) */
@@ -133,8 +132,8 @@ static void demo_partial_derivatives(void)
     SDL_Log("    Forward:   df/dx = %.6f,  df/dy = %.6f",
             fwd_dfdx, fwd_dfdy);
     SDL_Log("      Error:   |%.2e|,  |%.2e|",
-            fabsf(fwd_dfdx - analytic_dfdx),
-            fabsf(fwd_dfdy - analytic_dfdy));
+            SDL_fabsf(fwd_dfdx - analytic_dfdx),
+            SDL_fabsf(fwd_dfdy - analytic_dfdy));
     SDL_Log(" ");
 
     /* Backward difference:  f'(x) ~ (f(x) - f(x-h)) / h */
@@ -145,8 +144,8 @@ static void demo_partial_derivatives(void)
     SDL_Log("    Backward:  df/dx = %.6f,  df/dy = %.6f",
             bwd_dfdx, bwd_dfdy);
     SDL_Log("      Error:   |%.2e|,  |%.2e|",
-            fabsf(bwd_dfdx - analytic_dfdx),
-            fabsf(bwd_dfdy - analytic_dfdy));
+            SDL_fabsf(bwd_dfdx - analytic_dfdx),
+            SDL_fabsf(bwd_dfdy - analytic_dfdy));
     SDL_Log(" ");
 
     /* Central difference:  f'(x) ~ (f(x+h) - f(x-h)) / (2h) */
@@ -157,8 +156,8 @@ static void demo_partial_derivatives(void)
     SDL_Log("    Central:   df/dx = %.6f,  df/dy = %.6f",
             ctr_dfdx, ctr_dfdy);
     SDL_Log("      Error:   |%.2e|,  |%.2e|",
-            fabsf(ctr_dfdx - analytic_dfdx),
-            fabsf(ctr_dfdy - analytic_dfdy));
+            SDL_fabsf(ctr_dfdx - analytic_dfdx),
+            SDL_fabsf(ctr_dfdy - analytic_dfdy));
     SDL_Log(" ");
     SDL_Log("  Central differences cancel the first-order error term, giving");
     SDL_Log("  O(eps^2) accuracy compared to O(eps) for forward/backward.");
@@ -206,8 +205,8 @@ static void demo_gradient_vector(void)
 
         const char *dir;
         if (mag < DIR_EPS) dir = "flat";
-        else if (fabsf(grad.y) < DIR_EPS) dir = grad.x > 0 ? "right" : "left";
-        else if (fabsf(grad.x) < DIR_EPS) dir = grad.y > 0 ? "up" : "down";
+        else if (SDL_fabsf(grad.y) < DIR_EPS) dir = grad.x > 0 ? "right" : "left";
+        else if (SDL_fabsf(grad.x) < DIR_EPS) dir = grad.y > 0 ? "up" : "down";
         else if (grad.x > 0 && grad.y > 0) dir = "up-right";
         else if (grad.x > 0 && grad.y < 0) dir = "down-right";
         else if (grad.x < 0 && grad.y > 0) dir = "up-left";
@@ -266,9 +265,9 @@ static void demo_gradient_perpendicularity(void)
 
             /* At sparse points (every 3rd), show gradient arrow */
             if (row % 3 == 1 && col % 3 == 1 &&
-                fabsf(x) > ARROW_SKIP_DIST && fabsf(y) > ARROW_SKIP_DIST) {
+                SDL_fabsf(x) > ARROW_SKIP_DIST && SDL_fabsf(y) > ARROW_SKIP_DIST) {
                 vec2 grad = forge_field2d_gradient(field_paraboloid, x, y, EPS, NULL);
-                float angle = atan2f(grad.y, grad.x);
+                float angle = SDL_atan2f(grad.y, grad.x);
                 char arrow;
                 /* Map angle to ASCII arrow — 8 directions */
                 if      (angle >  ARROW_7PI_8 || angle < -ARROW_7PI_8) arrow = '<';
@@ -326,7 +325,7 @@ static void demo_heightmap_normals(void)
             /* Height is a Gaussian bump centered at grid center */
             float cx = (float)x - (float)(HM_SIZE - 1) / 2.0f;
             float cz = (float)z - (float)(HM_SIZE - 1) / 2.0f;
-            heights[z * HM_SIZE + x] = HM_AMPLITUDE * expf(-(cx * cx + cz * cz) / HM_SPREAD);
+            heights[z * HM_SIZE + x] = HM_AMPLITUDE * SDL_expf(-(cx * cx + cz * cz) / HM_SPREAD);
         }
     }
 

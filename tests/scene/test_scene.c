@@ -291,9 +291,9 @@ static void test_light_vp_matrix_not_identity(void)
     mat4 light_vp = mat4_multiply(light_proj, light_view);
 
     /* The result should not be the identity matrix */
-    ASSERT_TRUE(fabsf(light_vp.m[0] - 1.0f) > EPSILON ||
-                fabsf(light_vp.m[5] - 1.0f) > EPSILON ||
-                fabsf(light_vp.m[10] - 1.0f) > EPSILON);
+    ASSERT_TRUE(SDL_fabsf(light_vp.m[0] - 1.0f) > EPSILON ||
+                SDL_fabsf(light_vp.m[5] - 1.0f) > EPSILON ||
+                SDL_fabsf(light_vp.m[10] - 1.0f) > EPSILON);
     END_TEST();
 }
 
@@ -628,8 +628,8 @@ static void test_gpu_init_custom_config(void)
     ASSERT_NEAR_C(pos.z, CUSTOM_CAM_Z, EPSILON);
     /* Light VP should be valid (not zero matrix) */
     mat4 lvp = forge_scene_light_vp_mat(&scene);
-    ASSERT_TRUE_C(fabsf(lvp.m[0]) > EPSILON ||
-                  fabsf(lvp.m[5]) > EPSILON);
+    ASSERT_TRUE_C(SDL_fabsf(lvp.m[0]) > EPSILON ||
+                  SDL_fabsf(lvp.m[5]) > EPSILON);
 cleanup:
     forge_scene_destroy(&scene);
     END_TEST_C();
@@ -782,10 +782,10 @@ static void test_light_dir_straight_up_uses_alt_up(void)
     mat4 lvp = forge_scene_light_vp_mat(&scene);
     vec4 clip = mat4_multiply_vec4(lvp, vec4_create(0.0f, 0.0f, 0.0f, 1.0f));
     /* All components must be finite (rejects both NaN and +/-Inf) */
-    ASSERT_TRUE_C(isfinite(clip.x));
-    ASSERT_TRUE_C(isfinite(clip.y));
-    ASSERT_TRUE_C(isfinite(clip.z));
-    ASSERT_TRUE_C(isfinite(clip.w) && clip.w > 0.0f);
+    ASSERT_TRUE_C(forge_isfinite(clip.x));
+    ASSERT_TRUE_C(forge_isfinite(clip.y));
+    ASSERT_TRUE_C(forge_isfinite(clip.z));
+    ASSERT_TRUE_C(forge_isfinite(clip.w) && clip.w > 0.0f);
 cleanup:
     forge_scene_destroy(&scene);
     END_TEST_C();
@@ -811,10 +811,10 @@ static void test_light_dir_straight_down_uses_alt_up(void)
     mat4 lvp = forge_scene_light_vp_mat(&scene);
     vec4 clip = mat4_multiply_vec4(lvp, vec4_create(0.0f, 0.0f, 0.0f, 1.0f));
     /* All components must be finite (rejects both NaN and +/-Inf) */
-    ASSERT_TRUE_C(isfinite(clip.x));
-    ASSERT_TRUE_C(isfinite(clip.y));
-    ASSERT_TRUE_C(isfinite(clip.z));
-    ASSERT_TRUE_C(isfinite(clip.w) && clip.w > 0.0f);
+    ASSERT_TRUE_C(forge_isfinite(clip.x));
+    ASSERT_TRUE_C(forge_isfinite(clip.y));
+    ASSERT_TRUE_C(forge_isfinite(clip.z));
+    ASSERT_TRUE_C(forge_isfinite(clip.w) && clip.w > 0.0f);
 cleanup:
     forge_scene_destroy(&scene);
     END_TEST_C();

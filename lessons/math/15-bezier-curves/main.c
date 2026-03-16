@@ -380,8 +380,8 @@ static void demo_joining(void)
     SDL_Log("C0 continuity (shared endpoint):");
     SDL_Log("  Segment 1 at t=1: (%.4f, %.4f)", end1.x, end1.y);
     SDL_Log("  Segment 2 at t=0: (%.4f, %.4f)", start2.x, start2.y);
-    SDL_Log("  Match: %s", (fabsf(end1.x - start2.x) < FLOAT_TOLERANCE &&
-                             fabsf(end1.y - start2.y) < FLOAT_TOLERANCE)
+    SDL_Log("  Match: %s", (SDL_fabsf(end1.x - start2.x) < FLOAT_TOLERANCE &&
+                             SDL_fabsf(end1.y - start2.y) < FLOAT_TOLERANCE)
              ? "yes" : "no");
     SDL_Log(" ");
 
@@ -393,8 +393,8 @@ static void demo_joining(void)
     SDL_Log("Tangent at junction (C0 only — expect mismatch):");
     SDL_Log("  Segment 1 at t=1: (%.4f, %.4f)", tan1_end.x, tan1_end.y);
     SDL_Log("  Segment 2 at t=0: (%.4f, %.4f)", tan2_start.x, tan2_start.y);
-    SDL_Log("  Match: %s", (fabsf(tan1_end.x - tan2_start.x) < FLOAT_TOLERANCE &&
-                             fabsf(tan1_end.y - tan2_start.y) < FLOAT_TOLERANCE)
+    SDL_Log("  Match: %s", (SDL_fabsf(tan1_end.x - tan2_start.x) < FLOAT_TOLERANCE &&
+                             SDL_fabsf(tan1_end.y - tan2_start.y) < FLOAT_TOLERANCE)
              ? "yes" : "no");
     SDL_Log(" ");
 
@@ -413,8 +413,8 @@ static void demo_joining(void)
     vec2 tan2_c1 = vec2_bezier_cubic_tangent(s2_p0, s2_p1_c1, s2_p2, s2_p3, 0.0f);
     SDL_Log("  Tangent seg 1 end:   (%.4f, %.4f)", tan1_c1.x, tan1_c1.y);
     SDL_Log("  Tangent seg 2 start: (%.4f, %.4f)", tan2_c1.x, tan2_c1.y);
-    SDL_Log("  Match: %s", (fabsf(tan1_c1.x - tan2_c1.x) < FLOAT_TOLERANCE &&
-                             fabsf(tan1_c1.y - tan2_c1.y) < FLOAT_TOLERANCE)
+    SDL_Log("  Match: %s", (SDL_fabsf(tan1_c1.x - tan2_c1.x) < FLOAT_TOLERANCE &&
+                             SDL_fabsf(tan1_c1.y - tan2_c1.y) < FLOAT_TOLERANCE)
              ? "yes" : "no");
     SDL_Log(" ");
 }
@@ -445,8 +445,8 @@ static void demo_split(void)
     SDL_Log("  Original: (%.4f, %.4f)", orig_pt.x, orig_pt.y);
     SDL_Log("  Left:     (%.4f, %.4f)  (match: %s)",
             left_pt.x, left_pt.y,
-            (fabsf(orig_pt.x - left_pt.x) < FLOAT_TOLERANCE &&
-             fabsf(orig_pt.y - left_pt.y) < FLOAT_TOLERANCE) ? "yes" : "no");
+            (SDL_fabsf(orig_pt.x - left_pt.x) < FLOAT_TOLERANCE &&
+             SDL_fabsf(orig_pt.y - left_pt.y) < FLOAT_TOLERANCE) ? "yes" : "no");
     SDL_Log(" ");
 }
 
@@ -479,8 +479,8 @@ static void demo_degree_elev(void)
                                     cubic_equiv[2], cubic_equiv[3], tv);
         SDL_Log("  t=%.2f  quad=(%.4f,%.4f)  cubic=(%.4f,%.4f)  match: %s",
                 tv, pq.x, pq.y, pc.x, pc.y,
-                (fabsf(pq.x - pc.x) < FLOAT_TOLERANCE &&
-                 fabsf(pq.y - pc.y) < FLOAT_TOLERANCE) ? "yes" : "no");
+                (SDL_fabsf(pq.x - pc.x) < FLOAT_TOLERANCE &&
+                 SDL_fabsf(pq.y - pc.y) < FLOAT_TOLERANCE) ? "yes" : "no");
     }
     SDL_Log(" ");
 }

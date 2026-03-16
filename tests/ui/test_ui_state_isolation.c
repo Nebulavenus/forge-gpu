@@ -23,7 +23,6 @@
 
 #include <SDL3/SDL.h>
 #include <limits.h>
-#include <math.h>
 #include "ui/forge_ui.h"
 #include "ui/forge_ui_window.h"
 
@@ -88,14 +87,14 @@ static int fail_count = 0;
 #define ASSERT_NEAR(a, b, eps)                                    \
     do {                                                          \
         float _a = (a), _b = (b);                                 \
-        if (isnan(_a) || isnan(_b)) {                             \
+        if (SDL_isnan(_a) || SDL_isnan(_b)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (NaN, "      \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     __LINE__);                                    \
             fail_count++;                                         \
             return;                                               \
         }                                                         \
-        if (fabsf(_a - _b) > (eps)) {                             \
+        if (SDL_fabsf(_a - _b) > (eps)) {                             \
             SDL_Log("    FAIL: %s == %f, expected %f (eps=%f, "   \
                     "line %d)", #a, (double)_a, (double)_b,       \
                     (double)(eps), __LINE__);                     \
@@ -974,7 +973,7 @@ static void test_layout_cursor_fresh_for_each_panel(void)
                              + FORGE_UI_PANEL_PADDING;
     ASSERT_NEAR(cursor_b_start, expected_b_start, 0.01f);
     /* Must NOT equal Panel A's end cursor */
-    ASSERT_TRUE(fabsf(cursor_b_start - cursor_a_end) > 1.0f);
+    ASSERT_TRUE(SDL_fabsf(cursor_b_start - cursor_a_end) > 1.0f);
     forge_ui_ctx_panel_end(&ctx);
 
     forge_ui_ctx_end(&ctx);

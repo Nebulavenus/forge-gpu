@@ -10,7 +10,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Test Framework ──────────────────────────────────────────────────────── */
@@ -649,7 +648,7 @@ static void test_mat2_determinant(void)
 
     /* Rotation: det = 1 */
     float a = FORGE_PI / TEST_FOUR;
-    mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+    mat2 rot = mat2_create(SDL_cosf(a), -SDL_sinf(a), SDL_sinf(a), SDL_cosf(a));
     ASSERT_FLOAT_EQ(mat2_determinant(rot), TEST_ONE);
 
     /* Singular matrix (columns are parallel): det = 0 */
@@ -685,7 +684,7 @@ static void test_mat2_singular_values_rotation(void)
     TEST("mat2_singular_values rotation = isotropic");
     /* A pure rotation should have singular values (1, 1) */
     float a = FORGE_PI / TEST_THREE;
-    mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+    mat2 rot = mat2_create(SDL_cosf(a), -SDL_sinf(a), SDL_sinf(a), SDL_cosf(a));
     vec2 sv = mat2_singular_values(rot);
     ASSERT_FLOAT_EQ(sv.x, TEST_ONE);
     ASSERT_FLOAT_EQ(sv.y, TEST_ONE);
@@ -703,10 +702,10 @@ static void test_mat2_singular_values_shear(void)
      * sv = sqrt of those */
     mat2 shear = mat2_create(1, 1, 0, 1);
     vec2 sv = mat2_singular_values(shear);
-    float golden = (3.0f + sqrtf(5.0f)) / 2.0f;
-    float golden_inv = (3.0f - sqrtf(5.0f)) / 2.0f;
-    ASSERT_FLOAT_EQ(sv.x, sqrtf(golden));
-    ASSERT_FLOAT_EQ(sv.y, sqrtf(golden_inv));
+    float golden = (3.0f + SDL_sqrtf(5.0f)) / 2.0f;
+    float golden_inv = (3.0f - SDL_sqrtf(5.0f)) / 2.0f;
+    ASSERT_FLOAT_EQ(sv.x, SDL_sqrtf(golden));
+    ASSERT_FLOAT_EQ(sv.y, SDL_sqrtf(golden_inv));
     END_TEST();
 }
 
@@ -726,7 +725,7 @@ static void test_mat2_anisotropy_ratio(void)
 
     /* Rotation: ratio = 1 */
     float a = FORGE_PI / TEST_FOUR;
-    mat2 rot = mat2_create(cosf(a), -sinf(a), sinf(a), cosf(a));
+    mat2 rot = mat2_create(SDL_cosf(a), -SDL_sinf(a), SDL_sinf(a), SDL_cosf(a));
     ASSERT_FLOAT_EQ(mat2_anisotropy_ratio(rot), TEST_ONE);
     END_TEST();
 }
@@ -1043,7 +1042,7 @@ static void test_mat4_perspective_from_planes_symmetric(void)
     float aspect = TEST_PROJ_ASPECT_W / TEST_PROJ_ASPECT_H;
     float n = TEST_PROJ_NEAR, f = TEST_PROJ_FAR;
 
-    float half_h = n * tanf(fov * 0.5f);
+    float half_h = n * SDL_tanf(fov * 0.5f);
     float half_w = half_h * aspect;
 
     mat4 from_fov = mat4_perspective(fov, aspect, n, f);
@@ -1418,8 +1417,8 @@ static void test_quat_from_axis_angle(void)
     TEST("quat_from_axis_angle");
     /* 90° around Y axis: q = (cos(45°), 0, sin(45°), 0) */
     quat q = quat_from_axis_angle(vec3_create(0, 1, 0), FORGE_PI / 2.0f);
-    float expected_w = cosf(FORGE_PI / 4.0f);
-    float expected_y = sinf(FORGE_PI / 4.0f);
+    float expected_w = SDL_cosf(FORGE_PI / 4.0f);
+    float expected_y = SDL_sinf(FORGE_PI / 4.0f);
     ASSERT_FLOAT_EQ(q.w, expected_w);
     ASSERT_FLOAT_EQ(q.x, TEST_ZERO);
     ASSERT_FLOAT_EQ(q.y, expected_y);
@@ -3263,7 +3262,7 @@ static void test_sdf2_box_corner(void)
     vec2 p = vec2_create(2.0f, 2.0f);
     vec2 half = vec2_create(1.0f, 1.0f);
     /* Euclidean distance to corner (1,1): sqrt(1+1) = sqrt(2) */
-    ASSERT_FLOAT_EQ(sdf2_box(p, half), sqrtf(2.0f));
+    ASSERT_FLOAT_EQ(sdf2_box(p, half), SDL_sqrtf(2.0f));
     END_TEST();
 }
 

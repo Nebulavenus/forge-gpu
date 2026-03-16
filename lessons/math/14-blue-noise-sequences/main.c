@@ -20,7 +20,6 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <math.h>
 #include "math/forge_math.h"
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -440,7 +439,7 @@ static void demo_dithering(void)
     printf("  Quantized to %d levels (banding visible):\n  ", DITHER_LEVELS);
     for (int x = 0; x < DITHER_WIDTH; x++) {
         float t = (float)x / (float)(DITHER_WIDTH - 1);
-        float q = floorf(t * (float)DITHER_LEVELS) / (float)DITHER_LEVELS;
+        float q = SDL_floorf(t * (float)DITHER_LEVELS) / (float)DITHER_LEVELS;
         printf("%c", density_char(q));
     }
     printf("\n\n");
@@ -451,7 +450,7 @@ static void demo_dithering(void)
         float t = (float)x / (float)(DITHER_WIDTH - 1);
         float noise = forge_hash_to_float(forge_hash_wang((uint32_t)x ^ 42u));
         float dithered = t + (noise - 0.5f) / (float)DITHER_LEVELS;
-        float q = floorf(dithered * (float)DITHER_LEVELS) / (float)DITHER_LEVELS;
+        float q = SDL_floorf(dithered * (float)DITHER_LEVELS) / (float)DITHER_LEVELS;
         if (q < 0.0f) q = 0.0f;
         if (q > 1.0f) q = 1.0f;
         printf("%c", density_char(q));
@@ -464,7 +463,7 @@ static void demo_dithering(void)
         float t = (float)x / (float)(DITHER_WIDTH - 1);
         float r1_val = forge_r1((uint32_t)x);
         float dithered = t + (r1_val - 0.5f) / (float)DITHER_LEVELS;
-        float q = floorf(dithered * (float)DITHER_LEVELS) / (float)DITHER_LEVELS;
+        float q = SDL_floorf(dithered * (float)DITHER_LEVELS) / (float)DITHER_LEVELS;
         if (q < 0.0f) q = 0.0f;
         if (q > 1.0f) q = 1.0f;
         printf("%c", density_char(q));
@@ -530,9 +529,9 @@ static void demo_sampling(void)
 
         printf("  %-8d  %-14.6f  %-14.6f  %-14.6f\n",
                n,
-               fabsf(est_rand - true_value),
-               fabsf(est_halt - true_value),
-               fabsf(est_r2   - true_value));
+               SDL_fabsf(est_rand - true_value),
+               SDL_fabsf(est_halt - true_value),
+               SDL_fabsf(est_r2   - true_value));
     }
 
     printf("\n  Low-discrepancy sequences consistently produce smaller\n");
@@ -573,7 +572,7 @@ static void demo_stippling(void)
     /* Radial gradient: dark in center, light at edges */
     float cx = (float)STIP_W * 0.5f;
     float cy = (float)STIP_H * 0.5f;
-    float max_r = sqrtf(cx * cx + cy * cy);
+    float max_r = SDL_sqrtf(cx * cx + cy * cy);
 
     for (int i = 0; i < STIP_CANDIDATES; i++) {
         /* Use R2 for candidate positions */
@@ -588,7 +587,7 @@ static void demo_stippling(void)
         /* Compute darkness at this position (radial gradient) */
         float dx = (float)ix - cx;
         float dy = ((float)iy - cy) * STIP_ASPECT_RATIO;
-        float r = sqrtf(dx * dx + dy * dy);
+        float r = SDL_sqrtf(dx * dx + dy * dy);
         float darkness = 1.0f - (r / max_r);
         if (darkness < 0.0f) darkness = 0.0f;
 

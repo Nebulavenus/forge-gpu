@@ -417,7 +417,19 @@ lessons, asset pipeline lessons.
 
 ---
 
-## 15. Build and shader compilation
+## 15. SDL stdinc compliance
+
+**Never use bare C stdlib calls when an SDL_ equivalent exists.** This is a
+cross-platform portability requirement — bare calls may not be available or
+behave consistently across all SDL GPU backends (Vulkan, Metal, D3D12).
+
+**What to check:**
+
+- [ ] **SDL stdinc compliance** — No bare C stdlib calls (`fabsf`, `sinf`, `memset`, `strcmp`, `malloc`, etc.) when an SDL equivalent exists. Grep for bare names in `.c` and `.h` files and verify all matches use the `SDL_` prefix. See `SDL_stdinc.h` for the full list.
+
+---
+
+## 16. Build and shader compilation
 
 Verify the lesson compiles and shaders are up to date.
 
@@ -432,7 +444,7 @@ cmake --build build --target lesson_NN_name
 
 ---
 
-## 16. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
+## 17. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
 
 If the lesson has diagrams (check for `assets/*.png` files that are not
 screenshots), verify each diagram function against the README:
@@ -470,8 +482,9 @@ Final Pass Results — Lesson NN: Name
 12. Python lint           ⏭️  SKIP  (no scripts modified)
 13. Pyright types         ⏭️  SKIP  (no scripts modified)
 14. forge_scene.h usage   ✅ PASS  (physics lesson uses forge_scene.h)
-15. Build & shaders       ✅ PASS
-16. Diagram correctness   ⏭️  SKIP  (no diagrams)
+15. SDL stdinc compliance ✅ PASS
+16. Build & shaders       ✅ PASS
+17. Diagram correctness   ⏭️  SKIP  (no diagrams)
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

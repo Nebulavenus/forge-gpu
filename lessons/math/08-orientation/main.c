@@ -403,9 +403,9 @@ int main(int argc, char *argv[])
         SDL_Log("    angle = %.0f degrees -> half-angle = %.0f degrees",
                 SEC5_ANGLE_DEG, SEC5_ANGLE_DEG * 0.5f);
         SDL_Log("    cos(half) = %.4f -> this is q.w (%.4f)",
-                cosf(angle * 0.5f), q.w);
+                SDL_cosf(angle * 0.5f), q.w);
         SDL_Log("    sin(half) = %.4f -> this scales the axis",
-                sinf(angle * 0.5f));
+                SDL_sinf(angle * 0.5f));
         printf("\n");
     }
 

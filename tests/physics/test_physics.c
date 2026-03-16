@@ -568,9 +568,9 @@ static void test_energy_stability_no_nan(void)
     ASSERT_TRUE(!isnan(p.velocity.x) && !isnan(p.velocity.y) && !isnan(p.velocity.z));
     ASSERT_TRUE(!isinf(p.velocity.x) && !isinf(p.velocity.y) && !isinf(p.velocity.z));
     /* Position should remain reasonable */
-    ASSERT_TRUE(fabsf(p.position.x) < NRG_POS_BOUND);
-    ASSERT_TRUE(fabsf(p.position.y) < NRG_POS_BOUND);
-    ASSERT_TRUE(fabsf(p.position.z) < NRG_POS_BOUND);
+    ASSERT_TRUE(SDL_fabsf(p.position.x) < NRG_POS_BOUND);
+    ASSERT_TRUE(SDL_fabsf(p.position.y) < NRG_POS_BOUND);
+    ASSERT_TRUE(SDL_fabsf(p.position.z) < NRG_POS_BOUND);
     END_TEST();
 }
 
@@ -789,7 +789,7 @@ static void test_very_heavy_particle_not_static(void)
     TEST("very heavy particle (mass=2M) is NOT treated as static");
 
     /* Create a particle with mass = 2,000,000. Its inv_mass (~5e-7) is
-     * less than FORGE_PHYSICS_EPSILON. Under the old fabsf(inv_mass) < EPSILON
+     * less than FORGE_PHYSICS_EPSILON. Under the old SDL_fabsf(inv_mass) < EPSILON
      * guard, this particle would have been incorrectly treated as static. */
     vec3 pos = vec3_create(0.0f, AG_HEIGHT, 0.0f);
     ForgePhysicsParticle p = forge_physics_particle_create(
@@ -805,12 +805,12 @@ static void test_very_heavy_particle_not_static(void)
 
     /* Force accumulator must be non-zero (gravity was applied) */
     float fy = VH_MASS * GRAVITY_Y;
-    ASSERT_NEAR(p.force_accum.y, fy, fabsf(fy) * 0.001f);
+    ASSERT_NEAR(p.force_accum.y, fy, SDL_fabsf(fy) * 0.001f);
 
     /* Integrate with dt = 1/60 — particle must move */
     float orig_y = p.position.y;
     forge_physics_integrate(&p, PHYSICS_DT);
-    ASSERT_TRUE(fabsf(p.position.y - orig_y) > EPSILON);
+    ASSERT_TRUE(SDL_fabsf(p.position.y - orig_y) > EPSILON);
 
     /* Collide with ground plane while penetrating */
     p.position.y = VH_PEN_HEIGHT;  /* below radius — penetrating */
@@ -1022,7 +1022,7 @@ static void test_spring_damped_amplitude_decreases(void)
         forge_physics_spring_apply(&s, particles, 2);
         forge_physics_integrate(&particles[1], SP_DAMP_DT);
 
-        float disp = fabsf(particles[1].position.x - SP_REST_TEST);
+        float disp = SDL_fabsf(particles[1].position.x - SP_REST_TEST);
         if (i < SP_DAMP_STEPS / 2) {
             if (disp > max_disp_first_half) max_disp_first_half = disp;
         } else {
@@ -1091,7 +1091,7 @@ static void test_spring_static_particle_no_force(void)
     ASSERT_NEAR(particles[0].force_accum.z, 0.0f, EPSILON);
 
     /* Dynamic particle should still get force */
-    ASSERT_TRUE(fabsf(particles[1].force_accum.x) > EPSILON);
+    ASSERT_TRUE(SDL_fabsf(particles[1].force_accum.x) > EPSILON);
     END_TEST();
 }
 
@@ -1400,9 +1400,9 @@ static void test_constraints_solve_more_iterations_better(void)
     /* Compute total error for each */
     float error_few = 0.0f, error_many = 0.0f;
     for (int i = 0; i < CHAIN_LEN - 1; i++) {
-        float d_few = fabsf(vec3_length(
+        float d_few = SDL_fabsf(vec3_length(
             vec3_sub(p_few[i + 1].position, p_few[i].position)) - CHAIN_TARGET);
-        float d_many = fabsf(vec3_length(
+        float d_many = SDL_fabsf(vec3_length(
             vec3_sub(p_many[i + 1].position, p_many[i].position)) - CHAIN_TARGET);
         error_few += d_few;
         error_many += d_many;
@@ -1525,8 +1525,8 @@ static void test_spring_constraint_comparison(void)
 
     /* Both should be near the target distance, within reasonable tolerance.
      * Spring may settle at a gravity-displaced equilibrium, so allow more tolerance. */
-    ASSERT_TRUE(fabsf(cp_dist - CMP_REST_LEN) < CMP_CONSTRAINT_TOL);
-    ASSERT_TRUE(fabsf(sp_dist - CMP_REST_LEN) < CMP_SPRING_TOL); /* spring has gravity sag */
+    ASSERT_TRUE(SDL_fabsf(cp_dist - CMP_REST_LEN) < CMP_CONSTRAINT_TOL);
+    ASSERT_TRUE(SDL_fabsf(sp_dist - CMP_REST_LEN) < CMP_SPRING_TOL); /* spring has gravity sag */
     END_TEST();
 }
 
@@ -1850,7 +1850,7 @@ static void test_constraints_solve_negative_iterations(void)
 
     /* With 1 iteration and stiffness=1, full correction:
      * particles move toward target distance from GUARD_POS_FAR apart */
-    float dist = fabsf(particles[1].position.x - particles[0].position.x);
+    float dist = SDL_fabsf(particles[1].position.x - particles[0].position.x);
     ASSERT_NEAR(dist, GUARD_DC_DIST, EPSILON);
     END_TEST();
 }
@@ -2764,8 +2764,8 @@ static void test_resolve_position_correction_equal_mass(void)
     forge_physics_resolve_contact(&contact, particles, 2);
 
     /* A moves away from B (negative x direction) by pen/2 */
-    float a_moved = fabsf(particles[0].position.x - pos_a_before);
-    float b_moved = fabsf(particles[1].position.x - pos_b_before);
+    float a_moved = SDL_fabsf(particles[0].position.x - pos_a_before);
+    float b_moved = SDL_fabsf(particles[1].position.x - pos_b_before);
     ASSERT_NEAR(a_moved, PC_CORR_HALF_PEN, EPSILON);
     ASSERT_NEAR(b_moved, PC_CORR_HALF_PEN, EPSILON);
     END_TEST();
@@ -2797,7 +2797,7 @@ static void test_resolve_position_correction_one_static(void)
     /* Static particle must not move */
     ASSERT_NEAR(particles[0].position.x, pos_static_before, EPSILON);
     /* Dynamic particle moves by the full penetration */
-    float b_moved = fabsf(particles[1].position.x - PC_CORR_OFFSET);
+    float b_moved = SDL_fabsf(particles[1].position.x - PC_CORR_OFFSET);
     ASSERT_NEAR(b_moved, PC_CORR_PEN, EPSILON);
     END_TEST();
 }
@@ -2826,8 +2826,8 @@ static void test_resolve_position_correction_unequal_mass(void)
     forge_physics_resolve_contact(&contact, particles, 2);
 
     /* Lighter (A, 1kg) should move more, heavier (B, 3kg) moves less */
-    float a_moved = fabsf(particles[0].position.x - pos_a_before);
-    float b_moved = fabsf(particles[1].position.x - pos_b_before);
+    float a_moved = SDL_fabsf(particles[0].position.x - pos_a_before);
+    float b_moved = SDL_fabsf(particles[1].position.x - pos_b_before);
     ASSERT_NEAR(a_moved, PC_CORR_A_MOVE, EPSILON);
     ASSERT_NEAR(b_moved, PC_CORR_B_MOVE, EPSILON);
     END_TEST();
@@ -3674,8 +3674,8 @@ static void test_rb_integrate_pure_rotation(void)
     /* With damping=1.0, velocity preserved */
     ASSERT_NEAR(rb.angular_velocity.y, RB_INT_ANG_VEL, RB_INT_ROT_TOL);
     /* Quaternion should have changed */
-    ASSERT_TRUE(fabsf(rb.orientation.w - 1.0f) > EPSILON ||
-                fabsf(rb.orientation.y) > EPSILON);
+    ASSERT_TRUE(SDL_fabsf(rb.orientation.w - 1.0f) > EPSILON ||
+                SDL_fabsf(rb.orientation.y) > EPSILON);
     /* Position unchanged (no forces) */
     ASSERT_NEAR(rb.position.x, 0.0f, EPSILON);
     END_TEST();
@@ -3760,7 +3760,7 @@ static void test_rb_integrate_prev_saved(void)
     /* prev_position should be original (0,0,0) */
     ASSERT_NEAR(rb.prev_position.x, 0.0f, EPSILON);
     /* current position should have moved */
-    ASSERT_TRUE(fabsf(rb.position.x) > EPSILON);
+    ASSERT_TRUE(SDL_fabsf(rb.position.x) > EPSILON);
     END_TEST();
 }
 
@@ -3904,7 +3904,7 @@ static void test_rb_world_inertia_after_integration(void)
     /* At least one element should differ */
     bool changed = false;
     for (int i = 0; i < 9; i++) {
-        if (fabsf(rb.inv_inertia_world.m[i] - before.m[i]) > EPSILON) {
+        if (SDL_fabsf(rb.inv_inertia_world.m[i] - before.m[i]) > EPSILON) {
             changed = true;
             break;
         }
@@ -4593,7 +4593,7 @@ static void test_rb_friction_generates_torque(void)
      *   y = 0*(-30) - 0*0    = 0
      *   z = 0*0 - (-1)*(-30) = -30
      * So torque should be in -Z direction. */
-    ASSERT_TRUE(fabsf(rb.torque_accum.z) > EPSILON);
+    ASSERT_TRUE(SDL_fabsf(rb.torque_accum.z) > EPSILON);
     /* Torque z should be negative (friction causes backward spin) */
     ASSERT_TRUE(rb.torque_accum.z < 0.0f);
     END_TEST();
@@ -4680,7 +4680,7 @@ static void test_rb_gravity_drag_terminal_velocity(void)
     ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
         vec3_create(0, FG_DROP_HEIGHT, 0), FG_MASS, FG_LIN_DAMPING, FG_ANG_DAMPING, FG_RESTIT);
     forge_physics_rigid_body_set_inertia_sphere(&rb, 1.0f);
-    float v_term = FG_MASS * fabsf(FG_GRAVITY_Y) / FG_DRAG_COEFF;
+    float v_term = FG_MASS * SDL_fabsf(FG_GRAVITY_Y) / FG_DRAG_COEFF;
     /* Run for many steps to approach terminal velocity */
     for (int i = 0; i < FG_TERMINAL_STEPS; i++) {
         forge_physics_rigid_body_apply_gravity(&rb,
@@ -4689,7 +4689,7 @@ static void test_rb_gravity_drag_terminal_velocity(void)
         forge_physics_rigid_body_integrate(&rb, FG_DT);
     }
     /* Vertical speed should be near terminal velocity */
-    float vy = fabsf(rb.velocity.y);
+    float vy = SDL_fabsf(rb.velocity.y);
     ASSERT_NEAR(vy, v_term, v_term * FG_TERMINAL_TOL);  /* within 5% */
     END_TEST();
 }

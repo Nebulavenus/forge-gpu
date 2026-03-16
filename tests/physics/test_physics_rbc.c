@@ -380,9 +380,9 @@ static void test_rb_contact_resolve_friction(void)
 
     ForgePhysicsRBContact c = rbc_make_ground_contact(0, RBC_CONTACT_PEN);
 
-    float speed_before = fabsf(bodies[0].velocity.x);
+    float speed_before = SDL_fabsf(bodies[0].velocity.x);
     forge_physics_rb_resolve_contact(&c, bodies, 1, RBC_DT);
-    float speed_after = fabsf(bodies[0].velocity.x);
+    float speed_after = SDL_fabsf(bodies[0].velocity.x);
 
     /* Friction should reduce tangential speed */
     ASSERT_TRUE(speed_after < speed_before);
@@ -408,7 +408,7 @@ static void test_rb_contact_resolve_resting(void)
 
     /* Resting contact: velocity should be near zero or slightly positive
      * (Baumgarte bias can push it positive) — not a full bounce */
-    ASSERT_TRUE(fabsf(bodies[0].velocity.y) < RBC_RESTING_EPS);
+    ASSERT_TRUE(SDL_fabsf(bodies[0].velocity.y) < RBC_RESTING_EPS);
     END_TEST();
 }
 
@@ -430,8 +430,8 @@ static void test_rb_contact_resolve_plane_contact(void)
 
     /* After resolve, vertical velocity should be non-negative (bounced) */
     ASSERT_TRUE(bodies[0].velocity.y >= 0.0f);
-    ASSERT_TRUE(isfinite(bodies[0].velocity.x));
-    ASSERT_TRUE(isfinite(bodies[0].velocity.y));
+    ASSERT_TRUE(forge_isfinite(bodies[0].velocity.x));
+    ASSERT_TRUE(forge_isfinite(bodies[0].velocity.y));
     END_TEST();
 }
 
@@ -497,8 +497,8 @@ static void test_rb_contact_resolve_negative_friction(void)
     c.static_friction = RBC_NEG_MU_S;
     c.dynamic_friction = RBC_NEG_MU_D;
     forge_physics_rb_resolve_contact(&c, bodies_neg, 1, RBC_DT);
-    ASSERT_TRUE(isfinite(bodies_neg[0].velocity.x));
-    ASSERT_TRUE(isfinite(bodies_neg[0].velocity.y));
+    ASSERT_TRUE(forge_isfinite(bodies_neg[0].velocity.x));
+    ASSERT_TRUE(forge_isfinite(bodies_neg[0].velocity.y));
 
     ForgePhysicsRigidBody bodies_zero[1];
     bodies_zero[0] = rbc_make_sphere(vec3_create(0, RBC_SPHERE_Y_PEN, 0), RBC_SPHERE_RADIUS);
@@ -530,8 +530,8 @@ static void test_rb_contact_resolve_mud_exceeds_mus(void)
     c.static_friction = RBC_CLAMP_MU_S;
     c.dynamic_friction = RBC_CLAMP_MU_D;
     forge_physics_rb_resolve_contact(&c, bodies_bad, 1, RBC_DT);
-    ASSERT_TRUE(isfinite(bodies_bad[0].velocity.x));
-    ASSERT_TRUE(isfinite(bodies_bad[0].velocity.y));
+    ASSERT_TRUE(forge_isfinite(bodies_bad[0].velocity.x));
+    ASSERT_TRUE(forge_isfinite(bodies_bad[0].velocity.y));
 
     ForgePhysicsRigidBody bodies_clamped[1];
     bodies_clamped[0] = rbc_make_sphere(vec3_create(0, RBC_SPHERE_Y_PEN, 0), RBC_SPHERE_RADIUS);
@@ -704,8 +704,8 @@ static void test_rb_solver_iterations_stable(void)
     forge_physics_rb_resolve_contacts(
         contacts, 2, bodies10, 2, RBC_SOLVER_ITERS, RBC_DT);
 
-    float residual_10 = fabsf(bodies10[0].velocity.y) + fabsf(bodies10[1].velocity.y);
-    float residual_1  = fabsf(bodies1[0].velocity.y) + fabsf(bodies1[1].velocity.y);
+    float residual_10 = SDL_fabsf(bodies10[0].velocity.y) + SDL_fabsf(bodies10[1].velocity.y);
+    float residual_1  = SDL_fabsf(bodies1[0].velocity.y) + SDL_fabsf(bodies1[1].velocity.y);
     ASSERT_TRUE(residual_1 < 50.0f);
     ASSERT_TRUE(residual_10 < 50.0f);
     ASSERT_TRUE(!isnan(bodies10[0].velocity.y));

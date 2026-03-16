@@ -44,13 +44,13 @@ extern bool gpu_available;
 #define ASSERT_NEAR(a, b, eps) \
     do { \
         float _an = (a), _bn = (b); \
-        if (!isfinite(_an) || !isfinite(_bn)) { \
+        if (!forge_isfinite(_an) || !forge_isfinite(_bn)) { \
             SDL_Log("    FAIL: Non-finite operand: got %.6f, expected %.6f", \
                     (double)_an, (double)_bn); \
             fail_count++; \
             return; \
         } \
-        if (fabsf(_an - _bn) > (eps)) { \
+        if (SDL_fabsf(_an - _bn) > (eps)) { \
             SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
                     (double)_bn, (double)_an, (double)(eps)); \
             fail_count++; \
@@ -104,14 +104,14 @@ extern bool gpu_available;
 #define ASSERT_NEAR_C(a, b, eps) \
     do { \
         float _anc = (a), _bnc = (b); \
-        if (!isfinite(_anc) || !isfinite(_bnc)) { \
+        if (!forge_isfinite(_anc) || !forge_isfinite(_bnc)) { \
             SDL_Log("    FAIL: Non-finite operand: got %.6f, expected %.6f", \
                     (double)_anc, (double)_bnc); \
             fail_count++; \
             _test_failed = 1; \
             goto cleanup; \
         } \
-        if (fabsf(_anc - _bnc) > (eps)) { \
+        if (SDL_fabsf(_anc - _bnc) > (eps)) { \
             SDL_Log("    FAIL: Expected %.6f, got %.6f (eps=%.6f)", \
                     (double)_bnc, (double)_anc, (double)(eps)); \
             fail_count++; \

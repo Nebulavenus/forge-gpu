@@ -1028,13 +1028,13 @@ static bool generate_and_upload_sphere(SDL_GPUDevice *device, app_state *state) 
   /* Generate vertices: sweep from top pole (stack=0) to bottom pole. */
   for (int stack = 0; stack <= SPHERE_STACKS; stack++) {
     float phi = FORGE_PI * (float)stack / (float)SPHERE_STACKS;
-    float sin_phi = forge_sinf(phi);
-    float cos_phi = forge_cosf(phi);
+    float sin_phi = SDL_sinf(phi);
+    float cos_phi = SDL_cosf(phi);
 
     for (int slice = 0; slice <= SPHERE_SLICES; slice++) {
       float theta = 2.0f * FORGE_PI * (float)slice / (float)SPHERE_SLICES;
-      float sin_theta = forge_sinf(theta);
-      float cos_theta = forge_cosf(theta);
+      float sin_theta = SDL_sinf(theta);
+      float cos_theta = SDL_cosf(theta);
 
       /* Normal is just the unit sphere direction. */
       float nx = sin_phi * cos_theta;
@@ -1095,9 +1095,9 @@ static void generate_box_placements(app_state *state) {
   for (int i = 0; i < BOX_GROUND_COUNT; i++) {
     float angle = (float)i * (2.0f * FORGE_PI / BOX_GROUND_COUNT);
     state->box_placements[count].position = vec3_create(
-        BOX_RING_RADIUS * forge_cosf(angle),
+        BOX_RING_RADIUS * SDL_cosf(angle),
         BOX_GROUND_Y,
-        BOX_RING_RADIUS * forge_sinf(angle)
+        BOX_RING_RADIUS * SDL_sinf(angle)
     );
     state->box_placements[count].y_rotation = angle;
     count++;
@@ -2018,9 +2018,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
   /* ── Animate point light — orbits around the scene ─────────────── */
   state->light_angle += LIGHT_ORBIT_SPEED * dt;
   vec3 light_pos = vec3_create(
-      LIGHT_ORBIT_RADIUS * forge_cosf(state->light_angle),
+      LIGHT_ORBIT_RADIUS * SDL_cosf(state->light_angle),
       LIGHT_ORBIT_HEIGHT,
-      LIGHT_ORBIT_RADIUS * forge_sinf(state->light_angle)
+      LIGHT_ORBIT_RADIUS * SDL_sinf(state->light_angle)
   );
 
   /* ── Camera movement ──────────────────────────────────────────────── */

@@ -33,7 +33,6 @@
 #include <SDL3/SDL.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include "gltf/forge_gltf.h"
 #include "arena/forge_arena.h"
 
@@ -962,13 +961,13 @@ int main(int argc, char *argv[])
 {
     g_seed = DEFAULT_SEED;
     if (argc > 1) {
-        unsigned long parsed = strtoul(argv[1], NULL, 0);
+        unsigned long parsed = SDL_strtoul(argv[1], NULL, 0);
         g_seed = (Uint32)parsed;
     }
 
     int iterations = FORGE_FUZZ_ITERATIONS;
     if (argc > 2) {
-        int parsed = atoi(argv[2]);
+        int parsed = SDL_atoi(argv[2]);
         if (parsed > 0) iterations = parsed;
     }
 

@@ -69,6 +69,7 @@ Before committing, verify the lesson has all required pieces from the
 - [ ] Has comprehensive comments explaining *why* and *purpose*, not just *what* —
   every pipeline setting, resource binding, and API call states the reason for
   the choice (e.g. why CULLMODE_NONE, why we push uniforms each frame)
+- [ ] **No bare C stdlib calls** — use SDL-prefixed math/memory/string APIs where available (`SDL_fabsf`, `SDL_sinf`, `SDL_memset`, etc.), and approved project wrappers for C99 functions SDL lacks (`forge_isfinite`, `forge_fmaxf`, `forge_fminf`)
 
 ### Integration with project
 
