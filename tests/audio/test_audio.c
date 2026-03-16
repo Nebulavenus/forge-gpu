@@ -484,6 +484,327 @@ static void test_null_out_no_crash(void)
     END_TEST();
 }
 
+/* ── Fade tests (Lesson 02) ────────────────────────────────────────── */
+
+static void test_fade_in_ramps_up(void)
+{
+    TEST("fade-in ramps fade_volume from 0 to 1");
+
+    ForgeAudioBuffer buf = make_test_buffer(FORGE_AUDIO_SAMPLE_RATE, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    forge_audio_source_fade_in(&src, 1.0f);
+
+    ASSERT_TRUE(src.playing);
+    ASSERT_NEAR(src.fade_volume, 0.0f, EPSILON);
+
+    /* Advance half a second */
+    forge_audio_source_fade_update(&src, 0.5f);
+    ASSERT_NEAR(src.fade_volume, 0.5f, 0.01f);
+
+    /* Advance to completion */
+    forge_audio_source_fade_update(&src, 0.5f);
+    ASSERT_NEAR(src.fade_volume, 1.0f, EPSILON);
+    ASSERT_NEAR(src.fade_rate, 0.0f, EPSILON);  /* fade complete */
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_fade_out_ramps_down(void)
+{
+    TEST("fade-out ramps fade_volume from 1 to 0");
+
+    ForgeAudioBuffer buf = make_test_buffer(FORGE_AUDIO_SAMPLE_RATE, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    forge_audio_source_fade_out(&src, 1.0f);
+    ASSERT_NEAR(src.fade_target, 0.0f, EPSILON);
+
+    forge_audio_source_fade_update(&src, 0.5f);
+    ASSERT_NEAR(src.fade_volume, 0.5f, 0.01f);
+    ASSERT_TRUE(src.playing);  /* still fading */
+
+    forge_audio_source_fade_update(&src, 0.5f);
+    ASSERT_NEAR(src.fade_volume, 0.0f, EPSILON);
+    ASSERT_TRUE(!src.playing);  /* auto-stopped */
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_fade_out_auto_stop(void)
+{
+    TEST("fade-out auto-stops source when reaching 0");
+
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 0.8f, true);
+    src.playing = true;
+
+    forge_audio_source_fade_out(&src, 0.1f);
+    /* Advance past the fade duration */
+    forge_audio_source_fade_update(&src, 0.2f);
+
+    ASSERT_NEAR(src.fade_volume, 0.0f, EPSILON);
+    ASSERT_TRUE(!src.playing);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_fade_independent_of_volume(void)
+{
+    TEST("fade_volume is independent of source volume");
+
+    ForgeAudioBuffer buf = make_test_buffer(4, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 0.5f, false);
+    src.fade_volume = 0.5f;
+    src.playing = true;
+
+    float out[8];
+    memset(out, 0, sizeof(out));
+    forge_audio_source_mix(&src, out, 4);
+
+    /* volume=0.5, fade=0.5, pan=0 → gain_l = gain_r = 0.5 * 0.5 * 0.5 = 0.125 */
+    ASSERT_NEAR(out[0], 0.125f, EPSILON);
+    ASSERT_NEAR(out[1], 0.125f, EPSILON);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_fade_no_clicks(void)
+{
+    TEST("fade produces smooth ramp (no large jumps)");
+
+    ForgeAudioBuffer buf = make_test_buffer(FORGE_AUDIO_SAMPLE_RATE, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    forge_audio_source_fade_in(&src, 1.0f);
+
+    float prev = src.fade_volume;
+    float dt = 1.0f / 60.0f;  /* 60 fps */
+    float max_step = (1.0f / 1.0f) * dt + 0.001f;  /* rate * dt + tolerance */
+
+    for (int i = 0; i < 60; i++) {
+        forge_audio_source_fade_update(&src, dt);
+        float diff = src.fade_volume - prev;
+        if (diff < 0.0f) diff = -diff;
+        ASSERT_TRUE(diff <= max_step);
+        prev = src.fade_volume;
+    }
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_fade_zero_duration_snaps(void)
+{
+    TEST("fade with zero duration snaps immediately");
+
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    forge_audio_source_fade(&src, 0.0f, 0.0f);
+    ASSERT_NEAR(src.fade_volume, 0.0f, EPSILON);
+    ASSERT_NEAR(src.fade_rate, 0.0f, EPSILON);
+    ASSERT_TRUE(!src.playing);  /* auto-stop on snap to 0 */
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_fade_in_starts_playback(void)
+{
+    TEST("fade_in starts playback");
+
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, false);
+    ASSERT_TRUE(!src.playing);
+
+    forge_audio_source_fade_in(&src, 0.5f);
+    ASSERT_TRUE(src.playing);
+    ASSERT_NEAR(src.fade_volume, 0.0f, EPSILON);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_no_fade_no_change(void)
+{
+    TEST("zero fade_rate means no change");
+
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+    /* Default: fade_rate=0, fade_volume=1 */
+
+    forge_audio_source_fade_update(&src, 1.0f);
+    ASSERT_NEAR(src.fade_volume, 1.0f, EPSILON);
+    ASSERT_TRUE(src.playing);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+/* ── Pool tests (Lesson 02) ───────────────────────────────────────── */
+
+static void test_pool_init(void)
+{
+    TEST("pool init sets all slots inactive");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+
+    ASSERT_TRUE(forge_audio_pool_active_count(&pool) == 0);
+    for (int i = 0; i < FORGE_AUDIO_POOL_MAX_SOURCES; i++) {
+        ASSERT_TRUE(!pool.sources[i].playing);
+    }
+
+    END_TEST();
+}
+
+static void test_pool_play_returns_valid_index(void)
+{
+    TEST("pool_play returns valid slot index");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+
+    int idx = forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    ASSERT_TRUE(idx >= 0 && idx < FORGE_AUDIO_POOL_MAX_SOURCES);
+    ASSERT_TRUE(pool.sources[idx].playing);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_pool_full_returns_negative(void)
+{
+    TEST("pool_play returns -1 when full");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+
+    /* Fill all slots */
+    for (int i = 0; i < FORGE_AUDIO_POOL_MAX_SOURCES; i++) {
+        int idx = forge_audio_pool_play(&pool, &buf, 1.0f, true);
+        ASSERT_TRUE(idx >= 0);
+    }
+
+    /* Next play should fail */
+    int idx = forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    ASSERT_TRUE(idx == -1);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_pool_finished_sources_reclaimed(void)
+{
+    TEST("finished sources are reclaimed by pool_mix");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+    ForgeAudioBuffer buf = make_test_buffer(4, 1.0f, 1.0f);
+
+    int idx = forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    ASSERT_TRUE(idx >= 0);
+
+    /* Mix more frames than the buffer has — source should stop */
+    float out[16];
+    memset(out, 0, sizeof(out));
+    forge_audio_pool_mix(&pool, out, 8);
+
+    ASSERT_TRUE(!pool.sources[idx].playing);
+    ASSERT_TRUE(forge_audio_pool_active_count(&pool) == 0);
+
+    /* Slot should now be reusable */
+    int idx2 = forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    ASSERT_TRUE(idx2 >= 0);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_pool_additive_mixing(void)
+{
+    TEST("pool mixes sources additively");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+    ForgeAudioBuffer buf = make_test_buffer(4, 1.0f, 1.0f);
+
+    forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    forge_audio_pool_play(&pool, &buf, 1.0f, false);
+
+    float out[8];
+    memset(out, 0, sizeof(out));
+    forge_audio_pool_mix(&pool, out, 4);
+
+    /* Two sources at volume 1.0, center pan → each adds 0.5 → total 1.0 */
+    ASSERT_NEAR(out[0], 1.0f, EPSILON);
+    ASSERT_NEAR(out[1], 1.0f, EPSILON);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_pool_active_count(void)
+{
+    TEST("pool active_count tracks playing sources");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+
+    ASSERT_TRUE(forge_audio_pool_active_count(&pool) == 0);
+
+    forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    forge_audio_pool_play(&pool, &buf, 1.0f, false);
+    ASSERT_TRUE(forge_audio_pool_active_count(&pool) == 2);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_pool_stop_all(void)
+{
+    TEST("pool_stop_all stops everything");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+    ForgeAudioBuffer buf = make_test_buffer(100, 1.0f, 1.0f);
+
+    forge_audio_pool_play(&pool, &buf, 1.0f, true);
+    forge_audio_pool_play(&pool, &buf, 1.0f, true);
+    forge_audio_pool_play(&pool, &buf, 1.0f, true);
+
+    forge_audio_pool_stop_all(&pool);
+    ASSERT_TRUE(forge_audio_pool_active_count(&pool) == 0);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_pool_get_valid_invalid(void)
+{
+    TEST("pool_get returns source or NULL");
+
+    ForgeAudioPool pool;
+    forge_audio_pool_init(&pool);
+
+    ASSERT_TRUE(forge_audio_pool_get(&pool, 0) != NULL);
+    ASSERT_TRUE(forge_audio_pool_get(&pool, FORGE_AUDIO_POOL_MAX_SOURCES - 1) != NULL);
+    ASSERT_TRUE(forge_audio_pool_get(&pool, -1) == NULL);
+    ASSERT_TRUE(forge_audio_pool_get(&pool, FORGE_AUDIO_POOL_MAX_SOURCES) == NULL);
+    ASSERT_TRUE(forge_audio_pool_get(NULL, 0) == NULL);
+
+    END_TEST();
+}
+
 /* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -511,6 +832,26 @@ int main(int argc, char *argv[])
     test_empty_buffer_no_hang();
     test_misaligned_cursor_no_hang();
     test_null_out_no_crash();
+
+    /* Fade tests (Lesson 02) */
+    test_fade_in_ramps_up();
+    test_fade_out_ramps_down();
+    test_fade_out_auto_stop();
+    test_fade_independent_of_volume();
+    test_fade_no_clicks();
+    test_fade_zero_duration_snaps();
+    test_fade_in_starts_playback();
+    test_no_fade_no_change();
+
+    /* Pool tests (Lesson 02) */
+    test_pool_init();
+    test_pool_play_returns_valid_index();
+    test_pool_full_returns_negative();
+    test_pool_finished_sources_reclaimed();
+    test_pool_additive_mixing();
+    test_pool_active_count();
+    test_pool_stop_all();
+    test_pool_get_valid_invalid();
 
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",
             pass_count, test_count, fail_count);

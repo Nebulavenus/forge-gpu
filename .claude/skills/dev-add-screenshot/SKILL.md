@@ -23,9 +23,16 @@ Lessons include `capture/forge_capture.h` which adds a `--screenshot`
 command-line flag. The Python orchestration script runs the lesson, converts
 the BMP output to PNG, and updates the README.
 
-**Important:** The lesson's `main.c` must have capture support integrated.
-If it doesn't, you must add it before the capture script will work (see
-"Adding capture support to a lesson" below).
+**Important:** Lessons using `forge_scene.h` (physics, audio, GPU lessons
+40+) already have capture support built in — `forge_scene.h` includes
+`forge_capture.h` and handles init, frame capture, and cleanup internally.
+No changes to `main.c` are needed for these lessons. Just build with
+`-DFORGE_CAPTURE=ON` and run the capture script.
+
+For early GPU lessons (02–39) that do NOT use `forge_scene.h`, the lesson's
+`main.c` must have capture support integrated manually. If it doesn't, add
+it before the capture script will work (see "Adding capture support to a
+lesson" below).
 
 ## Key API calls
 

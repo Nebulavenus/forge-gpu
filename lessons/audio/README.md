@@ -39,6 +39,7 @@ serve to illustrate and control what the listener hears.
 | # | Topic | What you'll learn |
 |---|-------|-------------------|
 | [01](01-audio-basics/) | Audio Basics | PCM fundamentals, WAV loading, F32 conversion, mixing, SDL audio streams |
+| [02](02-sound-effects/) | Sound Effects | Source pool, fire-and-forget playback, volume fading, polyphony |
 
 ## Shared library
 

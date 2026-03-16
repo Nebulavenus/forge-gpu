@@ -170,6 +170,7 @@ endif()
 # ── Audio Lessons ─────────────────────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/audio/01-audio-basics)
+    add_subdirectory(lessons/audio/02-sound-effects)
 endif()
 
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────
