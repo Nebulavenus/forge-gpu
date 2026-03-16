@@ -49,8 +49,8 @@
 /* UI layout */
 #define PANEL_X       10
 #define PANEL_Y       10
-#define PANEL_W       240
-#define PANEL_H       160
+#define PANEL_W       265
+#define PANEL_H       300
 #define LABEL_HEIGHT  20
 
 /* Maximum path buffer for asset paths */
@@ -126,6 +126,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
                                      p1, p2, p3, p4)) {
             SDL_Log("ERROR: failed to load CesiumMilkTruck");
             return SDL_APP_FAILURE;
+        }
+
+        /* Override all materials to double-sided so the truck interior
+         * is visible through the transparent glass windows. Without this,
+         * back-face culling hides the cabin walls and you see through
+         * the truck to the grid behind it. */
+        for (uint32_t i = 0; i < state->truck.materials.material_count; i++) {
+            state->truck.materials.materials[i].double_sided = true;
         }
     }
 
@@ -212,8 +220,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                              state->truck.transparent_draw_calls);
                 forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
 
-                SDL_snprintf(buf, sizeof(buf), "dt: %.1f ms  (%.0f FPS)",
-                             (double)(forge_scene_dt(s) * 1000.0f),
+                SDL_snprintf(buf, sizeof(buf), "dt: %.1f ms",
+                             (double)(forge_scene_dt(s) * 1000.0f));
+                forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+
+                SDL_snprintf(buf, sizeof(buf), "FPS: %.0f",
                              (double)(forge_scene_dt(s) > 0.0f
                                       ? 1.0f / forge_scene_dt(s) : 0.0f));
                 forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
