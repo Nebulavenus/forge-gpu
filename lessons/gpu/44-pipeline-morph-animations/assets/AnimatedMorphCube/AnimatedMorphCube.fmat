@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "materials": [
+    {
+      "name": "Material",
+      "base_color_factor": [0.603827, 0.603827, 0.603827, 1.000000],
+      "base_color_texture": null,
+      "metallic_factor": 0.000000,
+      "roughness_factor": 0.500000,
+      "metallic_roughness_texture": null,
+      "normal_texture": null,
+      "normal_scale": 1.000000,
+      "occlusion_texture": null,
+      "occlusion_strength": 1.000000,
+      "emissive_factor": [0.000000, 0.000000, 0.000000],
+      "emissive_texture": null,
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.500000,
+      "double_sided": false
+    }
+  ]
+}

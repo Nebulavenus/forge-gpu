@@ -1,0 +1,13 @@
+{
+  "source": "SimpleMorph.gltf",
+  "format_version": 3,
+  "vertex_count": 3,
+  "vertex_stride": 48,
+  "has_tangents": true,
+  "has_morphs": true,
+  "submesh_count": 1,
+  "lod_count": 1,
+  "lod_ratios": [1.00],
+  "original_vertex_count": 3,
+  "dedup_ratio": 1.00
+}

@@ -65,6 +65,98 @@ if (!forge_scene_init(&scene, &cfg, argc, argv)) {
 | `forge_scene_ui(s)` | `ForgeUiContext *` (NULL if UI disabled, valid between begin_ui/end_ui) |
 | `forge_scene_window_ui(s)` | `ForgeUiWindowContext *` (NULL if UI disabled, valid between begin_ui/end_ui) |
 
+### Model loading (`FORGE_SCENE_MODEL_SUPPORT`)
+
+Define `FORGE_SCENE_MODEL_SUPPORT` before including `forge_scene.h` to enable
+pipeline model rendering. Three model types are supported:
+
+| Type | Struct | Loader | Vertex stride |
+|------|--------|--------|---------------|
+| Static model | `ForgeSceneModel` | `forge_scene_load_model()` | 48 bytes |
+| Skinned model | `ForgeSceneSkinnedModel` | `forge_scene_load_skinned_model()` | 72 bytes |
+| Morph model | `ForgeSceneMorphModel` | `forge_scene_load_morph_model()` | 48 bytes + storage buffers |
+
+Each type has matching `_draw`, `_draw_shadows`, and `_free` functions.
+
+### Coordinate system and model placement
+
+forge-gpu uses a **Y-up, right-handed** coordinate system (matching glTF and
+SDL GPU). All scene rendering — camera, lighting, shadow maps, grid — assumes
+this convention.
+
+**The placement matrix controls world-space positioning.** Every draw call
+takes a `mat4 placement` parameter that positions the model in the scene:
+
+```c
+mat4 placement = mat4_multiply(
+    mat4_translate(vec3_create(x, y, z)),
+    mat4_scale_uniform(scale));
+forge_scene_draw_morph_model(&scene, &model, placement);
+```
+
+**Node transforms are part of the model, not the scene.** Pipeline models
+(`.fscene`) carry per-node transforms from the original glTF. These often
+include coordinate-system conversions (e.g. Blender's Z-up → glTF's Y-up
+rotation) and authoring-time scale. The scene renderer applies these
+transforms as part of the model's internal hierarchy — they are correct data,
+not artifacts to be stripped.
+
+**To determine a model's world-space size,** check the `.fscene` node
+transforms, not just the `.fmesh` vertex positions. A mesh with positions
+ranging [-0.01, 0.01] may have a 100x scale in its scene node, making it
+~2 units in world space. Use `dump_fscene.py` to inspect:
+
+```bash
+python scripts/dump_fscene.py path/to/model.fscene
+```
+
+**Common mistakes:**
+
+- Scaling the placement by 100x because the mesh vertices looked tiny — check
+  the node transform first, it may already include the intended scale
+- Trying to "fix" a rotated model by counter-rotating the placement — the
+  rotation is likely a Z-up → Y-up conversion that puts the model in the
+  correct coordinate system
+- Resetting node transforms to identity in the loader — this breaks animation
+  keyframes and joint hierarchies that are authored relative to the node space
+
+### Storage buffer alignment (StructuredBuffer)
+
+**Always declare `StructuredBuffer<float4>` in HLSL, never `float3`.**
+SPIRV and DXIL disagree on the stride of `StructuredBuffer<float3>`:
+
+| Backend | `StructuredBuffer<float3>` stride | `StructuredBuffer<float4>` stride |
+|---------|-----------------------------------|-----------------------------------|
+| SPIRV (Vulkan) | **16 bytes** (vec4 alignment) | 16 bytes |
+| DXIL (D3D12) | **12 bytes** (natural size) | 16 bytes |
+| MSL (Metal) | **16 bytes** (vec4 alignment) | 16 bytes |
+
+If the CPU uploads 16-byte-stride data (4 floats per element, 4th as
+padding) and the shader declares `StructuredBuffer<float3>`, Vulkan reads
+correctly but D3D12 reads every element after index 0 at the wrong offset.
+The result is visible mesh corruption — vertices splitting at seams, faces
+skewing asymmetrically.
+
+**The fix:** declare `StructuredBuffer<float4>` and read `.xyz`:
+
+```hlsl
+/* Wrong — stride mismatch on D3D12 */
+StructuredBuffer<float3> deltas : register(t0, space0);
+float3 d = deltas[vertex_id];
+
+/* Correct — 16-byte stride on all backends */
+StructuredBuffer<float4> deltas : register(t0, space0);
+float3 d = deltas[vertex_id].xyz;
+```
+
+CPU-side arrays must use 4 floats per element (16-byte stride) with the
+4th float as padding. The morph model code uses this layout — see
+`forge_scene_update_morph_animation`.
+
+This applies to any `StructuredBuffer` carrying 3-component data (positions,
+normals, deltas). 2-component and 4-component types do not have this
+mismatch.
+
 ## Error handling
 
 `forge_scene_init()` validates all config fields before creating any GPU

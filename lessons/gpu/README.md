@@ -65,6 +65,7 @@ portable C interface.
 | [<img src="41-scene-model-loading/assets/screenshot.png" width="480" alt="Scene Model Loading"/>](41-scene-model-loading/) | [**41 — Scene Model Loading**](41-scene-model-loading/) | Load pipeline-processed models (.fscene + .fmesh + .fmat), traverse scene hierarchy, per-primitive material binding, mesh instancing |
 | [<img src="42-pipeline-texture-compression/assets/screenshot.png" width="480" alt="Pipeline Texture Compression"/>](42-pipeline-texture-compression/) | [**42 — Pipeline Texture Compression**](42-pipeline-texture-compression/) | GPU block-compressed textures (BC7/BC5) via asset pipeline, UASTC transcoding, D3D12 alignment, VRAM savings, normal map encoding |
 | [<img src="43-pipeline-skinned-animations/assets/screenshot.png" width="480" alt="Pipeline Skinned Animations"/>](43-pipeline-skinned-animations/) | [**43 — Pipeline Skinned Animations**](43-pipeline-skinned-animations/) | Skeletal animation with pipeline assets (.fskin joint hierarchy, .fanim keyframes), 72-byte skinned vertices, GPU joint storage buffer, transform animation |
+| [<img src="44-pipeline-morph-animations/assets/screenshot.png" width="480" alt="Pipeline Morph Animations"/>](44-pipeline-morph-animations/) | [**44 — Pipeline Morph Animations**](44-pipeline-morph-animations/) | Morph target (blend shape) animation with pipeline assets (.fmesh morph deltas, .fanim weight channels), CPU-blended deltas, GPU storage buffer displacement via SV_VertexID |
 
 ## Prerequisites
 
@@ -240,6 +241,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-scene-model-loading`** — Load and render pipeline-processed 3D models with per-primitive materials and scene hierarchy traversal
 - **`/forge-pipeline-texture-compression`** — Load GPU block-compressed textures (BC7/BC5) through the asset pipeline
 - **`/forge-pipeline-skinned-animations`** — Pipeline-based skeletal animation with .fskin/.fanim assets and ForgeSceneSkinnedModel
+- **`/forge-pipeline-morph-animations`** — Pipeline-based morph target (blend shape) animation with .fmesh morph deltas and ForgeSceneMorphModel
 
 **How to use:**
 

@@ -144,7 +144,7 @@ typedef struct ToolOptions {
 
 static bool parse_args(int argc, char *argv[], ToolOptions *opts);
 static bool process_mesh(const ToolOptions *opts);
-static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
+static bool write_fmesh(const char *path, const MeshVertex *vertices,
                             unsigned int vertex_count, unsigned int vertex_stride,
                             const unsigned int *indices,
                             int lod_count, int submesh_count,
@@ -164,7 +164,8 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              bool has_tangents, int lod_count,
                              const float *lod_ratios, int submesh_count,
                              unsigned int original_vertex_count,
-                             bool has_morphs);
+                             bool has_morphs,
+                             unsigned int format_version);
 static bool generate_tangents(MeshVertex *vertices, unsigned int vertex_count,
                                const unsigned int *indices, unsigned int index_count);
 
@@ -1277,7 +1278,7 @@ static bool process_mesh(const ToolOptions *opts)
     }
 
     /* ── Step 8: Write binary .fmesh ─────────────────────────────────────*/
-    bool ok = write_fmesh_v2(opts->output_path, vertices, vertex_count,
+    bool ok = write_fmesh(opts->output_path, vertices, vertex_count,
                               vertex_stride, all_indices,
                               opts->lod_count, submesh_count,
                               lod_submeshes, lod_errors, flags,
@@ -1319,10 +1320,15 @@ static bool process_mesh(const ToolOptions *opts)
     }
 
     /* ── Step 10: Write .meta.json sidecar ───────────────────────────────*/
-    ok = write_meta_json(opts->output_path, opts->input_path,
-                          vertex_count, vertex_stride, has_tangents,
-                          opts->lod_count, opts->lod_ratios, submesh_count,
-                          original_vertex_count, has_morph_data);
+    {
+        unsigned int meta_format_version = (has_skin_data || has_morph_data)
+            ? FMESH_VERSION_SKIN : FMESH_VERSION;
+        ok = write_meta_json(opts->output_path, opts->input_path,
+                              vertex_count, vertex_stride, has_tangents,
+                              opts->lod_count, opts->lod_ratios, submesh_count,
+                              original_vertex_count, has_morph_data,
+                              meta_format_version);
+    }
 
     if (ok && opts->verbose) {
         SDL_Log("Output: '%s' (%u vertices, %d submeshes, %d LODs, "
@@ -1346,7 +1352,7 @@ static bool process_mesh(const ToolOptions *opts)
 
 /* ── Binary .fmesh v2 writer ─────────────────────────────────────────────── */
 
-static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
+static bool write_fmesh(const char *path, const MeshVertex *vertices,
                             unsigned int vertex_count, unsigned int vertex_stride,
                             const unsigned int *indices,
                             int lod_count, int submesh_count,
@@ -1369,7 +1375,7 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
 
     /* ── Header (32 bytes) ───────────────────────────────────────────────
      *   magic:          4 bytes  "FMSH"
-     *   version:        4 bytes  uint32 (2)
+     *   version:        4 bytes  uint32 (2 or 3; 3 when skinned or morph data present)
      *   vertex_count:   4 bytes  uint32
      *   vertex_stride:  4 bytes  uint32
      *   lod_count:      4 bytes  uint32
@@ -1381,7 +1387,8 @@ static bool write_fmesh_v2(const char *path, const MeshVertex *vertices,
 
     bool ok = true;
     ok = ok && (SDL_WriteIO(io, FMESH_MAGIC, FMESH_MAGIC_SIZE) == FMESH_MAGIC_SIZE);
-    ok = ok && write_u32_le(io, has_skin ? FMESH_VERSION_SKIN : FMESH_VERSION);
+    /* v3 required for skinned vertices and/or morph target data */
+    ok = ok && write_u32_le(io, (has_skin || has_morphs) ? FMESH_VERSION_SKIN : FMESH_VERSION);
     ok = ok && write_u32_le(io, vertex_count);
     ok = ok && write_u32_le(io, vertex_stride);
     ok = ok && write_u32_le(io, (uint32_t)lod_count);
@@ -1801,7 +1808,8 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
                              bool has_tangents, int lod_count,
                              const float *lod_ratios, int submesh_count,
                              unsigned int original_vertex_count,
-                             bool has_morphs)
+                             bool has_morphs,
+                             unsigned int format_version)
 {
     /* Build the .meta.json path by replacing the .fmesh extension.
      * Example: "model.fmesh" -> "model.meta.json" */
@@ -1836,7 +1844,7 @@ static bool write_meta_json(const char *fmesh_path, const char *source_path,
     SDL_IOprintf(io, "  \"source\": ");
     write_json_string(io, source_name);
     SDL_IOprintf(io, ",\n");
-    SDL_IOprintf(io, "  \"format_version\": %d,\n", FMESH_VERSION);
+    SDL_IOprintf(io, "  \"format_version\": %u,\n", format_version);
     SDL_IOprintf(io, "  \"vertex_count\": %u,\n", vertex_count);
     SDL_IOprintf(io, "  \"vertex_stride\": %u,\n", vertex_stride);
     SDL_IOprintf(io, "  \"has_tangents\": %s,\n", has_tangents ? "true" : "false");

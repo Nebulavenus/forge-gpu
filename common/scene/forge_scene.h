@@ -91,6 +91,9 @@
 /* Default aspect ratio fallback */
 #define FORGE_SCENE_DEFAULT_ASPECT     (16.0f / 9.0f)
 
+/* Morph weight skip threshold */
+#define FORGE_SCENE_MORPH_WEIGHT_EPSILON   0.001f
+
 /* Light direction stability thresholds */
 #define FORGE_SCENE_LIGHT_DIR_EPSILON      1e-6f
 #define FORGE_SCENE_LIGHT_UP_PARALLEL_COS  0.999f
@@ -297,6 +300,49 @@ typedef struct ForgeSceneSkinnedModel {
     ForgeSceneVramStats vram;
 } ForgeSceneSkinnedModel;
 
+/* A loaded pipeline model with morph target (blend shape) support.
+ * Uses standard 48-byte vertices (same as ForgeSceneModel) with per-vertex
+ * position and normal deltas stored in GPU storage buffers.  The CPU blends
+ * morph target deltas each frame and uploads the result — the vertex shader
+ * adds deltas to base attributes via SV_VertexID indexing. */
+typedef struct ForgeSceneMorphModel {
+    /* Pipeline data (owns memory — freed by forge_scene_free_morph_model) */
+    ForgePipelineScene       scene_data;   /* node hierarchy + world transforms */
+    ForgePipelineMesh        mesh;         /* vertex/index data + morph deltas  */
+    ForgePipelineMaterialSet materials;    /* PBR material descriptions         */
+    ForgePipelineAnimFile    animations;   /* animation clips (morph weights)   */
+
+    /* GPU resources */
+    SDL_GPUBuffer *vertex_buffer;          /* uploaded 48-byte base vertices    */
+    SDL_GPUBuffer *index_buffer;           /* uploaded uint32 indices           */
+    SDL_GPUBuffer *morph_pos_buffer;       /* storage: vertex_count x float4 (16-byte stride) */
+    SDL_GPUBuffer *morph_nrm_buffer;       /* storage: vertex_count x float4 (16-byte stride) */
+    SDL_GPUTransferBuffer *morph_transfer_buffer; /* persistent upload staging  */
+
+    /* Per-material textures */
+    ForgeSceneModelTextures mat_textures[FORGE_SCENE_MODEL_MAX_MATERIALS];
+    uint32_t                mat_texture_count;
+
+    /* CPU-side blended deltas (uploaded to GPU each frame) */
+    float *blended_pos_deltas;   /* vertex_count * 4 floats (16-byte stride) */
+    float *blended_nrm_deltas;   /* vertex_count * 4 floats (16-byte stride) */
+
+    /* Morph weight state (set by animation or manual override) */
+    float    morph_weights[FORGE_PIPELINE_MAX_MORPH_TARGETS];
+    uint32_t morph_target_count;  /* actual count from mesh */
+
+    /* Animation state */
+    float    anim_time;
+    float    anim_speed;       /* default 1.0 */
+    int      current_clip;
+    bool     looping;          /* default true */
+    bool     manual_weights;   /* true = skip animation, use morph_weights[] directly */
+
+    /* Stats */
+    uint32_t draw_calls;
+    ForgeSceneVramStats vram;
+} ForgeSceneMorphModel;
+
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 
 /* ── Configuration ──────────────────────────────────────────────────────── */
@@ -404,7 +450,7 @@ typedef struct ForgeScene {
 
     /* ── Per-frame state ────────────────────────────────────────────── */
     SDL_GPUCommandBuffer *cmd;
-    SDL_GPUCopyPass      *skinned_copy_pass;   /* batched joint upload pass   */
+    SDL_GPUCopyPass      *model_copy_pass;   /* batched model data upload pass */
     SDL_GPURenderPass    *pass;                /* current active render pass  */
     SDL_GPUTexture       *swapchain;
     Uint32                sw, sh;              /* swapchain dimensions        */
@@ -443,6 +489,14 @@ typedef struct ForgeScene {
     SDL_GPUGraphicsPipeline *skinned_pipeline_blend_double; /* alpha blend + cull none         */
     SDL_GPUGraphicsPipeline *skinned_shadow_pipeline;      /* depth-only, 72-byte stride       */
     bool                     skinned_pipelines_ready;      /* lazy init flag                   */
+
+    /* Morph target model pipelines (lazy-initialized on first morph model load) */
+    SDL_GPUGraphicsPipeline *morph_pipeline;               /* cull back, depth write          */
+    SDL_GPUGraphicsPipeline *morph_pipeline_blend;         /* alpha blend, no depth write     */
+    SDL_GPUGraphicsPipeline *morph_pipeline_double;        /* cull none, depth write          */
+    SDL_GPUGraphicsPipeline *morph_pipeline_blend_double;  /* alpha blend + cull none         */
+    SDL_GPUGraphicsPipeline *morph_shadow_pipeline;        /* depth-only, 48-byte + storage   */
+    bool                     morph_pipelines_ready;        /* lazy init flag                  */
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 } ForgeScene;
 
@@ -631,6 +685,38 @@ static void forge_scene_draw_skinned_model_shadows(
 static void forge_scene_free_skinned_model(
     ForgeScene *scene, ForgeSceneSkinnedModel *model);
 
+/* ── Morph target model API ─────────────────────────────── */
+
+/* Load a morph target pipeline model (.fscene + .fmesh + optional .fmat + optional .fanim).
+ * The .fmesh must have FLAG_MORPHS set (morph delta data appended).
+ * fmat_path may be NULL (morph models may have no material file).
+ * fanim_path may be NULL for static morph weights (manual control). */
+static bool forge_scene_load_morph_model(
+    ForgeScene *scene, ForgeSceneMorphModel *model,
+    const char *fscene_path, const char *fmesh_path,
+    const char *fmat_path,   const char *fanim_path,
+    const char *base_dir);
+
+/* Evaluate morph weight animation and blend deltas on the CPU,
+ * then upload blended deltas to GPU storage buffers.
+ * Must be called after forge_scene_begin_frame() (requires scene->cmd).
+ * When model->manual_weights is true, skips animation evaluation and
+ * uses morph_weights[] as-is. */
+static void forge_scene_update_morph_animation(
+    ForgeScene *scene, ForgeSceneMorphModel *model, float dt);
+
+/* Draw morph model in the main pass. */
+static void forge_scene_draw_morph_model(
+    ForgeScene *scene, ForgeSceneMorphModel *model, mat4 placement);
+
+/* Draw morph model into the shadow map. */
+static void forge_scene_draw_morph_model_shadows(
+    ForgeScene *scene, ForgeSceneMorphModel *model, mat4 placement);
+
+/* Release all GPU and CPU resources for a morph model. */
+static void forge_scene_free_morph_model(
+    ForgeScene *scene, ForgeSceneMorphModel *model);
+
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 
 /* ── Utility functions ──────────────────────────────────────── */
@@ -711,6 +797,12 @@ static SDL_GPUTexture *forge_scene_upload_texture(
 #include "scene/shaders/compiled/scene_skinned_shadow_vert_spirv.h"
 #include "scene/shaders/compiled/scene_skinned_shadow_vert_dxil.h"
 #include "scene/shaders/compiled/scene_skinned_shadow_vert_msl.h"
+#include "scene/shaders/compiled/scene_morph_vert_spirv.h"
+#include "scene/shaders/compiled/scene_morph_vert_dxil.h"
+#include "scene/shaders/compiled/scene_morph_vert_msl.h"
+#include "scene/shaders/compiled/scene_morph_shadow_vert_spirv.h"
+#include "scene/shaders/compiled/scene_morph_shadow_vert_dxil.h"
+#include "scene/shaders/compiled/scene_morph_shadow_vert_msl.h"
 #endif
 
 /* ── D3D12 texture alignment constants ─────────────────────────────────── */
@@ -2244,9 +2336,9 @@ static void forge_scene_begin_shadow_pass(ForgeScene *scene)
     /* Close the batched skinned-model joint upload pass (if any) before
      * starting the first render pass.  All skinned updates must happen
      * before this point. */
-    if (scene->skinned_copy_pass) {
-        SDL_EndGPUCopyPass(scene->skinned_copy_pass);
-        scene->skinned_copy_pass = NULL;
+    if (scene->model_copy_pass) {
+        SDL_EndGPUCopyPass(scene->model_copy_pass);
+        scene->model_copy_pass = NULL;
     }
 
     SDL_GPUDepthStencilTargetInfo depth_target;
@@ -2323,9 +2415,9 @@ static void forge_scene_begin_main_pass(ForgeScene *scene)
     /* Safety net: close the batched skinned joint upload pass if the caller
      * skipped the shadow pass.  begin_shadow_pass normally handles this,
      * but shadows are optional for skinned models. */
-    if (scene->skinned_copy_pass) {
-        SDL_EndGPUCopyPass(scene->skinned_copy_pass);
-        scene->skinned_copy_pass = NULL;
+    if (scene->model_copy_pass) {
+        SDL_EndGPUCopyPass(scene->model_copy_pass);
+        scene->model_copy_pass = NULL;
     }
 
     SDL_GPUColorTargetInfo color_target;
@@ -2788,9 +2880,9 @@ static void forge_scene_destroy(ForgeScene *scene)
      * buffer before tearing down GPU resources.  This handles the case
      * where the caller exits mid-frame (after begin_frame but before
      * end_frame). */
-    if (scene->skinned_copy_pass) {
-        SDL_EndGPUCopyPass(scene->skinned_copy_pass);
-        scene->skinned_copy_pass = NULL;
+    if (scene->model_copy_pass) {
+        SDL_EndGPUCopyPass(scene->model_copy_pass);
+        scene->model_copy_pass = NULL;
     }
     if (scene->pass) {
         SDL_EndGPURenderPass(scene->pass);
@@ -2905,6 +2997,16 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_pipeline_blend_double);
     if (scene->skinned_shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_shadow_pipeline);
+    if (scene->morph_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline);
+    if (scene->morph_pipeline_blend)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_blend);
+    if (scene->morph_pipeline_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_double);
+    if (scene->morph_pipeline_blend_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_blend_double);
+    if (scene->morph_shadow_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_shadow_pipeline);
 #endif
 
     /* Window — release claim first, then destroy.
@@ -4736,7 +4838,7 @@ static void forge_scene_update_skinned_animation(
     /* Upload joint matrices to GPU via persistent transfer buffer.
      * Uses cycle=true to avoid GPU stalls when the previous frame's
      * upload is still in flight. Lazily opens a single copy pass on
-     * scene->skinned_copy_pass that is shared across all skinned models
+     * scene->model_copy_pass that is shared across all skinned models
      * and ended in forge_scene_begin_shadow_pass. */
     if (model->joint_buffer && model->joint_transfer_buffer &&
         model->active_joint_count > 0) {
@@ -4756,15 +4858,15 @@ static void forge_scene_update_skinned_animation(
                                            model->joint_transfer_buffer);
 
                 /* Lazily open a batched copy pass for all skinned models */
-                if (!scene->skinned_copy_pass) {
-                    scene->skinned_copy_pass =
+                if (!scene->model_copy_pass) {
+                    scene->model_copy_pass =
                         SDL_BeginGPUCopyPass(scene->cmd);
-                    if (!scene->skinned_copy_pass) {
+                    if (!scene->model_copy_pass) {
                         SDL_Log("forge_scene: joint buffer copy pass "
                                 "failed: %s", SDL_GetError());
                     }
                 }
-                if (scene->skinned_copy_pass) {
+                if (scene->model_copy_pass) {
                     SDL_GPUTransferBufferLocation src;
                     SDL_zero(src);
                     src.transfer_buffer = model->joint_transfer_buffer;
@@ -4773,7 +4875,7 @@ static void forge_scene_update_skinned_animation(
                     dst.buffer = model->joint_buffer;
                     dst.size   = upload_size;
                     SDL_UploadToGPUBuffer(
-                        scene->skinned_copy_pass, &src, &dst, true);
+                        scene->model_copy_pass, &src, &dst, true);
                 }
             } else {
                 SDL_Log("forge_scene: SDL_MapGPUTransferBuffer failed: %s",
@@ -4983,6 +5085,917 @@ static void forge_scene_free_skinned_model(
     forge_pipeline_free_mesh(&model->mesh);
     forge_pipeline_free_materials(&model->materials);
     forge_pipeline_free_skins(&model->skins);
+    forge_pipeline_free_animation(&model->animations);
+
+    SDL_memset(model, 0, sizeof(*model));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ *  Morph target model support
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Init morph pipelines (lazy, called on first morph model load) ────── */
+
+static bool forge_scene_init_morph_pipelines(ForgeScene *scene)
+{
+    if (scene->morph_pipelines_ready) return true;
+
+    /* Ensure model pipelines are ready (we reuse samplers, fallback textures) */
+    if (!forge_scene_init_model_pipelines(scene)) return false;
+
+    /* Create morph vertex shader — 2 storage buffers (pos + nrm deltas), 1 uniform */
+    SDL_GPUShader *morph_vs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_morph_vert_spirv, sizeof(scene_morph_vert_spirv),
+        scene_morph_vert_dxil,  sizeof(scene_morph_vert_dxil),
+        scene_morph_vert_msl,   scene_morph_vert_msl_size,
+        0, 0, 2, 1);  /* 0 samplers, 0 storage_tex, 2 storage_buf, 1 uniform */
+
+    /* Reuse model fragment shader */
+    SDL_GPUShader *morph_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        scene_model_frag_spirv, sizeof(scene_model_frag_spirv),
+        scene_model_frag_dxil,  sizeof(scene_model_frag_dxil),
+        scene_model_frag_msl, scene_model_frag_msl_size,
+        6, 0, 0, 1);
+
+    /* Morph shadow vertex shader — 1 storage buffer (pos deltas only), 1 uniform */
+    SDL_GPUShader *morph_shadow_vs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_morph_shadow_vert_spirv, sizeof(scene_morph_shadow_vert_spirv),
+        scene_morph_shadow_vert_dxil,  sizeof(scene_morph_shadow_vert_dxil),
+        scene_morph_shadow_vert_msl, scene_morph_shadow_vert_msl_size,
+        0, 0, 1, 1);
+
+    /* Reuse existing shadow fragment shader */
+    SDL_GPUShader *morph_shadow_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        shadow_frag_spirv, sizeof(shadow_frag_spirv),
+        shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl, shadow_frag_msl_size,
+        0, 0, 0, 0);
+
+    if (!morph_vs || !morph_fs || !morph_shadow_vs || !morph_shadow_fs) {
+        SDL_Log("forge_scene: morph shader creation failed");
+        if (morph_vs)        SDL_ReleaseGPUShader(scene->device, morph_vs);
+        if (morph_fs)        SDL_ReleaseGPUShader(scene->device, morph_fs);
+        if (morph_shadow_vs) SDL_ReleaseGPUShader(scene->device, morph_shadow_vs);
+        if (morph_shadow_fs) SDL_ReleaseGPUShader(scene->device, morph_shadow_fs);
+        return false;
+    }
+
+    /* 48-byte vertex input: pos + normal + uv + tangent (same as scene_model) */
+    SDL_GPUVertexBufferDescription morph_vbd;
+    SDL_zero(morph_vbd);
+    morph_vbd.slot       = 0;
+    morph_vbd.pitch      = FORGE_PIPELINE_VERTEX_STRIDE_TAN;
+    morph_vbd.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+    SDL_GPUVertexAttribute morph_attrs[4];
+    SDL_zero(morph_attrs);
+    morph_attrs[0].location = 0; morph_attrs[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; morph_attrs[0].offset = 0;
+    morph_attrs[1].location = 1; morph_attrs[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; morph_attrs[1].offset = 12;
+    morph_attrs[2].location = 2; morph_attrs[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2; morph_attrs[2].offset = 24;
+    morph_attrs[3].location = 3; morph_attrs[3].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4; morph_attrs[3].offset = 32;
+
+    SDL_GPUVertexInputState morph_input;
+    SDL_zero(morph_input);
+    morph_input.vertex_buffer_descriptions = &morph_vbd;
+    morph_input.num_vertex_buffers         = 1;
+    morph_input.vertex_attributes          = morph_attrs;
+    morph_input.num_vertex_attributes      = 4;
+
+    /* Shadow pass uses only position (offset 0) but needs same stride */
+    SDL_GPUVertexAttribute morph_shadow_attrs[1];
+    SDL_zero(morph_shadow_attrs);
+    morph_shadow_attrs[0].location = 0;
+    morph_shadow_attrs[0].format   = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    morph_shadow_attrs[0].offset   = 0;
+
+    SDL_GPUVertexInputState morph_shadow_input;
+    SDL_zero(morph_shadow_input);
+    morph_shadow_input.vertex_buffer_descriptions = &morph_vbd;
+    morph_shadow_input.num_vertex_buffers         = 1;
+    morph_shadow_input.vertex_attributes          = morph_shadow_attrs;
+    morph_shadow_input.num_vertex_attributes      = 1;
+
+    SDL_GPUColorTargetDescription ctd;
+    SDL_zero(ctd);
+    ctd.format = scene->swapchain_fmt;
+
+    /* Opaque pipeline: cull back, depth test+write */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = morph_vs;
+        pi.fragment_shader    = morph_fs;
+        pi.vertex_input_state = morph_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.color_target_descriptions = &ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->morph_pipeline = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Blend pipeline: alpha blend, no depth write */
+    {
+        SDL_GPUColorTargetDescription blend_ctd;
+        SDL_zero(blend_ctd);
+        blend_ctd.format = scene->swapchain_fmt;
+        blend_ctd.blend_state.enable_blend = true;
+        blend_ctd.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        blend_ctd.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_ctd.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        blend_ctd.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        blend_ctd.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_ctd.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = morph_vs;
+        pi.fragment_shader    = morph_fs;
+        pi.vertex_input_state = morph_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_BACK;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = false;
+        pi.target_info.color_target_descriptions = &blend_ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->morph_pipeline_blend = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Double-sided pipeline: cull none, depth test+write */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = morph_vs;
+        pi.fragment_shader    = morph_fs;
+        pi.vertex_input_state = morph_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.color_target_descriptions = &ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->morph_pipeline_double = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Blend + double-sided */
+    {
+        SDL_GPUColorTargetDescription blend_double_ctd;
+        SDL_zero(blend_double_ctd);
+        blend_double_ctd.format = scene->swapchain_fmt;
+        blend_double_ctd.blend_state.enable_blend = true;
+        blend_double_ctd.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        blend_double_ctd.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_double_ctd.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        blend_double_ctd.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        blend_double_ctd.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_double_ctd.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = morph_vs;
+        pi.fragment_shader    = morph_fs;
+        pi.vertex_input_state = morph_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = false;
+        pi.target_info.color_target_descriptions = &blend_double_ctd;
+        pi.target_info.num_color_targets         = 1;
+        pi.target_info.depth_stencil_format      = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->morph_pipeline_blend_double = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Shadow pipeline: depth-only, 48-byte stride + 1 storage buffer, cull none, depth bias */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader      = morph_shadow_vs;
+        pi.fragment_shader    = morph_shadow_fs;
+        pi.vertex_input_state = morph_shadow_input;
+        pi.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.enable_depth_bias = true;
+        pi.rasterizer_state.depth_bias_constant_factor = FORGE_SCENE_SHADOW_BIAS_CONST;
+        pi.rasterizer_state.depth_bias_slope_factor    = FORGE_SCENE_SHADOW_BIAS_SLOPE;
+        pi.depth_stencil_state.compare_op        = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.target_info.num_color_targets        = 0;
+        pi.target_info.depth_stencil_format     = scene->shadow_fmt;
+        pi.target_info.has_depth_stencil_target = true;
+        scene->morph_shadow_pipeline = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+    }
+
+    /* Release shaders */
+    SDL_ReleaseGPUShader(scene->device, morph_vs);
+    SDL_ReleaseGPUShader(scene->device, morph_fs);
+    SDL_ReleaseGPUShader(scene->device, morph_shadow_vs);
+    SDL_ReleaseGPUShader(scene->device, morph_shadow_fs);
+
+    if (!scene->morph_pipeline || !scene->morph_pipeline_blend ||
+        !scene->morph_pipeline_double || !scene->morph_pipeline_blend_double ||
+        !scene->morph_shadow_pipeline) {
+        SDL_Log("forge_scene: morph pipeline creation failed: %s", SDL_GetError());
+        if (scene->morph_pipeline)
+            { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline); scene->morph_pipeline = NULL; }
+        if (scene->morph_pipeline_blend)
+            { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_blend); scene->morph_pipeline_blend = NULL; }
+        if (scene->morph_pipeline_double)
+            { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_double); scene->morph_pipeline_double = NULL; }
+        if (scene->morph_pipeline_blend_double)
+            { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_pipeline_blend_double); scene->morph_pipeline_blend_double = NULL; }
+        if (scene->morph_shadow_pipeline)
+            { SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_shadow_pipeline); scene->morph_shadow_pipeline = NULL; }
+        return false;
+    }
+
+    scene->morph_pipelines_ready = true;
+    return true;
+}
+
+/* ── Load morph model ────────────────────────────────────────────────────── */
+
+static bool forge_scene_load_morph_model(
+    ForgeScene *scene, ForgeSceneMorphModel *model,
+    const char *fscene_path, const char *fmesh_path,
+    const char *fmat_path,   const char *fanim_path,
+    const char *base_dir)
+{
+    if (!scene || !model) {
+        SDL_Log("forge_scene: load_morph_model: NULL scene or model");
+        return false;
+    }
+    if (!fscene_path || !fmesh_path || !base_dir) {
+        SDL_Log("forge_scene: load_morph_model: NULL required path");
+        return false;
+    }
+    if (base_dir[0] == '\0') {
+        SDL_Log("forge_scene: load_morph_model: empty base_dir");
+        return false;
+    }
+
+    SDL_memset(model, 0, sizeof(*model));
+    model->anim_speed = 1.0f;
+    model->looping = true;
+
+    /* Lazy-init morph pipelines */
+    if (!forge_scene_init_morph_pipelines(scene)) return false;
+
+    /* Load pipeline data */
+    if (!forge_pipeline_load_scene(fscene_path, &model->scene_data)) {
+        SDL_Log("forge_scene: load_morph_model: failed to load scene '%s'",
+                fscene_path);
+        return false;
+    }
+
+    if (!forge_pipeline_load_mesh(fmesh_path, &model->mesh)) {
+        SDL_Log("forge_scene: load_morph_model: failed to load mesh '%s'",
+                fmesh_path);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+
+    /* Validate: must have morph data and 48-byte base vertices */
+    if (!forge_pipeline_has_morph_data(&model->mesh)) {
+        SDL_Log("forge_scene: load_morph_model: '%s' has no morph data "
+                "(flags=0x%x)", fmesh_path, model->mesh.flags);
+        forge_pipeline_free_mesh(&model->mesh);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+    if (model->mesh.vertex_stride != FORGE_PIPELINE_VERTEX_STRIDE_TAN) {
+        SDL_Log("forge_scene: load_morph_model: '%s' has unsupported stride %u "
+                "(expected %u)", fmesh_path, model->mesh.vertex_stride,
+                (unsigned)FORGE_PIPELINE_VERTEX_STRIDE_TAN);
+        forge_pipeline_free_mesh(&model->mesh);
+        forge_pipeline_free_scene(&model->scene_data);
+        SDL_memset(model, 0, sizeof(*model));
+        return false;
+    }
+
+    /* Load materials (optional — morph models may have no material file) */
+    if (fmat_path) {
+        if (!forge_pipeline_load_materials(fmat_path, &model->materials)) {
+            SDL_Log("forge_scene: load_morph_model: failed to load materials '%s'",
+                    fmat_path);
+            goto fail;
+        }
+        if (model->materials.material_count > FORGE_SCENE_MODEL_MAX_MATERIALS) {
+            SDL_Log("forge_scene: load_morph_model: too many materials (%u, max %u)",
+                    model->materials.material_count,
+                    (unsigned)FORGE_SCENE_MODEL_MAX_MATERIALS);
+            goto fail;
+        }
+    }
+
+    /* Load animations (optional — morph weights can be set manually) */
+    if (fanim_path) {
+        if (!forge_pipeline_load_animation(fanim_path, &model->animations)) {
+            SDL_Log("forge_scene: load_morph_model: failed to load anim '%s'",
+                    fanim_path);
+            goto fail;
+        }
+    }
+
+    /* Cache morph target count and default weights */
+    model->morph_target_count = model->mesh.morph_target_count;
+    for (uint32_t i = 0; i < model->morph_target_count; i++)
+        model->morph_weights[i] = model->mesh.morph_targets[i].default_weight;
+
+    /* Upload vertex buffer */
+    {
+        uint64_t vb_size_64 =
+            (uint64_t)model->mesh.vertex_count * model->mesh.vertex_stride;
+        if (vb_size_64 > (uint64_t)UINT32_MAX) {
+            SDL_Log("forge_scene: load_morph_model: vertex buffer overflow");
+            goto fail;
+        }
+        Uint32 vb_size = (Uint32)vb_size_64;
+        model->vertex_buffer = forge_scene_upload_buffer(scene,
+            SDL_GPU_BUFFERUSAGE_VERTEX, model->mesh.vertices, vb_size);
+        if (!model->vertex_buffer) {
+            SDL_Log("forge_scene: load_morph_model: vertex buffer upload failed");
+            goto fail;
+        }
+    }
+
+    /* Upload index buffer (LOD 0) */
+    {
+        uint64_t total_indices = 0;
+        for (uint32_t s = 0; s < model->mesh.submesh_count; s++) {
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, s);
+            if (sub) total_indices += sub->index_count;
+        }
+        uint64_t ib_size_64 = total_indices * sizeof(uint32_t);
+        if (ib_size_64 > (uint64_t)UINT32_MAX) {
+            SDL_Log("forge_scene: load_morph_model: index buffer overflow");
+            goto fail;
+        }
+        if (total_indices > 0 && model->mesh.indices &&
+            model->mesh.lod_count > 0) {
+            Uint32 lod0_offset = model->mesh.lods[0].index_offset;
+            const uint8_t *idx_start =
+                (const uint8_t *)model->mesh.indices + lod0_offset;
+            Uint32 ib_size = (Uint32)ib_size_64;
+            model->index_buffer = forge_scene_upload_buffer(scene,
+                SDL_GPU_BUFFERUSAGE_INDEX, idx_start, ib_size);
+        }
+        if (!model->index_buffer) {
+            SDL_Log("forge_scene: load_morph_model: index buffer upload failed");
+            goto fail;
+        }
+    }
+
+    /* Allocate CPU-side blended delta arrays.
+     * Use 4 floats per vertex (16-byte stride) to match the GPU's
+     * StructuredBuffer<float4> which has ArrayStride 16 in both SPIRV and DXIL.
+     * The 4th float per element is padding (always 0). */
+    {
+        size_t delta_floats = (size_t)model->mesh.vertex_count * 4;
+        size_t delta_bytes  = delta_floats * sizeof(float);
+        model->blended_pos_deltas = (float *)SDL_calloc(1, delta_bytes);
+        model->blended_nrm_deltas = (float *)SDL_calloc(1, delta_bytes);
+        if (!model->blended_pos_deltas || !model->blended_nrm_deltas) {
+            SDL_Log("forge_scene: load_morph_model: delta alloc failed");
+            goto fail;
+        }
+    }
+
+    /* Create morph delta storage buffers (zero-filled initially).
+     * Use 16-byte stride (4 floats) per element to match SPIRV's
+     * StructuredBuffer<float4> stride of 16 bytes. */
+    {
+        uint64_t buf_size_64 =
+            (uint64_t)model->mesh.vertex_count * 4 * sizeof(float);
+        if (buf_size_64 > (uint64_t)UINT32_MAX) {
+            SDL_Log("forge_scene: load_morph_model: delta buffer size "
+                    "exceeds UINT32_MAX (%" SDL_PRIu64 " bytes)", buf_size_64);
+            goto fail;
+        }
+        Uint32 buf_size = (Uint32)buf_size_64;
+        model->morph_pos_buffer = forge_scene_upload_buffer(scene,
+            SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ,
+            model->blended_pos_deltas, buf_size);
+        model->morph_nrm_buffer = forge_scene_upload_buffer(scene,
+            SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ,
+            model->blended_nrm_deltas, buf_size);
+        if (!model->morph_pos_buffer || !model->morph_nrm_buffer) {
+            SDL_Log("forge_scene: load_morph_model: delta buffer upload failed");
+            goto fail;
+        }
+    }
+
+    /* Create persistent transfer buffer for per-frame delta uploads.
+     * Sized for both position + normal deltas in sequence (16 bytes each). */
+    {
+        uint64_t single_size_64 =
+            (uint64_t)model->mesh.vertex_count * 4 * sizeof(float);
+        if (single_size_64 > (uint64_t)(UINT32_MAX / 2)) {
+            SDL_Log("forge_scene: load_morph_model: transfer buffer size "
+                    "exceeds UINT32_MAX");
+            goto fail;
+        }
+        Uint32 single_buf_size = (Uint32)single_size_64;
+        SDL_GPUTransferBufferCreateInfo tbci;
+        SDL_zero(tbci);
+        tbci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tbci.size  = single_buf_size * 2;  /* pos + nrm */
+        model->morph_transfer_buffer =
+            SDL_CreateGPUTransferBuffer(scene->device, &tbci);
+        if (!model->morph_transfer_buffer) {
+            SDL_Log("forge_scene: load_morph_model: transfer buffer creation "
+                    "failed: %s", SDL_GetError());
+            goto fail;
+        }
+    }
+
+    /* Load per-material textures */
+    {
+        uint32_t mat_count = model->materials.material_count;
+        model->mat_texture_count = mat_count;
+
+        for (uint32_t i = 0; i < mat_count; i++) {
+            const ForgePipelineMaterial *mat = &model->materials.materials[i];
+            char path_buf[FORGE_SCENE_PATH_BUF_SIZE];
+
+            if (mat->base_color_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->base_color_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].base_color =
+                        forge_scene_load_pipeline_texture(
+                            scene, &model->vram, path_buf, true, false);
+            }
+            if (mat->normal_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->normal_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].normal =
+                        forge_scene_load_pipeline_texture(
+                            scene, &model->vram, path_buf, false, true);
+            }
+            if (mat->metallic_roughness_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->metallic_roughness_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].metallic_roughness =
+                        forge_scene_load_pipeline_texture(
+                            scene, &model->vram, path_buf, false, false);
+            }
+            if (mat->occlusion_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->occlusion_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].occlusion =
+                        forge_scene_load_pipeline_texture(
+                            scene, &model->vram, path_buf, false, false);
+            }
+            if (mat->emissive_texture[0]) {
+                int len = SDL_snprintf(path_buf, sizeof(path_buf), "%s/%s",
+                                       base_dir, mat->emissive_texture);
+                if (len >= 0 && len < (int)sizeof(path_buf))
+                    model->mat_textures[i].emissive =
+                        forge_scene_load_pipeline_texture(
+                            scene, &model->vram, path_buf, true, false);
+            }
+        }
+    }
+
+    SDL_Log("forge_scene: loaded morph model: %u vertices, %u submeshes, "
+            "%u morph targets, %u clips",
+            model->mesh.vertex_count, model->mesh.submesh_count,
+            model->morph_target_count, model->animations.clip_count);
+    return true;
+
+fail:
+    forge_scene_free_morph_model(scene, model);
+    return false;
+}
+
+/* ── Update morph animation ──────────────────────────────────────────────── */
+
+static void forge_scene_update_morph_animation(
+    ForgeScene *scene, ForgeSceneMorphModel *model, float dt)
+{
+    if (!scene || !model) return;
+
+    /* ── Evaluate morph weights from animation ──────────────────────── */
+    if (!model->manual_weights &&
+        model->animations.clip_count > 0 &&
+        model->current_clip >= 0 &&
+        (uint32_t)model->current_clip < model->animations.clip_count) {
+
+        model->anim_time += dt * model->anim_speed;
+
+        const ForgePipelineAnimation *clip =
+            &model->animations.clips[model->current_clip];
+        float dur = clip->duration;
+        if (model->looping && dur > FORGE_PIPELINE_ANIM_EPSILON) {
+            model->anim_time = SDL_fmodf(model->anim_time, dur);
+            if (model->anim_time < 0.0f) model->anim_time += dur;
+        }
+
+        /* Reset weights to defaults before evaluating channels so stale
+         * values from prior frames do not persist when channels don't write
+         * every component. */
+        for (uint32_t w = 0; w < model->morph_target_count; w++)
+            model->morph_weights[w] = 0.0f;
+
+        /* Find morph weight channels and sample them.
+         * forge_pipeline_anim_apply skips MORPH_WEIGHTS channels, so we
+         * evaluate them here by searching the clip's channels directly. */
+        for (uint32_t ci = 0; ci < clip->channel_count; ci++) {
+            const ForgePipelineAnimChannel *ch = &clip->channels[ci];
+            if (ch->target_path != FORGE_PIPELINE_ANIM_MORPH_WEIGHTS)
+                continue;
+            if (ch->sampler_index >= clip->sampler_count)
+                continue;
+
+            const ForgePipelineAnimSampler *samp =
+                &clip->samplers[ch->sampler_index];
+            if (samp->keyframe_count == 0 || !samp->timestamps || !samp->values)
+                continue;
+
+            /* Binary search for the keyframe bracket.
+             * anim_time is already wrapped by fmodf above, so no
+             * additional wrapping needed here. */
+            float t = model->anim_time;
+
+            /* Clamp to valid range */
+            /* src_nc = stride in the keyframe value array (may differ
+             * from morph_target_count).  dst_nc = how many weights we
+             * actually write — clamped to the model's target count. */
+            uint32_t src_nc = (uint32_t)samp->value_components;
+            uint32_t dst_nc = src_nc < model->morph_target_count
+                            ? src_nc : model->morph_target_count;
+
+            if (t <= samp->timestamps[0]) {
+                /* Before first keyframe — use first values */
+                for (uint32_t w = 0; w < dst_nc; w++)
+                    model->morph_weights[w] = samp->values[w];
+            } else if (t >= samp->timestamps[samp->keyframe_count - 1]) {
+                /* After last keyframe — use last values */
+                uint32_t last = (uint32_t)(samp->keyframe_count - 1) * src_nc;
+                for (uint32_t w = 0; w < dst_nc; w++)
+                    model->morph_weights[w] = samp->values[last + w];
+            } else if (samp->keyframe_count >= 2) {
+                /* Binary search — needs at least 2 keyframes */
+                uint32_t lo = 0, hi = samp->keyframe_count - 2;
+                while (lo < hi) {
+                    uint32_t mid = (lo + hi) / 2;
+                    if (samp->timestamps[mid + 1] <= t)
+                        lo = mid + 1;
+                    else
+                        hi = mid;
+                }
+                float t0 = samp->timestamps[lo];
+                float t1 = samp->timestamps[lo + 1];
+                float alpha = (t1 > t0)
+                    ? (t - t0) / (t1 - t0) : 0.0f;
+
+                for (uint32_t w = 0; w < dst_nc; w++) {
+                    float v0 = samp->values[lo * src_nc + w];
+                    float v1 = samp->values[(lo + 1) * src_nc + w];
+                    model->morph_weights[w] = v0 + alpha * (v1 - v0);
+                }
+            }
+        }
+    }
+
+    /* ── CPU-blend morph deltas ──────────────────────────────────────── */
+    if (model->morph_target_count > 0 && model->blended_pos_deltas &&
+        model->blended_nrm_deltas) {
+        uint32_t vc = model->mesh.vertex_count;
+
+        /* Clear blended arrays (4 floats per vertex for 16-byte stride) */
+        SDL_memset(model->blended_pos_deltas, 0, vc * 4 * sizeof(float));
+        SDL_memset(model->blended_nrm_deltas, 0, vc * 4 * sizeof(float));
+
+        /* Accumulate weighted deltas from each target.
+         * Source deltas are tightly packed (3 floats per vertex).
+         * Destination uses 16-byte stride (4 floats per vertex) to match
+         * the GPU's StructuredBuffer<float4> stride of 16 bytes. */
+        for (uint32_t ti = 0; ti < model->morph_target_count; ti++) {
+            float w = model->morph_weights[ti];
+            if (w < FORGE_SCENE_MORPH_WEIGHT_EPSILON &&
+                w > -FORGE_SCENE_MORPH_WEIGHT_EPSILON) continue; /* skip near-zero */
+
+            const ForgePipelineMorphTarget *mt = &model->mesh.morph_targets[ti];
+            if (mt->position_deltas) {
+                for (uint32_t v = 0; v < vc; v++) {
+                    model->blended_pos_deltas[v * 4 + 0] += w * mt->position_deltas[v * 3 + 0];
+                    model->blended_pos_deltas[v * 4 + 1] += w * mt->position_deltas[v * 3 + 1];
+                    model->blended_pos_deltas[v * 4 + 2] += w * mt->position_deltas[v * 3 + 2];
+                }
+            }
+            if (mt->normal_deltas) {
+                for (uint32_t v = 0; v < vc; v++) {
+                    model->blended_nrm_deltas[v * 4 + 0] += w * mt->normal_deltas[v * 3 + 0];
+                    model->blended_nrm_deltas[v * 4 + 1] += w * mt->normal_deltas[v * 3 + 1];
+                    model->blended_nrm_deltas[v * 4 + 2] += w * mt->normal_deltas[v * 3 + 2];
+                }
+            }
+        }
+    }
+
+    /* ── Upload blended deltas to GPU ───────────────────────────────── */
+    if (model->morph_pos_buffer && model->morph_nrm_buffer &&
+        model->morph_transfer_buffer && model->mesh.vertex_count > 0) {
+        if (!scene->cmd) {
+            SDL_Log("forge_scene: update_morph_animation: scene->cmd is NULL "
+                    "(call after forge_scene_begin_frame)");
+        } else {
+            /* 16-byte stride per element (4 floats) to match SPIRV ArrayStride.
+             * Size validated at load time — cast is safe here. */
+            Uint32 single_size =
+                (Uint32)((uint64_t)model->mesh.vertex_count * 4 * sizeof(float));
+
+            void *mapped = SDL_MapGPUTransferBuffer(
+                scene->device, model->morph_transfer_buffer, true);
+            if (mapped) {
+                /* Pack pos + nrm sequentially in the transfer buffer */
+                SDL_memcpy(mapped, model->blended_pos_deltas, single_size);
+                SDL_memcpy((uint8_t *)mapped + single_size,
+                           model->blended_nrm_deltas, single_size);
+                SDL_UnmapGPUTransferBuffer(scene->device,
+                                           model->morph_transfer_buffer);
+
+                /* Reuse the shared model_copy_pass for morph uploads */
+                if (!scene->model_copy_pass) {
+                    scene->model_copy_pass =
+                        SDL_BeginGPUCopyPass(scene->cmd);
+                    if (!scene->model_copy_pass) {
+                        SDL_Log("forge_scene: morph delta copy pass "
+                                "failed: %s", SDL_GetError());
+                    }
+                }
+                if (scene->model_copy_pass) {
+                    /* Upload position deltas */
+                    SDL_GPUTransferBufferLocation pos_src;
+                    SDL_zero(pos_src);
+                    pos_src.transfer_buffer = model->morph_transfer_buffer;
+                    pos_src.offset = 0;
+                    SDL_GPUBufferRegion pos_dst;
+                    SDL_zero(pos_dst);
+                    pos_dst.buffer = model->morph_pos_buffer;
+                    pos_dst.size   = single_size;
+                    SDL_UploadToGPUBuffer(
+                        scene->model_copy_pass, &pos_src, &pos_dst, true);
+
+                    /* Upload normal deltas */
+                    SDL_GPUTransferBufferLocation nrm_src;
+                    SDL_zero(nrm_src);
+                    nrm_src.transfer_buffer = model->morph_transfer_buffer;
+                    nrm_src.offset = single_size;
+                    SDL_GPUBufferRegion nrm_dst;
+                    SDL_zero(nrm_dst);
+                    nrm_dst.buffer = model->morph_nrm_buffer;
+                    nrm_dst.size   = single_size;
+                    SDL_UploadToGPUBuffer(
+                        scene->model_copy_pass, &nrm_src, &nrm_dst, true);
+                }
+            } else {
+                SDL_Log("forge_scene: morph transfer buffer map failed: %s",
+                        SDL_GetError());
+            }
+        }
+    }
+}
+
+/* ── Draw morph model ────────────────────────────────────────────────────── */
+
+static void forge_scene_draw_morph_model(
+    ForgeScene *scene, ForgeSceneMorphModel *model, mat4 placement)
+{
+    if (!scene || !model || !scene->pass) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0) return;
+
+    model->draw_calls = 0;
+
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    /* Bind vertex + index buffers */
+    SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    /* Bind morph delta storage buffers at vertex stage slots 0 and 1 */
+    SDL_GPUBuffer *morph_bufs[2] = {
+        model->morph_pos_buffer, model->morph_nrm_buffer
+    };
+    SDL_BindGPUVertexStorageBuffers(scene->pass, 0, morph_bufs, 2);
+
+    SDL_GPUGraphicsPipeline *last_pipeline = NULL;
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;
+
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+        mat4 final_world = mat4_multiply(placement, node_world);
+
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count &&
+                (uint32_t)sub->material_index < model->mat_texture_count) {
+                mat = &model->materials.materials[sub->material_index];
+                textures = &model->mat_textures[sub->material_index];
+            }
+
+            /* Select pipeline variant */
+            SDL_GPUGraphicsPipeline *pipeline;
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND && mat->double_sided)
+                pipeline = scene->morph_pipeline_blend_double;
+            else if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND)
+                pipeline = scene->morph_pipeline_blend;
+            else if (mat && mat->double_sided)
+                pipeline = scene->morph_pipeline_double;
+            else
+                pipeline = scene->morph_pipeline;
+
+            if (pipeline != last_pipeline) {
+                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
+                last_pipeline = pipeline;
+            }
+
+            forge_scene__bind_model_textures(scene, textures);
+
+            /* Vertex uniforms */
+            ForgeSceneVertUniforms vu;
+            vu.mvp      = mat4_multiply(scene->cam_vp, final_world);
+            vu.model    = final_world;
+            vu.light_vp = mat4_multiply(scene->light_vp, final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+            /* Fragment uniforms */
+            ForgeSceneModelFragUniforms fu;
+            forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
+            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+            model->draw_calls++;
+        }
+    }
+}
+
+/* ── Draw morph model shadows ────────────────────────────────────────────── */
+
+static void forge_scene_draw_morph_model_shadows(
+    ForgeScene *scene, ForgeSceneMorphModel *model, mat4 placement)
+{
+    if (!scene || !model || !scene->pass) return;
+    if (!scene->morph_shadow_pipeline) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0) return;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->morph_shadow_pipeline);
+
+    /* Bind vertex + index buffers */
+    SDL_GPUBufferBinding vb_bind = { model->vertex_buffer, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    /* Bind position delta storage buffer only (shadow needs no normals) */
+    SDL_BindGPUVertexStorageBuffers(scene->pass, 0,
+                                    &model->morph_pos_buffer, 1);
+
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;
+
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+        mat4 final_world = mat4_multiply(placement, node_world);
+
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            /* Skip non-opaque submeshes */
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count) {
+                int amode = model->materials.materials[sub->material_index].alpha_mode;
+                if (amode == FORGE_PIPELINE_ALPHA_BLEND ||
+                    amode == FORGE_PIPELINE_ALPHA_MASK)
+                    continue;
+            }
+
+            ForgeSceneShadowVertUniforms su;
+            su.light_vp = mat4_multiply(scene->light_vp, final_world);
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, 1, first_index, 0, 0);
+        }
+    }
+}
+
+/* ── Free morph model ────────────────────────────────────────────────────── */
+
+static void forge_scene_free_morph_model(
+    ForgeScene *scene, ForgeSceneMorphModel *model)
+{
+    if (!model) return;
+
+    if (scene && scene->device) {
+        /* Release GPU buffers */
+        if (model->vertex_buffer)
+            SDL_ReleaseGPUBuffer(scene->device, model->vertex_buffer);
+        if (model->index_buffer)
+            SDL_ReleaseGPUBuffer(scene->device, model->index_buffer);
+        if (model->morph_pos_buffer)
+            SDL_ReleaseGPUBuffer(scene->device, model->morph_pos_buffer);
+        if (model->morph_nrm_buffer)
+            SDL_ReleaseGPUBuffer(scene->device, model->morph_nrm_buffer);
+        if (model->morph_transfer_buffer)
+            SDL_ReleaseGPUTransferBuffer(scene->device,
+                                         model->morph_transfer_buffer);
+
+        /* Release per-material textures (skip fallbacks owned by scene) */
+        for (uint32_t i = 0; i < model->mat_texture_count; i++) {
+            ForgeSceneModelTextures *t = &model->mat_textures[i];
+            if (t->base_color && t->base_color != scene->model_white_texture)
+                SDL_ReleaseGPUTexture(scene->device, t->base_color);
+            if (t->normal && t->normal != scene->model_flat_normal)
+                SDL_ReleaseGPUTexture(scene->device, t->normal);
+            if (t->metallic_roughness && t->metallic_roughness != scene->model_white_texture)
+                SDL_ReleaseGPUTexture(scene->device, t->metallic_roughness);
+            if (t->occlusion && t->occlusion != scene->model_white_texture)
+                SDL_ReleaseGPUTexture(scene->device, t->occlusion);
+            if (t->emissive && t->emissive != scene->model_black_texture)
+                SDL_ReleaseGPUTexture(scene->device, t->emissive);
+        }
+    }
+
+    /* Free CPU-side delta arrays */
+    SDL_free(model->blended_pos_deltas);
+    SDL_free(model->blended_nrm_deltas);
+
+    /* Free pipeline data */
+    forge_pipeline_free_scene(&model->scene_data);
+    forge_pipeline_free_mesh(&model->mesh);
+    forge_pipeline_free_materials(&model->materials);
     forge_pipeline_free_animation(&model->animations);
 
     SDL_memset(model, 0, sizeof(*model));
