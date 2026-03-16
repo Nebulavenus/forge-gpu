@@ -306,7 +306,7 @@ depend on.
   extends
 - [Asset Lesson 06](../06-loading-processed-assets/) — the runtime loader
   this lesson extends
-- [GPU Lesson 36](../../gpu/36-scene-loading/) — glTF scene loading with
+- [GPU Lesson 09](../../gpu/09-scene-loading/) — glTF scene loading with
   materials
 - [GPU Lesson 39](../../gpu/39-pipeline-processed-assets/) — renders
   pipeline-processed assets (will use .fmat in a future update)

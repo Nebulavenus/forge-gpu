@@ -474,10 +474,10 @@ In forge-gpu lessons:
   glyph outline loading — the input to this lesson's rasterizer
 - [Math Lesson 15 — Bézier Curves](../../math/15-bezier-curves/) explains the
   parametric curve math used for scanline-Bézier intersection
-- **UI Lesson 03 — Font Atlas** (planned) will pack these bitmaps into a
-  single GPU texture
-- A future **GPU lesson** will render text by sampling the atlas and
-  multiplying alpha by a text color uniform
+- [UI Lesson 03 — Font Atlas](../03-font-atlas/) packs these bitmaps
+  into a single texture atlas
+- [GPU Lesson 28 — UI Rendering](../../gpu/28-ui-rendering/) uploads the
+  atlas to the GPU and renders text by sampling it with a color uniform
 
 ## Building
 

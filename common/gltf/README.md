@@ -54,8 +54,11 @@ forge_arena_destroy(&arena);  // frees all scene memory
   with LINEAR or STEP interpolation
 - **`ForgeGltfAnimChannel`** -- Binds a sampler to a node's TRS property
   (translation, rotation, or scale)
+- **`ForgeGltfMorphTarget`** -- Per-mesh morph target: position, normal,
+  and tangent deltas for blend shape animation
 - **`ForgeGltfAnimPath`** -- Enum: `FORGE_GLTF_ANIM_TRANSLATION`,
-  `FORGE_GLTF_ANIM_ROTATION`, `FORGE_GLTF_ANIM_SCALE`
+  `FORGE_GLTF_ANIM_ROTATION`, `FORGE_GLTF_ANIM_SCALE`,
+  `FORGE_GLTF_ANIM_MORPH_WEIGHTS`
 - **`ForgeGltfInterpolation`** -- Enum: `FORGE_GLTF_INTERP_LINEAR`,
   `FORGE_GLTF_INTERP_STEP`
 - **`ForgeGltfBuffer`** -- A loaded binary buffer (`.bin` file)
@@ -131,11 +134,13 @@ and improves GPU vertex cache performance.
 
 Each primitive can reference a material with:
 
+- **`name`** -- Material name from glTF
 - **`base_color[4]`** -- RGBA color factor (default: opaque white)
-- **`texture_path`** -- File path to the base color texture (empty if none)
-- **`has_texture`** -- Whether a texture path was resolved
-- **`normal_map_path`** -- File path to the normal map texture (empty if none)
-- **`has_normal_map`** -- Whether a normal map was resolved
+- **`texture_path`** / **`has_texture`** -- Base color texture path
+- **`normal_map_path`** / **`has_normal_map`** -- Normal map texture path
+- **`metallic_roughness_path`** / **`has_metallic_roughness`** -- Metallic-roughness texture path
+- **`occlusion_path`** / **`has_occlusion`** -- Ambient occlusion texture path
+- **`emissive_factor[3]`** / **`emissive_path`** / **`has_emissive`** -- Emissive color and texture
 - **`alpha_mode`** -- `OPAQUE`, `MASK`, or `BLEND` (default: opaque)
 - **`alpha_cutoff`** -- Threshold for alpha mask mode (default: 0.5)
 - **`double_sided`** -- Whether to render both faces
@@ -160,6 +165,7 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 - **Indexed geometry** with 16-bit and 32-bit indices
 - **Vertex attributes**: POSITION, NORMAL, TEXCOORD_0, TANGENT
 - **Multiple binary buffers** referenced by URI
+- **Morph targets** with position, normal, and tangent deltas
 - **Accessor validation** (bounds checking, component type validation)
 
 ## Constants
@@ -177,6 +183,7 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 | `FORGE_GLTF_MAX_ANIMATIONS` | 16 | Default animation array sizing hint (not enforced) |
 | `FORGE_GLTF_MAX_ANIM_CHANNELS` | 128 | Default channel array sizing hint (not enforced) |
 | `FORGE_GLTF_MAX_ANIM_SAMPLERS` | 128 | Default sampler array sizing hint (not enforced) |
+| `FORGE_GLTF_MAX_MORPH_TARGETS` | 8 | Maximum morph targets per mesh (enforced) |
 | `FORGE_GLTF_JOINTS_PER_VERT` | 4 | Joint influences per vertex |
 | `FORGE_GLTF_MAX_CHILDREN` | 256 | Default children array sizing hint (not enforced) |
 | `FORGE_GLTF_MAX_DEPTH` | 256 | Maximum hierarchy depth (recursion limit — enforced) |
@@ -186,7 +193,8 @@ GPU textures however they prefer -- see Lesson 09 for a full example.
 
 Most constants are sizing hints from before the arena migration and are no
 longer enforced as hard caps — the loader dynamically allocates arrays via the
-arena. `FORGE_GLTF_MAX_BUFFERS` and `FORGE_GLTF_MAX_DEPTH` remain enforced.
+arena. `FORGE_GLTF_MAX_BUFFERS`, `FORGE_GLTF_MAX_MORPH_TARGETS`, and
+`FORGE_GLTF_MAX_DEPTH` remain enforced.
 See `forge_gltf.h` for the current allocation behavior.
 
 ## Dependencies

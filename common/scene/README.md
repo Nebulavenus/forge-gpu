@@ -41,6 +41,7 @@ if (!forge_scene_init(&scene, &cfg, argc, argv)) {
 | `forge_scene_end_shadow_pass(scene)` | End shadow pass |
 | `forge_scene_begin_main_pass(scene)` | Begin main color+depth pass (draws sky) |
 | `forge_scene_draw_mesh(scene, vb, ib, count, model, color)` | Draw a lit mesh with Blinn-Phong and shadow |
+| `forge_scene_draw_mesh_double_sided(scene, vb, ib, count, model, color)` | Draw a lit mesh without back-face culling |
 | `forge_scene_draw_grid(scene)` | Draw procedural grid floor |
 | `forge_scene_end_main_pass(scene)` | End main pass |
 | `forge_scene_begin_ui(scene, mx, my, down)` | Begin UI for this frame |

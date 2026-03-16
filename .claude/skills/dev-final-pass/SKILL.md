@@ -1,13 +1,13 @@
 ---
 name: dev-final-pass
-description: Run a quality review pass on a lesson before publishing, catching the recurring issues found across 51 closed PRs
+description: Run a quality review pass on a lesson before publishing, catching recurring issues found across project PR history
 argument-hint: "[lesson-number or lesson-name]"
 disable-model-invocation: false
 ---
 
 Run a systematic quality review on a GPU, math, physics, or audio lesson
-before publishing. This skill encodes every recurring theme from PR review
-feedback across the project's history (51 closed PRs, 177 review comments).
+before publishing. This skill encodes recurring themes from PR review
+feedback across the project's history.
 Running this pass before `/dev-publish-lesson` should eliminate most reviewer
 findings.
 

@@ -542,8 +542,8 @@ access at runtime.
 
 | Track | Connection |
 |:---|:---|
-| [GPU Lesson 06 — 3D Cube](../../gpu/06-3d-cube/) | Uses hard-coded cube vertices; replacing them with `forge_shapes_cube()` eliminates manual vertex data |
-| [GPU Lesson 19 — Environment Maps](../../gpu/19-environment-maps/) | Skybox and reflection probes use `forge_shapes_sphere()` for the environment geometry |
+| [GPU Lesson 06 — Depth & 3D](../../gpu/06-depth-and-3d/) | Uses hard-coded cube vertices; replacing them with `forge_shapes_cube()` eliminates manual vertex data |
+| [GPU Lesson 14 — Environment Mapping](../../gpu/14-environment-mapping/) | Skybox and reflection probes use `forge_shapes_sphere()` for the environment geometry |
 | [GPU Lesson 33 — Vertex Pulling](../../gpu/33-vertex-pulling/) | SoA layout uploads directly to storage buffers for vertex pulling |
 | [Asset Lesson 03 — Mesh Processing](../03-mesh-processing/) | Processes imported meshes; procedural geometry skips import but uses the same GPU upload path |
 | [Asset Lesson 05 — Asset Bundles](../05-asset-bundles/) | Packs processed assets into compressed archive files with table-of-contents indexing for fast random access at runtime |

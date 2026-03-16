@@ -386,8 +386,8 @@ Graphics and game programming uses these techniques for:
 - [Lesson 13 — Gradient Noise](../13-gradient-noise/) builds on hash functions
   for coherent noise; blue noise is the spatial complement (even spacing vs
   smooth variation)
-- [GPU Lesson 25 — Shader Noise](../../gpu/25-shader-noise/) (planned) will
-  apply blue noise dithering and low-discrepancy sampling on the GPU
+- [GPU Lesson 25 — Shader Noise](../../gpu/25-shader-noise/) applies
+  blue noise dithering and low-discrepancy sampling on the GPU
 
 ## Building
 

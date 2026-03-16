@@ -5,12 +5,12 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–41** — From Hello Window through Scene Model Loading
+- **GPU Lessons 01–43** — From Hello Window through Pipeline Skinned Animations
 - **Math Lessons 01–18** — From Vectors through Scalar Field Gradients
 - **Engine Lessons 01–12** — From Intro to C through Memory Arenas
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Asset Lessons 01–09** — From Pipeline Scaffold through Scene Hierarchy
+- **Asset Lessons 01–13** — From Pipeline Scaffold through Morph Targets
 
 ## GPU Lessons — Remaining
 
@@ -71,7 +71,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 - [x] **Physics Lesson 04 — Rigid Body State and Orientation** — Mass, center of mass, inertia tensor; quaternion orientation; linear and angular velocity; state representation and integration; inertia tensor rotation to world space
 - [x] **Physics Lesson 05 — Forces and Torques** — Applying forces at arbitrary points; gravity, drag, and friction as force generators; torque and angular acceleration; force accumulator pattern; combining linear and angular effects; gyroscopic stability
-- [x] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; sphere-sphere body-body collision detection; static and dynamic friction (Coulomb model); resting contact resolution; sphere stacking with body-body collisions; **first lesson with forge UI overlay** — sliders for friction/restitution/solver iterations, energy and contact count readouts
+- [x] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; sphere-sphere body-body collision detection; static and dynamic friction (Coulomb model); resting contact resolution; sphere stacking with body-body collisions; forge UI overlay with sliders for friction/restitution/solver iterations, energy and contact count readouts
 
 ### Collision Detection
 
@@ -141,7 +141,7 @@ full plan. Summary:
 - [x] **Asset Lesson 10 — Animation Loader and Per-Clip Export** — Runtime `.fanim` loader in `forge_pipeline.h`; per-clip export via `--split` flag in `forge-anim-tool`; `.fanims` stub manifest; animation pipeline plugin defaults to split mode
 - [x] **Asset Lesson 11 — Animation Manifest and Named Lookup** — `.fanims` JSON manifest with loop flags, tags, and named clip lookup; `forge_pipeline_load_anim_set`, `forge_pipeline_find_clip`, and `forge_pipeline_load_clip` API; manifest generation with tags in `forge-anim-tool`
 - [x] **Asset Lesson 12 — Skin Data and Skinned Vertices** — `.fskin` binary format for joint hierarchies and inverse bind matrices; skinned vertex support in `.fmesh` v3; `forge_pipeline_load_skins` API; mesh tool and scene tool extensions
-- [ ] **Asset Lesson 13 — Morph Targets** — Morph target (blend shape) support across the pipeline: glTF morph target parsing (`ForgeGltfMorphTarget` with position/normal/tangent deltas), `.fmesh` `FLAG_MORPHS` bit with delta data appended after indices, morph weight animation channels in `.fanim` (target_path 3), runtime morph data loading in `forge_pipeline.h`, mesh tool serialization with morph metadata sidecar
+- [x] **Asset Lesson 13 — Morph Targets** — Morph target (blend shape) support across the pipeline: glTF morph target parsing (`ForgeGltfMorphTarget` with position/normal/tangent deltas), `.fmesh` `FLAG_MORPHS` bit with delta data appended after indices, morph weight animation channels in `.fanim` (target_path 3), runtime morph data loading in `forge_pipeline.h`, mesh tool serialization with morph metadata sidecar
 
 ### Web Frontend
 

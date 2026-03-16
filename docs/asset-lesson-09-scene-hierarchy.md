@@ -168,12 +168,13 @@ channels from `.fanim` target these nodes by index to spin the wheels.
   ranges. The name could be clearer — `SubmeshRange`, `MeshMapping`, or
   similar. "SceneMesh" is ambiguous alongside `ForgePipelineMesh`.
 
-- **ForgeGltfScene stack size**: The glTF parser struct uses fixed-size arrays
-  (512 nodes × 256 children, 1024 primitives, etc.) making it too large for
-  the stack. The scene tool heap-allocates it, but this affects every tool and
-  lesson. An arena allocator or switching to heap-allocated dynamic arrays
-  would fix it project-wide.
+### Resolved questions
 
-- **PLAN.md numbering**: The current plan has Lesson 09 as "Web UI Scaffold."
-  This lesson takes that slot. The web frontend lessons (09–12) shift to
-  10–13, or the plan is renumbered.
+- **ForgeGltfScene stack size**: Resolved. The glTF parser now uses
+  arena-allocated dynamic arrays via `ForgeArena`, replacing the fixed-size
+  arrays that were too large for the stack. All tools and lessons use the
+  arena allocator.
+
+- **PLAN.md numbering**: Resolved. Scene Hierarchy took the Lesson 09 slot.
+  The web frontend lessons shifted to 14–17 in PLAN.md. Lessons 10–13 are
+  Animation Loader, Animation Manifest, Skinned Animations, and Morph Targets.

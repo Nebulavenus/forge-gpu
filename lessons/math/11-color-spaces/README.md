@@ -327,8 +327,9 @@ Graphics and game programming uses color space math for:
   swapchain format, which automatically gamma-encodes output
 - [GPU Lesson 10 — Basic Lighting](../../gpu/10-basic-lighting/) performs
   Blinn-Phong shading in linear space
-- GPU Lesson 21 — HDR & Tone Mapping (planned) will use `color_tonemap_aces()`,
-  `color_apply_exposure()`, and the full linear → tone map → sRGB pipeline
+- [GPU Lesson 21 — HDR & Tone Mapping](../../gpu/21-hdr-tone-mapping/) uses
+  `color_tonemap_aces()`, `color_apply_exposure()`, and the full linear →
+  tone map → sRGB pipeline
 
 ## Building
 

@@ -471,10 +471,10 @@ In forge-gpu lessons:
   coordinates and position math
 - [GPU Lesson 04 — Textures & Samplers](../../gpu/04-textures-and-samplers/)
   — UV coordinates, texture sampling, bilinear filtering
-- **UI Lesson 04** (upcoming) — text layout using the glyph table to
-  build vertex data
-- A future **GPU lesson** will upload the atlas texture and render text
-  quads sampling from it
+- [UI Lesson 04 — Text Layout](../04-text-layout/) — text layout using
+  the glyph table to build vertex data
+- [GPU Lesson 28 — UI Rendering](../../gpu/28-ui-rendering/) uploads the
+  atlas texture and renders text quads sampling from it
 
 ## Building
 
@@ -539,8 +539,8 @@ data (positions + UV coordinates) ready for a GPU renderer.
 
 ## Further reading
 
-- [UI Lesson 04](../04-text-layout/) (upcoming) — text layout and
-  shaping using the glyph table from this lesson
+- [UI Lesson 04](../04-text-layout/) — text layout and shaping using the
+  glyph table from this lesson
 - [GPU Lesson 04 — Textures & Samplers](../../gpu/04-textures-and-samplers/)
   — how the GPU samples textures with UV coordinates
 - [A Thousand Ways to Pack the Bin](http://clb.confined.space/files/RectangleBinPack.pdf)

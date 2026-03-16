@@ -380,7 +380,7 @@ Every function needs:
 2. **Check library**: `mat4_rotate_z` exists!
 3. **Decision**: Don't create a new lesson for rotation yet (matrices lesson will cover it)
 4. **Refactor Lesson 03**: Replace bespoke math with `mat4_rotate_z`
-5. **Plan**: Add matrices lesson later (lesson 02-matrices)
+5. **Plan**: Add matrices lesson later (lesson 05-matrices)
 
 ## Tips
 

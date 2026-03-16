@@ -239,7 +239,7 @@ Files added:
 Also updates root README.md, PLAN.md, and CMakeLists.txt to integrate
 the new lesson.
 
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 Present the commit message to the user for approval before committing.

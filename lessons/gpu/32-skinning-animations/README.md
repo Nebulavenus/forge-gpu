@@ -279,9 +279,9 @@ orientation.
 
 This lesson uses:
 
-- **Quaternions** — [Math Lesson 04](../../math/04-quaternions/) for
+- **Quaternions** — [Math Lesson 08](../../math/08-orientation/) for
   rotation representation and slerp interpolation
-- **Matrices** — [Math Lesson 02](../../math/02-matrices/) for joint
+- **Matrices** — [Math Lesson 05](../../math/05-matrices/) for joint
   matrix composition and MVP transforms
 
 Key math library functions:

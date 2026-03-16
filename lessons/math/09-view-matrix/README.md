@@ -316,8 +316,8 @@ Graphics and game programming uses view matrices for:
 
 - [GPU Lesson 06 — Depth & 3D](../../gpu/06-depth-and-3d/) uses `mat4_look_at`
   for a static camera viewing several cubes
-- GPU Lesson 07 (upcoming) will use `mat4_view_from_quat` for a first-person
-  camera with keyboard and mouse input
+- [GPU Lesson 07 — Camera & Input](../../gpu/07-camera-and-input/) uses
+  `mat4_view_from_quat` for a first-person camera with keyboard and mouse input
 
 ## Building
 

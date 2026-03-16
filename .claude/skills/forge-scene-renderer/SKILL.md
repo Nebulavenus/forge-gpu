@@ -8,8 +8,9 @@ trigger: Use when someone needs a full 3D scene setup, wants to avoid rendering 
 
 Set up a complete 3D rendering scene using the `forge_scene.h` header-only
 library. One `forge_scene_init()` call creates the GPU device, window, depth
-texture, shadow map, five graphics pipelines (shadow, scene, grid, sky, UI),
-a quaternion FPS camera, and an optional immediate-mode UI system.
+texture, shadow map, six graphics pipelines (shadow, scene, scene
+double-sided, grid, sky, UI), a quaternion FPS camera, and an optional
+immediate-mode UI system.
 
 ## Usage pattern
 

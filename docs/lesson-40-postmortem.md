@@ -119,11 +119,11 @@ the actual API.
 
 **Lesson:** Check the header before using a function name from memory.
 
-## Blockers for retrying Lesson 40
+## Former blockers (resolved)
 
-### Asset Lesson 09 — Scene Hierarchy (in progress)
+### Asset Lesson 09 — Scene Hierarchy (complete)
 
-Addresses issue #8 above. A new C tool (`tools/scene/`) extracts the glTF
+Addressed issue #8 above. A new C tool (`tools/scene/`) extracts the glTF
 node hierarchy into a `.fscene` binary format. The runtime loader in
 `forge_pipeline.h` reads it back and computes world transforms by walking the
 tree. This gives the renderer the node tree, per-node transforms, and
@@ -132,15 +132,20 @@ mesh-to-submesh mappings needed to draw multi-node models correctly.
 See [docs/asset-lesson-09-scene-hierarchy.md](asset-lesson-09-scene-hierarchy.md)
 for full design details.
 
-**Status:** C tool, Python plugin, runtime loader, and tests are implemented.
-Verified against CesiumMilkTruck — hierarchy, instancing, and transforms are
-correct.
+**Status:** Complete. C tool, Python plugin, runtime loader, and tests are
+implemented and merged. Verified against CesiumMilkTruck — hierarchy,
+instancing, and transforms are correct.
 
-**Blocked by:** `ForgeGltfScene` stack overflow. The struct uses fixed-size
-arrays (512 nodes × 256 children, 1024 primitives, etc.) and is too large for
-the stack. The scene tool works around this by heap-allocating the struct, but
-the mesh tool, anim tool, and every GPU lesson that calls `forge_gltf_load()`
-have the same latent problem. The fix is to replace the fixed arrays in
-`ForgeGltfScene` with heap-allocated (or arena-allocated) dynamic arrays sized
-to the actual scene. This is a prerequisite change in `common/gltf/forge_gltf.h`
-that affects all consumers of the glTF parser.
+### ForgeGltfScene stack overflow (resolved)
+
+The `ForgeGltfScene` struct previously used fixed-size arrays (512 nodes ×
+256 children, 1024 primitives, etc.) that were too large for the stack. This
+was resolved by migrating to arena-allocated dynamic arrays via `ForgeArena`.
+All consumers (`forge_gltf_load`, mesh tool, anim tool, scene tool) now use
+the arena allocator. See `common/gltf/forge_gltf.h` for the current
+implementation.
+
+### Lesson 40 resolution
+
+With both blockers resolved, GPU Lesson 40 (Scene Renderer) was completed
+along with Lessons 41–43 which build on it.

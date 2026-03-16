@@ -224,7 +224,7 @@ In the lesson README, add a "Math" section linking to relevant math lessons:
 
 This lesson uses:
 - **Vectors** — [Math Lesson 01](../math/01-vectors/) for positions and colors
-- **Matrices** — [Math Lesson 02](../math/02-matrices/) for rotations
+- **Matrices** — [Math Lesson 05](../math/05-matrices/) for rotations
 ```
 
 ## Diagrams and Formulas

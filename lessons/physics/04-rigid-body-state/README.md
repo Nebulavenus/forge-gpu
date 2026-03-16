@@ -530,9 +530,9 @@ build\lessons\physics\04-rigid-body-state\Debug\04-rigid-body-state.exe
 
 ## What's next
 
-Physics Lesson 05 adds rigid body collision response -- the angular impulse
-that arises when two oriented bodies collide at a point away from their
-centers of mass, producing both linear and angular velocity changes.
+Physics Lesson 05 adds forces and torques -- applying gravity, drag, and
+friction as force generators, and computing torque from forces applied at
+points away from the center of mass.
 
 ## Exercises
 
@@ -565,9 +565,9 @@ centers of mass, producing both linear and angular velocity changes.
 
 - [Physics Lesson 01 -- Point Particles](../01-point-particles/) -- integration
   and force accumulator foundations
-- [Physics Lesson 05 -- Rigid Body Collisions](../05-rigid-body-collisions/) --
-  angular impulse at a contact point, extending this lesson's state
-- [Math Lesson 06 -- Quaternions](../../math/06-quaternions/) -- quaternion
+- [Physics Lesson 05 -- Forces and Torques](../05-forces-and-torques/) --
+  force generators and torque from off-center forces, extending this lesson's state
+- [Math Lesson 08 -- Orientation](../../math/08-orientation/) -- quaternion
   algebra, the derivative formula, and SLERP
 - Baraff & Witkin, "Physically Based Modeling" (SIGGRAPH 1997 course notes),
   Part II -- the canonical derivation of rigid body equations of motion

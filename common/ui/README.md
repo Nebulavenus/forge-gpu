@@ -292,6 +292,8 @@ if (forge_ui_ttf_load("font.ttf", &font)) {
 
 ### Functions -- Windows (forge_ui_window.h)
 
+- **`forge_ui_window_state_default()`** -- Return a `ForgeUiWindowState` with
+  sensible default values (position, size, z_order, collapsed)
 - **`forge_ui_wctx_init(wctx, ctx)`** -- Initialize a window context wrapping
   an existing UI context. Returns `true` on success
 - **`forge_ui_wctx_free(wctx)`** -- Free per-window draw list buffers

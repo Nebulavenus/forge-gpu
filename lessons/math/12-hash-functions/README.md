@@ -296,7 +296,7 @@ static). But it is the **foundation** for structured noise:
   (see [Math Lesson 13 — Gradient Noise](../13-gradient-noise/))
 - **Blue noise**: white noise with low-frequency content suppressed, reducing
   visible clumps
-  (see [Math Lesson 14 — Blue Noise](../14-blue-noise/) when available)
+  (see [Math Lesson 14 — Blue Noise](../14-blue-noise-sequences/))
 - **Dithering**: adding small amounts of noise to break up color banding in
   gradients
 
@@ -315,10 +315,10 @@ Graphics and game programming uses hash functions for:
 
 **In forge-gpu lessons:**
 
-- [GPU Lesson 25 — Shader Noise](../../gpu/25-shader-noise/) will use these
-  hash functions for white noise in fragment shaders (when available)
-- [GPU Lesson 27 — SSAO](../../gpu/27-ssao/) will use noise textures for
-  random sample rotation (when available)
+- [GPU Lesson 25 — Shader Noise](../../gpu/25-shader-noise/) uses these
+  hash functions for white noise in fragment shaders
+- [GPU Lesson 27 — SSAO](../../gpu/27-ssao/) uses noise textures for
+  random sample rotation
 
 ## Building
 
@@ -412,7 +412,7 @@ quality to practical multi-dimensional seeding and visualization.
 
 - [Math Lesson 13 — Gradient Noise](../13-gradient-noise/) —
   builds on hash functions to create smooth, continuous noise
-- [Math Lesson 14 — Blue Noise](../14-blue-noise/) (when available) —
+- [Math Lesson 14 — Blue Noise](../14-blue-noise-sequences/) —
   improving sample distribution by removing low-frequency clumps
 - Jarzynski & Olano, "Hash Functions for GPU Rendering" (JCGT, 2020) — survey
   and comparison of hash functions suitable for shaders

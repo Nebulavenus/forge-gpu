@@ -76,7 +76,7 @@ If the "Markdown Lint" check failed:
    git add <fixed-files>
    git commit -m "Fix markdown linting errors
 
-   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+   Co-Authored-By: Claude <noreply@anthropic.com>"
    git push
    ```
 
