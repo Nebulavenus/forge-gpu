@@ -100,7 +100,7 @@
 #define CAM_SENSITIVITY 0.003f
 #define CAM_NEAR       0.1f
 #define CAM_FAR        100.0f
-#define CAM_FOV        1.0472f  /* 60 degrees in radians */
+#define CAM_FOV_DEG    60.0f
 
 /* Edge detection thresholds */
 #define DEPTH_THRESHOLD  0.002f
@@ -1663,50 +1663,36 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     state->last_ticks = now;
     if (dt > MAX_DELTA_TIME) dt = MAX_DELTA_TIME;
 
-    /* ── 2. Camera movement ───────────────────────────────────────── */
-    /* Compute forward and right vectors from yaw (horizontal rotation).
-     * Pitch only affects view direction, not movement — this keeps the
-     * camera moving along the XZ plane regardless of look angle. */
+    /* ── 2. Camera movement (quaternion camera pattern) ────────────── */
 
-    float sin_yaw = SDL_sinf(state->cam_yaw);
-    float cos_yaw = SDL_cosf(state->cam_yaw);
-    vec3 forward = vec3_create(-sin_yaw, 0.0f, -cos_yaw);
-    vec3 world_up = vec3_create(0.0f, 1.0f, 0.0f);
-    vec3 right = vec3_normalize(
-        vec3_cross(forward, world_up));
+    quat cam_orient = quat_from_euler(state->cam_yaw, state->cam_pitch, 0.0f);
+    vec3 forward = quat_forward(cam_orient);
+    vec3 right   = quat_right(cam_orient);
 
-    vec3 velocity = vec3_create(0.0f, 0.0f, 0.0f);
-    if (state->key_w) velocity = vec3_add(velocity, forward);
-    if (state->key_s) velocity = vec3_sub(velocity, forward);
-    if (state->key_d) velocity = vec3_add(velocity, right);
-    if (state->key_a) velocity = vec3_sub(velocity, right);
-    if (state->key_space) velocity = vec3_add(velocity, world_up);
-    if (state->key_shift) velocity = vec3_sub(velocity, world_up);
+    vec3 move = vec3_create(0.0f, 0.0f, 0.0f);
+    if (state->key_w) move = vec3_add(move, forward);
+    if (state->key_s) move = vec3_sub(move, forward);
+    if (state->key_d) move = vec3_add(move, right);
+    if (state->key_a) move = vec3_sub(move, right);
+    if (state->key_space)  move.y += 1.0f;
+    if (state->key_shift)  move.y -= 1.0f;
 
-    float vel_len = vec3_length(velocity);
-    if (vel_len > VELOCITY_EPSILON) {
-        velocity = vec3_scale(
-            vec3_normalize(velocity), CAM_SPEED * dt);
-        state->cam_position = vec3_add(state->cam_position,
-                                                    velocity);
+    if (vec3_length(move) > VELOCITY_EPSILON) {
+        move = vec3_scale(vec3_normalize(move), CAM_SPEED * dt);
+        state->cam_position = vec3_add(state->cam_position, move);
     }
 
     /* ── 3. Matrix computation ────────────────────────────────────── */
 
-    /* View matrix from camera position + yaw/pitch look direction */
-    float sin_pitch = SDL_sinf(state->cam_pitch);
-    float cos_pitch = SDL_cosf(state->cam_pitch);
-    vec3 look_dir = vec3_create(-sin_yaw * cos_pitch,
-                                      sin_pitch,
-                                     -cos_yaw * cos_pitch);
-    vec3 target = vec3_add(state->cam_position, look_dir);
-    mat4 view = mat4_look_at(state->cam_position, target, world_up);
+    float aspect = (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT;
+    mat4 view = mat4_view_from_quat(state->cam_position, cam_orient);
     mat4 proj = mat4_perspective(
-        CAM_FOV, (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT,
+        CAM_FOV_DEG * FORGE_DEG2RAD, aspect,
         CAM_NEAR, CAM_FAR);
     mat4 vp = mat4_multiply(proj, view);
 
     /* Light matrices for shadow mapping (light_dir computed once in init) */
+    vec3 world_up  = vec3_create(0.0f, 1.0f, 0.0f);
     vec3 light_pos = vec3_scale(state->light_dir, -LIGHT_DISTANCE);
     mat4 light_view = mat4_look_at(
         light_pos, vec3_create(0.0f, 0.0f, 0.0f), world_up);
