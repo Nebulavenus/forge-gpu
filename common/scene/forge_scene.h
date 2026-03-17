@@ -6255,11 +6255,12 @@ static void forge_scene_update_morph_animation(
             if (model->anim_time < 0.0f) model->anim_time += dur;
         }
 
-        /* Reset weights to defaults before evaluating channels so stale
-         * values from prior frames do not persist when channels don't write
-         * every component. */
+        /* Reset weights to authored defaults before evaluating channels so
+         * stale values from prior frames do not persist when channels don't
+         * write every component. Uses default_weight (not 0.0f) to preserve
+         * authored rest poses — see GitHub issue #316. */
         for (uint32_t w = 0; w < model->morph_target_count; w++)
-            model->morph_weights[w] = 0.0f;
+            model->morph_weights[w] = model->mesh.morph_targets[w].default_weight;
 
         /* Find morph weight channels and sample them.
          * forge_pipeline_anim_apply skips MORPH_WEIGHTS channels, so we
