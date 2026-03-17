@@ -262,7 +262,7 @@ use `forge_pipeline_load_mesh()` / `forge_pipeline_load_texture()` and declare
 
 ## Phase 5 — Update skills
 
-### 5A: `dev-new-lesson`
+### 5A: `dev-gpu-lesson`
 
 Add a mandatory section:
 
@@ -308,9 +308,7 @@ New checklist category:
 > - [ ] CMake has `add_dependencies(lesson_XX forge-assets)`
 > - [ ] If new assets added, `python -m pipeline` runs clean
 
-### 5D: `dev-publish-lesson`
-
-Add to PR validation:
+### 5D: `dev-final-pass` (additional PR validation)
 
 > **Asset Pipeline Check** (GPU Lessons 39+)
 >

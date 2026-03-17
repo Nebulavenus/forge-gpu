@@ -8,9 +8,9 @@ and a debug visualization of stencil buffer contents. All geometry is
 procedural (cubes, spheres, portal frame). Uses traditional vertex input (not
 vertex pulling) to keep focus on the stencil concepts.
 
-## dev-new-lesson Compliance Checklist
+## dev-gpu-lesson Compliance Checklist
 
-This plan follows every requirement from the `/dev-new-lesson` skill:
+This plan follows every requirement from the `/dev-gpu-lesson` skill:
 
 - [x] Start from clean main branch (`git checkout main && git pull`)
 - [x] Determine math needs — uses `mat4_scale_uniform`, `mat4_translate`,

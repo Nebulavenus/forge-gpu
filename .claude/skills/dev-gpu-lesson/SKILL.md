@@ -1,11 +1,16 @@
 ---
-name: dev-new-lesson
-description: Scaffold a new forge-gpu lesson with all required files
+name: dev-gpu-lesson
+description: Scaffold a new GPU lesson using forge_scene.h for the rendering baseline
 argument-hint: "[number] [name] [description]"
 disable-model-invocation: true
 ---
 
-Create a new lesson for the forge-gpu project. The user will provide:
+Create a new GPU lesson for the forge-gpu project. Every GPU lesson uses
+`forge_scene.h` for the rendering baseline (shadow map, Blinn-Phong lighting,
+grid floor, sky gradient, FPS camera, UI). The lesson focuses entirely on its
+subject matter, not rendering plumbing.
+
+The user will provide:
 
 - **Number**: two-digit lesson number (e.g. 02)
 - **Name**: short kebab-case name (e.g. first-triangle)
@@ -37,10 +42,7 @@ If any of these are missing, ask the user before proceeding.
 
 4. **Create main.c** using the SDL callback architecture:
    - `#define SDL_MAIN_USE_CALLBACKS 1` before includes
-   - **For lessons that need a full 3D scene** (lighting, shadow map, grid,
-     camera, UI), use `forge_scene.h` instead of building the rendering
-     baseline from scratch. This applies to all GPU lessons from ~lesson 40
-     onward, and to all physics and audio lessons. See the
+   - **Always use `forge_scene.h`** for the rendering baseline. See the
      `forge-scene-renderer` skill for the full API.
    - Include required headers:
 
@@ -48,9 +50,8 @@ If any of these are missing, ask the user before proceeding.
      #include <SDL3/SDL.h>
      #include <SDL3/SDL_main.h>
      #include <stddef.h>    /* offsetof */
-     #include "math/forge_math.h"  /* ALWAYS include the math library */
+     #include "math/forge_math.h"
 
-     /* For lessons needing a full 3D scene baseline: */
      #define FORGE_SCENE_IMPLEMENTATION
      #include "scene/forge_scene.h"
      ```
@@ -107,13 +108,11 @@ If any of these are missing, ask the user before proceeding.
 
 7. **Update the root CMakeLists.txt**: add `add_subdirectory(lessons/gpu/NN-name)` under "GPU Lessons"
 
-8. **Update README.md**: add a row to the GPU Lessons table
+8. **Update PLAN.md**: check off the lesson if it was listed, or add it
 
-9. **Update PLAN.md**: check off the lesson if it was listed, or add it
+9. **Build and test**: run `cmake --build build --config Debug` and verify it runs
 
-10. **Build and test**: run `cmake --build build --config Debug` and verify it runs
-
-11. **Capture a screenshot**: Use the `/dev-add-screenshot` skill to capture a screenshot
+10. **Capture a screenshot**: Use the `/dev-add-screenshot` skill to capture a screenshot
     and embed it in the lesson README. Every lesson must have a visual in the
     "Result" section so readers can see what they're building before diving into code.
 
@@ -124,10 +123,10 @@ If any of these are missing, ask the user before proceeding.
     Verify the image is in `lessons/gpu/NN-name/assets/` and the README
     references it with `![Lesson NN screenshot](assets/screenshot.png)`.
 
-12. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
+11. **Create a matching skill**: add `.claude/skills/<topic>/SKILL.md` that
     distills the lesson into a reusable pattern with YAML frontmatter
 
-13. **Run markdown linting**: Use the `/dev-markdown-lint` skill to verify all markdown files pass linting:
+12. **Run markdown linting**: Use the `/dev-markdown-lint` skill to verify all markdown files pass linting:
 
     ```bash
     npx markdownlint-cli2 "**/*.md"

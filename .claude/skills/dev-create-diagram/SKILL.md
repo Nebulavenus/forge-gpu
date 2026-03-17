@@ -15,7 +15,7 @@ learners understand the topics being taught.
   mathematical concepts visually
 - A concept is hard to explain with text alone — a diagram makes it click
 - You're writing a lesson with `/dev-math-lesson`, `/dev-engine-lesson`, or
-  `/dev-new-lesson` and want to add visual aids
+  `/dev-gpu-lesson` and want to add visual aids
 
 **When NOT to use this skill:**
 

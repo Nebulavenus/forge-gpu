@@ -5,11 +5,9 @@ argument-hint: "[lesson-number or lesson-name]"
 disable-model-invocation: false
 ---
 
-Run a systematic quality review on a GPU, math, physics, or audio lesson
-before publishing. This skill encodes recurring themes from PR review
-feedback across the project's history.
-Running this pass before `/dev-publish-lesson` should eliminate most reviewer
-findings.
+Run a systematic quality review on any lesson (GPU, math, engine, UI, physics,
+audio, or asset pipeline) before creating a PR with `/dev-create-pr`. This skill
+encodes recurring themes from PR review feedback across the project's history.
 
 The user provides:
 
@@ -32,6 +30,31 @@ every error path.
 
 Use a Task agent (model: haiku) for builds, shader compilation, linting, and
 other command execution — never run those directly from the main agent.
+
+---
+
+## 0. Required files
+
+Verify the lesson has all required pieces.
+
+**What to check:**
+
+- [ ] `lessons/<track>/NN-name/README.md` exists
+- [ ] `lessons/<track>/NN-name/main.c` exists (GPU, physics, audio, engine
+  lessons) — asset lessons may use Python entry points instead
+- [ ] `lessons/<track>/NN-name/CMakeLists.txt` exists (C lessons only — asset
+  lessons that are pure Python do not need one)
+- [ ] `lessons/<track>/NN-name/assets/screenshot.png` exists (GPU, physics,
+  audio lessons) — **not** just a placeholder
+- [ ] `.claude/skills/<topic>/SKILL.md` exists (the matching skill)
+- [ ] Root `CMakeLists.txt` includes `add_subdirectory(lessons/<track>/NN-name)`
+  (C lessons only)
+- [ ] Root `PLAN.md` has the lesson checked off or added
+
+**Shader directory:** Only required if the lesson has its own shaders beyond
+what `forge_scene.h` provides. GPU lessons using `forge_scene.h` for the
+rendering baseline do not need a `shaders/` directory unless they add
+lesson-specific shaders.
 
 ---
 
@@ -77,6 +100,9 @@ if (!SDL_SomeFunction(args)) {
 `SDL_Init(`, `SDL_Claim` across all `.c` and `.h` files in the lesson directory
 and verify each has an `if (!...)` wrapper.
 
+**Skip for:** math lessons, engine lessons, UI lessons, asset lessons (no SDL
+GPU calls).
+
 ---
 
 ## 2. Command buffer lifecycle (acquired from Lesson 24 review)
@@ -101,10 +127,7 @@ acquisition, you **must** submit (even on error).
 - [ ] The `!swapchain_tex` (minimized window) path submits the empty
   command buffer and returns `SDL_APP_CONTINUE`
 
-**How to check:** Find `SDL_AcquireGPUCommandBuffer` in `SDL_AppIterate`, then
-trace **every** `return` statement between that acquire and the final submit.
-Each one must either submit or cancel `cmd` first. Do not skip any — enumerate
-them all and verify individually.
+**Skip for:** math, engine, UI, asset lessons.
 
 ---
 
@@ -125,9 +148,6 @@ file (or in a shared header if reused).
 - [ ] Mathematical constants like `2.0f` in formulas are acceptable only when
   they are inherent to the math (e.g. `2.0 * dot(N, I)` in reflection) — but
   domain-specific multipliers should be named
-
-**How to search:** Grep for bare float patterns like `[^a-zA-Z_]0\.\d+f` and
-integer patterns. Inspect each for whether it should be a named constant.
 
 ---
 
@@ -153,10 +173,7 @@ If you allocate it, you must free it on every exit path.
 - [ ] `ensure_*` functions that destroy-then-recreate handle partial failure
   (some resources recreated, some not) without leaking
 
-**How to check:** Read each init/load function, identify all `SDL_CreateGPU*`
-and `SDL_ReleaseGPU*` calls, and verify every create has a matching release on
-every error path. Then diff `init_fail` against `SDL_AppQuit` line by line —
-any resource freed in one but not the other is a bug.
+**Skip for:** math, engine, UI, asset lessons (no GPU resources).
 
 ---
 
@@ -182,9 +199,6 @@ convention, confirmed in `.coderabbit.yaml` and consistent across all lessons.
 - [ ] Local helper functions use `snake_case` (not `camelCase`)
 - [ ] `#define` constants use `UPPER_SNAKE_CASE`
 
-**How to search:** Grep for `typedef struct` in main.c and verify consistent
-PascalCase. Grep for `static` functions and verify snake_case.
-
 ---
 
 ## 6. Per-field intent comments (15+ PR comments)
@@ -192,10 +206,6 @@ PascalCase. Grep for `static` functions and verify snake_case.
 **Every** struct field needs an inline comment — no exceptions, no "the section
 header covers it." Section headers group related fields; inline comments
 explain each individual field's purpose, units, format, or valid range.
-
-A field named `exposure` is not self-documenting. Is it a multiplier or an EV
-stop? What range is valid? What happens at 0? The inline comment answers this:
-`/* brightness multiplier before tone mapping (>0) */`
 
 **What to check:**
 
@@ -208,35 +218,6 @@ stop? What range is valid? What happens at 0? The inline comment answers this:
 - [ ] Push constant structs explain each member
 - [ ] GPU type struct fields (e.g. `GpuPrimitive`, `GpuMaterial`, `ModelData`)
   document each field
-
-**Example of good comments:**
-
-```c
-typedef struct {
-    float cascade_splits[MAX_CASCADES]; /* view-space depth boundaries per cascade */
-    float shadow_bias;                  /* depth bias in light-space to prevent acne */
-    float shadow_texel_size;            /* 1.0 / shadow_map_resolution for PCF offsets */
-    int   cascade_count;                /* number of active cascades (1..MAX_CASCADES) */
-} shadow_params;
-```
-
-**Bad — section headers are not field comments:**
-
-```c
-/* Camera. */
-vec3  cam_position;
-float cam_yaw;
-float cam_pitch;
-```
-
-**Good — every field documented:**
-
-```c
-/* Camera. */
-vec3  cam_position;  /* world-space camera position */
-float cam_yaw;       /* horizontal rotation (radians, 0 = +Z) */
-float cam_pitch;     /* vertical rotation (radians, clamped ±1.5) */
-```
 
 ---
 
@@ -277,9 +258,11 @@ sections.
 
 - [ ] Starts with `# Lesson NN — Title`
 - [ ] Has "What you'll learn" section near the top
-- [ ] **GPU lessons:** Has screenshot in a "Result" section near the top (not a placeholder)
-- [ ] **Math lessons:** "Result" section comes **after** "Building" (not near the top) —
-  math results are text output that would be intimidating before the lesson content
+- [ ] **GPU/physics/audio lessons:** Has screenshot in a "Result" section near
+  the top (not a placeholder)
+- [ ] **Math lessons:** "Result" section comes **after** "Building" (not near
+  the top) — math results are text output that would be intimidating before
+  the lesson content
 - [ ] **GPU lessons only:** If the lesson has shader files, has a "Shaders"
   section immediately before "Building" that lists each shader file with a
   brief description of what it does
@@ -299,11 +282,6 @@ taught it.** Every concept, API, tool, or term that appears for the first time
 must be briefly defined in the README — or the README must link to the specific
 earlier lesson or engine/math lesson that introduced it.
 
-Do not assume the reader knows what SDL is, what a GPU is, what a window is,
-what callbacks are, what a shader is, or what any graphics API term means —
-unless the lesson's prerequisites explicitly list a prior lesson that covered
-it.
-
 **What to check:**
 
 - [ ] Every SDL API function used for the first time in the lesson series is
@@ -315,42 +293,65 @@ it.
 - [ ] Domain-specific terms (e.g. "sRGB", "linear color space", "NDC",
   "back-face culling") are defined when first used, or explicitly deferred
   with a note pointing to the future lesson that will cover them
-- [ ] If the lesson is early in the sequence (especially GPU lesson 01), it
-  explains foundational context: what SDL is, what a GPU is and why we use
-  one, what a "window" means in this context, and what Vulkan / Direct3D 12
-  / Metal are
-- [ ] The callback architecture (`SDL_AppInit`, `SDL_AppEvent`,
-  `SDL_AppIterate`, `SDL_AppQuit`) is explained if this is the first lesson
-  to use it — readers may not know what "SDL drives the main loop" means
 - [ ] Links to **engine lessons** are provided where they offer deeper
-  background on foundational topics:
-  - [Engine 01 — Intro to C](../../engine/01-intro-to-c/) for C language
-    constructs (types, structs, pointers, memory)
-  - [Engine 02 — CMake Fundamentals](../../engine/02-cmake-fundamentals/)
-    for build system questions
-  - [Engine 03 — FetchContent](../../engine/03-fetchcontent-dependencies/)
-    for how SDL3 arrives in the project
-  - [Engine 06 — Reading Error Messages](../../engine/06-reading-error-messages/)
-    for troubleshooting build or runtime failures
+  background on foundational topics
 - [ ] Links to **math lessons** are provided when the lesson uses math
   concepts (vectors, matrices, coordinate spaces) for the first time
 - [ ] No concept is used in the README or code comments with the implicit
-  assumption that "everyone knows what this is" — if in doubt, add a
-  one-sentence definition
-
-**How to check:** Read the README from the perspective of someone who has
-never programmed a GPU application. For each technical term or API call, ask:
-"Was this explained in this lesson or a linked prior lesson?" If the answer is
-no, it needs a definition or a link.
+  assumption that "everyone knows what this is"
 
 ---
 
-## 11. Markdown linting
+## 11. main.c structure (from publish-lesson validation)
+
+**What to check:**
+
+- [ ] Uses `#define SDL_MAIN_USE_CALLBACKS 1`
+- [ ] Implements all 4 callbacks: `SDL_AppInit`, `SDL_AppEvent`,
+  `SDL_AppIterate`, `SDL_AppQuit`
+- [ ] Uses `SDL_calloc` for app_state allocation
+- [ ] Includes error handling with `SDL_Log` on all GPU calls
+- [ ] Window size is 1280x720 (16:9) — standard for consistent screenshots
+- [ ] Has comprehensive comments explaining *why* and *purpose*, not just
+  *what*
+- [ ] **No bare C stdlib calls** — use SDL-prefixed APIs where available
+  (`SDL_fabsf`, `SDL_sinf`, `SDL_memset`, etc.), and approved project wrappers
+  for C99 functions SDL lacks (`forge_isfinite`, `forge_fmaxf`, `forge_fminf`)
+
+**Skip `SDL_MAIN_USE_CALLBACKS` check for:** math, engine lessons that use
+`main()` directly.
+
+---
+
+## 12. `forge_scene.h` usage (GPU, physics, audio lessons)
+
+**All GPU lessons, all physics lessons, and all audio lessons** must use
+`forge_scene.h` for the rendering baseline (shadow map, Blinn-Phong, grid,
+sky, camera, UI). This eliminates hundreds of lines of boilerplate and ensures
+a consistent rendering foundation.
+
+**What to check:**
+
+- [ ] `main.c` includes `#define FORGE_SCENE_IMPLEMENTATION` followed by
+  `#include "scene/forge_scene.h"`
+- [ ] `app_state` contains a `ForgeScene scene` field instead of individual
+  pipelines, textures, and samplers for the baseline rendering
+- [ ] Rendering uses `forge_scene_begin_frame` / `forge_scene_begin_shadow_pass`
+  / `forge_scene_begin_main_pass` / `forge_scene_end_frame` pattern
+- [ ] No duplicate baseline shaders in the lesson's `shaders/` directory
+  (scene, grid, shadow, sky, UI shaders are provided by `forge_scene.h`)
+- [ ] Lesson-specific shaders (if any) serve a purpose beyond the baseline
+
+**Skip this check for:** math, engine, UI, asset lessons.
+
+---
+
+## 13. Markdown linting
 
 Run the linter and resolve all issues.
 
 ```bash
-npx markdownlint-cli2 "lessons/gpu/NN-name/**/*.md" "lessons/math/NN-name/**/*.md"
+npx markdownlint-cli2 "lessons/<track>/NN-name/**/*.md" ".claude/skills/<topic>/SKILL.md"
 ```
 
 **Common issues from PR feedback:**
@@ -362,7 +363,7 @@ npx markdownlint-cli2 "lessons/gpu/NN-name/**/*.md" "lessons/math/NN-name/**/*.m
 
 ---
 
-## 12. Python linting (if scripts were modified)
+## 14. Python linting (if scripts were modified)
 
 If any Python scripts in `scripts/` were added or modified:
 
@@ -377,7 +378,7 @@ ruff format --check scripts/
 
 ---
 
-## 13. Pyright type checking (if Python files were modified)
+## 15. Pyright type checking (if Python files were modified)
 
 If any Python files in `scripts/` or `pipeline/` were added or modified:
 
@@ -386,65 +387,60 @@ pyright
 ```
 
 - [ ] No errors from `pyright`
-- [ ] No private import usage (`reportPrivateImportUsage`) — use the public
-  module (e.g. `mpatches.Circle` instead of `plt.Circle`)
+- [ ] No private import usage (`reportPrivateImportUsage`)
 - [ ] No unresolved imports (`reportMissingImports`)
 
 ---
 
-## 14. `forge_scene.h` usage (GPU lessons >= 40, physics, audio)
-
-**GPU lessons from ~lesson 40 onward, all physics lessons, and all audio
-lessons** must use `forge_scene.h` for the rendering baseline (shadow map,
-Blinn-Phong, grid, sky, camera, UI). This eliminates hundreds of lines of
-boilerplate and ensures a consistent rendering foundation.
-
-**What to check:**
-
-- [ ] `main.c` includes `#define FORGE_SCENE_IMPLEMENTATION` followed by
-  `#include "scene/forge_scene.h"`
-- [ ] `app_state` contains a `ForgeScene scene` field instead of individual
-  pipelines, textures, and samplers for the baseline rendering
-- [ ] Rendering uses `forge_scene_begin_frame` / `forge_scene_begin_shadow_pass`
-  / `forge_scene_begin_main_pass` / `forge_scene_end_frame` pattern
-- [ ] No duplicate baseline shaders in the lesson's `shaders/` directory
-  (scene, grid, shadow, sky, UI shaders are provided by `forge_scene.h`)
-- [ ] Lesson-specific shaders (if any) are in `shaders/` and serve a purpose
-  beyond the baseline (e.g. debug visualization, waveform display)
-
-**Skip this check for:** GPU lessons < 40, math lessons, engine lessons, UI
-lessons, asset pipeline lessons.
-
----
-
-## 15. SDL stdinc compliance
+## 16. SDL stdinc compliance
 
 **Never use bare C stdlib calls when an SDL_ equivalent exists.** This is a
-cross-platform portability requirement — bare calls may not be available or
-behave consistently across all SDL GPU backends (Vulkan, Metal, D3D12).
+cross-platform portability requirement.
 
 **What to check:**
 
-- [ ] **SDL stdinc compliance** — No bare C stdlib calls (`fabsf`, `sinf`, `memset`, `strcmp`, `malloc`, etc.) when an SDL equivalent exists. Grep for bare names in `.c` and `.h` files and verify all matches use the `SDL_` prefix. See `SDL_stdinc.h` for the full list.
+- [ ] No bare C stdlib calls (`fabsf`, `sinf`, `memset`, `strcmp`, `malloc`,
+  etc.) when an SDL equivalent exists. Grep for bare names in `.c` and `.h`
+  files and verify all matches use the `SDL_` prefix.
 
 ---
 
-## 16. Build and shader compilation
+## 17. Build and shader compilation
 
 Verify the lesson compiles and shaders are up to date.
 
+**For GPU, physics, and audio lessons (C with shaders):**
+
 ```bash
 python scripts/compile_shaders.py NN -v
-cmake --build build --target lesson_NN_name
+cmake --build build --target NN-name
 ```
 
 - [ ] Shaders compile to both SPIRV and DXIL without warnings
 - [ ] Lesson builds with no errors or warnings
 - [ ] Generated shader headers are up to date (not stale from a previous edit)
 
+**For math/engine lessons (C without shaders):**
+
+```bash
+cmake --build build --target NN-name
+```
+
+- [ ] Lesson builds with no errors or warnings
+
+**For asset lessons (Python):**
+
+```bash
+pytest tests/pipeline/ -v
+```
+
+- [ ] Pipeline tests pass
+
+**Skip for:** UI lessons (no standalone executable).
+
 ---
 
-## 17. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
+## 18. Diagram correctness (recurring in PRs #152, #167, #168, #179, #185)
 
 If the lesson has diagrams (check for `assets/*.png` files that are not
 screenshots), verify each diagram function against the README:
@@ -468,25 +464,27 @@ After completing all checks, report a summary table:
 Final Pass Results — Lesson NN: Name
 =====================================
 
- 1. SDL bool returns      ✅ PASS  (N calls checked)
- 2. Command buffer life   ✅ PASS  (N paths checked)
- 3. Magic numbers         ✅ PASS
- 4. Resource leaks        ⚠️  WARN  (1 potential leak in load_scene)
- 5. Naming conventions    ✅ PASS
- 6. Intent comments       ✅ PASS
- 7. Spec accuracy         ✅ PASS
- 8. Skill completeness    ✅ PASS
- 9. README structure      ✅ PASS
-10. Concept introduction  ✅ PASS
-11. Markdown lint         ✅ PASS
-12. Python lint           ⏭️  SKIP  (no scripts modified)
-13. Pyright types         ⏭️  SKIP  (no scripts modified)
-14. forge_scene.h usage   ✅ PASS  (physics lesson uses forge_scene.h)
-15. SDL stdinc compliance ✅ PASS
-16. Build & shaders       ✅ PASS
-17. Diagram correctness   ⏭️  SKIP  (no diagrams)
+ 0. Required files       ✅ PASS  (all files present)
+ 1. SDL bool returns     ✅ PASS  (N calls checked)
+ 2. Command buffer life  ✅ PASS  (N paths checked)
+ 3. Magic numbers        ✅ PASS
+ 4. Resource leaks       ⚠️  WARN  (1 potential leak in load_scene)
+ 5. Naming conventions   ✅ PASS
+ 6. Intent comments      ✅ PASS
+ 7. Spec accuracy        ✅ PASS
+ 8. Skill completeness   ✅ PASS
+ 9. README structure     ✅ PASS
+10. Concept introduction ✅ PASS
+11. main.c structure     ✅ PASS
+12. forge_scene.h usage  ✅ PASS
+13. Markdown lint        ✅ PASS
+14. Python lint          ⏭️  SKIP  (no scripts modified)
+15. Pyright types        ⏭️  SKIP  (no scripts modified)
+16. SDL stdinc compliance ✅ PASS
+17. Build & shaders      ✅ PASS
+18. Diagram correctness  ⏭️  SKIP  (no diagrams)
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested
 fix. Ask the user if they want you to apply the fixes before proceeding to
-`/dev-publish-lesson`.
+`/dev-create-pr`.

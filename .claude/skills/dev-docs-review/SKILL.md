@@ -272,7 +272,7 @@ Each batch agent does the same work:
    - **Naming convention** — every skill directory and `name:` field must use
      the correct prefix. Lesson skills (any track) use `forge-` (e.g.
      `forge-stencil-testing`, `forge-bloom`), development/workflow skills use
-     `dev-` (e.g. `dev-create-pr`, `dev-publish-lesson`). Flag any skill
+     `dev-` (e.g. `dev-create-pr`, `dev-gpu-lesson`). Flag any skill
      whose directory name lacks the expected prefix. Check that the `name:`
      field in the YAML frontmatter matches the directory name exactly.
 

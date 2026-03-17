@@ -11,15 +11,12 @@ purpose, inputs, and step-by-step instructions.
 
 | Skill                    | Purpose                                        |
 |--------------------------|-------------------------------------------------|
-| `dev-create-lesson`      | Scaffold a new GPU lesson                      |
-| `dev-new-lesson`         | Alternative lesson scaffolding                 |
-| `dev-start-lesson`       | Begin work on a lesson with planning            |
+| `dev-gpu-lesson`         | GPU lesson scaffolding with forge_scene.h      |
 | `dev-math-lesson`        | Create a math lesson + update math library      |
 | `dev-engine-lesson`      | Scaffold an engine lesson                      |
 | `dev-ui-lesson`          | Scaffold a UI lesson                           |
 | `dev-physics-lesson`     | Scaffold a physics lesson                      |
 | `dev-asset-lesson`       | Scaffold an asset pipeline lesson              |
-| `dev-publish-lesson`     | Branch, commit, and open a PR for a lesson     |
 | `dev-create-pr`          | Create a pull request                          |
 | `dev-add-screenshot`     | Capture and embed screenshots/GIFs             |
 | `dev-create-diagram`     | Generate matplotlib diagrams for lessons       |

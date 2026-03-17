@@ -134,7 +134,7 @@ full plan. Summary:
 - [ ] `.gitignore` — `.forge-cache/`, `assets/processed/`, `assets/bundles/`
 - [ ] Process all existing models and textures through the pipeline
 - [ ] GPU Lesson 08 README hint pointing to the asset pipeline track
-- [ ] Update skills (dev-new-lesson, dev-physics-lesson, dev-final-pass, dev-publish-lesson) to mandate pipeline usage for lessons 39+
+- [ ] Update skills (dev-gpu-lesson, dev-physics-lesson, dev-final-pass, dev-create-pr) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 
 ### Skinned Animation Pipeline

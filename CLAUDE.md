@@ -165,7 +165,7 @@ Key rules — violating any of these produces a backwards or broken camera:
   completes with zero findings.
 - **Never commit directly to `main`.** All changes go through pull requests.
 - Create a feature branch, commit there, push, and open a PR with `gh pr create`.
-- Use the **/dev-publish-lesson** skill for lesson PRs — it handles branch + PR creation.
+- Use **/dev-create-pr** for all pull requests, including lessons.
 - **Batch all commits into a single push.** Never push commits piecewise (e.g.
   pushing a fix, then pushing a lint fix separately). Multiple rapid pushes
   cause CodeRabbit to freeze and pause reviews, delaying the entire PR. Make

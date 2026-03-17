@@ -39,7 +39,7 @@ Or with a specific base branch:
 
 - Before pushing fixes during `/dev-review-pr` — catch new issues locally
   instead of waiting for the GitHub bot
-- Before creating a PR with `/dev-publish-lesson` — clean up obvious issues
+- Before creating a PR with `/dev-create-pr` — clean up obvious issues
   before the first review
 - Any time you want a quick code quality check without pushing
 - After `/dev-final-pass` for a second opinion from a different reviewer
