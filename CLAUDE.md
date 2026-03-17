@@ -205,9 +205,9 @@ forge-gpu/
 │   ├── capture/           # Screenshot/GIF capture utility
 │   ├── scene/             # Scene renderer library (shadow map, Blinn-Phong, grid, sky, camera, UI)
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, physics, shapes, scene, pipeline)
+├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, audio, physics, shapes, scene, pipeline)
 ├── scripts/
-│   ├── compile_shaders.py # HLSL → SPIRV/DXIL shader compiler
+│   ├── compile_shaders.py # HLSL → SPIRV/DXIL/MSL shader compiler
 │   ├── compile_scene_shaders.py # Scene renderer shader compiler
 │   ├── dump_fmesh.py      # .fmesh binary inspector
 │   ├── dump_fscene.py     # .fscene binary inspector
@@ -248,7 +248,7 @@ under `tests/` and register it in the root `CMakeLists.txt` (C) or
 
 ## Shader compilation
 
-Shaders are written in HLSL and compiled to SPIRV + DXIL using
+Shaders are written in HLSL and compiled to SPIRV, DXIL, and MSL using
 `scripts/compile_shaders.py`:
 
 ```bash
@@ -257,9 +257,10 @@ python scripts/compile_shaders.py 16            # lesson 16 only
 python scripts/compile_shaders.py blending      # by name fragment
 ```
 
-Generated files (`.spv`, `.dxil`, C headers) go in `shaders/compiled/`.
-Headers are included as `"shaders/compiled/scene_vert_spirv.h"`. Recompile
-after any HLSL change — the C build does not auto-detect shader changes.
+Generated files (`.spv`, `.dxil`, `.msl`, and C headers) go in each lesson's
+`shaders/compiled/` directory. Headers are included as
+`"shaders/compiled/scene_vert_spirv.h"`. Recompile after any HLSL change —
+the C build does not auto-detect shader changes.
 
 ## Writing lessons
 

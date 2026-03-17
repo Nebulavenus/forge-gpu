@@ -16,6 +16,7 @@ corresponds to a module in `common/` or `pipeline/`.
 | `scene/`    | C        | Scene renderer (`common/scene/`)       |
 | `shapes/`   | C        | Procedural geometry (`common/shapes/`) |
 | `ui/`       | C        | UI library (`common/ui/`)              |
+| `audio/`    | C        | Audio library (`common/audio/`)        |
 | `pipeline/` | Python   | Asset pipeline (`pipeline/`)           |
 
 ## Running

@@ -35,7 +35,7 @@ lesson.
 
 **Resolve the lesson** from the argument:
 
-- `<track>` is `gpu`, `math`, `ui`, `engine`, `assets`, or `physics`
+- `<track>` is `gpu`, `math`, `ui`, `engine`, `assets`, `physics`, or `audio`
 - `<NN>` is the lesson number (zero-padded or not)
 - Find the actual directory: glob `lessons/<track>/<NN>-*` to get the full
   slug (e.g. `gpu/37` → `lessons/gpu/37-3d-picking/`)

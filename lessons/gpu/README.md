@@ -243,7 +243,6 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-pipeline-texture-compression`** — Load GPU block-compressed textures (BC7/BC5) through the asset pipeline
 - **`/forge-pipeline-skinned-animations`** — Pipeline-based skeletal animation with .fskin/.fanim assets and ForgeSceneSkinnedModel
 - **`/forge-pipeline-morph-animations`** — Pipeline-based morph target (blend shape) animation with .fmesh morph deltas and ForgeSceneMorphModel
-- **`/forge-scene-transparency-sorting`** — Two-pass transparency sorting with centroid-based depth ordering and alpha-masked shadow casting
 
 **How to use:**
 

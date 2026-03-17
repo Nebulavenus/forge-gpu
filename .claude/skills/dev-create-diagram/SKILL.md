@@ -46,6 +46,7 @@ Diagram functions are organized by track and lesson number under
 - `scripts/forge_diagrams/ui/lesson_NN.py` — UI lessons
 - `scripts/forge_diagrams/assets/lesson_NN.py` — asset pipeline lessons
 - `scripts/forge_diagrams/physics/lesson_NN.py` — physics lessons
+- `scripts/forge_diagrams/audio/lesson_NN.py` — audio lessons
 
 If a `lesson_NN.py` file does not exist yet for the lesson, create one.
 

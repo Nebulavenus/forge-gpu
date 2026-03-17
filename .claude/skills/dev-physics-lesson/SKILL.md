@@ -116,14 +116,14 @@ function must be defensible.
 - Clamp values that have physical bounds: restitution to `[0, 1]`, damping
   to `[0, 1]`, penetration depth to `>= 0`. Document the valid range in the
   parameter comment.
-- Use `fabsf()` for float comparisons, not `==`. Two floats are "equal" if
-  `fabsf(a - b) < epsilon`.
+- Use `SDL_fabsf()` for float comparisons, not `==`. Two floats are "equal" if
+  `SDL_fabsf(a - b) < epsilon`.
 
 **Performance:**
 
 - Precompute values that do not change per-frame: inverse mass, inverse
   inertia tensor, bounding radii.
-- Avoid `sqrtf()` when the squared value suffices — distance comparisons,
+- Avoid `SDL_sqrtf()` when the squared value suffices — distance comparisons,
   broadphase overlap tests, and radius checks should use squared distances.
 - Broadphase before narrowphase: never run O(n) narrowphase tests when a
   spatial partition or sort-and-sweep can reject pairs early.

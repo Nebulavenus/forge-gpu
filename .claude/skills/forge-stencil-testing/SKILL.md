@@ -224,5 +224,5 @@ SDL_SetGPUStencilReference(render_pass, 1);
   for the full walkthrough
 - [GPU Lesson 06 — Depth & 3D](../../../lessons/gpu/06-depth-and-3d/)
   for depth buffer fundamentals
-- [GPU Lesson 15 — Shadow Maps](../../../lessons/gpu/15-cascaded-shadow-maps/)
+- [GPU Lesson 15 — Cascaded Shadow Maps](../../../lessons/gpu/15-cascaded-shadow-maps/)
   for depth-only render passes

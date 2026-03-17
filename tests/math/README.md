@@ -4,28 +4,32 @@ Automated tests for the forge-gpu math library (`common/math/forge_math.h`).
 
 ## What's tested
 
+- **Scalar helpers**: `forge_log2f`, `forge_clampf`, `forge_trilerpf`
 - **vec2**: create, add, sub, scale, dot, length, normalize, lerp
-- **vec3**: create, add, sub, scale, dot, cross, length, normalize, lerp
-- **vec4**: create, add, sub, scale, dot
-- **mat4**: identity, translate, scale, rotate_x/y/z, look_at, perspective, orthographic, multiply
+- **vec3**: create, add, sub, scale, dot, cross, length, normalize, lerp, trilerp, negate, reflect, rotate\_axis\_angle
+- **vec4**: create, add, sub, scale, dot, trilerp
+- **mat2**: create, identity, multiply, multiply\_vec2, transpose, determinant, singular\_values, anisotropy\_ratio
+- **mat3**: create, identity, multiply, multiply\_vec3, transpose, determinant, inverse, rotate, scale, from\_diagonal
+- **mat4**: identity, translate, scale, rotate\_x/y/z, look\_at, perspective, orthographic, multiply, transpose, determinant, inverse, from\_mat3, perspective\_from\_planes
+- **quat**: identity, conjugate, normalize, multiply, from\_axis\_angle, from\_euler, to\_mat4, to\_mat3, from\_mat4, slerp, nlerp, rotate\_vec3, euler roundtrips
+- **Color**: sRGB/linear conversions, luminance, RGB↔HSL, RGB↔HSV, RGB↔XYZ, XYZ↔xyY, tone mapping (Reinhard, ACES), exposure
+- **Hash functions**: Wang, PCG, xxHash32, 2D/3D hash, hash distribution, hash\_to\_float
+- **Noise**: Perlin 1D/2D/3D, Simplex 2D, FBM 2D/3D, domain warp, gradient, fade
+- **Bezier curves**: quadratic and cubic endpoints, midpoints, tangents, arc length, split, flatten, vec3 variants
+- **SDF (2D)**: circle, box, rounded box, segment, union, intersection, subtraction, smooth union/intersection
+- **Scalar field**: gradient, Laplacian, heightmap normals
 
 ## Running the tests
 
-### Build and run directly
-
 ```bash
-cmake --build build --config Debug --target test_math
-build/tests/math/Debug/test_math.exe
+# Build and run this suite only
+cmake --build build --target test_math
+ctest --test-dir build -R math --output-on-failure
+
+# Run all C tests
+cmake --build build
+ctest --test-dir build
 ```
-
-### Run via CTest
-
-```bash
-cd build
-ctest -C Debug --output-on-failure
-```
-
-CTest runs all registered tests and provides a summary.
 
 ## Test output
 
@@ -106,11 +110,3 @@ All comparisons use `EPSILON = 0.0001f` to account for floating-point rounding.
 
 **Tests are documentation.** Each test shows how to use a function correctly and
 what results to expect. When in doubt about a math function's behavior, read the tests.
-
-## Future additions
-
-- Matrix inverse, transpose
-- Quaternion operations
-- More edge cases (zero vectors, degenerate matrices, etc.)
-
-Add tests as you add functionality — keep the math library reliable!

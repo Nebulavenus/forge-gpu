@@ -5,32 +5,16 @@
 The following foundations, tooling, and lesson ranges are complete:
 
 - **Foundation** — Project scaffolding, math library, test suite, skills
-- **GPU Lessons 01–43, 45** — From Hello Window through Scene Transparency Sorting
+- **GPU Lessons 01–45** — From Hello Window through Scene Transparency Sorting
 - **Math Lessons 01–18** — From Vectors through Scalar Field Gradients
 - **Engine Lessons 01–12** — From Intro to C through Memory Arenas
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
+- **Physics Lessons 01–07** — From Point Particles through Collision Shapes
+- **Audio Lessons 01–02** — Audio Basics and Sound Effects
 - **Asset Lessons 01–13** — From Pipeline Scaffold through Morph Targets
 
 ## GPU Lessons — Remaining
-
-### Reusable Scene Infrastructure
-
-- [x] **Lesson 40 — Scene Renderer** — A reusable `common/scene/forge_scene.h` header-only library that packages the rendering stack lessons 01–39 built piece by piece: SDL GPU device/window/swapchain setup, depth texture management with auto-resize, directional shadow map with PCF sampling, Blinn-Phong lighting uniforms, procedural grid floor, quaternion FPS camera with mouse/keyboard input, shader creation from SPIRV/DXIL bytecode, GPU buffer upload helpers, and forge UI initialization with font atlas + rendering pipeline. One `forge_scene_init()` call replaces 500–600 lines of boilerplate per lesson. The lesson itself demonstrates the library by rendering a lit scene with shadows, grid, UI panel, and camera controls in under 200 lines of application code. This is the foundation that physics, audio, and all future GPU lessons build on — agents writing those lessons include one header and focus entirely on the lesson's subject matter, not rendering plumbing.
-
-### Scene Model Loading
-
-- [x] **Lesson 41 — Scene Model Loading** — Extends `forge_scene.h` with pipeline model rendering: `ForgeSceneModel` struct with GPU buffers, per-material textures, and `ForgePipelineScene` node hierarchy; `forge_scene_load_model()` loads `.fscene` + `.fmesh` + `.fmat`, uploads buffers, loads textures with fallbacks; `forge_scene_draw_model()` traverses nodes, binds per-primitive materials, selects pipeline variant (opaque/blend/double-sided); `forge_scene_draw_model_shadows()` for depth-only pass; three models (CesiumMilkTruck with mesh instancing, Suzanne with PBR textures, Duck). (depends on GPU Lessons 39, 40 and Asset Lesson 09)
-
-### Pipeline Texture & Animation
-
-- [x] **Lesson 42 — Pipeline Texture Compression** — Adds GPU block-compressed texture loading to `forge_scene.h`: processes model textures through the Python pipeline's texture plugin (BC7 for color/emissive via Basis Universal, BC5 for normal maps); loads KTX2 containers with pre-computed mip chains; uploads compressed blocks directly to GPU without CPU decoding; `forge_scene_load_pipeline_texture()` detects `.meta.json` sidecars and uses pre-made mips instead of GPU blit chain; compares VRAM usage and load times between raw PNG and compressed paths. (depends on GPU Lesson 41 and Asset Lesson 02)
-- [x] **Lesson 43 — Pipeline Skinned Animations** — Extends `forge_scene.h` with skeletal animation support through pipeline assets: loads `.fskin` (joint hierarchy + inverse bind matrices), `.fanim` (keyframe data), and `.fanims` (animation manifest); computes joint matrices per frame; adds a skinned vertex shader (72-byte vertices with joints/weights); `ForgeSceneSkinnedModel` struct with joint buffer and animation state; `forge_scene_draw_skinned_model()` and `forge_scene_update_animation()`; demonstrates with CesiumMan walking in a scene. (depends on GPU Lesson 41, Asset Lessons 10–12)
-- [x] **Lesson 44 — Pipeline Morph Target Animations** — Extends `forge_scene.h` with morph target (blend shape) support through pipeline assets: loads `.fmesh` with `FLAG_MORPHS` (per-vertex position and normal deltas); evaluates morph weights from `.fanim` keyframes on the CPU; CPU-blends weighted deltas and uploads to two GPU storage buffers; vertex shader adds blended deltas to base mesh via `SV_VertexID`; `ForgeSceneMorphModel` struct with delta buffers, transfer buffer, and weight state; demonstrates with AnimatedMorphCube and SimpleMorph from glTF sample assets. (depends on GPU Lesson 43 and Asset Lesson 13)
-
-### Scene Transparency
-
-- [x] **Lesson 45 — Scene Transparency Sorting** — Extends `forge_scene.h` with correct transparent rendering: two-pass draw splitting opaque and blend submeshes; back-to-front depth sorting for transparent draws via precomputed submesh centroids; alpha-masked shadow casting with `shadow_mask` shaders that sample base color and discard below `alpha_cutoff`; `ForgeSceneTransparentDraw` queue sorted by camera distance; `transparency_sorting` toggle for A/B comparison; integrates with `forge_scene_draw_model()` / `forge_scene_draw_model_shadows()` and skinned model variants; demonstrates with CesiumMilkTruck (glass material set to BLEND). (depends on GPU Lessons 16, 41)
 
 ### Advanced Rendering
 
@@ -53,7 +37,7 @@ The following foundations, tooling, and lesson ranges are complete:
 
 A new header-only library (`common/physics/`) built lesson by lesson, covering
 particle dynamics, rigid body simulation, collision detection, and contact
-resolution. 14 lessons in five arcs — each lesson extends `forge_physics.h`
+resolution. 15 lessons in four arcs — each lesson extends `forge_physics.h`
 with tested, documented functions.
 
 All physics lessons use `forge_scene.h` (GPU Lesson 40) for rendering — the
@@ -61,21 +45,8 @@ scene renderer provides Blinn-Phong lighting, shadow maps, grid floor, camera
 controls, and UI panels out of the box. Physics lessons focus entirely on
 simulation code; rendering is a single `#include` and a few function calls.
 
-### Particle Dynamics
-
-- [x] **Physics Lesson 01 — Point Particles** — Position, velocity, acceleration; symplectic Euler integration; gravity and drag forces; `forge_physics_` API scaffolding in `common/physics/forge_physics.h`
-- [x] **Physics Lesson 02 — Springs and Constraints** — Hooke's law spring forces; damped springs; distance constraints with projection; chain and cloth-like particle systems
-- [x] **Physics Lesson 03 — Particle Collisions** — Sphere-sphere and sphere-plane collision detection; impulse-based response; coefficient of restitution; simple O(n²) all-pairs (broadphase deferred to Lesson 07)
-
-### Rigid Body Foundations
-
-- [x] **Physics Lesson 04 — Rigid Body State and Orientation** — Mass, center of mass, inertia tensor; quaternion orientation; linear and angular velocity; state representation and integration; inertia tensor rotation to world space
-- [x] **Physics Lesson 05 — Forces and Torques** — Applying forces at arbitrary points; gravity, drag, and friction as force generators; torque and angular acceleration; force accumulator pattern; combining linear and angular effects; gyroscopic stability
-- [x] **Physics Lesson 06 — Resting Contacts and Friction** — Plane contact detection for boxes and spheres; sphere-sphere body-body collision detection; static and dynamic friction (Coulomb model); resting contact resolution; sphere stacking with body-body collisions; forge UI overlay with sliders for friction/restitution/solver iterations, energy and contact count readouts
-
 ### Collision Detection
 
-- [x] **Physics Lesson 07 — Collision Shapes and Support Functions** — Collision shape tagged union (sphere, box, capsule); support functions for each shape (GJK foundation); AABB computation from oriented shapes; AABB overlap testing; capsule inertia via composite body theorem; shape-based collision dispatch
 - [ ] **Physics Lesson 08 — Sweep-and-Prune Broadphase** — Sort-and-sweep broadphase using L07's AABBs; axis projection and pair tracking; incremental updates for moving objects
 - [ ] **Physics Lesson 09 — GJK Intersection Testing** — Gilbert-Johnson-Keerthi algorithm for boolean intersection testing; Minkowski difference intuition; simplex evolution; support function interface from L07
 - [ ] **Physics Lesson 10 — EPA Penetration Depth** — Expanding Polytope Algorithm for penetration depth and contact normal from a GJK simplex; polytope expansion and convergence; connecting EPA output to contact generation
@@ -105,8 +76,6 @@ lesson.
 
 ### Fundamentals
 
-- [x] **Audio Lesson 01 — Audio Basics** — PCM audio fundamentals; sample rate, bit depth, channels; loading WAV files; playing a sound with SDL audio streams; `forge_audio_` API scaffolding in `common/audio/forge_audio.h`; forge UI panel with play/pause and volume slider
-- [x] **Audio Lesson 02 — Sound Effects** — Fire-and-forget one-shot playback with automatic cleanup; polyphony (multiple overlapping instances of the same sound); fade-in and fade-out with configurable duration; `forge_audio_source_fade()`, `forge_audio_source_fade_in()`, `forge_audio_source_fade_out()` API additions to `forge_audio.h`; `ForgeAudioPool` with fixed capacity and automatic slot reclamation; UI panel showing active source list with per-source progress bars and fade state; demo scene with 5 spheres — 4 one-shot categories and 1 ambient loop with fade controls; audio files: 4 short one-shots, 1 looping ambient — user-supplied WAVs
 - [ ] **Audio Lesson 03 — Audio Mixing** — `ForgeAudioMixer` struct with fixed-size channel array and master bus; `forge_audio_mixer_create()`, `forge_audio_mixer_add_channel()`, `forge_audio_mixer_mix()`; per-channel volume, pan, mute, and solo; master volume with soft clipping (tanh saturation) to prevent hard clipping; peak-hold VU meter per channel via `forge_audio_channel_peak()`; new `forge_ui_vu_meter()` widget in `common/ui/`; UI mixer panel resembling a DAW channel strip — vertical faders, pan sliders, mute/solo toggles, stereo VU meters with peak indicators; demo scene with 4–6 simultaneous looping sources (drums, bass, melody, ambience, FX) that the user mixes live; audio files: 4–6 looping stems from a single track, same length so they stay in sync — user-supplied WAVs via `audio.conf`
 
 ### Spatial & Advanced
@@ -136,13 +105,6 @@ full plan. Summary:
 - [ ] GPU Lesson 08 README hint pointing to the asset pipeline track
 - [ ] Update skills (dev-gpu-lesson, dev-physics-lesson, dev-final-pass, dev-create-pr) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
-
-### Skinned Animation Pipeline
-
-- [x] **Asset Lesson 10 — Animation Loader and Per-Clip Export** — Runtime `.fanim` loader in `forge_pipeline.h`; per-clip export via `--split` flag in `forge-anim-tool`; `.fanims` stub manifest; animation pipeline plugin defaults to split mode
-- [x] **Asset Lesson 11 — Animation Manifest and Named Lookup** — `.fanims` JSON manifest with loop flags, tags, and named clip lookup; `forge_pipeline_load_anim_set`, `forge_pipeline_find_clip`, and `forge_pipeline_load_clip` API; manifest generation with tags in `forge-anim-tool`
-- [x] **Asset Lesson 12 — Skin Data and Skinned Vertices** — `.fskin` binary format for joint hierarchies and inverse bind matrices; skinned vertex support in `.fmesh` v3; `forge_pipeline_load_skins` API; mesh tool and scene tool extensions
-- [x] **Asset Lesson 13 — Morph Targets** — Morph target (blend shape) support across the pipeline: glTF morph target parsing (`ForgeGltfMorphTarget` with position/normal/tangent deltas), `.fmesh` `FLAG_MORPHS` bit with delta data appended after indices, morph weight animation channels in `.fanim` (target_path 3), runtime morph data loading in `forge_pipeline.h`, mesh tool serialization with morph metadata sidecar
 
 ### Web Frontend
 

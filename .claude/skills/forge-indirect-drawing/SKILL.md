@@ -328,7 +328,7 @@ static void extract_frustum_planes(mat4 vp, float planes[6][4])
 
     /* Normalize each plane for correct sphere-vs-plane distances */
     for (int i = 0; i < 6; i++) {
-        float len = sqrtf(planes[i][0] * planes[i][0] +
+        float len = SDL_sqrtf(planes[i][0] * planes[i][0] +
                           planes[i][1] * planes[i][1] +
                           planes[i][2] * planes[i][2]);
         if (len > 0.0001f) {

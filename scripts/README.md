@@ -16,6 +16,7 @@ Helper scripts for building, running, and maintaining forge-gpu lessons.
 | `dump_fmesh.py` | Inspect `.fmesh` binary mesh files |
 | `dump_fscene.py` | Inspect `.fscene` binary scene files |
 | `check_math_blocks.py` | Validate math code blocks in lesson READMEs |
+| `add_msl_support.py` | Add MSL (Metal Shading Language) shader support to lessons |
 | `cloud-setup.sh` | Set up a headless Linux environment (Lavapipe + Mesa) |
 
 ## Subdirectories

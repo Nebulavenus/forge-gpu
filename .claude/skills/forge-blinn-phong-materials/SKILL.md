@@ -4,7 +4,7 @@ description: Add per-material Blinn-Phong lighting with ambient, diffuse, specul
 ---
 
 Add per-material Blinn-Phong lighting to an SDL GPU project. Extends the basic
-lighting pattern from the `basic-lighting` skill with full material properties.
+lighting pattern from the `forge-basic-lighting` skill with full material properties.
 
 ## When to use
 
@@ -153,7 +153,7 @@ for (int i = 0; i < num_objects; i++) {
 
 ## Dependencies
 
-- Extends: `basic-lighting` skill (Lesson 10 patterns)
+- Extends: `forge-basic-lighting` skill (Lesson 10 patterns)
 - Uses: `math/forge_math.h` for vectors and matrices
 - Uses: `gltf/forge_gltf.h` for model loading
 - Reference: [Lesson 18 — Blinn-Phong with Materials](../../../lessons/gpu/18-blinn-phong-materials/)

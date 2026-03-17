@@ -189,7 +189,7 @@ SDL_GPUDepthStencilTargetInfo ds_target = {
   for stencil buffer fundamentals and stencil-expansion outlines
 - [GPU Lesson 27 — SSAO](../../../lessons/gpu/27-ssao/)
   for G-buffer and view-space normal techniques
-- [GPU Lesson 15 — Shadow Maps](../../../lessons/gpu/15-cascaded-shadow-maps/)
+- [GPU Lesson 15 — Cascaded Shadow Maps](../../../lessons/gpu/15-cascaded-shadow-maps/)
   for depth-only render passes
 - [GPU Lesson 16 — Blending](../../../lessons/gpu/16-blending/)
   for blend state configuration (additive blending)

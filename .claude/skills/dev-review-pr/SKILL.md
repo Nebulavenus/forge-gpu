@@ -375,7 +375,7 @@ Root cause: Copy-pasted checkbox description without adapting for radio buttons
 Code fixes:
   [ ] common/ui/forge_ui.h:234 — change "circle" to "rectangle" in header doc
   [ ] common/ui/README.md:89 — update radio button description
-  [ ] lessons/ui/15-editable-controls/README.md:156 — fix shape description
+  [ ] lessons/ui/15-dev-ui/README.md:156 — fix shape description
   [ ] OR: actually make radio buttons round in forge_ui_ctx_radio()
 
 Doc sync:
@@ -878,7 +878,7 @@ Grouped into 3 themes:
 Theme 1: Doc/code mismatch — radio button shape (3 comments, Minor)
   - common/ui/forge_ui.h:234 — header says "circle"
   - common/ui/README.md:89 — API docs say "circular"
-  - lessons/ui/15-editable-controls/README.md:156 — lesson says "round"
+  - lessons/ui/15-dev-ui/README.md:156 — lesson says "round"
 
 Theme 2: Unchecked division by zero (2 comments, Major)
   - forge_ui.h:1200 — sv_rect.w can be 0

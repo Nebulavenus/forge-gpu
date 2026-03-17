@@ -226,7 +226,7 @@ needed in the shader.
 
 ## Reference
 
-- Lesson 21: `lessons/gpu/21-hdr-tone-mapping/`
-- Scene shader: `lessons/gpu/21-hdr-tone-mapping/shaders/scene.frag.hlsl`
-- Tone map shader: `lessons/gpu/21-hdr-tone-mapping/shaders/tonemap.frag.hlsl`
-- Math Lesson 11 (Color Spaces): `lessons/math/11-color-spaces/`
+- [Lesson 21 — HDR Tone Mapping](../../../lessons/gpu/21-hdr-tone-mapping/)
+- [Scene shader](../../../lessons/gpu/21-hdr-tone-mapping/shaders/scene.frag.hlsl)
+- [Tone map shader](../../../lessons/gpu/21-hdr-tone-mapping/shaders/tonemap.frag.hlsl)
+- [Math Lesson 11 — Color Spaces](../../../lessons/math/11-color-spaces/)

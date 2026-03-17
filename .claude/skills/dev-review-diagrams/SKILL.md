@@ -11,7 +11,7 @@ lesson README to catch correctness issues before they reach CodeRabbit review.
 **When to use this skill:**
 
 - Before pushing a lesson that includes diagrams
-- As part of `/dev-final-pass` (section 14)
+- As part of `/dev-final-pass` (section 18)
 - After modifying diagram functions or the README sections they illustrate
 - When CodeRabbit flagged diagram correctness issues in a previous round
 

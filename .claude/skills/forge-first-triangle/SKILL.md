@@ -6,7 +6,7 @@ description: Draw colored geometry with vertex buffers, shaders, and a graphics 
 # First Triangle — Vertex Buffers, Shaders & Pipeline
 
 This skill teaches how to draw colored geometry with SDL3's GPU API.
-It builds on the `sdl-gpu-setup` skill (device, window, swapchain, render loop).
+It builds on the `forge-sdl-gpu-setup` skill (device, window, swapchain, render loop).
 
 ## When to use
 

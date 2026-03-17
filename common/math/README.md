@@ -45,7 +45,7 @@ in the shader.
 - **Bilinear interpolation:** `forge_bilerpf(c00, c10, c01, c11, tx, ty)` — blend 4 grid values
 - **Trilinear interpolation:** `forge_trilerpf(c000..c111, tx, ty, tz)` — blend 8 cube corners
 - **Logarithm:** `forge_log2f(x)` — base-2 logarithm (mip level count)
-- **Trig wrappers:** `forge_sinf(x)`, `forge_cosf(x)` — thin wrappers for sinf/cosf
+- **Trig wrappers:** `forge_sinf(x)`, `forge_cosf(x)` — thin wrappers over `SDL_sinf`/`SDL_cosf` for naming consistency
 - **Clamping:** `forge_clampf(x, lo, hi)` — clamp scalar to range
 - **Comparison:** `forge_approx_equalf(a, b, tolerance)` — absolute tolerance,
   `forge_rel_equalf(a, b, tolerance)` — relative tolerance
