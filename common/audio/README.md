@@ -50,11 +50,21 @@ created by lesson code. Later lessons will add spatial audio using
 | `forge_audio_pool_stop_all` | `(ForgeAudioPool *pool)` | Stop all sources |
 | `forge_audio_pool_active_count` | `(const ForgeAudioPool *pool) → int` | Count of currently playing sources |
 
+### Lesson 03 — Audio Mixing
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_mixer_create` | `(void) → ForgeAudioMixer` | Create zeroed mixer with master volume 1.0 |
+| `forge_audio_mixer_add_channel` | `(ForgeAudioMixer *mixer, ForgeAudioSource *src) → int` | Add source as channel, returns index or -1 |
+| `forge_audio_mixer_mix` | `(ForgeAudioMixer *mixer, float *out, int frames)` | Mix all channels with volume/pan/mute/solo, soft clip via tanh |
+| `forge_audio_mixer_update_peaks` | `(ForgeAudioMixer *mixer, float dt)` | Decay peak hold values over time |
+| `forge_audio_channel_peak` | `(const ForgeAudioMixer *mixer, int ch, float *l, float *r)` | Read per-channel peak levels |
+| `forge_audio_mixer_master_peak` | `(const ForgeAudioMixer *mixer, float *l, float *r)` | Read master peak levels |
+
 ### Planned API (future lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 03 — Audio Mixing | `forge_audio_mixer_create()`, `forge_audio_mixer_set_volume()`, `forge_audio_mixer_set_pan()` | Multi-source mixing, panning, master volume |
 | 04 — Spatial Audio | `forge_audio_source_set_position()`, `forge_audio_listener_set()`, `forge_audio_attenuation()` | 3D positioning, distance attenuation, Doppler |
 | 05–06 | *See [PLAN.md](../../PLAN.md)* | Streaming, DSP effects |
 
@@ -74,3 +84,4 @@ created by lesson code. Later lessons will add spatial audio using
 |---|---|
 | [Audio 01](../../lessons/audio/01-audio-basics/) | `forge_audio_load_wav`, `ForgeAudioBuffer`, `ForgeAudioSource`, `forge_audio_source_mix` |
 | [Audio 02](../../lessons/audio/02-sound-effects/) | `ForgeAudioPool`, `forge_audio_pool_play`, `forge_audio_pool_mix`, `forge_audio_source_fade_in`, `forge_audio_source_fade_out` |
+| [Audio 03](../../lessons/audio/03-audio-mixing/) | `ForgeAudioMixer`, `forge_audio_mixer_create`, `forge_audio_mixer_add_channel`, `forge_audio_mixer_mix`, `forge_audio_mixer_update_peaks` |

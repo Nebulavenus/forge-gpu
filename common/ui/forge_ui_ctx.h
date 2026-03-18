@@ -149,6 +149,27 @@
 #define FORGE_UI_SPARKLINE_LINE_WIDTH  2.0f   /* sparkline line thickness (unscaled px) */
 #define FORGE_UI_SPARKLINE_COL_CAP   200      /* max column quads per segment (safety cap) */
 
+/* ── VU meter style ───────────────────────────────────────────────────── */
+
+#define FORGE_UI_VU_GAP              2.0f   /* gap between L/R bars (unscaled px) */
+#define FORGE_UI_VU_PEAK_LINE_H      2.0f   /* peak hold indicator height (unscaled px) */
+#define FORGE_UI_VU_ZONE_GREEN       0.5f   /* level threshold: green → yellow */
+#define FORGE_UI_VU_ZONE_YELLOW      0.8f   /* level threshold: yellow → red */
+
+/* Zone colors (RGB) */
+#define FORGE_UI_VU_GREEN_R   0.2f
+#define FORGE_UI_VU_GREEN_G   0.8f
+#define FORGE_UI_VU_GREEN_B   0.2f
+#define FORGE_UI_VU_YELLOW_R  0.9f
+#define FORGE_UI_VU_YELLOW_G  0.8f
+#define FORGE_UI_VU_YELLOW_B  0.1f
+#define FORGE_UI_VU_RED_R     0.9f
+#define FORGE_UI_VU_RED_G     0.15f
+#define FORGE_UI_VU_RED_B     0.15f
+#define FORGE_UI_VU_BG_DIM    0.5f   /* background darkening factor for border color */
+#define FORGE_UI_VU_PEAK_MIN  0.0f   /* minimum peak_hold to draw the indicator (0 = hidden) */
+#define FORGE_UI_VU_PEAK_ALPHA 0.9f  /* peak hold indicator opacity */
+
 /* ── Drag float/int style ──────────────────────────────────────────────── */
 
 #define FORGE_UI_DRAG_LABEL_GAP        6.0f   /* gap between component label and value field (unscaled px) */
@@ -819,6 +840,32 @@ static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
                                                   int count,
                                                   float min_val, float max_val,
                                                   ForgeUiColor line_color,
+                                                  float size);
+
+/* ── VU meter ──────────────────────────────────────────────────────────── */
+
+/* Draw a stereo VU meter: two vertical bars (left/right) side by side
+ * with a 2px gap.  Each bar fills from the bottom up according to its
+ * level value [0..1].  Color zones: green [0..0.5], yellow [0.5..0.8],
+ * red [0.8..1.0].  An optional peak hold indicator is drawn as a thin
+ * white horizontal line.
+ *
+ * Non-interactive — no ID, no hit test.
+ *
+ * level_l:   left channel level [0..1] (clamped)
+ * level_r:   right channel level [0..1] (clamped)
+ * peak_l:    left peak hold level [0..1] (thin white line, 0 = hidden)
+ * peak_r:    right peak hold level [0..1] (thin white line, 0 = hidden)
+ * rect:      bounding rectangle in screen pixels */
+static inline void forge_ui_ctx_vu_meter(ForgeUiContext *ctx,
+                                           float level_l, float level_r,
+                                           float peak_l, float peak_r,
+                                           ForgeUiRect rect);
+
+/* VU meter placed by the current layout. */
+static inline void forge_ui_ctx_vu_meter_layout(ForgeUiContext *ctx,
+                                                  float level_l, float level_r,
+                                                  float peak_l, float peak_r,
                                                   float size);
 
 /* ── Drag float ────────────────────────────────────────────────────────── */
@@ -3259,6 +3306,131 @@ static inline void forge_ui_ctx_sparkline_layout(ForgeUiContext *ctx,
         !forge_isfinite(line_color.b) || !forge_isfinite(line_color.a)) return;
     ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
     forge_ui_ctx_sparkline(ctx, values, count, min_val, max_val, line_color, rect);
+}
+
+/* ── VU meter implementation ───────────────────────────────────────────── */
+
+/* Draw a single VU bar (one channel) filling from bottom to top.
+ * Color transitions: green [0..0.5], yellow [0.5..0.8], red [0.8..1.0].
+ * The bar is drawn as up to 3 colored segments to show the zone split. */
+static inline void forge_ui__vu_bar(ForgeUiContext *ctx,
+                                      float level, float peak_hold,
+                                      ForgeUiRect bar)
+{
+    /* Background (darkened border color for consistency) */
+    forge_ui__emit_rect(ctx, bar,
+                        ctx->theme.border.r * FORGE_UI_VU_BG_DIM,
+                        ctx->theme.border.g * FORGE_UI_VU_BG_DIM,
+                        ctx->theme.border.b * FORGE_UI_VU_BG_DIM,
+                        ctx->theme.border.a);
+
+    if (level <= 0.0f && peak_hold <= 0.0f) return;
+
+    /* Clamp level to [0, 1] */
+    if (level > 1.0f) level = 1.0f;
+
+    /* Zone thresholds and colors from named constants */
+    float green_end  = FORGE_UI_VU_ZONE_GREEN;
+    float yellow_end = FORGE_UI_VU_ZONE_YELLOW;
+
+    float gr = FORGE_UI_VU_GREEN_R,  gg = FORGE_UI_VU_GREEN_G,  gb = FORGE_UI_VU_GREEN_B;
+    float yr = FORGE_UI_VU_YELLOW_R, yg = FORGE_UI_VU_YELLOW_G, yb = FORGE_UI_VU_YELLOW_B;
+    float rr = FORGE_UI_VU_RED_R,    rg = FORGE_UI_VU_RED_G,    rb = FORGE_UI_VU_RED_B;
+
+    /* Draw filled segments from bottom up.  Bar fills from bottom (y+h)
+     * toward top (y).  Each zone occupies a fraction of the total height. */
+    float total_h = bar.h;
+
+    /* Green zone: [0, green_end] → bottom portion */
+    if (level > 0.0f) {
+        float zone_frac = level < green_end ? level : green_end;
+        float h = total_h * zone_frac;
+        ForgeUiRect seg = {
+            bar.x, bar.y + total_h * (1.0f - zone_frac), bar.w, h
+        };
+        forge_ui__emit_rect(ctx, seg, gr, gg, gb, 1.0f);
+    }
+
+    /* Yellow zone: [green_end, yellow_end] */
+    if (level > green_end) {
+        float zone_top = level < yellow_end ? level : yellow_end;
+        float h = total_h * (zone_top - green_end);
+        ForgeUiRect seg = {
+            bar.x,
+            bar.y + total_h * (1.0f - zone_top),
+            bar.w,
+            h
+        };
+        forge_ui__emit_rect(ctx, seg, yr, yg, yb, 1.0f);
+    }
+
+    /* Red zone: [yellow_end, 1.0] */
+    if (level > yellow_end) {
+        float zone_top = level; /* already clamped to 1.0 */
+        float h = total_h * (zone_top - yellow_end);
+        ForgeUiRect seg = {
+            bar.x,
+            bar.y + total_h * (1.0f - zone_top),
+            bar.w,
+            h
+        };
+        forge_ui__emit_rect(ctx, seg, rr, rg, rb, 1.0f);
+    }
+
+    /* Peak hold indicator: thin white line at peak_hold position */
+    if (peak_hold > FORGE_UI_VU_PEAK_MIN) {
+        if (peak_hold > 1.0f) peak_hold = 1.0f;
+        float line_h = FORGE_UI_SCALED(ctx, FORGE_UI_VU_PEAK_LINE_H);
+        float line_y = bar.y + total_h * (1.0f - peak_hold) - line_h * 0.5f;
+        if (line_y < bar.y) line_y = bar.y;
+        if (line_y + line_h > bar.y + bar.h) line_h = bar.y + bar.h - line_y;
+        if (line_h > 0.0f) {
+            ForgeUiRect line_rect = { bar.x, line_y, bar.w, line_h };
+            forge_ui__emit_rect(ctx, line_rect, 1.0f, 1.0f, 1.0f,
+                                FORGE_UI_VU_PEAK_ALPHA);
+        }
+    }
+}
+
+static inline void forge_ui_ctx_vu_meter(ForgeUiContext *ctx,
+                                           float level_l, float level_r,
+                                           float peak_l, float peak_r,
+                                           ForgeUiRect rect)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (!forge_isfinite(rect.x) || !forge_isfinite(rect.y) ||
+        !forge_isfinite(rect.w) || !forge_isfinite(rect.h)) return;
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+
+    /* Sanitize levels */
+    if (!forge_isfinite(level_l)) level_l = 0.0f;
+    if (!forge_isfinite(level_r)) level_r = 0.0f;
+    if (!forge_isfinite(peak_l)) peak_l = 0.0f;
+    if (!forge_isfinite(peak_r)) peak_r = 0.0f;
+
+    /* Split rect into two bars with a scaled gap. */
+    float gap = FORGE_UI_SCALED(ctx, FORGE_UI_VU_GAP);
+    if (gap < 0.0f) gap = 0.0f;
+    if (gap > rect.w) gap = rect.w;
+    float bar_w = (rect.w - gap) * 0.5f;
+    if (bar_w <= 0.0f) return;
+
+    ForgeUiRect left_bar  = { rect.x, rect.y, bar_w, rect.h };
+    ForgeUiRect right_bar = { rect.x + bar_w + gap, rect.y, bar_w, rect.h };
+
+    forge_ui__vu_bar(ctx, level_l, peak_l, left_bar);
+    forge_ui__vu_bar(ctx, level_r, peak_r, right_bar);
+}
+
+static inline void forge_ui_ctx_vu_meter_layout(ForgeUiContext *ctx,
+                                                  float level_l, float level_r,
+                                                  float peak_l, float peak_r,
+                                                  float size)
+{
+    if (!ctx || !ctx->atlas) return;
+    if (ctx->layout_depth <= 0) return;
+    ForgeUiRect rect = forge_ui_ctx_layout_next(ctx, size);
+    forge_ui_ctx_vu_meter(ctx, level_l, level_r, peak_l, peak_r, rect);
 }
 
 /* ── HSV/RGB conversion ────────────────────────────────────────────────── */

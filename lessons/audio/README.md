@@ -40,6 +40,7 @@ serve to illustrate and control what the listener hears.
 |---|-------|-------------------|
 | [01](01-audio-basics/) | Audio Basics | PCM fundamentals, WAV loading, F32 conversion, mixing, SDL audio streams |
 | [02](02-sound-effects/) | Sound Effects | Source pool, fire-and-forget playback, volume fading, polyphony |
+| [03](03-audio-mixing/) | Audio Mixing | Multi-channel mixer, per-channel volume/pan/mute/solo, soft clipping, peak metering |
 
 ## Shared library
 

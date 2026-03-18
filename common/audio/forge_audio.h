@@ -1,8 +1,15 @@
 /*
  * forge_audio.h — Header-only audio library for forge-gpu
  *
- * Lesson 01 delivers: WAV loading (any format → F32 stereo), audio buffer
- * management, source playback state, and additive mixing with volume and pan.
+ * Grows lesson by lesson:
+ *   Lesson 01 — WAV loading (any format → F32 stereo), audio buffer
+ *               management, source playback state, additive mixing with
+ *               volume and pan.
+ *   Lesson 02 — Fade envelopes (linear ramp with auto-stop), fire-and-forget
+ *               source pool for polyphonic playback.
+ *   Lesson 03 — Multi-channel mixer with per-channel volume/pan/mute/solo,
+ *               tanh soft clipping on the master bus, peak metering with
+ *               hold-and-decay indicators.
  *
  * Usage:
  *   #include "audio/forge_audio.h"
@@ -18,6 +25,11 @@
 #define FORGE_AUDIO_H
 
 #include <SDL3/SDL.h>
+
+/* Portable isfinite — SDL_stdinc.h does not yet provide this */
+#ifndef forge_isfinite
+#define forge_isfinite(x) (!SDL_isinf(x) && !SDL_isnan(x))
+#endif
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -535,6 +547,414 @@ static inline int forge_audio_pool_active_count(const ForgeAudioPool *pool)
         if (pool->sources[i].playing) count++;
     }
     return count;
+}
+
+/* ── Mixer (Lesson 03) ─────────────────────────────────────────────── */
+
+/* A multi-channel mixer with per-channel volume, pan, mute, solo,
+ * peak metering, and soft clipping on the master bus.
+ *
+ * Each channel wraps a ForgeAudioSource pointer and adds per-channel
+ * controls.  The mixer owns no audio data — sources and buffers are
+ * managed by the caller.
+ *
+ * forge_audio_mixer_mix() is the core function: it mixes all active
+ * channels into a stereo output buffer with the following signal chain:
+ *   1. Per-channel volume + pan  →  additive sum
+ *   2. Master volume
+ *   3. Soft clip (tanh saturation)
+ *   4. Peak metering */
+
+#ifndef FORGE_AUDIO_MIXER_MAX_CHANNELS
+#define FORGE_AUDIO_MIXER_MAX_CHANNELS 16
+#endif
+
+/* Peak hold decay rate: seconds before a peak indicator drops to zero */
+#define FORGE_AUDIO_PEAK_HOLD_TIME 1.5f
+
+/* Stack scratch buffer size (in floats) for per-channel mixing.
+ * Falls back to heap allocation when total_samples exceeds this. */
+#define FORGE_AUDIO__STACK_SCRATCH_SIZE 2048
+
+/* Compensation factor to undo the center-pan halving applied by
+ * forge_audio_source_mix (volume=1, pan=0 → gain = 0.5 per channel).
+ * Coupled to the linear pan law: gain = volume * (1 ± pan) / 2. */
+#define FORGE_AUDIO__CENTER_PAN_UNDO 2.0f
+
+typedef struct ForgeAudioChannel {
+    ForgeAudioSource *source;   /* audio source (not owned) */
+    float  volume;              /* per-channel gain [0..∞), typically [0..2] */
+    float  pan;                 /* stereo pan [-1..+1], 0 = center */
+    bool   mute;                /* true = channel excluded from mix */
+    bool   solo;                /* true = only solo'd channels are heard */
+    float  peak_l;              /* instantaneous peak level, left — pre-master,
+                                 * pre-clip, can exceed 1.0 when channel gain > 1.0 */
+    float  peak_r;              /* instantaneous peak level, right — pre-master,
+                                 * pre-clip, can exceed 1.0 when channel gain > 1.0 */
+    float  peak_hold_l;         /* peak hold level, left — pre-master, pre-clip,
+                                 * can exceed 1.0; decays over time */
+    float  peak_hold_r;         /* peak hold level, right — pre-master, pre-clip,
+                                 * can exceed 1.0; decays over time */
+    float  peak_hold_timer_l;   /* seconds remaining before hold starts decay */
+    float  peak_hold_timer_r;   /* seconds remaining before hold starts decay */
+} ForgeAudioChannel;
+
+typedef struct ForgeAudioMixer {
+    ForgeAudioChannel channels[FORGE_AUDIO_MIXER_MAX_CHANNELS];
+    int   channel_count;        /* number of active channels */
+    float master_volume;        /* master gain applied after sum [0..∞) */
+    float master_peak_l;        /* instantaneous master peak, left */
+    float master_peak_r;        /* instantaneous master peak, right */
+    float master_peak_hold_l;   /* master peak hold, left */
+    float master_peak_hold_r;   /* master peak hold, right */
+    float master_hold_timer_l;  /* seconds remaining before master hold decays */
+    float master_hold_timer_r;  /* seconds remaining before master hold decays */
+} ForgeAudioMixer;
+
+/* Create a zeroed mixer with master_volume = 1.0. */
+static inline ForgeAudioMixer forge_audio_mixer_create(void)
+{
+    ForgeAudioMixer m;
+    SDL_memset(&m, 0, sizeof(m));
+    m.master_volume = 1.0f;
+    return m;
+}
+
+/* Add a source to the mixer.  Returns the channel index [0..MAX-1]
+ * on success, or -1 if the mixer is full.  The channel defaults to
+ * volume=1.0, pan=0, unmuted, not solo'd. */
+static inline int forge_audio_mixer_add_channel(ForgeAudioMixer *mixer,
+                                                  ForgeAudioSource *source)
+{
+    if (!mixer || !source) return -1;
+    if (mixer->channel_count < 0) return -1;
+    if (mixer->channel_count >= FORGE_AUDIO_MIXER_MAX_CHANNELS) return -1;
+
+    int idx = mixer->channel_count;
+    SDL_memset(&mixer->channels[idx], 0, sizeof(ForgeAudioChannel));
+    mixer->channels[idx].source = source;
+    mixer->channels[idx].volume = 1.0f;
+    mixer->channels[idx].pan    = 0.0f;
+    mixer->channel_count++;
+    return idx;
+}
+
+/* Private helper: clamp channel_count to valid range [0, MAX]. */
+static inline int forge_audio__clamped_channel_count(
+    const ForgeAudioMixer *mixer)
+{
+    if (!mixer) return 0;
+    int n = mixer->channel_count;
+    if (n < 0) n = 0;
+    if (n > FORGE_AUDIO_MIXER_MAX_CHANNELS) n = FORGE_AUDIO_MIXER_MAX_CHANNELS;
+    return n;
+}
+
+/* Private helper: tanh approximation using SDL_expf.
+ * Clamps extreme values to avoid overflow in exp. */
+static inline float forge_audio__tanhf(float x)
+{
+    if (x >  10.0f) return  1.0f;
+    if (x < -10.0f) return -1.0f;
+    float e2x = SDL_expf(2.0f * x);
+    return (e2x - 1.0f) / (e2x + 1.0f);
+}
+
+/* Mix all channels into out (stereo F32, frames * 2 floats).
+ *
+ * Unlike forge_audio_source_mix() which is additive, this function
+ * zeroes the output buffer before mixing.  The signal chain is:
+ *   1. Zero output
+ *   2. Scan for any solo'd channels
+ *   3. Per channel: skip if muted or (has_solo && !solo'd)
+ *   4. Mix source samples with channel volume + pan law
+ *   5. Track per-channel peak (max |sample| per side)
+ *   6. Apply master_volume to summed output
+ *   7. Soft-clip via tanh
+ *   8. Track master peak
+ *
+ * Sources are advanced by forge_audio_source_mix(), which handles
+ * looping and end-of-buffer logic.  The mixer uses a temporary
+ * scratch buffer per channel to measure per-channel peaks before
+ * the master sum. */
+static inline void forge_audio_mixer_mix(ForgeAudioMixer *mixer,
+                                           float *out, int frames)
+{
+    if (!mixer || !out || frames <= 0) return;
+
+    size_t total_samples = (size_t)frames * FORGE_AUDIO_CHANNELS;
+    size_t total_bytes = total_samples * sizeof(float);
+    if (total_bytes / sizeof(float) != total_samples) return;  /* overflow */
+
+    /* 1. Zero output buffer */
+    SDL_memset(out, 0, total_bytes);
+
+    int ch_count = forge_audio__clamped_channel_count(mixer);
+    if (ch_count <= 0) {
+        mixer->master_peak_l = 0.0f;
+        mixer->master_peak_r = 0.0f;
+        return;
+    }
+
+    /* 2. Check for any solo'd channels */
+    bool has_solo = false;
+    for (int ch = 0; ch < ch_count; ch++) {
+        if (mixer->channels[ch].solo) {
+            has_solo = true;
+            break;
+        }
+    }
+
+    /* 3-5. Per-channel mixing with peak tracking.
+     * We use a stack-allocated scratch buffer for small frame counts,
+     * or heap-allocate for large ones. */
+    float stack_scratch[FORGE_AUDIO__STACK_SCRATCH_SIZE];
+    float *scratch = NULL;
+    bool scratch_heap = false;
+    if (total_samples <= FORGE_AUDIO__STACK_SCRATCH_SIZE) {
+        scratch = stack_scratch;
+    } else {
+        scratch = (float *)SDL_malloc(total_bytes);
+        if (!scratch) {
+            mixer->master_peak_l = 0.0f;
+            mixer->master_peak_r = 0.0f;
+            return;
+        }
+        scratch_heap = true;
+    }
+
+    for (int ch = 0; ch < ch_count; ch++) {
+        ForgeAudioChannel *channel = &mixer->channels[ch];
+
+        /* Reset instantaneous peaks before this mix pass */
+        channel->peak_l = 0.0f;
+        channel->peak_r = 0.0f;
+
+        /* Skip conditions: muted, or solo is active and this channel isn't solo'd.
+         * Skipped channels still advance their source cursor so looping stems
+         * stay in sync when unmuted.  (Source_mix at volume 0 advances the
+         * cursor without producing output — see the zero-volume fast path.) */
+        bool skip_mix = false;
+        if (channel->mute && !channel->solo) {
+            skip_mix = true;
+        }
+        if (has_solo && !channel->solo) {
+            skip_mix = true;
+        }
+
+        if (!channel->source || !channel->source->playing) continue;
+
+        /* Sanitize public controls — reject NaN/Inf to prevent poison */
+        if (!forge_isfinite(channel->volume)) channel->volume = 0.0f;
+        if (!forge_isfinite(channel->pan))    channel->pan = 0.0f;
+
+        if (skip_mix || channel->volume <= 0.0f) {
+            /* Advance cursor to stay in sync without mixing */
+            float saved_vol = channel->source->volume;
+            channel->source->volume = 0.0f;
+            float dummy[2] = {0};
+            /* source_mix at volume 0 advances cursor via its fast path */
+            forge_audio_source_mix(channel->source, dummy, frames);
+            channel->source->volume = saved_vol;
+            continue;
+        }
+
+        /* Mix this source into scratch buffer (zeroed first) */
+        SDL_memset(scratch, 0, total_bytes);
+
+        /* Temporarily set source volume to 1.0 and pan to 0.0 so we get
+         * raw samples — we apply channel volume/pan ourselves.
+         *
+         * NOTE: This mutates the source struct briefly.  The mixer is
+         * designed for single-threaded use; do not call from an audio
+         * callback that reads the same sources concurrently. */
+        float saved_vol = channel->source->volume;
+        float saved_pan = channel->source->pan;
+        channel->source->volume = 1.0f;
+        channel->source->pan = 0.0f;
+        forge_audio_source_mix(channel->source, scratch, frames);
+        channel->source->volume = saved_vol;
+        channel->source->pan = saved_pan;
+
+        /* Apply channel volume and pan, add to output, track peaks.
+         * Pan law: gain_L = volume*(1-pan)/2, gain_R = volume*(1+pan)/2 */
+        float pan = channel->pan;
+        if (pan < -1.0f) pan = -1.0f;
+        if (pan >  1.0f) pan =  1.0f;
+        float gain_l = channel->volume * (1.0f - pan) * 0.5f;
+        float gain_r = channel->volume * (1.0f + pan) * 0.5f;
+
+        float ch_peak_l = 0.0f;
+        float ch_peak_r = 0.0f;
+
+        for (int i = 0; i < frames; i++) {
+            float raw_l = scratch[i * 2]     * FORGE_AUDIO__CENTER_PAN_UNDO;
+            float raw_r = scratch[i * 2 + 1] * FORGE_AUDIO__CENTER_PAN_UNDO;
+
+            float sl = raw_l * gain_l;
+            float sr = raw_r * gain_r;
+
+            out[i * 2]     += sl;
+            out[i * 2 + 1] += sr;
+
+            float abs_l = sl < 0.0f ? -sl : sl;
+            float abs_r = sr < 0.0f ? -sr : sr;
+            if (abs_l > ch_peak_l) ch_peak_l = abs_l;
+            if (abs_r > ch_peak_r) ch_peak_r = abs_r;
+        }
+
+        channel->peak_l = ch_peak_l;
+        channel->peak_r = ch_peak_r;
+
+        /* Update peak hold */
+        if (ch_peak_l >= channel->peak_hold_l) {
+            channel->peak_hold_l = ch_peak_l;
+            channel->peak_hold_timer_l = FORGE_AUDIO_PEAK_HOLD_TIME;
+        }
+        if (ch_peak_r >= channel->peak_hold_r) {
+            channel->peak_hold_r = ch_peak_r;
+            channel->peak_hold_timer_r = FORGE_AUDIO_PEAK_HOLD_TIME;
+        }
+    }
+
+    if (scratch_heap) {
+        SDL_free(scratch);
+    }
+
+    /* 6-8. Master volume, soft clip, master peak */
+    if (!forge_isfinite(mixer->master_volume)) mixer->master_volume = 1.0f;
+    if (mixer->master_volume < 0.0f) mixer->master_volume = 0.0f;
+
+    float m_peak_l = 0.0f;
+    float m_peak_r = 0.0f;
+
+    for (int i = 0; i < frames; i++) {
+        /* Apply master volume */
+        float l = out[i * 2]     * mixer->master_volume;
+        float r = out[i * 2 + 1] * mixer->master_volume;
+
+        /* Soft-clip via tanh — output stays in [-1, 1] */
+        l = forge_audio__tanhf(l);
+        r = forge_audio__tanhf(r);
+
+        out[i * 2]     = l;
+        out[i * 2 + 1] = r;
+
+        float abs_l = l < 0.0f ? -l : l;
+        float abs_r = r < 0.0f ? -r : r;
+        if (abs_l > m_peak_l) m_peak_l = abs_l;
+        if (abs_r > m_peak_r) m_peak_r = abs_r;
+    }
+
+    mixer->master_peak_l = m_peak_l;
+    mixer->master_peak_r = m_peak_r;
+
+    /* Update master peak hold */
+    if (m_peak_l >= mixer->master_peak_hold_l) {
+        mixer->master_peak_hold_l = m_peak_l;
+        mixer->master_hold_timer_l = FORGE_AUDIO_PEAK_HOLD_TIME;
+    }
+    if (m_peak_r >= mixer->master_peak_hold_r) {
+        mixer->master_peak_hold_r = m_peak_r;
+        mixer->master_hold_timer_r = FORGE_AUDIO_PEAK_HOLD_TIME;
+    }
+}
+
+/* Decay peak hold values over time.  Call once per frame with dt. */
+static inline void forge_audio_mixer_update_peaks(ForgeAudioMixer *mixer,
+                                                    float dt)
+{
+    if (!mixer || !forge_isfinite(dt) || dt <= 0.0f) return;
+
+    int ch_count = forge_audio__clamped_channel_count(mixer);
+    float decay_rate = 1.0f / FORGE_AUDIO_PEAK_HOLD_TIME;
+
+    for (int ch = 0; ch < ch_count; ch++) {
+        ForgeAudioChannel *c = &mixer->channels[ch];
+
+        /* Left peak hold — if timer expires mid-frame, apply remaining
+         * time as decay so large dt values work in a single call. */
+        if (c->peak_hold_timer_l > 0.0f) {
+            c->peak_hold_timer_l -= dt;
+            if (c->peak_hold_timer_l < 0.0f) {
+                float decay_dt = -c->peak_hold_timer_l;
+                c->peak_hold_timer_l = 0.0f;
+                c->peak_hold_l -= decay_rate * decay_dt;
+                if (c->peak_hold_l < 0.0f) c->peak_hold_l = 0.0f;
+            }
+        } else {
+            c->peak_hold_l -= decay_rate * dt;
+            if (c->peak_hold_l < 0.0f) c->peak_hold_l = 0.0f;
+        }
+
+        /* Right peak hold */
+        if (c->peak_hold_timer_r > 0.0f) {
+            c->peak_hold_timer_r -= dt;
+            if (c->peak_hold_timer_r < 0.0f) {
+                float decay_dt = -c->peak_hold_timer_r;
+                c->peak_hold_timer_r = 0.0f;
+                c->peak_hold_r -= decay_rate * decay_dt;
+                if (c->peak_hold_r < 0.0f) c->peak_hold_r = 0.0f;
+            }
+        } else {
+            c->peak_hold_r -= decay_rate * dt;
+            if (c->peak_hold_r < 0.0f) c->peak_hold_r = 0.0f;
+        }
+    }
+
+    /* Master peak hold */
+    if (mixer->master_hold_timer_l > 0.0f) {
+        mixer->master_hold_timer_l -= dt;
+        if (mixer->master_hold_timer_l < 0.0f) {
+            float decay_dt = -mixer->master_hold_timer_l;
+            mixer->master_hold_timer_l = 0.0f;
+            mixer->master_peak_hold_l -= decay_rate * decay_dt;
+            if (mixer->master_peak_hold_l < 0.0f) mixer->master_peak_hold_l = 0.0f;
+        }
+    } else {
+        mixer->master_peak_hold_l -= decay_rate * dt;
+        if (mixer->master_peak_hold_l < 0.0f) mixer->master_peak_hold_l = 0.0f;
+    }
+    if (mixer->master_hold_timer_r > 0.0f) {
+        mixer->master_hold_timer_r -= dt;
+        if (mixer->master_hold_timer_r < 0.0f) {
+            float decay_dt = -mixer->master_hold_timer_r;
+            mixer->master_hold_timer_r = 0.0f;
+            mixer->master_peak_hold_r -= decay_rate * decay_dt;
+            if (mixer->master_peak_hold_r < 0.0f) mixer->master_peak_hold_r = 0.0f;
+        }
+    } else {
+        mixer->master_peak_hold_r -= decay_rate * dt;
+        if (mixer->master_peak_hold_r < 0.0f) mixer->master_peak_hold_r = 0.0f;
+    }
+}
+
+/* Read per-channel peak levels. */
+static inline void forge_audio_channel_peak(const ForgeAudioMixer *mixer,
+                                              int ch,
+                                              float *out_l, float *out_r)
+{
+    int ch_count = forge_audio__clamped_channel_count(mixer);
+    if (!mixer || ch < 0 || ch >= ch_count) {
+        if (out_l) *out_l = 0.0f;
+        if (out_r) *out_r = 0.0f;
+        return;
+    }
+    if (out_l) *out_l = mixer->channels[ch].peak_l;
+    if (out_r) *out_r = mixer->channels[ch].peak_r;
+}
+
+/* Read master peak levels. */
+static inline void forge_audio_mixer_master_peak(const ForgeAudioMixer *mixer,
+                                                   float *out_l, float *out_r)
+{
+    if (!mixer) {
+        if (out_l) *out_l = 0.0f;
+        if (out_r) *out_r = 0.0f;
+        return;
+    }
+    if (out_l) *out_l = mixer->master_peak_l;
+    if (out_r) *out_r = mixer->master_peak_r;
 }
 
 #endif /* FORGE_AUDIO_H */

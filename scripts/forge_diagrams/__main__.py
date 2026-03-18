@@ -279,6 +279,11 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_torque_force_at_point,
     diagram_world_space_inertia,
 )
+from .audio import (
+    diagram_mixer_signal_chain,
+    diagram_peak_hold_behavior,
+    diagram_soft_clipping,
+)
 from .ui import (
     diagram_adjacent_pair_matrix,
     diagram_antialiasing_comparison,
@@ -354,6 +359,11 @@ from .ui import (
 # ---------------------------------------------------------------------------
 
 DIAGRAMS = {
+    "audio/03": [
+        ("mixer_signal_chain.png", diagram_mixer_signal_chain),
+        ("soft_clipping.png", diagram_soft_clipping),
+        ("peak_hold_behavior.png", diagram_peak_hold_behavior),
+    ],
     "assets/02": [
         ("block_compression.png", diagram_texture_block_compression),
         ("format_comparison.png", diagram_texture_format_comparison),
@@ -816,6 +826,7 @@ DIAGRAMS = {
 
 # Full lesson directory names for display
 LESSON_NAMES = {
+    "audio/03": "audio/03-audio-mixing",
     "assets/02": "assets/02-texture-processing",
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",

@@ -76,7 +76,7 @@ lesson.
 
 ### Fundamentals
 
-- [ ] **Audio Lesson 03 — Audio Mixing** — `ForgeAudioMixer` struct with fixed-size channel array and master bus; `forge_audio_mixer_create()`, `forge_audio_mixer_add_channel()`, `forge_audio_mixer_mix()`; per-channel volume, pan, mute, and solo; master volume with soft clipping (tanh saturation) to prevent hard clipping; peak-hold VU meter per channel via `forge_audio_channel_peak()`; new `forge_ui_vu_meter()` widget in `common/ui/`; UI mixer panel resembling a DAW channel strip — vertical faders, pan sliders, mute/solo toggles, stereo VU meters with peak indicators; demo scene with 4–6 simultaneous looping sources (drums, bass, melody, ambience, FX) that the user mixes live; audio files: 4–6 looping stems from a single track, same length so they stay in sync — user-supplied WAVs via `audio.conf`
+- [x] **Audio Lesson 03 — Audio Mixing** — `ForgeAudioMixer` struct with fixed-size channel array and master bus; `forge_audio_mixer_create()`, `forge_audio_mixer_add_channel()`, `forge_audio_mixer_mix()`; per-channel volume, pan, mute, and solo; master volume with soft clipping (tanh saturation) to prevent hard clipping; peak-hold VU meter per channel via `forge_audio_channel_peak()`; new `forge_ui_vu_meter()` widget in `common/ui/`; UI mixer panel resembling a DAW channel strip — vertical faders, pan sliders, mute/solo toggles, stereo VU meters with peak indicators; demo scene with 4–6 simultaneous looping sources (drums, bass, melody, ambience, FX) that the user mixes live; audio files: 4–6 looping stems from a single track, same length so they stay in sync — user-supplied WAVs via `audio.conf`
 
 ### Spatial & Advanced
 
