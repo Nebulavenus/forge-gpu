@@ -14,11 +14,11 @@ documents its purpose, handles edge cases, and has corresponding tests in
 #include "audio/forge_audio.h"
 ```
 
-The library depends on SDL3 for WAV loading and format conversion. It provides
-decode/conversion helpers and a mixer function (`forge_audio_source_mix`) that
-mixes into caller-provided buffers — the audio device and output stream are
-created by lesson code. Later lessons will add spatial audio using
-`common/math/forge_math.h` for vector calculations.
+The library depends on SDL3 for WAV loading and format conversion, and
+`common/math/forge_math.h` for spatial audio vector calculations. It provides
+decode/conversion helpers, a mixer, and a spatial audio layer that computes
+distance attenuation, stereo pan, and Doppler pitch shifting from 3D positions.
+The audio device and output stream are created by lesson code.
 
 ## API Reference
 
@@ -61,19 +61,33 @@ created by lesson code. Later lessons will add spatial audio using
 | `forge_audio_channel_peak` | `(const ForgeAudioMixer *mixer, int ch, float *l, float *r)` | Read per-channel peak levels |
 | `forge_audio_mixer_master_peak` | `(const ForgeAudioMixer *mixer, float *l, float *r)` | Read master peak levels |
 
+### Lesson 04 — Spatial Audio
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_listener_from_camera` | `(vec3 pos, quat orient) → ForgeAudioListener` | Build listener from camera position and orientation |
+| `forge_audio_spatial_source_create` | `(ForgeAudioSource *src, vec3 pos, ForgeAudioMixer *mixer, int ch) → ForgeAudioSpatialSource` | Wrap a source with spatial parameters, bind to mixer channel |
+| `forge_audio_spatial_attenuation` | `(model, dist, min, max, rolloff) → float` | Compute distance attenuation gain [0, 1] |
+| `forge_audio_spatial_pan` | `(const ForgeAudioListener *l, vec3 pos) → float` | Stereo pan [-1, +1] from 3D position |
+| `forge_audio_spatial_doppler` | `(const ForgeAudioListener *l, const ForgeAudioSpatialSource *s, float c) → float` | Doppler pitch factor |
+| `forge_audio_spatial_apply` | `(const ForgeAudioListener *l, ForgeAudioSpatialSource *s)` | Apply attenuation, pan, Doppler; writes to bound mixer channel |
+
+Also modified in Lesson 04: `ForgeAudioSource` gained `playback_rate` and
+`cursor_frac` fields for fractional cursor advancement with linear
+interpolation. At rate 1.0 with no fractional accumulation, the mixer takes
+the integer-step fast path — identical to Lessons 01–03.
+
 ### Planned API (future lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 04 — Spatial Audio | `forge_audio_source_set_position()`, `forge_audio_listener_set()`, `forge_audio_attenuation()` | 3D positioning, distance attenuation, Doppler |
 | 05–06 | *See [PLAN.md](../../PLAN.md)* | Streaming, DSP effects |
 
 ## Design
 
 - **Header-only** — `static inline` functions, no separate compilation unit
 - **Uses SDL3 audio** — `SDL_LoadWAV` for decoding and `SDL_AudioStream` for format conversion
-- **No external dependencies** — SDL3 only (WAV loading via `SDL_LoadWAV`);
-  later lessons will add `forge_math.h` for spatial audio calculations
+- **Depends on** — SDL3 and `common/math/forge_math.h` (for spatial audio vectors and quaternions)
 - **Naming** — `forge_audio_` prefix for functions, `ForgeAudio` for types
 - **Tested** — Every function has tests for correctness and edge cases in
   `tests/audio/`
@@ -85,3 +99,4 @@ created by lesson code. Later lessons will add spatial audio using
 | [Audio 01](../../lessons/audio/01-audio-basics/) | `forge_audio_load_wav`, `ForgeAudioBuffer`, `ForgeAudioSource`, `forge_audio_source_mix` |
 | [Audio 02](../../lessons/audio/02-sound-effects/) | `ForgeAudioPool`, `forge_audio_pool_play`, `forge_audio_pool_mix`, `forge_audio_source_fade_in`, `forge_audio_source_fade_out` |
 | [Audio 03](../../lessons/audio/03-audio-mixing/) | `ForgeAudioMixer`, `forge_audio_mixer_create`, `forge_audio_mixer_add_channel`, `forge_audio_mixer_mix`, `forge_audio_mixer_update_peaks` |
+| [Audio 04](../../lessons/audio/04-spatial-audio/) | `ForgeAudioListener`, `ForgeAudioSpatialSource`, `forge_audio_listener_from_camera`, `forge_audio_spatial_source_create`, `forge_audio_spatial_apply` |

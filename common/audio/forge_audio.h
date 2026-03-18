@@ -10,6 +10,9 @@
  *   Lesson 03 — Multi-channel mixer with per-channel volume/pan/mute/solo,
  *               tanh soft clipping on the master bus, peak metering with
  *               hold-and-decay indicators.
+ *   Lesson 04 — Spatial audio: distance attenuation (linear, inverse,
+ *               exponential), stereo pan from 3D position, Doppler pitch
+ *               shifting with fractional-rate sample interpolation.
  *
  * Usage:
  *   #include "audio/forge_audio.h"
@@ -25,6 +28,7 @@
 #define FORGE_AUDIO_H
 
 #include <SDL3/SDL.h>
+#include "math/forge_math.h"
 
 /* Portable isfinite — SDL_stdinc.h does not yet provide this */
 #ifndef forge_isfinite
@@ -79,6 +83,15 @@ typedef struct ForgeAudioSource {
     float  fade_volume;  /* current fade multiplier [0..1] */
     float  fade_target;  /* where the fade is heading */
     float  fade_rate;    /* |change| per second (0 = no fade active) */
+
+    /* Playback rate (Lesson 04) — controls cursor advancement speed for
+     * Doppler pitch shifting.  1.0 = normal speed, 2.0 = double speed (one
+     * octave up), 0.5 = half speed (one octave down).  The mixer uses linear
+     * interpolation between adjacent samples when the rate is non-integer.
+     * At rate=1.0 with cursor_frac=0.0, behavior is identical to the
+     * integer-step path from Lessons 01-03. */
+    float  playback_rate;  /* cursor advance rate (1.0 = normal) */
+    float  cursor_frac;    /* fractional sample position [0..1) */
 } ForgeAudioSource;
 
 /* ── Buffer functions ──────────────────────────────────────────────────── */
@@ -229,16 +242,21 @@ static inline ForgeAudioSource forge_audio_source_create(
     src.looping     = looping;
     src.playing     = false;
     src.cursor      = 0;
-    src.fade_volume = 1.0f;
-    src.fade_target = 1.0f;
-    src.fade_rate   = 0.0f;
+    src.fade_volume    = 1.0f;
+    src.fade_target    = 1.0f;
+    src.fade_rate      = 0.0f;
+    src.playback_rate  = 1.0f;
+    src.cursor_frac    = 0.0f;
     return src;
 }
 
 /* Reset cursor to the beginning. Does not change playing state. */
 static inline void forge_audio_source_reset(ForgeAudioSource *src)
 {
-    if (src) src->cursor = 0;
+    if (src) {
+        src->cursor = 0;
+        src->cursor_frac = 0.0f;
+    }
 }
 
 /* Return playback progress as a fraction [0..1].
@@ -304,16 +322,30 @@ static inline void forge_audio_source_mix(ForgeAudioSource *src,
         src->cursor -= (src->cursor % FORGE_AUDIO_CHANNELS);
     }
 
+    /* Sanitize playback_rate — zero, negative, or NaN would break cursor logic */
+    float rate = src->playback_rate;
+    if (!forge_isfinite(rate) || rate <= 0.0f) rate = 1.0f;
+
     if (src->volume <= 0.0f || src->fade_volume <= 0.0f) {
         /* Advance cursor even at zero volume so progress tracking works */
-        int advance = frames * FORGE_AUDIO_CHANNELS;
-        src->cursor += advance;
+        if (rate == 1.0f && src->cursor_frac == 0.0f) {
+            /* Fast path: integer-step advance (identical to Lessons 01-03) */
+            int advance = frames * FORGE_AUDIO_CHANNELS;
+            src->cursor += advance;
+        } else {
+            /* Fractional advance */
+            float frac = src->cursor_frac + (float)frames * rate;
+            int whole_frames = (int)frac;
+            src->cursor_frac = frac - (float)whole_frames;
+            src->cursor += whole_frames * FORGE_AUDIO_CHANNELS;
+        }
         int total = src->buffer->sample_count;
         if (src->cursor >= total) {
             if (src->looping) {
                 src->cursor %= total;
             } else {
                 src->cursor = total;
+                src->cursor_frac = 0.0f;
                 src->playing = false;
             }
         }
@@ -341,36 +373,110 @@ static inline void forge_audio_source_mix(ForgeAudioSource *src,
 
     const float *data = src->buffer->data;
     int total = src->buffer->sample_count;
-    int remaining = frames;
+    int total_frames = total / FORGE_AUDIO_CHANNELS;
 
-    while (remaining > 0 && src->playing) {
-        /* How many frames can we read before hitting the buffer end? */
-        int samples_left = total - src->cursor;
-        int frames_left = samples_left / FORGE_AUDIO_CHANNELS;
-        int to_mix = remaining < frames_left ? remaining : frames_left;
+    /* ── Integer-step fast path (rate=1.0, cursor_frac=0.0) ────────────
+     * When playback_rate is exactly 1.0 and there is no fractional
+     * accumulation, use the original integer-step loop.  This preserves
+     * bit-identical output for Lessons 01-03 and avoids the overhead of
+     * per-sample interpolation. */
+    if (rate == 1.0f && src->cursor_frac == 0.0f) {
+        int remaining = frames;
+        while (remaining > 0 && src->playing) {
+            int samples_left = total - src->cursor;
+            int frames_left = samples_left / FORGE_AUDIO_CHANNELS;
+            int to_mix = remaining < frames_left ? remaining : frames_left;
 
-        /* Additive mix with per-channel gain (includes fade envelope) */
-        for (int i = 0; i < to_mix; i++) {
-            int idx = src->cursor + i * FORGE_AUDIO_CHANNELS;
-            float l = data[idx];
-            float r = data[idx + 1];
-            out[i * 2]     += l * gain_l;
-            out[i * 2 + 1] += r * gain_r;
-        }
+            for (int i = 0; i < to_mix; i++) {
+                int idx = src->cursor + i * FORGE_AUDIO_CHANNELS;
+                float l = data[idx];
+                float r = data[idx + 1];
+                out[i * 2]     += l * gain_l;
+                out[i * 2 + 1] += r * gain_r;
+            }
 
-        src->cursor += to_mix * FORGE_AUDIO_CHANNELS;
-        out += to_mix * 2;
-        remaining -= to_mix;
+            src->cursor += to_mix * FORGE_AUDIO_CHANNELS;
+            out += to_mix * 2;
+            remaining -= to_mix;
 
-        /* End of buffer */
-        if (src->cursor >= total) {
-            if (src->looping) {
-                src->cursor = 0;
-            } else {
-                src->cursor = total;
-                src->playing = false;
+            if (src->cursor >= total) {
+                if (src->looping) {
+                    src->cursor = 0;
+                } else {
+                    src->cursor = total;
+                    src->playing = false;
+                }
             }
         }
+        return;
+    }
+
+    /* ── Fractional-step path (rate ≠ 1.0 or cursor_frac > 0) ─────────
+     * Advances the cursor by `rate` frames per output frame, using linear
+     * interpolation between adjacent samples.  Handles loop-boundary
+     * wrapping so the interpolation "next frame" is frame 0 when the
+     * cursor is at the last frame of a looping buffer. */
+    float cursor_f = (float)(src->cursor / FORGE_AUDIO_CHANNELS) +
+                     src->cursor_frac;
+
+    for (int i = 0; i < frames; i++) {
+        if (!src->playing) break;
+
+        int frame0 = (int)cursor_f;
+        float frac = cursor_f - (float)frame0;
+
+        /* Clamp frame0 into range */
+        if (frame0 < 0) frame0 = 0;
+        if (frame0 >= total_frames) {
+            if (src->looping) {
+                frame0 %= total_frames;
+            } else {
+                src->cursor = total;
+                src->cursor_frac = 0.0f;
+                src->playing = false;
+                break;
+            }
+        }
+
+        /* Next frame for interpolation — wraps for looping buffers */
+        int frame1 = frame0 + 1;
+        if (frame1 >= total_frames) {
+            frame1 = src->looping ? 0 : frame0;  /* clamp at end */
+        }
+
+        int idx0 = frame0 * FORGE_AUDIO_CHANNELS;
+        int idx1 = frame1 * FORGE_AUDIO_CHANNELS;
+
+        /* Linear interpolation between frame0 and frame1 */
+        float l = data[idx0]     * (1.0f - frac) + data[idx1]     * frac;
+        float r = data[idx0 + 1] * (1.0f - frac) + data[idx1 + 1] * frac;
+
+        out[i * 2]     += l * gain_l;
+        out[i * 2 + 1] += r * gain_r;
+
+        cursor_f += rate;
+
+        /* Handle wrap / end-of-buffer */
+        if (cursor_f >= (float)total_frames) {
+            if (src->looping) {
+                cursor_f = SDL_fmodf(cursor_f, (float)total_frames);
+            } else {
+                src->cursor = total;
+                src->cursor_frac = 0.0f;
+                src->playing = false;
+                break;
+            }
+        }
+    }
+
+    /* Write back cursor state */
+    if (src->playing) {
+        int frame_int = (int)cursor_f;
+        if (frame_int >= total_frames) {
+            frame_int = src->looping ? frame_int % total_frames : total_frames - 1;
+        }
+        src->cursor = frame_int * FORGE_AUDIO_CHANNELS;
+        src->cursor_frac = cursor_f - (float)frame_int;
     }
 }
 
@@ -955,6 +1061,307 @@ static inline void forge_audio_mixer_master_peak(const ForgeAudioMixer *mixer,
     }
     if (out_l) *out_l = mixer->master_peak_l;
     if (out_r) *out_r = mixer->master_peak_r;
+}
+
+/* ── Spatial Audio (Lesson 04) ────────────────────────────────────── */
+
+/* Spatial audio adds 3D positioning to the source/mixer architecture.
+ * A ForgeAudioSpatialSource wraps a ForgeAudioSource* with position,
+ * velocity, and distance parameters.  Each frame, forge_audio_spatial_apply()
+ * computes distance attenuation, stereo pan from 3D position, and optional
+ * Doppler pitch shift — then writes the results to the underlying source's
+ * volume, pan, and playback_rate fields.  The mixer proceeds unchanged. */
+
+/* Speed of sound in air at ~20 °C (meters per second) */
+#define FORGE_AUDIO_SPEED_OF_SOUND        343.0f
+
+/* Default spatial source parameters */
+#define FORGE_AUDIO_DEFAULT_MIN_DISTANCE  1.0f
+#define FORGE_AUDIO_DEFAULT_MAX_DISTANCE  50.0f
+#define FORGE_AUDIO_DEFAULT_ROLLOFF       1.0f
+
+/* Near-zero distance threshold for pan and Doppler calculations —
+ * below this, source is treated as coincident with listener */
+#define FORGE_AUDIO_NEAR_DISTANCE_EPSILON 0.001f
+
+/* Mach clamp fraction — Doppler denominator/numerator floored at this
+ * fraction of speed_of_sound to prevent infinity at Mach 1 */
+#define FORGE_AUDIO_MACH_CLAMP_FRACTION   0.1f
+
+/* Doppler pitch clamp range — two octaves in each direction */
+#define FORGE_AUDIO_DOPPLER_PITCH_MIN     0.5f   /* one octave down */
+#define FORGE_AUDIO_DOPPLER_PITCH_MAX     2.0f   /* one octave up */
+
+/* Distance attenuation models.
+ * Each model maps a distance d (clamped to [min, max]) to a gain [0, 1].
+ *
+ *   LINEAR:      gain = 1 - rolloff * (d - min) / (max - min)
+ *   INVERSE:     gain = min / (min + rolloff * (d - min))
+ *   EXPONENTIAL: gain = pow(d / min, -rolloff)
+ */
+typedef enum ForgeAudioAttenuationModel {
+    FORGE_AUDIO_ATTENUATION_LINEAR,
+    FORGE_AUDIO_ATTENUATION_INVERSE,
+    FORGE_AUDIO_ATTENUATION_EXPONENTIAL
+} ForgeAudioAttenuationModel;
+
+/* The listener represents the player's ears in 3D space.
+ * Position and orientation come from the camera; velocity is used for
+ * Doppler calculations.  `right` is stored (not recomputed) because it
+ * is used for every source's pan calculation. */
+typedef struct ForgeAudioListener {
+    vec3 position;
+    vec3 forward;
+    vec3 up;
+    vec3 right;
+    vec3 velocity;
+} ForgeAudioListener;
+
+/* A spatial wrapper around a ForgeAudioSource.
+ *
+ * base_volume preserves the user-set volume so spatial attenuation can
+ * scale it without permanently destroying volume differences between
+ * sources (e.g. a loud alarm vs a quiet hum). */
+typedef struct ForgeAudioSpatialSource {
+    ForgeAudioSource        *source;           /* underlying source (not owned) */
+    vec3                     position;          /* world-space position */
+    vec3                     velocity;          /* world-space velocity (for Doppler) */
+    float                    min_distance;      /* distance at which attenuation begins */
+    float                    max_distance;      /* distance at which gain reaches 0 (linear) */
+    float                    rolloff;           /* attenuation curve steepness */
+    float                    base_volume;       /* source volume before attenuation */
+    ForgeAudioAttenuationModel attenuation;     /* distance model */
+    bool                     doppler_enabled;   /* compute Doppler pitch shift */
+    ForgeAudioMixer         *mixer;             /* mixer to write channel volume/pan (NULL = source-only) */
+    int                      channel;           /* mixer channel index (-1 = none) */
+} ForgeAudioSpatialSource;
+
+/* ── Spatial functions ────────────────────────────────────────────── */
+
+/* Create a listener from a camera position and orientation quaternion.
+ * Extracts forward, up, and right vectors from the quaternion.
+ * Velocity defaults to zero — set it manually if the listener moves
+ * and Doppler is needed. */
+static inline ForgeAudioListener forge_audio_listener_from_camera(
+    vec3 position, quat orientation)
+{
+    ForgeAudioListener l;
+    l.position = position;
+    l.forward  = quat_forward(orientation);
+    l.up       = quat_up(orientation);
+    l.right    = quat_right(orientation);
+    l.velocity = vec3_create(0.0f, 0.0f, 0.0f);
+    return l;
+}
+
+/* Create a spatial source wrapping an existing audio source.
+ * Captures the source's current volume as base_volume.
+ * Defaults: min=1, max=50, rolloff=1, LINEAR, no Doppler.
+ *
+ * If mixer is non-NULL, spatial_apply writes volume/pan directly to the
+ * mixer channel — this is required for audible spatial effects when using
+ * ForgeAudioMixer.  Pass NULL / -1 for non-mixer use. */
+static inline ForgeAudioSpatialSource forge_audio_spatial_source_create(
+    ForgeAudioSource *source, vec3 position,
+    ForgeAudioMixer *mixer, int channel)
+{
+    ForgeAudioSpatialSource ss;
+    SDL_memset(&ss, 0, sizeof(ss));
+    ss.source          = source;
+    ss.position        = position;
+    ss.velocity        = vec3_create(0.0f, 0.0f, 0.0f);
+    ss.min_distance    = FORGE_AUDIO_DEFAULT_MIN_DISTANCE;
+    ss.max_distance    = FORGE_AUDIO_DEFAULT_MAX_DISTANCE;
+    ss.rolloff         = FORGE_AUDIO_DEFAULT_ROLLOFF;
+    ss.base_volume     = source ? source->volume : 1.0f;
+    ss.attenuation     = FORGE_AUDIO_ATTENUATION_LINEAR;
+    ss.doppler_enabled = false;
+    ss.mixer           = mixer;
+    ss.channel         = channel;
+    return ss;
+}
+
+/* Compute distance attenuation gain for the given model.
+ *
+ * Returns a gain in [0, 1] (clamped).  Distance is clamped to [min, max]
+ * before the model formula is applied.  Division by zero is guarded:
+ * if min_distance <= 0, returns 1.0 (no attenuation). */
+static inline float forge_audio_spatial_attenuation(
+    ForgeAudioAttenuationModel model,
+    float distance, float min_dist, float max_dist, float rolloff)
+{
+    /* Guard: NaN/Inf or non-positive parameters — no meaningful attenuation */
+    if (!forge_isfinite(distance) || !forge_isfinite(min_dist) ||
+        !forge_isfinite(max_dist) || !forge_isfinite(rolloff)) return 1.0f;
+    if (min_dist <= 0.0f || max_dist < min_dist || rolloff <= 0.0f) {
+        return 1.0f;
+    }
+
+    /* Clamp distance to [min, max] */
+    if (distance < min_dist) distance = min_dist;
+    if (distance > max_dist) distance = max_dist;
+
+    float gain = 1.0f;
+
+    switch (model) {
+    case FORGE_AUDIO_ATTENUATION_LINEAR: {
+        float range = max_dist - min_dist;
+        if (range <= 0.0f) return 1.0f;
+        gain = 1.0f - rolloff * (distance - min_dist) / range;
+        break;
+    }
+    case FORGE_AUDIO_ATTENUATION_INVERSE:
+        gain = min_dist / (min_dist + rolloff * (distance - min_dist));
+        break;
+    case FORGE_AUDIO_ATTENUATION_EXPONENTIAL:
+        gain = SDL_powf(distance / min_dist, -rolloff);
+        break;
+    default:
+        break;  /* unknown model — return 1.0 (no attenuation) */
+    }
+
+    /* Clamp to [0, 1] */
+    if (gain < 0.0f) gain = 0.0f;
+    if (gain > 1.0f) gain = 1.0f;
+    return gain;
+}
+
+/* Compute stereo pan [-1, +1] from a 3D source position relative to
+ * the listener.
+ *
+ * Projects the listener→source direction onto the listener's right axis.
+ * +1 = source is fully to the right, -1 = fully left, 0 = ahead/behind
+ * or coincident.
+ *
+ * When the source is very close (< 0.001 units), returns 0 (center pan)
+ * to avoid instability from normalizing a near-zero vector. */
+static inline float forge_audio_spatial_pan(
+    const ForgeAudioListener *listener, vec3 source_pos)
+{
+    if (!listener) return 0.0f;
+
+    vec3 to_source = vec3_sub(source_pos, listener->position);
+    float dist = vec3_length(to_source);
+    if (dist < FORGE_AUDIO_NEAR_DISTANCE_EPSILON) return 0.0f;  /* coincident — center pan */
+
+    vec3 dir = vec3_scale(to_source, 1.0f / dist);
+
+    /* Dot with listener's right vector gives the left-right component */
+    float pan = vec3_dot(dir, listener->right);
+
+    /* Clamp to [-1, +1] for safety */
+    if (pan < -1.0f) pan = -1.0f;
+    if (pan >  1.0f) pan =  1.0f;
+    return pan;
+}
+
+/* Compute Doppler pitch factor from relative velocities.
+ *
+ * Uses the classical Doppler formula:
+ *   pitch = (speed_of_sound + v_listener) /
+ *           (speed_of_sound + v_source)
+ *
+ * v_listener: component along listener→source axis (positive = toward source).
+ * v_source:   component along listener→source axis (positive = away from listener).
+ *
+ * Guards:
+ * - Coincident positions (dist < 0.001) → no Doppler (return 1.0)
+ * - Source moving at speed of sound → clamp to avoid infinity
+ * - Result clamped to [0.5, 2.0] for perceptual sanity
+ *
+ * Returns 1.0 when stationary, >1.0 when approaching, <1.0 when receding. */
+static inline float forge_audio_spatial_doppler(
+    const ForgeAudioListener *listener,
+    const ForgeAudioSpatialSource *spatial,
+    float speed_of_sound)
+{
+    if (!listener || !spatial) return 1.0f;
+    if (speed_of_sound <= 0.0f) return 1.0f;
+
+    vec3 to_source = vec3_sub(spatial->position, listener->position);
+    float dist = vec3_length(to_source);
+    if (dist < FORGE_AUDIO_NEAR_DISTANCE_EPSILON) return 1.0f;  /* coincident — no Doppler */
+
+    vec3 dir = vec3_scale(to_source, 1.0f / dist);
+
+    /* Radial velocity along the listener→source axis:
+     *   v_listener > 0 → listener moves toward source
+     *   v_source > 0   → source moves away from listener
+     *
+     * Classical Doppler formula (Wikipedia convention):
+     *   pitch = (c + v_listener) / (c + v_source)
+     *
+     * When source approaches: v_source < 0 → denom shrinks → pitch > 1.
+     * When source recedes:    v_source > 0 → denom grows   → pitch < 1. */
+    float v_listener = vec3_dot(listener->velocity, dir);
+    float v_source   = vec3_dot(spatial->velocity, dir);
+
+    /* Floor for denominator/numerator — prevents infinity at Mach 1 */
+    float min_vel = speed_of_sound * FORGE_AUDIO_MACH_CLAMP_FRACTION;
+
+    float denom = speed_of_sound + v_source;
+    if (denom < min_vel) denom = min_vel;
+
+    float numer = speed_of_sound + v_listener;
+    if (numer < min_vel) numer = min_vel;
+
+    float pitch = numer / denom;
+
+    /* Clamp to perceptually reasonable range */
+    if (pitch < FORGE_AUDIO_DOPPLER_PITCH_MIN) pitch = FORGE_AUDIO_DOPPLER_PITCH_MIN;
+    if (pitch > FORGE_AUDIO_DOPPLER_PITCH_MAX) pitch = FORGE_AUDIO_DOPPLER_PITCH_MAX;
+    return pitch;
+}
+
+/* Apply spatial parameters from 3D positions.
+ *
+ * Call once per frame for each spatial source, after updating positions.
+ * Computes distance attenuation, stereo pan, and optional Doppler from
+ * the listener and source world-space positions.
+ *
+ * If the spatial source was created with a mixer binding (mixer != NULL),
+ * the results are written directly to the mixer channel — this is
+ * required for audible spatial effects when using ForgeAudioMixer.
+ *
+ * The source's volume, pan, and playback_rate fields are always updated
+ * for readback (UI display, non-mixer use cases). */
+static inline void forge_audio_spatial_apply(
+    const ForgeAudioListener *listener,
+    ForgeAudioSpatialSource *spatial)
+{
+    if (!listener || !spatial || !spatial->source) return;
+
+    /* Distance from listener to source */
+    vec3 diff = vec3_sub(spatial->position, listener->position);
+    float distance = vec3_length(diff);
+
+    /* 1. Attenuation */
+    float gain = forge_audio_spatial_attenuation(
+        spatial->attenuation, distance,
+        spatial->min_distance, spatial->max_distance, spatial->rolloff);
+    float volume = spatial->base_volume * gain;
+
+    /* 2. Stereo pan */
+    float pan = forge_audio_spatial_pan(listener, spatial->position);
+
+    /* 3. Doppler (optional) */
+    float rate = 1.0f;
+    if (spatial->doppler_enabled) {
+        rate = forge_audio_spatial_doppler(
+            listener, spatial, FORGE_AUDIO_SPEED_OF_SOUND);
+    }
+
+    /* Write to source fields (for readback and non-mixer use) */
+    spatial->source->volume = volume;
+    spatial->source->pan = pan;
+    spatial->source->playback_rate = rate;
+
+    /* Write to mixer channel (what actually controls audio output) */
+    if (spatial->mixer && spatial->channel >= 0 &&
+        spatial->channel < forge_audio__clamped_channel_count(spatial->mixer)) {
+        spatial->mixer->channels[spatial->channel].volume = volume;
+        spatial->mixer->channels[spatial->channel].pan = pan;
+    }
 }
 
 #endif /* FORGE_AUDIO_H */

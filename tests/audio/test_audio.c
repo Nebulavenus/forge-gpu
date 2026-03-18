@@ -9,8 +9,8 @@
  */
 
 #include <SDL3/SDL.h>
-#include <limits.h>
-#include <math.h>
+#include <limits.h>   /* INT_MAX — not provided by SDL_stdinc.h */
+#include "math/forge_math.h"
 #include "audio/forge_audio.h"
 
 /* Portable isfinite — SDL provides isinf/isnan but no isfinite */
@@ -1362,6 +1362,440 @@ static void test_mixer_add_channel_negative_count_rejected(void)
     END_TEST();
 }
 
+/* ── Attenuation tests (Lesson 04) ──────────────────────────────────── */
+
+static void test_attenuation_linear_at_min(void)
+{
+    TEST("linear attenuation at min distance = 1.0");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 1.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_linear_at_max(void)
+{
+    TEST("linear attenuation at max distance = 0.0");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 50.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_linear_midpoint(void)
+{
+    TEST("linear attenuation at midpoint = 0.5");
+    float mid = (1.0f + 50.0f) * 0.5f;
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, mid, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 0.5f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_linear_beyond_max(void)
+{
+    TEST("linear attenuation beyond max clamped to 0.0");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 100.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_inverse_at_min(void)
+{
+    TEST("inverse attenuation at min distance = 1.0");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_INVERSE, 1.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_inverse_double_distance(void)
+{
+    TEST("inverse attenuation at 2*min = 0.5");
+    /* min / (min + rolloff*(dist - min)) = 1 / (1 + 1*1) = 0.5 */
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_INVERSE, 2.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 0.5f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_exponential_at_min(void)
+{
+    TEST("exponential attenuation at min distance = 1.0");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_EXPONENTIAL, 1.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_exponential_double_distance(void)
+{
+    TEST("exponential attenuation at 2*min = 0.5");
+    /* pow(2/1, -1) = 0.5 */
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_EXPONENTIAL, 2.0f, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 0.5f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_zero_min_distance(void)
+{
+    TEST("zero min_distance returns 1.0 (no crash)");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 5.0f, 0.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_nan_min_dist(void)
+{
+    TEST("NaN min_dist returns 1.0 (no crash)");
+    float nan_val = (float)SDL_sqrt(-1.0);
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 5.0f, nan_val, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_nan_max_dist(void)
+{
+    TEST("NaN max_dist returns 1.0 (no crash)");
+    float nan_val = (float)SDL_sqrt(-1.0);
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 5.0f, 1.0f, nan_val, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_nan_rolloff(void)
+{
+    TEST("NaN rolloff returns 1.0 (no crash)");
+    float nan_val = (float)SDL_sqrt(-1.0);
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 5.0f, 1.0f, 50.0f, nan_val);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_inf_distance(void)
+{
+    TEST("Inf distance returns clamped gain (no crash)");
+    /* Create infinity via safe runtime computation */
+    volatile float zero = 0.0f;  /* Volatile to prevent compile-time optimization */
+    float inf_val = 1.0f / zero;
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, inf_val, 1.0f, 50.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);  /* NaN/Inf → 1.0 guard */
+    END_TEST();
+}
+
+static void test_attenuation_inverted_range(void)
+{
+    TEST("inverted range (max < min) returns 1.0");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 5.0f, 10.0f, 2.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_attenuation_equal_min_max(void)
+{
+    TEST("equal min and max returns 1.0 (linear range=0)");
+    float g = forge_audio_spatial_attenuation(
+        FORGE_AUDIO_ATTENUATION_LINEAR, 5.0f, 5.0f, 5.0f, 1.0f);
+    ASSERT_NEAR(g, 1.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── Pan tests (Lesson 04) ──────────────────────────────────────── */
+
+static void test_pan_source_directly_right(void)
+{
+    TEST("pan: source directly right = +1");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    /* Default orientation: forward = (0,0,-1), right = (1,0,0) */
+    float p = forge_audio_spatial_pan(&l, vec3_create(10.0f, 0, 0));
+    ASSERT_NEAR(p, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_pan_source_directly_left(void)
+{
+    TEST("pan: source directly left = -1");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    float p = forge_audio_spatial_pan(&l, vec3_create(-10.0f, 0, 0));
+    ASSERT_NEAR(p, -1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_pan_source_directly_ahead(void)
+{
+    TEST("pan: source directly ahead = 0");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    /* Forward is (0,0,-1), so ahead is negative Z */
+    float p = forge_audio_spatial_pan(&l, vec3_create(0, 0, -10.0f));
+    ASSERT_NEAR(p, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_pan_source_directly_behind(void)
+{
+    TEST("pan: source directly behind = 0");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    float p = forge_audio_spatial_pan(&l, vec3_create(0, 0, 10.0f));
+    ASSERT_NEAR(p, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_pan_source_at_listener(void)
+{
+    TEST("pan: source at listener = 0 (center)");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(5, 3, 2), quat_identity());
+    float p = forge_audio_spatial_pan(&l, vec3_create(5, 3, 2));
+    ASSERT_NEAR(p, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_pan_rotated_listener(void)
+{
+    TEST("pan: rotated listener (facing +X, source at -Z = left)");
+    /* quat_from_euler(yaw, pitch, roll).  Yaw = -PI/2 → facing +X.
+     * Rotation of (1,0,0) by -PI/2 around Y → right = (0,0,1).
+     * Source at (0,0,-10): direction = (0,0,-1), dot with right (0,0,1) = -1 → left. */
+    quat q = quat_from_euler(-FORGE_PI * 0.5f, 0.0f, 0.0f);
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), q);
+    float p = forge_audio_spatial_pan(&l, vec3_create(0, 0, -10.0f));
+    ASSERT_NEAR(p, -1.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── Doppler tests (Lesson 04) ──────────────────────────────────── */
+
+static void test_doppler_stationary(void)
+{
+    TEST("doppler: stationary = 1.0");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    ForgeAudioSpatialSource ss;
+    SDL_memset(&ss, 0, sizeof(ss));
+    ss.position = vec3_create(10, 0, 0);
+    ss.velocity = vec3_create(0, 0, 0);
+    float d = forge_audio_spatial_doppler(&l, &ss, FORGE_AUDIO_SPEED_OF_SOUND);
+    ASSERT_NEAR(d, 1.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_doppler_approaching(void)
+{
+    TEST("doppler: approaching source > 1.0");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    ForgeAudioSpatialSource ss;
+    SDL_memset(&ss, 0, sizeof(ss));
+    ss.position = vec3_create(10, 0, 0);
+    /* Source moving toward listener (negative X) */
+    ss.velocity = vec3_create(-50.0f, 0, 0);
+    float d = forge_audio_spatial_doppler(&l, &ss, FORGE_AUDIO_SPEED_OF_SOUND);
+    ASSERT_TRUE(d > 1.0f);
+    END_TEST();
+}
+
+static void test_doppler_receding(void)
+{
+    TEST("doppler: receding source < 1.0");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    ForgeAudioSpatialSource ss;
+    SDL_memset(&ss, 0, sizeof(ss));
+    ss.position = vec3_create(10, 0, 0);
+    /* Source moving away from listener (positive X) */
+    ss.velocity = vec3_create(50.0f, 0, 0);
+    float d = forge_audio_spatial_doppler(&l, &ss, FORGE_AUDIO_SPEED_OF_SOUND);
+    ASSERT_TRUE(d < 1.0f);
+    END_TEST();
+}
+
+static void test_doppler_speed_of_sound_clamp(void)
+{
+    TEST("doppler: source at speed of sound — no infinity");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    ForgeAudioSpatialSource ss;
+    SDL_memset(&ss, 0, sizeof(ss));
+    ss.position = vec3_create(10, 0, 0);
+    /* Source moving toward listener at exactly Mach 1 */
+    ss.velocity = vec3_create(-FORGE_AUDIO_SPEED_OF_SOUND, 0, 0);
+    float d = forge_audio_spatial_doppler(&l, &ss, FORGE_AUDIO_SPEED_OF_SOUND);
+    ASSERT_TRUE(forge_isfinite(d));
+    ASSERT_TRUE(d > 0.0f && d <= 2.0f);
+    END_TEST();
+}
+
+static void test_doppler_zero_distance(void)
+{
+    TEST("doppler: zero distance = 1.0");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(5, 3, 2), quat_identity());
+    ForgeAudioSpatialSource ss;
+    SDL_memset(&ss, 0, sizeof(ss));
+    ss.position = vec3_create(5, 3, 2);
+    ss.velocity = vec3_create(100, 0, 0);
+    float d = forge_audio_spatial_doppler(&l, &ss, FORGE_AUDIO_SPEED_OF_SOUND);
+    ASSERT_NEAR(d, 1.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── Listener tests (Lesson 04) ─────────────────────────────────── */
+
+static void test_listener_identity_quat(void)
+{
+    TEST("listener: identity quat → forward=(0,0,-1), right=(1,0,0)");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+    ASSERT_NEAR(l.forward.x, 0.0f, EPSILON);
+    ASSERT_NEAR(l.forward.y, 0.0f, EPSILON);
+    ASSERT_NEAR(l.forward.z, -1.0f, EPSILON);
+    ASSERT_NEAR(l.right.x, 1.0f, EPSILON);
+    ASSERT_NEAR(l.right.y, 0.0f, EPSILON);
+    ASSERT_NEAR(l.right.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_listener_yaw_90(void)
+{
+    TEST("listener: yaw -90° → forward=(1,0,0)");
+    quat q = quat_from_euler(-FORGE_PI * 0.5f, 0.0f, 0.0f);
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), q);
+    ASSERT_NEAR(l.forward.x, 1.0f, 0.01f);
+    ASSERT_NEAR(l.forward.y, 0.0f, 0.01f);
+    ASSERT_NEAR(l.forward.z, 0.0f, 0.01f);
+    END_TEST();
+}
+
+static void test_listener_velocity_defaults_zero(void)
+{
+    TEST("listener: velocity defaults to zero");
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(1, 2, 3), quat_identity());
+    ASSERT_NEAR(l.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(l.velocity.y, 0.0f, EPSILON);
+    ASSERT_NEAR(l.velocity.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* ── Spatial apply integration tests (Lesson 04) ────────────────── */
+
+static void test_spatial_apply_sets_volume(void)
+{
+    TEST("spatial apply: sets volume = base_volume * attenuation");
+    ForgeAudioBuffer buf = make_test_buffer(100, 0.5f, 0.5f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 0.8f, true);
+    src.playing = true;
+
+    ForgeAudioSpatialSource ss = forge_audio_spatial_source_create(
+        &src, vec3_create(25.5f, 0, 0), NULL, -1);  /* midpoint of [1, 50] */
+
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+
+    forge_audio_spatial_apply(&l, &ss);
+
+    /* Linear attenuation at midpoint = 0.5 → volume = 0.8 * 0.5 = 0.4 */
+    ASSERT_NEAR(src.volume, 0.8f * 0.5f, 0.02f);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_spatial_apply_sets_pan(void)
+{
+    TEST("spatial apply: sets pan from 3D position");
+    ForgeAudioBuffer buf = make_test_buffer(100, 0.5f, 0.5f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    /* Source to the right of the listener */
+    ForgeAudioSpatialSource ss = forge_audio_spatial_source_create(
+        &src, vec3_create(5.0f, 0, 0), NULL, -1);
+
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+
+    forge_audio_spatial_apply(&l, &ss);
+
+    /* Source is directly right → pan should be +1 */
+    ASSERT_NEAR(src.pan, 1.0f, EPSILON);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_spatial_apply_doppler_sets_playback_rate(void)
+{
+    TEST("spatial apply: doppler sets playback_rate");
+    ForgeAudioBuffer buf = make_test_buffer(100, 0.5f, 0.5f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    ForgeAudioSpatialSource ss = forge_audio_spatial_source_create(
+        &src, vec3_create(10, 0, 0), NULL, -1);
+    ss.doppler_enabled = true;
+    ss.velocity = vec3_create(-50.0f, 0, 0);  /* approaching */
+
+    ForgeAudioListener l = forge_audio_listener_from_camera(
+        vec3_create(0, 0, 0), quat_identity());
+
+    forge_audio_spatial_apply(&l, &ss);
+
+    /* Approaching source → playback_rate > 1.0 */
+    ASSERT_TRUE(src.playback_rate > 1.0f);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+/* ── Playback rate backward compatibility tests (Lesson 04) ──── */
+
+static void test_playback_rate_default(void)
+{
+    TEST("playback_rate: default is 1.0, cursor_frac is 0.0");
+    ForgeAudioBuffer buf = make_test_buffer(4, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, false);
+    ASSERT_NEAR(src.playback_rate, 1.0f, EPSILON);
+    ASSERT_NEAR(src.cursor_frac, 0.0f, EPSILON);
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+static void test_playback_rate_double_speed(void)
+{
+    TEST("playback_rate: rate=2.0 advances cursor twice as fast");
+    /* 8-frame buffer of constant 1.0 stereo */
+    ForgeAudioBuffer buf = make_test_buffer(8, 1.0f, 1.0f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, false);
+    src.playing = true;
+    src.playback_rate = 2.0f;
+
+    /* Mix 4 output frames at rate 2.0 → should consume 8 buffer frames */
+    float out[8];
+    SDL_memset(out, 0, sizeof(out));
+    forge_audio_source_mix(&src, out, 4);
+
+    /* Source should have reached end of buffer (8 frames consumed) */
+    ASSERT_TRUE(!src.playing);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
 /* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -1433,6 +1867,42 @@ int main(int argc, char *argv[])
     test_mixer_negative_master_volume_clamped();
     test_mixer_peak_exceeds_one_with_boost();
     test_mixer_add_channel_negative_count_rejected();
+
+    /* Spatial audio tests (Lesson 04) */
+    test_attenuation_linear_at_min();
+    test_attenuation_linear_at_max();
+    test_attenuation_linear_midpoint();
+    test_attenuation_linear_beyond_max();
+    test_attenuation_inverse_at_min();
+    test_attenuation_inverse_double_distance();
+    test_attenuation_exponential_at_min();
+    test_attenuation_exponential_double_distance();
+    test_attenuation_zero_min_distance();
+    test_attenuation_nan_min_dist();
+    test_attenuation_nan_max_dist();
+    test_attenuation_nan_rolloff();
+    test_attenuation_inf_distance();
+    test_attenuation_inverted_range();
+    test_attenuation_equal_min_max();
+    test_pan_source_directly_right();
+    test_pan_source_directly_left();
+    test_pan_source_directly_ahead();
+    test_pan_source_directly_behind();
+    test_pan_source_at_listener();
+    test_pan_rotated_listener();
+    test_doppler_stationary();
+    test_doppler_approaching();
+    test_doppler_receding();
+    test_doppler_speed_of_sound_clamp();
+    test_doppler_zero_distance();
+    test_listener_identity_quat();
+    test_listener_yaw_90();
+    test_listener_velocity_defaults_zero();
+    test_spatial_apply_sets_volume();
+    test_spatial_apply_sets_pan();
+    test_spatial_apply_doppler_sets_playback_rate();
+    test_playback_rate_default();
+    test_playback_rate_double_speed();
 
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",
             pass_count, test_count, fail_count);

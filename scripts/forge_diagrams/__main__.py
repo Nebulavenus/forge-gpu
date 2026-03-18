@@ -34,6 +34,15 @@ from .assets import (
     diagram_texture_block_compression,
     diagram_texture_format_comparison,
 )
+from .audio import (
+    diagram_attenuation_curves,
+    diagram_doppler_effect,
+    diagram_mixer_signal_chain,
+    diagram_peak_hold_behavior,
+    diagram_soft_clipping,
+    diagram_spatial_setup_flow,
+    diagram_stereo_pan,
+)
 from .engine import (
     diagram_alignment_padding,
     diagram_alpha_blending,
@@ -282,11 +291,6 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_torque_force_at_point,
     diagram_world_space_inertia,
 )
-from .audio import (
-    diagram_mixer_signal_chain,
-    diagram_peak_hold_behavior,
-    diagram_soft_clipping,
-)
 from .ui import (
     diagram_adjacent_pair_matrix,
     diagram_antialiasing_comparison,
@@ -366,6 +370,12 @@ DIAGRAMS = {
         ("mixer_signal_chain.png", diagram_mixer_signal_chain),
         ("soft_clipping.png", diagram_soft_clipping),
         ("peak_hold_behavior.png", diagram_peak_hold_behavior),
+    ],
+    "audio/04": [
+        ("attenuation_curves.png", diagram_attenuation_curves),
+        ("stereo_pan_diagram.png", diagram_stereo_pan),
+        ("doppler_effect.png", diagram_doppler_effect),
+        ("spatial_setup_flow.png", diagram_spatial_setup_flow),
     ],
     "assets/02": [
         ("block_compression.png", diagram_texture_block_compression),
@@ -835,6 +845,7 @@ DIAGRAMS = {
 # Full lesson directory names for display
 LESSON_NAMES = {
     "audio/03": "audio/03-audio-mixing",
+    "audio/04": "audio/04-spatial-audio",
     "assets/02": "assets/02-texture-processing",
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",
