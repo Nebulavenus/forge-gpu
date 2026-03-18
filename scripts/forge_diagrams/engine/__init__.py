@@ -21,6 +21,11 @@ __all__ = [
     "diagram_bump_allocation",
     "diagram_alignment_padding",
     "diagram_block_chain_growth",
+    "diagram_fat_pointer_layout",
+    "diagram_growth_policy",
+    "diagram_hash_map_dual_structure",
+    "diagram_bucket_probing",
+    "diagram_string_map_arena",
 ]
 
 from .lesson_04 import (
@@ -52,4 +57,11 @@ from .lesson_12 import (
     diagram_alignment_padding,
     diagram_block_chain_growth,
     diagram_bump_allocation,
+)
+from .lesson_13 import (
+    diagram_bucket_probing,
+    diagram_fat_pointer_layout,
+    diagram_growth_policy,
+    diagram_hash_map_dual_structure,
+    diagram_string_map_arena,
 )

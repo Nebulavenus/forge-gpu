@@ -7,7 +7,7 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Foundation** — Project scaffolding, math library, test suite, skills
 - **GPU Lessons 01–45** — From Hello Window through Scene Transparency Sorting
 - **Math Lessons 01–18** — From Vectors through Scalar Field Gradients
-- **Engine Lessons 01–12** — From Intro to C through Memory Arenas
+- **Engine Lessons 01–13** — From Intro to C through Stretchy Containers
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
 - **Physics Lessons 01–07** — From Point Particles through Collision Shapes

@@ -193,6 +193,7 @@ forge-gpu/
 │   └── plugins/           # Built-in asset type plugins
 ├── common/
 │   ├── arena/             # Arena (bump) allocator (header-only)
+│   ├── containers/        # Dynamic arrays and hash maps (header-only, fat-pointer pattern)
 │   ├── math/              # Math library (header-only, documented)
 │   ├── obj/               # OBJ parser (Wavefront .obj files)
 │   ├── gltf/              # glTF 2.0 parser (scenes, materials, hierarchy, arena-allocated)
@@ -205,7 +206,7 @@ forge-gpu/
 │   ├── capture/           # Screenshot/GIF capture utility
 │   ├── scene/             # Scene renderer library (shadow map, Blinn-Phong, grid, sky, camera, UI)
 │   └── forge.h            # Shared utilities for lessons
-├── tests/                 # Tests per module (arena, math, obj, gltf, raster, ui, audio, physics, shapes, scene, pipeline)
+├── tests/                 # Tests per module (arena, containers, math, obj, gltf, raster, ui, audio, physics, shapes, scene, pipeline)
 ├── scripts/
 │   ├── compile_shaders.py # HLSL → SPIRV/DXIL/MSL shader compiler
 │   ├── compile_scene_shaders.py # Scene renderer shader compiler

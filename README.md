@@ -80,6 +80,7 @@ GPU optimized formats.
 Header-only C libraries
 ([math](common/math/),
 [arena](common/arena/),
+[containers](common/containers/),
 [OBJ](common/obj/),
 [glTF](common/gltf/),
 [UI](common/ui/),

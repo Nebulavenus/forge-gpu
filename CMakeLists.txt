@@ -92,6 +92,7 @@ add_subdirectory(lessons/engine/09-hlsl-shared-headers)
 add_subdirectory(lessons/engine/10-cpu-rasterization)
 add_subdirectory(lessons/engine/11-git-version-control)
 add_subdirectory(lessons/engine/12-memory-arenas)
+add_subdirectory(lessons/engine/13-stretchy-containers)
 
 # ── GPU Lessons (require real SDL3) ─────────────────────────────────────────
 if(NOT FORGE_USE_SHIM)
@@ -212,6 +213,7 @@ endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 add_subdirectory(tests/arena)
+add_subdirectory(tests/containers)
 add_subdirectory(tests/math)
 add_subdirectory(tests/ui)
 add_subdirectory(tests/raster)
