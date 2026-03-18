@@ -24,6 +24,7 @@ extern int fail_count;
 
 void run_rbc_tests(void);
 void run_collision_shape_tests(void);
+void run_sap_tests(void);
 
 /* ── Shared test constants ─────────────────────────────────────────────── */
 

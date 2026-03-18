@@ -243,6 +243,7 @@ from .math import (
 )
 from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_angular_velocity,
+    diagram_axis_selection,
     diagram_box_plane_contacts,
     diagram_cloth_topology,
     diagram_collision_pipeline,
@@ -271,11 +272,13 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_quaternion_rotation,
     diagram_restitution_comparison,
     diagram_rigid_body_state,
+    diagram_sap_algorithm,
     diagram_sphere_plane_collision,
     diagram_sphere_sphere_collision,
     diagram_spring_damping_components,
     diagram_spring_vs_constraint,
     diagram_symplectic_vs_explicit_euler,
+    diagram_temporal_coherence,
     diagram_torque_force_at_point,
     diagram_world_space_inertia,
 )
@@ -556,6 +559,11 @@ DIAGRAMS = {
         ("box_plane_contacts.png", diagram_box_plane_contacts),
         ("iterative_solver_convergence.png", diagram_iterative_solver_convergence),
         ("impulse_resolution.png", diagram_impulse_resolution),
+    ],
+    "physics/08": [
+        ("sap_algorithm.png", diagram_sap_algorithm),
+        ("axis_selection.png", diagram_axis_selection),
+        ("temporal_coherence.png", diagram_temporal_coherence),
     ],
     "gpu/03": [
         ("unit_circle.png", diagram_unit_circle),
@@ -859,6 +867,7 @@ LESSON_NAMES = {
     "physics/04": "physics/04-rigid-body-state",
     "physics/05": "physics/05-forces-and-torques",
     "physics/06": "physics/06-resting-contacts-and-friction",
+    "physics/08": "physics/08-sweep-and-prune",
     "gpu/03": "gpu/03-uniforms-and-motion",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",

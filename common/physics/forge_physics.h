@@ -3394,4 +3394,334 @@ static inline vec3 forge_physics_aabb_extents(ForgePhysicsAABB aabb)
     return vec3_scale(vec3_sub(aabb.max, aabb.min), 0.5f);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Sweep-and-Prune (SAP) Broadphase
+ *
+ * Sort-and-sweep broadphase collision detection. Projects AABBs onto a
+ * single axis, sorts the endpoints, and sweeps to find overlapping pairs.
+ * For spatially coherent scenes the sort is nearly O(n) per frame because
+ * insertion sort exploits temporal coherence — endpoints barely move
+ * between frames.
+ *
+ * Usage:
+ *   ForgePhysicsSAPWorld sap;
+ *   forge_physics_sap_init(&sap);
+ *   // each frame:
+ *   sap.sweep_axis = forge_physics_sap_select_axis(aabbs, count);
+ *   forge_physics_sap_update(&sap, aabbs, count);
+ *   int n = forge_physics_sap_pair_count(&sap);
+ *   const ForgePhysicsSAPPair *pairs = forge_physics_sap_get_pairs(&sap);
+ *
+ * Reference: David Baraff, "Dynamic Simulation of Non-Penetrating Rigid
+ *            Bodies", PhD thesis, 1992 — sort-and-sweep algorithm.
+ *            Erin Catto, Box2D broadphase documentation.
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── SAP Constants ─────────────────────────────────────────────────────── */
+
+/* Maximum number of bodies the SAP broadphase can handle.
+ * Each body produces 2 endpoints, so the endpoint array is 2 * this value.
+ */
+#define FORGE_PHYSICS_SAP_MAX_BODIES  256
+
+/* Maximum number of overlapping pairs the SAP broadphase can report.
+ * If the scene produces more pairs than this, the excess is dropped and
+ * world->pair_overflow is set to true so callers can detect truncation.
+ */
+#define FORGE_PHYSICS_SAP_MAX_PAIRS   4096
+
+/* ── SAP Types ─────────────────────────────────────────────────────────── */
+
+/* A single endpoint on the sweep axis.
+ *
+ * Each AABB contributes two endpoints: a min (is_min = true) and a max
+ * (is_min = false). Sorting these by value and sweeping left-to-right
+ * identifies overlapping intervals.
+ */
+typedef struct ForgePhysicsSAPEndpoint {
+    float    value;       /* coordinate on the sweep axis */
+    uint16_t body_index;  /* which body this endpoint belongs to */
+    bool     is_min;      /* true = opening endpoint, false = closing */
+} ForgePhysicsSAPEndpoint;
+
+/* An overlapping pair found by the broadphase.
+ *
+ * Invariant: a < b always, ensuring each pair is stored uniquely.
+ */
+typedef struct ForgePhysicsSAPPair {
+    uint16_t a;
+    uint16_t b;
+} ForgePhysicsSAPPair;
+
+/* Sweep-and-prune broadphase world state.
+ *
+ * Holds the endpoint array, output pair buffer, and bookkeeping.
+ * All storage is inline — no heap allocation.
+ */
+typedef struct ForgePhysicsSAPWorld {
+    ForgePhysicsSAPEndpoint endpoints[FORGE_PHYSICS_SAP_MAX_BODIES * 2];
+    ForgePhysicsSAPPair     pairs[FORGE_PHYSICS_SAP_MAX_PAIRS];
+    int                     endpoint_count;
+    int                     pair_count;
+    int                     sweep_axis;   /* 0 = X, 1 = Y, 2 = Z */
+    int                     sort_ops;     /* insertion-sort swap count (diagnostic) */
+    bool                    pair_overflow; /* true if pairs exceeded MAX_PAIRS */
+} ForgePhysicsSAPWorld;
+
+/* ── SAP Helper Functions ──────────────────────────────────────────────── */
+
+/* Extract a component from a vec3 by axis index.
+ *
+ * Parameters:
+ *   v    — the vector
+ *   axis — 0 = x, 1 = y, 2 = z
+ *
+ * Returns: the component value (0.0f for invalid axis)
+ */
+static inline float forge_physics_vec3_axis(vec3 v, int axis)
+{
+    switch (axis) {
+    case 0: return v.x;
+    case 1: return v.y;
+    case 2: return v.z;
+    default: return 0.0f;
+    }
+}
+
+/* ── SAP Functions ─────────────────────────────────────────────────────── */
+
+/* Zero-initialize a SAP world.
+ *
+ * Clears all endpoints, pairs, and counters. Must be called before first use.
+ *
+ * Parameters:
+ *   world — SAP world to initialize (must not be NULL)
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
+ */
+static inline void forge_physics_sap_init(ForgePhysicsSAPWorld *world)
+{
+    if (!world) return;
+    SDL_memset(world, 0, sizeof(*world));
+}
+
+/* Select the sweep axis with greatest AABB center variance.
+ *
+ * Choosing the axis where bodies are most spread out maximizes pruning
+ * efficiency — endpoints are more separated, so fewer false overlaps
+ * survive the sweep.
+ *
+ * Parameters:
+ *   aabbs — array of AABBs
+ *   count — number of AABBs
+ *
+ * Returns: axis index (0 = X, 1 = Y, 2 = Z); defaults to 0 for
+ *          degenerate input
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
+ */
+static inline int forge_physics_sap_select_axis(
+    const ForgePhysicsAABB *aabbs, int count)
+{
+    if (!aabbs || count < 2) return 0;
+
+    float best_variance = -1.0f;
+    int best_axis = 0;
+
+    for (int axis = 0; axis < 3; axis++) {
+        /* Compute mean of centers on this axis */
+        float sum = 0.0f;
+        for (int i = 0; i < count; i++) {
+            vec3 center = forge_physics_aabb_center(aabbs[i]);
+            sum += forge_physics_vec3_axis(center, axis);
+        }
+        float mean = sum / (float)count;
+
+        /* Compute variance */
+        float var = 0.0f;
+        for (int i = 0; i < count; i++) {
+            vec3 center = forge_physics_aabb_center(aabbs[i]);
+            float d = forge_physics_vec3_axis(center, axis) - mean;
+            var += d * d;
+        }
+
+        if (var > best_variance) {
+            best_variance = var;
+            best_axis = axis;
+        }
+    }
+
+    return best_axis;
+}
+
+/* Update the SAP broadphase: populate endpoints, sort, sweep, output pairs.
+ *
+ * This is the main per-frame function. It:
+ *   1. Refreshes endpoint projected values from current AABBs on world->sweep_axis.
+ *      If the body count changed, rebuilds endpoints from scratch; otherwise
+ *      preserves the previous sort order for temporal coherence.
+ *   2. Insertion-sorts endpoints by value (O(n) for nearly-sorted data when
+ *      temporal coherence is preserved)
+ *   3. Sweeps left-to-right: on a min endpoint, tests the new body against
+ *      all currently active bodies using full 3-axis AABB overlap; on a max
+ *      endpoint, removes the body from the active set
+ *   4. Outputs pairs (a < b) into world->pairs, capped at SAP_MAX_PAIRS.
+ *      Sets world->pair_overflow if the cap is exceeded.
+ *
+ * Parameters:
+ *   world — SAP world (must be initialized)
+ *   aabbs — array of AABBs to test
+ *   count — number of AABBs (clamped to SAP_MAX_BODIES)
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
+ */
+static inline void forge_physics_sap_update(
+    ForgePhysicsSAPWorld *world,
+    const ForgePhysicsAABB *aabbs, int count)
+{
+    if (!world) return;
+    if (!aabbs || count <= 0) {
+        world->endpoint_count = 0;
+        world->pair_count = 0;
+        world->sort_ops = 0;
+        world->pair_overflow = false;
+        return;
+    }
+
+    /* Clamp to max bodies */
+    if (count > FORGE_PHYSICS_SAP_MAX_BODIES)
+        count = FORGE_PHYSICS_SAP_MAX_BODIES;
+
+    int axis = world->sweep_axis;
+    if (axis < 0 || axis > 2) {
+        axis = 0;
+        world->sweep_axis = axis;
+    }
+
+    /* Step 1: Populate endpoints.
+     *
+     * If the body count changed since last frame (or this is the first call),
+     * rebuild the endpoint array from scratch in body-index order. Otherwise,
+     * update only the projected values in-place — this preserves the sort
+     * order from the previous frame so the insertion sort stays near-linear
+     * (temporal coherence). */
+    int ep_count = count * 2;
+    bool rebuild = (world->endpoint_count != ep_count);
+
+    if (rebuild) {
+        /* Full rebuild: assign body_index and is_min, then set values */
+        world->endpoint_count = ep_count;
+        for (int i = 0; i < count; i++) {
+            world->endpoints[i * 2 + 0].body_index = (uint16_t)i;
+            world->endpoints[i * 2 + 0].is_min     = true;
+            world->endpoints[i * 2 + 1].body_index = (uint16_t)i;
+            world->endpoints[i * 2 + 1].is_min     = false;
+        }
+    }
+
+    /* Refresh projected values from current AABBs */
+    for (int i = 0; i < ep_count; i++) {
+        int bi = world->endpoints[i].body_index;
+        world->endpoints[i].value = world->endpoints[i].is_min
+            ? forge_physics_vec3_axis(aabbs[bi].min, axis)
+            : forge_physics_vec3_axis(aabbs[bi].max, axis);
+    }
+
+    /* Step 2: Insertion sort — O(n) for nearly-sorted (temporally coherent) data */
+    world->sort_ops = 0;
+    for (int i = 1; i < ep_count; i++) {
+        ForgePhysicsSAPEndpoint key = world->endpoints[i];
+        int j = i - 1;
+        while (
+            j >= 0 &&
+            (
+                world->endpoints[j].value > key.value ||
+                (world->endpoints[j].value == key.value &&
+                 !world->endpoints[j].is_min && key.is_min)
+            )
+        ) {
+            world->endpoints[j + 1] = world->endpoints[j];
+            j--;
+            world->sort_ops++;
+        }
+        world->endpoints[j + 1] = key;
+    }
+
+    /* Step 3: Sweep — track active bodies, test overlaps on min endpoints */
+    world->pair_count = 0;
+    world->pair_overflow = false;
+
+    /* Active set: which bodies currently have an open (min seen, max not yet) interval.
+     *
+     * Implementation note: the inner loop scans the flat active[] array, making
+     * the sweep O(n * k) where k is the average active count. A production engine
+     * would use a linked list of active bodies for O(k) per endpoint. The flat
+     * array is simpler and sufficient for SAP_MAX_BODIES (256). */
+    bool active[FORGE_PHYSICS_SAP_MAX_BODIES];
+    SDL_memset(active, 0, sizeof(active));
+
+    for (int i = 0; i < ep_count; i++) {
+        ForgePhysicsSAPEndpoint *ep = &world->endpoints[i];
+
+        if (ep->is_min) {
+            /* New body enters — test against all currently active bodies */
+            for (int b = 0; b < count; b++) {
+                if (!active[b]) continue;
+                if (b == (int)ep->body_index) continue;
+
+                /* Full 3-axis AABB overlap test */
+                if (forge_physics_aabb_overlap(aabbs[ep->body_index], aabbs[b])) {
+                    if (world->pair_count < FORGE_PHYSICS_SAP_MAX_PAIRS) {
+                        uint16_t pa = ep->body_index;
+                        uint16_t pb = (uint16_t)b;
+                        /* Enforce a < b ordering */
+                        if (pa > pb) { uint16_t tmp = pa; pa = pb; pb = tmp; }
+                        world->pairs[world->pair_count].a = pa;
+                        world->pairs[world->pair_count].b = pb;
+                        world->pair_count++;
+                    } else {
+                        world->pair_overflow = true;
+                    }
+                }
+            }
+            active[ep->body_index] = true;
+        } else {
+            /* Body exits — remove from active set */
+            active[ep->body_index] = false;
+        }
+    }
+}
+
+/* Return the number of overlapping pairs found in the last update.
+ *
+ * Parameters:
+ *   world — SAP world
+ *
+ * Returns: pair count (0 if world is NULL)
+ */
+static inline int forge_physics_sap_pair_count(const ForgePhysicsSAPWorld *world)
+{
+    if (!world) return 0;
+    return world->pair_count;
+}
+
+/* Return a pointer to the overlapping pairs array.
+ *
+ * The returned pointer is valid until the next call to
+ * forge_physics_sap_update(). Each pair has a < b.
+ *
+ * Parameters:
+ *   world — SAP world
+ *
+ * Returns: pointer to pairs array (NULL if world is NULL)
+ */
+static inline const ForgePhysicsSAPPair *forge_physics_sap_get_pairs(
+    const ForgePhysicsSAPWorld *world)
+{
+    if (!world) return NULL;
+    return world->pairs;
+}
+
 #endif /* FORGE_PHYSICS_H */

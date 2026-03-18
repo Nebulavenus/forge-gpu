@@ -37,6 +37,9 @@ __all__ = [
     "diagram_box_plane_contacts",
     "diagram_iterative_solver_convergence",
     "diagram_impulse_resolution",
+    "diagram_sap_algorithm",
+    "diagram_axis_selection",
+    "diagram_temporal_coherence",
 ]
 
 from .lesson_01 import (
@@ -86,4 +89,9 @@ from .lesson_06 import (
     diagram_coulomb_friction_cone,
     diagram_impulse_resolution,
     diagram_iterative_solver_convergence,
+)
+from .lesson_08 import (
+    diagram_axis_selection,
+    diagram_sap_algorithm,
+    diagram_temporal_coherence,
 )

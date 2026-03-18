@@ -5191,6 +5191,9 @@ int main(int argc, char *argv[])
     /* ── Collision Shapes (test_physics_shapes.c) ─────────────────────── */
     run_collision_shape_tests();
 
+    /* ── SAP Broadphase (test_physics_sap.c) ──────────────────────────── */
+    run_sap_tests();
+
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",
             pass_count, test_count, fail_count);
