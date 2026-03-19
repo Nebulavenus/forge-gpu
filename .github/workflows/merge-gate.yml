@@ -27,6 +27,7 @@ jobs:
             const ciChecks = new Set([
               'markdownlint',
               'build-and-test',
+              'msvc-build-and-test',
               'ruff',
               'pyright',
               'test',

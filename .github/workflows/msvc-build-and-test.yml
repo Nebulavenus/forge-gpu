@@ -1,0 +1,45 @@
+name: MSVC Build and Test
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.hlsl'
+      - '**/CMakeLists.txt'
+      - '.github/workflows/msvc-build-and-test.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.hlsl'
+      - '**/CMakeLists.txt'
+
+jobs:
+  msvc-build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache CMake FetchContent
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: msvc-fetchcontent-sdl3-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            msvc-fetchcontent-sdl3-
+
+      - name: Configure
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure

@@ -204,7 +204,8 @@ if(FORGE_BUILD_BASISU AND NOT FORGE_USE_SHIM)
         basis_universal_full
         GIT_REPOSITORY https://github.com/BinomialLLC/basis_universal.git
         GIT_TAG        28e76f6e340e688188c94386ff068e437e1222ca
-        GIT_SHALLOW    TRUE
+        # GIT_SHALLOW is omitted — shallow clones cannot checkout a commit
+        # hash (only branches/tags). A full clone is needed here.
     )
     FetchContent_MakeAvailable(basis_universal_full)
     # Note: basisu binary goes to _deps/basis_universal_full-src/bin/ by
