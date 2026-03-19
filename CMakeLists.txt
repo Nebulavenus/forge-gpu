@@ -180,6 +180,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/audio/03-audio-mixing)
     add_subdirectory(lessons/audio/04-spatial-audio)
     add_subdirectory(lessons/audio/05-music-streaming)
+    add_subdirectory(lessons/audio/06-dsp-effects)
 endif()
 
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────

@@ -102,11 +102,68 @@ the integer-step fast path — identical to Lessons 01–03.
 | `forge_audio_layer_group_close` | `(ForgeAudioLayerGroup *group)` | Close all layers |
 | `forge_audio_layer_group_progress` | `(const ForgeAudioLayerGroup *group) → float` | Leader layer progress [0..1] |
 
-### Planned API (future lessons)
+### Lesson 06 — DSP Effects
 
-| Lesson | Functions | Purpose |
+**Effect Interface:**
+
+| Function | Signature | Purpose |
 |---|---|---|
-| 06 | *See [PLAN.md](../../PLAN.md)* | DSP effects |
+| `forge_audio_effect_chain_init` | `(ForgeAudioEffectChain *chain)` | Zero-initialize an effect chain |
+| `forge_audio_effect_chain_add` | `(chain, ForgeAudioEffectFn process, void *userdata) → int` | Add effect to chain, returns index or -1 |
+| `forge_audio_effect_chain_clear` | `(chain)` | Remove all effects (does not free userdata) |
+| `forge_audio_effect_chain_process` | `(chain, float *samples, int frames)` | Process buffer through all chain effects |
+
+**Biquad Filter (Robert Bristow-Johnson Audio EQ Cookbook):**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_biquad_init` | `(ForgeAudioBiquad *bq)` | Init to LP 1000 Hz Q=0.707 |
+| `forge_audio_biquad_set` | `(bq, type, cutoff, q)` | Set parameters (dirty-check recompute) |
+| `forge_audio_biquad_reset` | `(bq)` | Clear filter history |
+| `forge_audio_biquad_process` | `(float *samples, int frames, void *userdata)` | ForgeAudioEffectFn callback |
+
+**Delay Line (circular buffer echo):**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_delay_init` | `(ForgeAudioDelay *d, float time_sec) → bool` | Allocate delay buffer |
+| `forge_audio_delay_set_time` | `(d, float time_sec)` | Change delay time (reallocates) |
+| `forge_audio_delay_reset` | `(d)` | Clear buffer to silence |
+| `forge_audio_delay_free` | `(d)` | Free heap buffer |
+| `forge_audio_delay_process` | `(float *samples, int frames, void *userdata)` | ForgeAudioEffectFn callback |
+
+**Schroeder Reverb (4 comb + 2 allpass with LP damping):**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_reverb_init` | `(ForgeAudioReverb *rv, float room, float damp) → bool` | Allocate ~55 KB of delay buffers |
+| `forge_audio_reverb_set` | `(rv, float room, float damp)` | Update room size and damping |
+| `forge_audio_reverb_reset` | `(rv)` | Clear all delay lines |
+| `forge_audio_reverb_free` | `(rv)` | Free heap memory |
+| `forge_audio_reverb_process` | `(float *samples, int frames, void *userdata)` | ForgeAudioEffectFn callback |
+
+**Chorus (sine LFO modulated delay):**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_chorus_init` | `(ForgeAudioChorus *ch, float rate, float depth) → bool` | Allocate delay buffer |
+| `forge_audio_chorus_reset` | `(ch)` | Clear buffer and LFO phase |
+| `forge_audio_chorus_free` | `(ch)` | Free heap buffer |
+| `forge_audio_chorus_process` | `(float *samples, int frames, void *userdata)` | ForgeAudioEffectFn callback |
+
+**Presets:**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_preset_underwater` | `(chain, bq, rv) → bool` | LP 500 Hz + reverb (room 0.8, wet 0.6) |
+| `forge_audio_preset_cave` | `(chain, rv, dl) → bool` | Reverb (room 0.95, wet 0.7) + delay (0.4s, wet 0.4) |
+| `forge_audio_preset_radio` | `(chain, hp, lp) → bool` | HP 800 Hz + LP 3000 Hz bandpass |
+
+Also modified in Lesson 06: `ForgeAudioChannel` gained an `effects` field
+(per-channel effect chain) and `ForgeAudioMixer` gained `master_effects`
+(master bus effect chain). `forge_audio_mixer_mix()` processes channel chains
+after source mix and the master chain before volume/soft-clip. Existing code
+is unaffected — chains start empty (effect_count = 0).
 
 ## Design
 
@@ -126,3 +183,4 @@ the integer-step fast path — identical to Lessons 01–03.
 | [Audio 03](../../lessons/audio/03-audio-mixing/) | `ForgeAudioMixer`, `forge_audio_mixer_create`, `forge_audio_mixer_add_channel`, `forge_audio_mixer_mix`, `forge_audio_mixer_update_peaks` |
 | [Audio 04](../../lessons/audio/04-spatial-audio/) | `ForgeAudioListener`, `ForgeAudioSpatialSource`, `forge_audio_listener_from_camera`, `forge_audio_spatial_source_create`, `forge_audio_spatial_apply` |
 | [Audio 05](../../lessons/audio/05-music-streaming/) | `ForgeAudioStream`, `ForgeAudioLayerGroup`, `forge_audio_stream_open`, `forge_audio_layer_group_add`, `forge_audio_layer_group_read`, `forge_audio_layer_group_fade_weight` |
+| [Audio 06](../../lessons/audio/06-dsp-effects/) | `ForgeAudioEffectChain`, `ForgeAudioBiquad`, `ForgeAudioDelay`, `ForgeAudioReverb`, `ForgeAudioChorus`, `forge_audio_effect_chain_add`, `forge_audio_preset_underwater`, `forge_audio_preset_cave`, `forge_audio_preset_radio` |

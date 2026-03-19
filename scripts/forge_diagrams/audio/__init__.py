@@ -16,6 +16,11 @@ from .lesson_05 import (
     diagram_crossfade_curves,
     diagram_streaming_architecture,
 )
+from .lesson_06 import (
+    diagram_biquad_frequency_response,
+    diagram_effect_chain_signal_flow,
+    diagram_schroeder_reverb_architecture,
+)
 
 __all__: list[str] = [
     "diagram_mixer_signal_chain",
@@ -28,4 +33,7 @@ __all__: list[str] = [
     "diagram_streaming_architecture",
     "diagram_crossfade_curves",
     "diagram_adaptive_layers",
+    "diagram_effect_chain_signal_flow",
+    "diagram_biquad_frequency_response",
+    "diagram_schroeder_reverb_architecture",
 ]

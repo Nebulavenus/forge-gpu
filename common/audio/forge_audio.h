@@ -16,6 +16,10 @@
  *   Lesson 05 — Music streaming: chunked WAV reader with ring buffer,
  *               crossfade between two streams (equal-power), loop-with-intro,
  *               adaptive music layers with per-layer weight fading.
+ *   Lesson 06 — DSP effects: callback-based effect system with biquad filter
+ *               (LP/HP/BP), delay line, Schroeder reverb (4 comb + 2 allpass),
+ *               chorus (LFO modulated delay), effect chains on channels and
+ *               master bus, presets (underwater, cave, radio).
  *
  * Usage:
  *   #include "audio/forge_audio.h"
@@ -699,6 +703,77 @@ static inline int forge_audio_pool_active_count(const ForgeAudioPool *pool)
  * Coupled to the linear pan law: gain = volume * (1 ± pan) / 2. */
 #define FORGE_AUDIO__CENTER_PAN_UNDO 2.0f
 
+/* ── Effect chain types (Lesson 06, declared early for mixer integration) ── */
+
+/* Callback signature: process stereo interleaved samples in-place.
+ * `frames` is the number of stereo frames (buffer has frames*2 floats). */
+typedef void (*ForgeAudioEffectFn)(float *samples, int frames, void *userdata);
+
+typedef struct ForgeAudioEffect {
+    ForgeAudioEffectFn process;   /* in-place stereo interleaved processing */
+    void              *userdata;  /* effect-specific state struct */
+    bool               bypass;    /* skip this effect when true */
+    float              wet;       /* wet/dry mix [0..1], 1.0 = fully wet */
+} ForgeAudioEffect;
+
+#define FORGE_AUDIO_MAX_EFFECTS 8
+
+typedef struct ForgeAudioEffectChain {
+    ForgeAudioEffect effects[FORGE_AUDIO_MAX_EFFECTS];
+    int              effect_count;
+} ForgeAudioEffectChain;
+
+/* Process a buffer through the entire effect chain.  For each non-bypassed
+ * effect, applies wet/dry blending: out = dry*(1-wet) + processed*wet.
+ * When wet=1.0 (default), the effect fully replaces the input.
+ *
+ * Defined early (before ForgeAudioMixer) so the mixer can call it inline. */
+static inline void forge_audio_effect_chain_process(
+    ForgeAudioEffectChain *chain, float *samples, int frames)
+{
+    if (!chain || !samples || frames <= 0) return;
+
+    size_t total = (size_t)frames * FORGE_AUDIO_CHANNELS;
+
+    for (int i = 0; i < chain->effect_count; i++) {
+        ForgeAudioEffect *fx = &chain->effects[i];
+        if (fx->bypass || !fx->process) continue;
+
+        float w = fx->wet;
+        if (w < 0.0f) w = 0.0f;
+        if (w > 1.0f) w = 1.0f;
+        if (!forge_isfinite(w)) w = 1.0f;
+
+        if (w >= 0.999f) {
+            /* Fully wet — process in-place, no copy needed */
+            fx->process(samples, frames, fx->userdata);
+        } else if (w <= 0.001f) {
+            /* Fully dry — skip processing entirely */
+            continue;
+        } else {
+            /* Wet/dry blend — need a copy of the dry signal */
+            float stack_dry[FORGE_AUDIO__STACK_SCRATCH_SIZE];
+            float *dry = NULL;
+            bool heap = false;
+            if (total <= FORGE_AUDIO__STACK_SCRATCH_SIZE) {
+                dry = stack_dry;
+            } else {
+                dry = (float *)SDL_malloc(total * sizeof(float));
+                if (!dry) continue;
+                heap = true;
+            }
+            SDL_memcpy(dry, samples, total * sizeof(float));
+            fx->process(samples, frames, fx->userdata);
+
+            float dry_gain = 1.0f - w;
+            for (size_t s = 0; s < total; s++) {
+                samples[s] = dry[s] * dry_gain + samples[s] * w;
+            }
+            if (heap) SDL_free(dry);
+        }
+    }
+}
+
 typedef struct ForgeAudioChannel {
     ForgeAudioSource *source;   /* audio source (not owned) */
     float  volume;              /* per-channel gain [0..∞), typically [0..2] */
@@ -715,6 +790,7 @@ typedef struct ForgeAudioChannel {
                                  * can exceed 1.0; decays over time */
     float  peak_hold_timer_l;   /* seconds remaining before hold starts decay */
     float  peak_hold_timer_r;   /* seconds remaining before hold starts decay */
+    ForgeAudioEffectChain effects; /* per-channel effect chain (Lesson 06) */
 } ForgeAudioChannel;
 
 typedef struct ForgeAudioMixer {
@@ -727,6 +803,7 @@ typedef struct ForgeAudioMixer {
     float master_peak_hold_r;   /* master peak hold, right */
     float master_hold_timer_l;  /* seconds remaining before master hold decays */
     float master_hold_timer_r;  /* seconds remaining before master hold decays */
+    ForgeAudioEffectChain master_effects; /* master bus effect chain (Lesson 06) */
 } ForgeAudioMixer;
 
 /* Create a zeroed mixer with master_volume = 1.0. */
@@ -895,6 +972,13 @@ static inline void forge_audio_mixer_mix(ForgeAudioMixer *mixer,
         channel->source->volume = saved_vol;
         channel->source->pan = saved_pan;
 
+        /* Apply per-channel effects (Lesson 06) — processes raw samples
+         * before volume/pan are applied, so effects see unity-gain signal */
+        if (channel->effects.effect_count > 0) {
+            forge_audio_effect_chain_process(&channel->effects,
+                                             scratch, frames);
+        }
+
         /* Apply channel volume and pan, add to output, track peaks.
          * Pan law: gain_L = volume*(1-pan)/2, gain_R = volume*(1+pan)/2 */
         float pan = channel->pan;
@@ -938,6 +1022,12 @@ static inline void forge_audio_mixer_mix(ForgeAudioMixer *mixer,
 
     if (scratch_heap) {
         SDL_free(scratch);
+    }
+
+    /* 5b. Master bus effects (Lesson 06) — applied to the summed output
+     * before master volume and soft clipping */
+    if (mixer->master_effects.effect_count > 0) {
+        forge_audio_effect_chain_process(&mixer->master_effects, out, frames);
     }
 
     /* 6-8. Master volume, soft clip, master peak */
@@ -2429,6 +2519,831 @@ static inline float forge_audio_layer_group_progress(
     int leader = group->leader;
     if (leader < 0 || leader >= group->layer_count) leader = 0;
     return forge_audio_stream_progress(&group->layers[leader].stream);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Lesson 06 — DSP Effects
+ *
+ * Callback-based effect system with four built-in effects:
+ *   - Biquad filter (low-pass, high-pass, band-pass)
+ *   - Delay line (circular buffer echo)
+ *   - Schroeder reverb (4 comb + 2 allpass with LP damping)
+ *   - Chorus (sine LFO modulated delay with linear interpolation)
+ *
+ * Effects are organized into chains (up to 8 effects per chain).  Each
+ * ForgeAudioChannel and the ForgeAudioMixer itself can have an effect chain.
+ * Channel chains process after source mix but before volume/pan; the master
+ * chain processes after all channels are summed but before master volume
+ * and soft clipping.
+ *
+ * Existing code is unaffected — effect_count starts at 0 via SDL_memset,
+ * so mixers created before this lesson skip all effect processing.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Effect chain functions ───────────────────────────────────────────── */
+
+/* Initialize an effect chain to empty (all zeroed). */
+static inline void forge_audio_effect_chain_init(ForgeAudioEffectChain *chain)
+{
+    if (!chain) return;
+    SDL_memset(chain, 0, sizeof(*chain));
+}
+
+/* Add an effect to the end of a chain.  Returns the index [0..MAX-1]
+ * on success, or -1 if the chain is full.  The wet parameter defaults
+ * to 1.0 (fully wet) if not set by the caller. */
+static inline int forge_audio_effect_chain_add(ForgeAudioEffectChain *chain,
+                                                ForgeAudioEffectFn process,
+                                                void *userdata)
+{
+    if (!chain || !process) return -1;
+    if (chain->effect_count >= FORGE_AUDIO_MAX_EFFECTS) return -1;
+
+    int idx = chain->effect_count;
+    SDL_memset(&chain->effects[idx], 0, sizeof(ForgeAudioEffect));
+    chain->effects[idx].process  = process;
+    chain->effects[idx].userdata = userdata;
+    chain->effects[idx].bypass   = false;
+    chain->effects[idx].wet      = 1.0f;
+    chain->effect_count++;
+    return idx;
+}
+
+/* Remove all effects from a chain (does NOT free userdata). */
+static inline void forge_audio_effect_chain_clear(ForgeAudioEffectChain *chain)
+{
+    if (!chain) return;
+    SDL_memset(chain, 0, sizeof(*chain));
+}
+
+/* ── Biquad filter ────────────────────────────────────────────────────
+ *
+ * Second-order IIR filter using Robert Bristow-Johnson's Audio EQ
+ * Cookbook coefficients.  Supports low-pass (LP), high-pass (HP), and
+ * band-pass (BP) filter types.
+ *
+ * State includes per-channel history (x1, x2, y1, y2) for stereo
+ * processing.  Coefficients are recomputed only when parameters change
+ * (dirty flag).  NaN/Inf in the output is caught and replaced with 0
+ * to prevent poison from propagating through the signal chain. */
+
+typedef enum ForgeAudioBiquadType {
+    FORGE_AUDIO_BIQUAD_LP = 0,
+    FORGE_AUDIO_BIQUAD_HP = 1,
+    FORGE_AUDIO_BIQUAD_BP = 2
+} ForgeAudioBiquadType;
+
+typedef struct ForgeAudioBiquad {
+    /* User parameters */
+    ForgeAudioBiquadType type;
+    float cutoff;   /* Hz */
+    float q;        /* resonance (0.1 .. 20.0) */
+
+    /* Normalized coefficients (Direct Form I) */
+    float b0, b1, b2;
+    float a1, a2;
+
+    /* Per-channel history (L=0, R=1) */
+    float x1[2], x2[2];  /* input history */
+    float y1[2], y2[2];  /* output history */
+
+    /* Dirty flag — recompute coefficients when true */
+    bool dirty;
+} ForgeAudioBiquad;
+
+/* Initialize biquad to LP 1000 Hz Q=0.707 (Butterworth). */
+static inline void forge_audio_biquad_init(ForgeAudioBiquad *bq)
+{
+    if (!bq) return;
+    SDL_memset(bq, 0, sizeof(*bq));
+    bq->type   = FORGE_AUDIO_BIQUAD_LP;
+    bq->cutoff = 1000.0f;
+    bq->q      = 0.707f;
+    bq->dirty  = true;
+}
+
+/* Set biquad parameters.  Marks dirty if any parameter changed. */
+static inline void forge_audio_biquad_set(ForgeAudioBiquad *bq,
+                                           ForgeAudioBiquadType type,
+                                           float cutoff, float q)
+{
+    if (!bq) return;
+    if (type != bq->type || cutoff != bq->cutoff || q != bq->q) {
+        bq->type   = type;
+        bq->cutoff = cutoff;
+        bq->q      = q;
+        bq->dirty  = true;
+    }
+}
+
+/* Recompute coefficients from current parameters. */
+static inline void forge_audio__biquad_compute(ForgeAudioBiquad *bq)
+{
+    if (!bq || !bq->dirty) return;
+    bq->dirty = false;
+
+    float freq = bq->cutoff;
+    float Q    = bq->q;
+
+    /* Clamp to safe ranges */
+    if (freq < 10.0f)  freq = 10.0f;
+    if (freq > (float)(FORGE_AUDIO_SAMPLE_RATE / 2 - 1))
+        freq = (float)(FORGE_AUDIO_SAMPLE_RATE / 2 - 1);
+    if (Q < 0.1f) Q = 0.1f;
+    if (Q > 20.0f) Q = 20.0f;
+
+    float w0    = 2.0f * FORGE_PI * freq / (float)FORGE_AUDIO_SAMPLE_RATE;
+    float sin_w = SDL_sinf(w0);
+    float cos_w = SDL_cosf(w0);
+    float alpha = sin_w / (2.0f * Q);
+
+    float b0, b1, b2, a0, a1, a2;
+
+    switch (bq->type) {
+    case FORGE_AUDIO_BIQUAD_LP:
+        b1 = 1.0f - cos_w;
+        b0 = b1 * 0.5f;
+        b2 = b0;
+        a0 = 1.0f + alpha;
+        a1 = -2.0f * cos_w;
+        a2 = 1.0f - alpha;
+        break;
+    case FORGE_AUDIO_BIQUAD_HP:
+        b1 = -(1.0f + cos_w);
+        b0 = (1.0f + cos_w) * 0.5f;
+        b2 = b0;
+        a0 = 1.0f + alpha;
+        a1 = -2.0f * cos_w;
+        a2 = 1.0f - alpha;
+        break;
+    case FORGE_AUDIO_BIQUAD_BP:
+        b0 = alpha;
+        b1 = 0.0f;
+        b2 = -alpha;
+        a0 = 1.0f + alpha;
+        a1 = -2.0f * cos_w;
+        a2 = 1.0f - alpha;
+        break;
+    default:
+        /* Unknown type — passthrough */
+        bq->b0 = 1.0f; bq->b1 = 0.0f; bq->b2 = 0.0f;
+        bq->a1 = 0.0f; bq->a2 = 0.0f;
+        return;
+    }
+
+    /* Normalize by a0 */
+    float inv_a0 = 1.0f / a0;
+    bq->b0 = b0 * inv_a0;
+    bq->b1 = b1 * inv_a0;
+    bq->b2 = b2 * inv_a0;
+    bq->a1 = a1 * inv_a0;
+    bq->a2 = a2 * inv_a0;
+}
+
+/* Reset filter history to zero (e.g. after parameter change or seek). */
+static inline void forge_audio_biquad_reset(ForgeAudioBiquad *bq)
+{
+    if (!bq) return;
+    SDL_memset(bq->x1, 0, sizeof(bq->x1));
+    SDL_memset(bq->x2, 0, sizeof(bq->x2));
+    SDL_memset(bq->y1, 0, sizeof(bq->y1));
+    SDL_memset(bq->y2, 0, sizeof(bq->y2));
+}
+
+/* Process stereo interleaved samples through the biquad filter.
+ * This is the ForgeAudioEffectFn callback. */
+static inline void forge_audio_biquad_process(float *samples, int frames,
+                                               void *userdata)
+{
+    ForgeAudioBiquad *bq = (ForgeAudioBiquad *)userdata;
+    if (!bq || !samples || frames <= 0) return;
+
+    /* Recompute coefficients if dirty */
+    forge_audio__biquad_compute(bq);
+
+    for (int i = 0; i < frames; i++) {
+        for (int ch = 0; ch < 2; ch++) {
+            float x0 = samples[i * 2 + ch];
+
+            float y0 = bq->b0 * x0
+                      + bq->b1 * bq->x1[ch]
+                      + bq->b2 * bq->x2[ch]
+                      - bq->a1 * bq->y1[ch]
+                      - bq->a2 * bq->y2[ch];
+
+            /* NaN/Inf rejection — prevent poison propagation */
+            if (!forge_isfinite(y0)) y0 = 0.0f;
+
+            bq->x2[ch] = bq->x1[ch];
+            bq->x1[ch] = x0;
+            bq->y2[ch] = bq->y1[ch];
+            bq->y1[ch] = y0;
+
+            samples[i * 2 + ch] = y0;
+        }
+    }
+}
+
+/* ── Delay line ───────────────────────────────────────────────────────
+ *
+ * Circular buffer echo with feedback.  The delay buffer is heap-allocated
+ * at init time to support delay times up to several seconds.
+ *
+ * Parameters:
+ *   delay_time — echo delay in seconds (determines buffer size)
+ *   feedback   — [0..1) fraction of output fed back into the delay
+ *   wet        — wet/dry handled by the effect chain, not here */
+
+/* Maximum delay time in seconds — prevents absurd allocations */
+#define FORGE_AUDIO_DELAY_MAX_TIME 5.0f
+
+typedef struct ForgeAudioDelay {
+    float *buffer;      /* heap-allocated circular buffer (stereo interleaved) */
+    int    buf_frames;  /* buffer capacity in frames */
+    int    write_pos;   /* write cursor (in frames) */
+    float  delay_time;  /* current delay in seconds */
+    float  feedback;    /* feedback gain [0..1) */
+} ForgeAudioDelay;
+
+/* Initialize delay with the given time in seconds.  Allocates the buffer.
+ * Returns true on success, false on allocation failure. */
+static inline bool forge_audio_delay_init(ForgeAudioDelay *d, float time_sec)
+{
+    if (!d) return false;
+    SDL_memset(d, 0, sizeof(*d));
+
+    if (time_sec < 0.001f) time_sec = 0.001f;
+    if (time_sec > FORGE_AUDIO_DELAY_MAX_TIME)
+        time_sec = FORGE_AUDIO_DELAY_MAX_TIME;
+
+    d->delay_time = time_sec;
+    d->feedback   = 0.3f;
+    d->buf_frames = (int)(time_sec * FORGE_AUDIO_SAMPLE_RATE) + 1;
+
+    size_t bytes = (size_t)d->buf_frames * FORGE_AUDIO_CHANNELS * sizeof(float);
+    d->buffer = (float *)SDL_malloc(bytes);
+    if (!d->buffer) {
+        d->buf_frames = 0;
+        return false;
+    }
+    SDL_memset(d->buffer, 0, bytes);
+    d->write_pos = 0;
+    return true;
+}
+
+/* Free the delay buffer. */
+static inline void forge_audio_delay_free(ForgeAudioDelay *d)
+{
+    if (!d) return;
+    SDL_free(d->buffer);
+    SDL_memset(d, 0, sizeof(*d));
+}
+
+/* Reset delay buffer to silence (clear all samples, reset write position). */
+static inline void forge_audio_delay_reset(ForgeAudioDelay *d)
+{
+    if (!d || !d->buffer) return;
+    SDL_memset(d->buffer, 0,
+               (size_t)d->buf_frames * FORGE_AUDIO_CHANNELS * sizeof(float));
+    d->write_pos = 0;
+}
+
+/* Change delay time.  Reallocates the buffer if needed. */
+static inline void forge_audio_delay_set_time(ForgeAudioDelay *d,
+                                               float time_sec)
+{
+    if (!d) return;
+    if (time_sec < 0.001f) time_sec = 0.001f;
+    if (time_sec > FORGE_AUDIO_DELAY_MAX_TIME)
+        time_sec = FORGE_AUDIO_DELAY_MAX_TIME;
+
+    int new_frames = (int)(time_sec * FORGE_AUDIO_SAMPLE_RATE) + 1;
+    if (new_frames != d->buf_frames) {
+        SDL_free(d->buffer);
+        d->buf_frames = new_frames;
+        size_t bytes = (size_t)new_frames * FORGE_AUDIO_CHANNELS * sizeof(float);
+        d->buffer = (float *)SDL_malloc(bytes);
+        if (d->buffer) {
+            SDL_memset(d->buffer, 0, bytes);
+        } else {
+            d->buf_frames = 0;
+        }
+        d->write_pos = 0;
+    }
+    d->delay_time = time_sec;
+}
+
+/* Process stereo interleaved samples through the delay line.
+ * This is the ForgeAudioEffectFn callback. */
+static inline void forge_audio_delay_process(float *samples, int frames,
+                                              void *userdata)
+{
+    ForgeAudioDelay *d = (ForgeAudioDelay *)userdata;
+    if (!d || !d->buffer || !samples || frames <= 0 || d->buf_frames <= 0)
+        return;
+
+    float fb = d->feedback;
+    if (fb < 0.0f) fb = 0.0f;
+    if (fb > 0.99f) fb = 0.99f;
+
+    for (int i = 0; i < frames; i++) {
+        /* Read the sample that was written buf_frames iterations ago.
+         * In a circular buffer of size N, the oldest unoverwritten sample
+         * is at (write_pos - N).  When the buffer is freshly zeroed,
+         * this reads silence until the first samples wrap around. */
+        int read_pos = d->write_pos - d->buf_frames;
+        if (read_pos < 0) read_pos += d->buf_frames;
+        /* Defensive wrap for edge cases (e.g. buf_frames changed) */
+        if (read_pos < 0) read_pos = 0;
+        if (read_pos >= d->buf_frames) read_pos = 0;
+
+        /* Read delayed sample */
+        float del_l = d->buffer[read_pos * 2];
+        float del_r = d->buffer[read_pos * 2 + 1];
+
+        /* NaN/Inf rejection — prevent poison from persisting in the
+         * circular buffer where it would corrupt all subsequent output */
+        if (!forge_isfinite(del_l)) del_l = 0.0f;
+        if (!forge_isfinite(del_r)) del_r = 0.0f;
+
+        /* Write new sample + feedback into buffer */
+        float in_l = samples[i * 2];
+        float in_r = samples[i * 2 + 1];
+        d->buffer[d->write_pos * 2]     = in_l + del_l * fb;
+        d->buffer[d->write_pos * 2 + 1] = in_r + del_r * fb;
+
+        /* Output = input + delayed */
+        samples[i * 2]     = in_l + del_l;
+        samples[i * 2 + 1] = in_r + del_r;
+
+        d->write_pos++;
+        if (d->write_pos >= d->buf_frames) d->write_pos = 0;
+    }
+}
+
+/* ── Schroeder reverb ─────────────────────────────────────────────────
+ *
+ * Classic algorithmic reverb using Manfred Schroeder's architecture:
+ * 4 parallel comb filters feeding into 2 series allpass filters.
+ * Each comb filter has a low-pass damping filter in the feedback path
+ * to simulate high-frequency absorption in real rooms.
+ *
+ * Stereo width is achieved by offsetting the right channel's comb
+ * delay lengths by FORGE_AUDIO_REVERB_STEREO_SPREAD samples.
+ *
+ * Memory: ~55 KB heap per instance (all delay lines combined).
+ *
+ * Parameters:
+ *   room_size — [0..1] scales comb feedback (larger = longer tail)
+ *   damping   — [0..1] LP filter amount in comb feedback (1 = dull)
+ *   wet       — handled by effect chain wet/dry */
+
+#define FORGE_AUDIO_REVERB_NUM_COMBS    4
+#define FORGE_AUDIO_REVERB_NUM_ALLPASS  2
+#define FORGE_AUDIO_REVERB_STEREO_SPREAD 23
+
+/* Comb filter delay lengths in samples (at 44100 Hz).
+ * These are mutually prime to minimize periodicity. */
+static const int FORGE_AUDIO_REVERB_COMB_LENGTHS[FORGE_AUDIO_REVERB_NUM_COMBS] = {
+    1557, 1617, 1491, 1422
+};
+
+/* Allpass filter delay lengths */
+static const int FORGE_AUDIO_REVERB_AP_LENGTHS[FORGE_AUDIO_REVERB_NUM_ALLPASS] = {
+    556, 441
+};
+
+/* Single comb filter with LP damping in feedback path */
+typedef struct ForgeAudioReverbComb {
+    float *buffer;     /* circular buffer */
+    int    buf_len;    /* buffer length in samples */
+    int    pos;        /* write position */
+    float  feedback;   /* feedback gain */
+    float  damp1;      /* LP coefficient (damping amount) */
+    float  damp2;      /* LP coefficient (1 - damp1) */
+    float  filter;     /* LP filter state */
+} ForgeAudioReverbComb;
+
+/* Single allpass filter */
+typedef struct ForgeAudioReverbAllpass {
+    float *buffer;
+    int    buf_len;
+    int    pos;
+    float  feedback;   /* typically 0.5 */
+} ForgeAudioReverbAllpass;
+
+typedef struct ForgeAudioReverb {
+    /* Per-channel comb and allpass filters (L=0, R=1) */
+    ForgeAudioReverbComb    combs[2][FORGE_AUDIO_REVERB_NUM_COMBS];
+    ForgeAudioReverbAllpass allpass[2][FORGE_AUDIO_REVERB_NUM_ALLPASS];
+
+    float room_size;  /* [0..1] */
+    float damping;    /* [0..1] */
+
+    /* Heap block for all delay buffers */
+    float *heap;
+} ForgeAudioReverb;
+
+/* Private: compute comb feedback from room_size [0..1].
+ * Maps to [0.7 .. 0.98] range for musically useful reverb tails. */
+static inline float forge_audio__reverb_feedback(float room_size)
+{
+    return 0.7f + room_size * 0.28f;
+}
+
+/* Set reverb parameters.  Updates comb feedback and damping coefficients. */
+static inline void forge_audio_reverb_set(ForgeAudioReverb *rv,
+                                           float room_size, float damping)
+{
+    if (!rv) return;
+    if (room_size < 0.0f) room_size = 0.0f;
+    if (room_size > 1.0f) room_size = 1.0f;
+    if (damping < 0.0f) damping = 0.0f;
+    if (damping > 1.0f) damping = 1.0f;
+
+    rv->room_size = room_size;
+    rv->damping   = damping;
+
+    float fb = forge_audio__reverb_feedback(room_size);
+
+    for (int ch = 0; ch < 2; ch++) {
+        for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
+            rv->combs[ch][c].feedback = fb;
+            rv->combs[ch][c].damp1    = damping;
+            rv->combs[ch][c].damp2    = 1.0f - damping;
+        }
+    }
+}
+
+/* Initialize reverb.  Allocates all delay buffers in a single heap block.
+ * Returns true on success. */
+static inline bool forge_audio_reverb_init(ForgeAudioReverb *rv,
+                                            float room_size, float damping)
+{
+    if (!rv) return false;
+    SDL_memset(rv, 0, sizeof(*rv));
+
+    /* Calculate total buffer size needed */
+    int total_samples = 0;
+    for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
+        total_samples += FORGE_AUDIO_REVERB_COMB_LENGTHS[c];  /* L */
+        total_samples += FORGE_AUDIO_REVERB_COMB_LENGTHS[c]
+                         + FORGE_AUDIO_REVERB_STEREO_SPREAD;  /* R */
+    }
+    for (int a = 0; a < FORGE_AUDIO_REVERB_NUM_ALLPASS; a++) {
+        total_samples += FORGE_AUDIO_REVERB_AP_LENGTHS[a];    /* L */
+        total_samples += FORGE_AUDIO_REVERB_AP_LENGTHS[a]
+                         + FORGE_AUDIO_REVERB_STEREO_SPREAD;  /* R */
+    }
+
+    rv->heap = (float *)SDL_malloc((size_t)total_samples * sizeof(float));
+    if (!rv->heap) return false;
+    SDL_memset(rv->heap, 0, (size_t)total_samples * sizeof(float));
+
+    /* Assign buffer pointers from the single heap block */
+    float *ptr = rv->heap;
+
+    for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
+        /* Left channel */
+        rv->combs[0][c].buffer  = ptr;
+        rv->combs[0][c].buf_len = FORGE_AUDIO_REVERB_COMB_LENGTHS[c];
+        rv->combs[0][c].pos     = 0;
+        ptr += FORGE_AUDIO_REVERB_COMB_LENGTHS[c];
+
+        /* Right channel — slightly longer for stereo width */
+        rv->combs[1][c].buffer  = ptr;
+        rv->combs[1][c].buf_len = FORGE_AUDIO_REVERB_COMB_LENGTHS[c]
+                                   + FORGE_AUDIO_REVERB_STEREO_SPREAD;
+        rv->combs[1][c].pos     = 0;
+        ptr += FORGE_AUDIO_REVERB_COMB_LENGTHS[c]
+               + FORGE_AUDIO_REVERB_STEREO_SPREAD;
+    }
+
+    for (int a = 0; a < FORGE_AUDIO_REVERB_NUM_ALLPASS; a++) {
+        rv->allpass[0][a].buffer   = ptr;
+        rv->allpass[0][a].buf_len  = FORGE_AUDIO_REVERB_AP_LENGTHS[a];
+        rv->allpass[0][a].pos      = 0;
+        rv->allpass[0][a].feedback = 0.5f;
+        ptr += FORGE_AUDIO_REVERB_AP_LENGTHS[a];
+
+        rv->allpass[1][a].buffer   = ptr;
+        rv->allpass[1][a].buf_len  = FORGE_AUDIO_REVERB_AP_LENGTHS[a]
+                                      + FORGE_AUDIO_REVERB_STEREO_SPREAD;
+        rv->allpass[1][a].pos      = 0;
+        rv->allpass[1][a].feedback = 0.5f;
+        ptr += FORGE_AUDIO_REVERB_AP_LENGTHS[a]
+               + FORGE_AUDIO_REVERB_STEREO_SPREAD;
+    }
+
+    forge_audio_reverb_set(rv, room_size, damping);
+    return true;
+}
+
+/* Free reverb heap memory. */
+static inline void forge_audio_reverb_free(ForgeAudioReverb *rv)
+{
+    if (!rv) return;
+    SDL_free(rv->heap);
+    SDL_memset(rv, 0, sizeof(*rv));
+}
+
+/* Reset reverb state (clear all delay buffers). */
+static inline void forge_audio_reverb_reset(ForgeAudioReverb *rv)
+{
+    if (!rv || !rv->heap) return;
+
+    for (int ch = 0; ch < 2; ch++) {
+        for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
+            ForgeAudioReverbComb *comb = &rv->combs[ch][c];
+            if (comb->buffer && comb->buf_len > 0) {
+                SDL_memset(comb->buffer, 0,
+                           (size_t)comb->buf_len * sizeof(float));
+                comb->pos    = 0;
+                comb->filter = 0.0f;
+            }
+        }
+        for (int a = 0; a < FORGE_AUDIO_REVERB_NUM_ALLPASS; a++) {
+            ForgeAudioReverbAllpass *ap = &rv->allpass[ch][a];
+            if (ap->buffer && ap->buf_len > 0) {
+                SDL_memset(ap->buffer, 0,
+                           (size_t)ap->buf_len * sizeof(float));
+                ap->pos = 0;
+            }
+        }
+    }
+}
+
+/* Private: process one sample through a comb filter with LP damping. */
+static inline float forge_audio__reverb_comb(ForgeAudioReverbComb *c,
+                                              float input)
+{
+    float output = c->buffer[c->pos];
+    /* NaN/Inf rejection — prevent poison from persisting in feedback */
+    if (!forge_isfinite(output)) output = 0.0f;
+    /* LP filter on the feedback path */
+    c->filter = output * c->damp2 + c->filter * c->damp1;
+    if (!forge_isfinite(c->filter)) c->filter = 0.0f;
+    c->buffer[c->pos] = input + c->filter * c->feedback;
+    c->pos++;
+    if (c->pos >= c->buf_len) c->pos = 0;
+    return output;
+}
+
+/* Private: process one sample through an allpass filter. */
+static inline float forge_audio__reverb_allpass(ForgeAudioReverbAllpass *ap,
+                                                 float input)
+{
+    float bufout = ap->buffer[ap->pos];
+    /* NaN/Inf rejection — prevent poison from persisting in feedback */
+    if (!forge_isfinite(bufout)) bufout = 0.0f;
+    float output = bufout - input;
+    ap->buffer[ap->pos] = input + bufout * ap->feedback;
+    ap->pos++;
+    if (ap->pos >= ap->buf_len) ap->pos = 0;
+    return output;
+}
+
+/* Process stereo interleaved samples through the reverb.
+ * This is the ForgeAudioEffectFn callback. */
+static inline void forge_audio_reverb_process(float *samples, int frames,
+                                               void *userdata)
+{
+    ForgeAudioReverb *rv = (ForgeAudioReverb *)userdata;
+    if (!rv || !rv->heap || !samples || frames <= 0) return;
+
+    for (int i = 0; i < frames; i++) {
+        for (int ch = 0; ch < 2; ch++) {
+            float input = samples[i * 2 + ch];
+            float sum = 0.0f;
+
+            /* Parallel comb filters */
+            for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
+                sum += forge_audio__reverb_comb(&rv->combs[ch][c], input);
+            }
+
+            /* Series allpass filters */
+            for (int a = 0; a < FORGE_AUDIO_REVERB_NUM_ALLPASS; a++) {
+                sum = forge_audio__reverb_allpass(&rv->allpass[ch][a], sum);
+            }
+
+            samples[i * 2 + ch] = sum;
+        }
+    }
+}
+
+/* ── Chorus ───────────────────────────────────────────────────────────
+ *
+ * Sine-LFO modulated delay line with linear interpolation.  Creates
+ * a thickening/detuning effect by continuously varying the delay time
+ * around a center point.
+ *
+ * Parameters:
+ *   rate  — LFO frequency in Hz (0.1 - 5.0)
+ *   depth — modulation depth in seconds (0.001 - 0.02)
+ *   wet   — handled by effect chain wet/dry */
+
+/* Maximum depth determines buffer size (40ms covers the full range) */
+#define FORGE_AUDIO_CHORUS_MAX_DEPTH  0.04f
+
+typedef struct ForgeAudioChorus {
+    float *buffer;      /* circular delay buffer (stereo interleaved) */
+    int    buf_frames;  /* buffer capacity in frames */
+    int    write_pos;   /* write cursor */
+    float  rate;        /* LFO rate in Hz */
+    float  depth;       /* modulation depth in seconds */
+    float  phase;       /* LFO phase [0..2*PI) */
+} ForgeAudioChorus;
+
+/* Initialize chorus.  Returns true on success. */
+static inline bool forge_audio_chorus_init(ForgeAudioChorus *ch,
+                                            float rate, float depth)
+{
+    if (!ch) return false;
+    SDL_memset(ch, 0, sizeof(*ch));
+
+    if (rate < 0.1f) rate = 0.1f;
+    if (rate > 5.0f) rate = 5.0f;
+    if (depth < 0.001f) depth = 0.001f;
+    if (depth > FORGE_AUDIO_CHORUS_MAX_DEPTH)
+        depth = FORGE_AUDIO_CHORUS_MAX_DEPTH;
+
+    ch->rate  = rate;
+    ch->depth = depth;
+    ch->phase = 0.0f;
+
+    /* Buffer must hold max_depth worth of samples */
+    ch->buf_frames = (int)(FORGE_AUDIO_CHORUS_MAX_DEPTH
+                           * FORGE_AUDIO_SAMPLE_RATE) + 2;
+
+    size_t bytes = (size_t)ch->buf_frames * FORGE_AUDIO_CHANNELS * sizeof(float);
+    ch->buffer = (float *)SDL_malloc(bytes);
+    if (!ch->buffer) {
+        ch->buf_frames = 0;
+        return false;
+    }
+    SDL_memset(ch->buffer, 0, bytes);
+    ch->write_pos = 0;
+    return true;
+}
+
+/* Free chorus buffer. */
+static inline void forge_audio_chorus_free(ForgeAudioChorus *ch)
+{
+    if (!ch) return;
+    SDL_free(ch->buffer);
+    SDL_memset(ch, 0, sizeof(*ch));
+}
+
+/* Reset chorus state. */
+static inline void forge_audio_chorus_reset(ForgeAudioChorus *ch)
+{
+    if (!ch || !ch->buffer) return;
+    SDL_memset(ch->buffer, 0,
+               (size_t)ch->buf_frames * FORGE_AUDIO_CHANNELS * sizeof(float));
+    ch->write_pos = 0;
+    ch->phase = 0.0f;
+}
+
+/* Process stereo interleaved samples through the chorus.
+ * This is the ForgeAudioEffectFn callback. */
+static inline void forge_audio_chorus_process(float *samples, int frames,
+                                               void *userdata)
+{
+    ForgeAudioChorus *ch = (ForgeAudioChorus *)userdata;
+    if (!ch || !ch->buffer || !samples || frames <= 0 || ch->buf_frames <= 0)
+        return;
+
+    float phase_inc = 2.0f * FORGE_PI * ch->rate / (float)FORGE_AUDIO_SAMPLE_RATE;
+
+    for (int i = 0; i < frames; i++) {
+        /* Write input to circular buffer */
+        ch->buffer[ch->write_pos * 2]     = samples[i * 2];
+        ch->buffer[ch->write_pos * 2 + 1] = samples[i * 2 + 1];
+
+        /* LFO: modulated delay in samples */
+        float mod = ch->depth * (float)FORGE_AUDIO_SAMPLE_RATE
+                    * (0.5f + 0.5f * SDL_sinf(ch->phase));
+
+        /* Read position with fractional part for linear interpolation */
+        float read_f = (float)ch->write_pos - mod;
+        if (read_f < 0.0f) read_f += (float)ch->buf_frames;
+
+        int   idx0 = (int)read_f;
+        float frac = read_f - (float)idx0;
+        int   idx1 = idx0 + 1;
+        if (idx0 >= ch->buf_frames) idx0 -= ch->buf_frames;
+        if (idx0 < 0) idx0 = 0;
+        if (idx1 >= ch->buf_frames) idx1 -= ch->buf_frames;
+        if (idx1 < 0) idx1 = 0;
+
+        /* Linear interpolation for each channel */
+        for (int c = 0; c < 2; c++) {
+            float s0 = ch->buffer[idx0 * 2 + c];
+            float s1 = ch->buffer[idx1 * 2 + c];
+            float delayed = s0 + (s1 - s0) * frac;
+
+            /* Output: input + delayed (chorus effect) */
+            samples[i * 2 + c] = samples[i * 2 + c] + delayed;
+        }
+
+        /* Advance LFO phase */
+        ch->phase += phase_inc;
+        if (ch->phase >= 2.0f * FORGE_PI)
+            ch->phase = SDL_fmodf(ch->phase, 2.0f * FORGE_PI);
+
+        /* Advance write position */
+        ch->write_pos++;
+        if (ch->write_pos >= ch->buf_frames) ch->write_pos = 0;
+    }
+}
+
+/* ── Presets ──────────────────────────────────────────────────────────
+ *
+ * Convenience functions that configure effects on a chain.  The caller
+ * owns the effect state structs (passed as pointers) and must keep them
+ * alive for the lifetime of the chain.
+ *
+ * Each preset clears the chain first, then adds effects with appropriate
+ * parameters.  Returns true on success.
+ *
+ * Heap-allocated effects (delay, reverb, chorus) must be initialized
+ * before calling the preset — the preset only configures parameters and
+ * adds them to the chain. */
+
+/* Underwater: LP 500 Hz Q=0.7 + reverb (room 0.8, damp 0.7, wet 0.6) */
+static inline bool forge_audio_preset_underwater(
+    ForgeAudioEffectChain *chain,
+    ForgeAudioBiquad *bq,
+    ForgeAudioReverb *rv)
+{
+    if (!chain || !bq || !rv) return false;
+    forge_audio_effect_chain_clear(chain);
+
+    forge_audio_biquad_set(bq, FORGE_AUDIO_BIQUAD_LP, 500.0f, 0.7f);
+    forge_audio_biquad_reset(bq);
+    int idx = forge_audio_effect_chain_add(chain,
+        forge_audio_biquad_process, bq);
+    if (idx < 0) return false;
+
+    forge_audio_reverb_set(rv, 0.8f, 0.7f);
+    forge_audio_reverb_reset(rv);
+    idx = forge_audio_effect_chain_add(chain,
+        forge_audio_reverb_process, rv);
+    if (idx < 0) return false;
+    chain->effects[idx].wet = 0.6f;
+
+    return true;
+}
+
+/* Cave: reverb (room 0.95, damp 0.3, wet 0.7) + delay (0.4s, fb 0.5, wet 0.4) */
+static inline bool forge_audio_preset_cave(
+    ForgeAudioEffectChain *chain,
+    ForgeAudioReverb *rv,
+    ForgeAudioDelay *dl)
+{
+    if (!chain || !rv || !dl) return false;
+    forge_audio_effect_chain_clear(chain);
+
+    forge_audio_reverb_set(rv, 0.95f, 0.3f);
+    forge_audio_reverb_reset(rv);
+    int idx = forge_audio_effect_chain_add(chain,
+        forge_audio_reverb_process, rv);
+    if (idx < 0) return false;
+    chain->effects[idx].wet = 0.7f;
+
+    forge_audio_delay_set_time(dl, 0.4f);
+    dl->feedback = 0.5f;
+    forge_audio_delay_reset(dl);
+    idx = forge_audio_effect_chain_add(chain,
+        forge_audio_delay_process, dl);
+    if (idx < 0) return false;
+    chain->effects[idx].wet = 0.4f;
+
+    return true;
+}
+
+/* Radio: HP 800 Hz + LP 3000 Hz (two biquads simulating bandpass) */
+static inline bool forge_audio_preset_radio(
+    ForgeAudioEffectChain *chain,
+    ForgeAudioBiquad *hp,
+    ForgeAudioBiquad *lp)
+{
+    if (!chain || !hp || !lp) return false;
+    forge_audio_effect_chain_clear(chain);
+
+    forge_audio_biquad_set(hp, FORGE_AUDIO_BIQUAD_HP, 800.0f, 0.707f);
+    forge_audio_biquad_reset(hp);
+    int idx = forge_audio_effect_chain_add(chain,
+        forge_audio_biquad_process, hp);
+    if (idx < 0) return false;
+
+    forge_audio_biquad_set(lp, FORGE_AUDIO_BIQUAD_LP, 3000.0f, 0.707f);
+    forge_audio_biquad_reset(lp);
+    idx = forge_audio_effect_chain_add(chain,
+        forge_audio_biquad_process, lp);
+    if (idx < 0) return false;
+
+    return true;
 }
 
 #endif /* FORGE_AUDIO_H */

@@ -37,10 +37,13 @@ from .assets import (
 from .audio import (
     diagram_adaptive_layers,
     diagram_attenuation_curves,
+    diagram_biquad_frequency_response,
     diagram_crossfade_curves,
     diagram_doppler_effect,
+    diagram_effect_chain_signal_flow,
     diagram_mixer_signal_chain,
     diagram_peak_hold_behavior,
+    diagram_schroeder_reverb_architecture,
     diagram_soft_clipping,
     diagram_spatial_setup_flow,
     diagram_stereo_pan,
@@ -389,6 +392,11 @@ DIAGRAMS = {
         ("streaming_architecture.png", diagram_streaming_architecture),
         ("crossfade_curves.png", diagram_crossfade_curves),
         ("adaptive_layers.png", diagram_adaptive_layers),
+    ],
+    "audio/06": [
+        ("effect_chain_signal_flow.png", diagram_effect_chain_signal_flow),
+        ("biquad_frequency_response.png", diagram_biquad_frequency_response),
+        ("schroeder_reverb_architecture.png", diagram_schroeder_reverb_architecture),
     ],
     "assets/02": [
         ("block_compression.png", diagram_texture_block_compression),
@@ -867,6 +875,7 @@ LESSON_NAMES = {
     "audio/03": "audio/03-audio-mixing",
     "audio/04": "audio/04-spatial-audio",
     "audio/05": "audio/05-music-streaming",
+    "audio/06": "audio/06-dsp-effects",
     "assets/02": "assets/02-texture-processing",
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",

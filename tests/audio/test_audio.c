@@ -2925,6 +2925,896 @@ static void test_layer_group_zero_weight_phase_lock(void)
     END_TEST();
 }
 
+/* ── DSP Effect tests (Lesson 06) ──────────────────────────────────── */
+
+/* Biquad: LP passes DC (0 Hz signal should pass through LP filter) */
+static void test_biquad_lp_passes_dc(void)
+{
+    TEST("biquad LP passes DC");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_LP, 1000.0f, 0.707f);
+
+    /* Feed 256 frames of DC = 1.0 through LP filter */
+    float buf[512];  /* 256 frames * 2 channels */
+    for (int i = 0; i < 512; i++) buf[i] = 1.0f;
+
+    /* Run several passes for filter to settle */
+    for (int pass = 0; pass < 10; pass++) {
+        for (int i = 0; i < 512; i++) buf[i] = 1.0f;
+        forge_audio_biquad_process(buf, 256, &bq);
+    }
+
+    /* After settling, output should be close to 1.0 (DC passthrough) */
+    ASSERT_NEAR(buf[510], 1.0f, 0.01f);
+    ASSERT_NEAR(buf[511], 1.0f, 0.01f);
+    END_TEST();
+}
+
+/* Biquad: LP attenuates high frequency */
+static void test_biquad_lp_attenuates_high(void)
+{
+    TEST("biquad LP attenuates high freq");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_LP, 200.0f, 0.707f);
+
+    /* Generate a 10 kHz sine (well above 200 Hz cutoff) */
+    float buf[512];
+    float freq = 10000.0f;
+    float phase = 0.0f;
+    float phase_inc = 2.0f * FORGE_PI * freq / 44100.0f;
+
+    /* Warm up the filter */
+    for (int pass = 0; pass < 5; pass++) {
+        for (int i = 0; i < 256; i++) {
+            float val = SDL_sinf(phase);
+            buf[i * 2] = val;
+            buf[i * 2 + 1] = val;
+            phase += phase_inc;
+        }
+        forge_audio_biquad_process(buf, 256, &bq);
+    }
+
+    /* Measure peak output — should be significantly attenuated */
+    float peak = 0.0f;
+    for (int i = 0; i < 512; i++) {
+        float a = buf[i] < 0.0f ? -buf[i] : buf[i];
+        if (a > peak) peak = a;
+    }
+    /* 10 kHz through 200 Hz LP should be heavily attenuated (< 0.1) */
+    ASSERT_TRUE(peak < 0.1f);
+    END_TEST();
+}
+
+/* Biquad: HP blocks DC */
+static void test_biquad_hp_blocks_dc(void)
+{
+    TEST("biquad HP blocks DC");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_HP, 1000.0f, 0.707f);
+
+    float buf[512];
+    for (int pass = 0; pass < 10; pass++) {
+        for (int i = 0; i < 512; i++) buf[i] = 1.0f;
+        forge_audio_biquad_process(buf, 256, &bq);
+    }
+
+    /* DC should be blocked — output near zero */
+    ASSERT_NEAR(buf[510], 0.0f, 0.01f);
+    END_TEST();
+}
+
+/* Biquad: HP passes high frequency */
+static void test_biquad_hp_passes_high(void)
+{
+    TEST("biquad HP passes high freq");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_HP, 200.0f, 0.707f);
+
+    /* 10 kHz sine — well above 200 Hz cutoff */
+    float buf[512];
+    float phase = 0.0f;
+    float phase_inc = 2.0f * FORGE_PI * 10000.0f / 44100.0f;
+
+    for (int pass = 0; pass < 5; pass++) {
+        for (int i = 0; i < 256; i++) {
+            float val = SDL_sinf(phase);
+            buf[i * 2] = val;
+            buf[i * 2 + 1] = val;
+            phase += phase_inc;
+        }
+        forge_audio_biquad_process(buf, 256, &bq);
+    }
+
+    float peak = 0.0f;
+    for (int i = 0; i < 512; i++) {
+        float a = buf[i] < 0.0f ? -buf[i] : buf[i];
+        if (a > peak) peak = a;
+    }
+    /* Should pass through with minimal attenuation */
+    ASSERT_TRUE(peak > 0.5f);
+    END_TEST();
+}
+
+/* Biquad: BP passes center frequency */
+static void test_biquad_bp_center(void)
+{
+    TEST("biquad BP passes center freq");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_BP, 1000.0f, 1.0f);
+
+    /* 1 kHz sine — at center */
+    float buf[512];
+    float phase = 0.0f;
+    float phase_inc = 2.0f * FORGE_PI * 1000.0f / 44100.0f;
+
+    for (int pass = 0; pass < 10; pass++) {
+        for (int i = 0; i < 256; i++) {
+            float val = SDL_sinf(phase);
+            buf[i * 2] = val;
+            buf[i * 2 + 1] = val;
+            phase += phase_inc;
+        }
+        forge_audio_biquad_process(buf, 256, &bq);
+    }
+
+    float peak = 0.0f;
+    for (int i = 0; i < 512; i++) {
+        float a = buf[i] < 0.0f ? -buf[i] : buf[i];
+        if (a > peak) peak = a;
+    }
+    /* Center frequency should pass with reasonable level */
+    ASSERT_TRUE(peak > 0.3f);
+    END_TEST();
+}
+
+/* Biquad: reset clears history */
+static void test_biquad_reset(void)
+{
+    TEST("biquad reset clears history");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+
+    /* Process some audio to fill history */
+    float buf[64];
+    for (int i = 0; i < 64; i++) buf[i] = 0.5f;
+    forge_audio_biquad_process(buf, 32, &bq);
+
+    /* History should be non-zero */
+    ASSERT_TRUE(bq.y1[0] != 0.0f || bq.x1[0] != 0.0f);
+
+    forge_audio_biquad_reset(&bq);
+
+    ASSERT_NEAR(bq.x1[0], 0.0f, EPSILON);
+    ASSERT_NEAR(bq.x2[0], 0.0f, EPSILON);
+    ASSERT_NEAR(bq.y1[0], 0.0f, EPSILON);
+    ASSERT_NEAR(bq.y2[0], 0.0f, EPSILON);
+    END_TEST();
+}
+
+/* Biquad: dirty check — unchanged params don't recompute */
+static void test_biquad_dirty_check(void)
+{
+    TEST("biquad dirty check");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    ASSERT_TRUE(bq.dirty);
+
+    /* Process triggers compute */
+    float buf[4] = {0};
+    forge_audio_biquad_process(buf, 2, &bq);
+    ASSERT_TRUE(!bq.dirty);
+
+    /* Setting same params should NOT mark dirty */
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_LP, 1000.0f, 0.707f);
+    ASSERT_TRUE(!bq.dirty);
+
+    /* Changing cutoff SHOULD mark dirty */
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_LP, 2000.0f, 0.707f);
+    ASSERT_TRUE(bq.dirty);
+    END_TEST();
+}
+
+/* Biquad: NaN rejection */
+static void test_biquad_nan_rejection(void)
+{
+    TEST("biquad NaN rejection");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+
+    /* Inject NaN in history to simulate corruption */
+    float buf[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    forge_audio_biquad_process(buf, 2, &bq);
+
+    /* Force NaN into history — use SDL_sqrtf(-1) to avoid MSVC C2124 */
+    float nan_val = SDL_sqrtf(-1.0f);
+    bq.y1[0] = nan_val;
+    bq.y1[1] = nan_val;
+
+    float buf2[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    forge_audio_biquad_process(buf2, 2, &bq);
+
+    /* Output should be finite (NaN caught and replaced with 0) */
+    for (int i = 0; i < 4; i++) {
+        ASSERT_TRUE(forge_isfinite(buf2[i]));
+    }
+    END_TEST();
+}
+
+/* Delay: silence in → silence out */
+static void test_delay_silence(void)
+{
+    TEST("delay silence in/out");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.1f));
+
+    float buf[128];
+    SDL_memset(buf, 0, sizeof(buf));
+    forge_audio_delay_process(buf, 64, &d);
+
+    /* All zeros in → all zeros out */
+    for (int i = 0; i < 128; i++) {
+        ASSERT_NEAR(buf[i], 0.0f, EPSILON);
+    }
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Delay: impulse produces echo */
+static void test_delay_impulse_echo(void)
+{
+    TEST("delay impulse echo");
+    ForgeAudioDelay d;
+    /* Very short delay: 10ms = 441 samples at 44100 Hz */
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.01f));
+    d.feedback = 0.0f;  /* no feedback — single echo */
+
+    /* Send impulse: frame 0 = 1.0, rest = 0 */
+    int total_frames = 1024;
+    float *buf = (float *)SDL_calloc((size_t)total_frames * 2, sizeof(float));
+    ASSERT_TRUE(buf != NULL);
+    buf[0] = 1.0f;  /* L */
+    buf[1] = 1.0f;  /* R */
+
+    forge_audio_delay_process(buf, total_frames, &d);
+
+    /* Frame 0 should still have the original impulse */
+    ASSERT_NEAR(buf[0], 1.0f, EPSILON);
+
+    /* Around frame 441-442 (10ms delay) we should see the echo.
+     * buf_frames = delay_samples + 1, so echo appears at buf_frames. */
+    int delay_frame = (int)(0.01f * 44100.0f) + 1;
+    float echo_l = buf[delay_frame * 2];
+    ASSERT_TRUE(echo_l > 0.5f);
+
+    SDL_free(buf);
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Delay: feedback produces decaying echoes */
+static void test_delay_feedback_decay(void)
+{
+    TEST("delay feedback decay");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.01f));
+    d.feedback = 0.5f;
+
+    int total_frames = 4096;
+    float *buf = (float *)SDL_calloc((size_t)total_frames * 2, sizeof(float));
+    ASSERT_TRUE(buf != NULL);
+    buf[0] = 1.0f;
+    buf[1] = 1.0f;
+
+    forge_audio_delay_process(buf, total_frames, &d);
+
+    /* Find peaks — each successive echo should be smaller */
+    int delay_frame = (int)(0.01f * 44100.0f) + 1;
+    float echo1 = buf[delay_frame * 2];
+    float echo2 = buf[delay_frame * 2 * 2];
+    ASSERT_TRUE(echo1 > echo2);
+    ASSERT_TRUE(echo2 > 0.0f);
+
+    SDL_free(buf);
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Delay: zero feedback — single echo only */
+static void test_delay_zero_feedback(void)
+{
+    TEST("delay zero feedback");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.01f));
+    d.feedback = 0.0f;
+
+    int total_frames = 4096;
+    float *buf = (float *)SDL_calloc((size_t)total_frames * 2, sizeof(float));
+    ASSERT_TRUE(buf != NULL);
+    buf[0] = 1.0f;
+    buf[1] = 1.0f;
+
+    forge_audio_delay_process(buf, total_frames, &d);
+
+    /* After one echo delay, should see the echo.
+     * After two echo delays, should be silence (no feedback). */
+    int delay_frame = (int)(0.01f * 44100.0f) + 1;
+    float echo1 = buf[delay_frame * 2];
+    ASSERT_TRUE(echo1 > 0.5f);
+
+    /* Two delay lengths later — should be near zero */
+    int pos2 = delay_frame * 2;
+    if (pos2 < total_frames) {
+        float echo2 = buf[pos2 * 2];
+        ASSERT_NEAR(echo2, 0.0f, 0.01f);
+    }
+
+    SDL_free(buf);
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Delay: set_time reallocates cleanly */
+static void test_delay_set_time(void)
+{
+    TEST("delay set_time reallocation");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.1f));
+    int orig_frames = d.buf_frames;
+
+    /* Feed an impulse so the buffer has non-zero data */
+    float buf[4] = {1.0f, 1.0f, 0.0f, 0.0f};
+    forge_audio_delay_process(buf, 2, &d);
+
+    /* Change to a longer delay — should reallocate and zero the buffer */
+    forge_audio_delay_set_time(&d, 0.5f);
+    ASSERT_TRUE(d.buf_frames > orig_frames);
+    ASSERT_TRUE(d.write_pos == 0);
+    ASSERT_TRUE(d.buffer != NULL);
+
+    /* After reallocation, silence in should give silence out
+     * (old buffer content should not persist) */
+    float silence[64];
+    SDL_memset(silence, 0, sizeof(silence));
+    forge_audio_delay_process(silence, 32, &d);
+    for (int i = 0; i < 64; i++) {
+        ASSERT_NEAR(silence[i], 0.0f, EPSILON);
+    }
+
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Delay: init/free safety */
+static void test_delay_init_free(void)
+{
+    TEST("delay init/free");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.5f));
+    ASSERT_TRUE(d.buffer != NULL);
+    ASSERT_TRUE(d.buf_frames > 0);
+
+    forge_audio_delay_free(&d);
+    ASSERT_TRUE(d.buffer == NULL);
+    ASSERT_TRUE(d.buf_frames == 0);
+
+    /* Free on already-freed is safe */
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Reverb: silence in → silence out */
+static void test_reverb_silence(void)
+{
+    TEST("reverb silence in/out");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.5f, 0.5f));
+
+    float buf[256];
+    SDL_memset(buf, 0, sizeof(buf));
+    forge_audio_reverb_process(buf, 128, &rv);
+
+    for (int i = 0; i < 256; i++) {
+        ASSERT_NEAR(buf[i], 0.0f, EPSILON);
+    }
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+/* Reverb: impulse produces a tail */
+static void test_reverb_impulse_tail(void)
+{
+    TEST("reverb impulse tail");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.8f, 0.5f));
+
+    int total_frames = 8192;
+    float *buf = (float *)SDL_calloc((size_t)total_frames * 2, sizeof(float));
+    ASSERT_TRUE(buf != NULL);
+    buf[0] = 1.0f;
+    buf[1] = 1.0f;
+
+    forge_audio_reverb_process(buf, total_frames, &rv);
+
+    /* There should be non-zero samples well after the impulse */
+    float late_energy = 0.0f;
+    for (int i = 4000; i < 8000; i++) {
+        float val = buf[i * 2];
+        late_energy += val * val;
+    }
+    ASSERT_TRUE(late_energy > 0.0001f);
+
+    SDL_free(buf);
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+/* Reverb: reset clears tail */
+static void test_reverb_reset(void)
+{
+    TEST("reverb reset clears tail");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.8f, 0.5f));
+
+    /* Feed impulse */
+    float buf[256];
+    SDL_memset(buf, 0, sizeof(buf));
+    buf[0] = 1.0f; buf[1] = 1.0f;
+    forge_audio_reverb_process(buf, 128, &rv);
+
+    forge_audio_reverb_reset(&rv);
+
+    /* After reset, silence in → silence out */
+    SDL_memset(buf, 0, sizeof(buf));
+    forge_audio_reverb_process(buf, 128, &rv);
+
+    for (int i = 0; i < 256; i++) {
+        ASSERT_NEAR(buf[i], 0.0f, EPSILON);
+    }
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+/* Reverb: init/free safety */
+static void test_reverb_init_free(void)
+{
+    TEST("reverb init/free");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.5f, 0.5f));
+    ASSERT_TRUE(rv.heap != NULL);
+
+    forge_audio_reverb_free(&rv);
+    ASSERT_TRUE(rv.heap == NULL);
+
+    /* Double free is safe */
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+/* Reverb: dry-only (wet=0 in chain) should pass through unchanged */
+static void test_reverb_dry_only(void)
+{
+    TEST("reverb dry-only passthrough");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.5f, 0.5f));
+
+    ForgeAudioEffectChain chain;
+    forge_audio_effect_chain_init(&chain);
+    int idx = forge_audio_effect_chain_add(&chain,
+        forge_audio_reverb_process, &rv);
+    ASSERT_TRUE(idx >= 0);
+    chain.effects[idx].wet = 0.0f;  /* fully dry */
+
+    float buf[128];
+    for (int i = 0; i < 128; i++) buf[i] = 0.5f;
+    float expected = 0.5f;
+
+    forge_audio_effect_chain_process(&chain, buf, 64);
+
+    /* Should be unchanged (dry passthrough) */
+    ASSERT_NEAR(buf[0], expected, EPSILON);
+    ASSERT_NEAR(buf[127], expected, EPSILON);
+
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+/* Reverb: NaN in feedback paths does not propagate */
+static void test_reverb_nan_rejection(void)
+{
+    TEST("reverb NaN rejection");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.5f, 0.5f));
+
+    /* Inject NaN into one of the comb buffers to simulate corruption */
+    float nan_val = SDL_sqrtf(-1.0f);
+    rv.combs[0][0].buffer[0] = nan_val;
+    rv.combs[0][0].filter = nan_val;
+
+    /* Process some frames — output should be finite despite NaN in buffer */
+    float buf[256];
+    for (int i = 0; i < 256; i++) buf[i] = 0.1f;
+    forge_audio_reverb_process(buf, 128, &rv);
+
+    for (int i = 0; i < 256; i++) {
+        ASSERT_TRUE(forge_isfinite(buf[i]));
+    }
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+/* Delay: NaN in circular buffer does not propagate */
+static void test_delay_nan_rejection(void)
+{
+    TEST("delay NaN rejection");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.01f));
+
+    /* Inject NaN into the delay buffer */
+    float nan_val = SDL_sqrtf(-1.0f);
+    d.buffer[0] = nan_val;
+    d.buffer[1] = nan_val;
+
+    /* Process — output should be finite */
+    float buf[128];
+    for (int i = 0; i < 128; i++) buf[i] = 0.5f;
+    forge_audio_delay_process(buf, 64, &d);
+
+    for (int i = 0; i < 128; i++) {
+        ASSERT_TRUE(forge_isfinite(buf[i]));
+    }
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+/* Chorus: extreme rate does not cause unbounded phase growth */
+static void test_chorus_phase_wrap(void)
+{
+    TEST("chorus phase wrap at extreme rate");
+    ForgeAudioChorus ch;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 5.0f, 0.005f));
+
+    /* Set an extreme rate (above the clamped init range) to test wrap */
+    ch.rate = 100.0f;
+
+    float buf[512];
+    for (int i = 0; i < 512; i++) buf[i] = 0.5f;
+
+    /* Process many frames — phase should stay bounded */
+    for (int pass = 0; pass < 100; pass++) {
+        for (int i = 0; i < 512; i++) buf[i] = 0.5f;
+        forge_audio_chorus_process(buf, 256, &ch);
+    }
+
+    /* Phase must stay in [0, 2*PI) */
+    ASSERT_TRUE(ch.phase >= 0.0f);
+    ASSERT_TRUE(ch.phase < 2.0f * FORGE_PI + 0.01f);
+
+    /* Output should be finite */
+    for (int i = 0; i < 512; i++) {
+        ASSERT_TRUE(forge_isfinite(buf[i]));
+    }
+    forge_audio_chorus_free(&ch);
+    END_TEST();
+}
+
+/* Chorus: DC signal still produces output */
+static void test_chorus_dc(void)
+{
+    TEST("chorus DC signal");
+    ForgeAudioChorus ch;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 1.0f, 0.005f));
+
+    float buf[512];
+    for (int i = 0; i < 512; i++) buf[i] = 0.5f;
+
+    /* Run a few passes */
+    for (int pass = 0; pass < 5; pass++) {
+        for (int i = 0; i < 512; i++) buf[i] = 0.5f;
+        forge_audio_chorus_process(buf, 256, &ch);
+    }
+
+    /* Output should be non-zero (input + modulated delay of DC) */
+    float peak = 0.0f;
+    for (int i = 0; i < 512; i++) {
+        float a = buf[i] < 0.0f ? -buf[i] : buf[i];
+        if (a > peak) peak = a;
+    }
+    ASSERT_TRUE(peak > 0.1f);
+    forge_audio_chorus_free(&ch);
+    END_TEST();
+}
+
+/* Chorus: init/free safety */
+static void test_chorus_init_free(void)
+{
+    TEST("chorus init/free");
+    ForgeAudioChorus ch;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 1.0f, 0.005f));
+    ASSERT_TRUE(ch.buffer != NULL);
+    ASSERT_TRUE(ch.buf_frames > 0);
+
+    forge_audio_chorus_free(&ch);
+    ASSERT_TRUE(ch.buffer == NULL);
+
+    /* Double free is safe */
+    forge_audio_chorus_free(&ch);
+    END_TEST();
+}
+
+/* Chorus: zero depth ~ passthrough */
+static void test_chorus_zero_depth(void)
+{
+    TEST("chorus zero depth passthrough");
+    ForgeAudioChorus ch;
+    /* Minimum depth (0.001) with very low rate */
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 0.1f, 0.001f));
+
+    /* Feed DC and check that output is close to 2x input (input + delayed) */
+    float buf[64];
+    for (int i = 0; i < 64; i++) buf[i] = 0.5f;
+
+    /* Run several passes so buffer fills with DC */
+    for (int pass = 0; pass < 20; pass++) {
+        for (int i = 0; i < 64; i++) buf[i] = 0.5f;
+        forge_audio_chorus_process(buf, 32, &ch);
+    }
+
+    /* Output should be approximately 1.0 (0.5 input + 0.5 delayed) */
+    ASSERT_NEAR(buf[60], 1.0f, 0.15f);
+    forge_audio_chorus_free(&ch);
+    END_TEST();
+}
+
+/* Chain: empty chain passes through unchanged */
+static void test_chain_empty_passthrough(void)
+{
+    TEST("chain empty passthrough");
+    ForgeAudioEffectChain chain;
+    forge_audio_effect_chain_init(&chain);
+
+    float buf[64];
+    for (int i = 0; i < 64; i++) buf[i] = 0.42f;
+
+    forge_audio_effect_chain_process(&chain, buf, 32);
+
+    ASSERT_NEAR(buf[0], 0.42f, EPSILON);
+    ASSERT_NEAR(buf[63], 0.42f, EPSILON);
+    END_TEST();
+}
+
+/* Chain: bypass skips effect */
+static void test_chain_bypass(void)
+{
+    TEST("chain bypass skips effect");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_HP, 20000.0f, 0.707f);
+
+    ForgeAudioEffectChain chain;
+    forge_audio_effect_chain_init(&chain);
+    int idx = forge_audio_effect_chain_add(&chain,
+        forge_audio_biquad_process, &bq);
+    chain.effects[idx].bypass = true;
+
+    /* Feed DC — HP at 20kHz would block it, but bypass means passthrough */
+    float buf[64];
+    for (int i = 0; i < 64; i++) buf[i] = 1.0f;
+    forge_audio_effect_chain_process(&chain, buf, 32);
+
+    ASSERT_NEAR(buf[62], 1.0f, EPSILON);
+    END_TEST();
+}
+
+/* Chain: wet/dry blend */
+static void test_chain_wet_dry_blend(void)
+{
+    TEST("chain wet/dry blend");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    /* HP at 20 kHz will block DC completely → wet signal ≈ 0 */
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_HP, 20000.0f, 0.707f);
+
+    ForgeAudioEffectChain chain;
+    forge_audio_effect_chain_init(&chain);
+    int idx = forge_audio_effect_chain_add(&chain,
+        forge_audio_biquad_process, &bq);
+    chain.effects[idx].wet = 0.5f;
+
+    /* Feed DC through with 50% wet.  Wet signal → ~0, dry = 1.0
+     * Expected output ≈ 0.5 * 1.0 + 0.5 * ~0 ≈ 0.5 */
+    float buf[512];
+    for (int pass = 0; pass < 10; pass++) {
+        for (int i = 0; i < 512; i++) buf[i] = 1.0f;
+        forge_audio_effect_chain_process(&chain, buf, 256);
+    }
+
+    /* Should be approximately 0.5 (50% dry signal) */
+    ASSERT_NEAR(buf[510], 0.5f, 0.1f);
+    END_TEST();
+}
+
+/* Chain: order matters (HP then LP vs LP then HP) */
+static void test_chain_order_matters(void)
+{
+    TEST("chain order matters");
+    /* Prove ordering is preserved by building two chains with a chorus
+     * and a LP filter in reversed order.  Chorus is time-varying (LFO
+     * modulates delay) so it does not commute with any linear filter.
+     * "Chorus then LP" applies time-varying pitch shift then smooths;
+     * "LP then chorus" smooths the signal then pitch-shifts the smooth
+     * version — producing measurably different output. */
+    ForgeAudioBiquad lp_a, lp_b;
+    forge_audio_biquad_init(&lp_a);
+    forge_audio_biquad_init(&lp_b);
+    forge_audio_biquad_set(&lp_a, FORGE_AUDIO_BIQUAD_LP, 1000.0f, 0.707f);
+    forge_audio_biquad_set(&lp_b, FORGE_AUDIO_BIQUAD_LP, 1000.0f, 0.707f);
+
+    ForgeAudioChorus ch_a, ch_b;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch_a, 3.0f, 0.01f));
+    ASSERT_TRUE(forge_audio_chorus_init(&ch_b, 3.0f, 0.01f));
+
+    /* Chain A: chorus → LP */
+    ForgeAudioEffectChain chain_a;
+    forge_audio_effect_chain_init(&chain_a);
+    forge_audio_effect_chain_add(&chain_a, forge_audio_chorus_process, &ch_a);
+    forge_audio_effect_chain_add(&chain_a, forge_audio_biquad_process, &lp_a);
+
+    /* Chain B: LP → chorus (reversed) */
+    ForgeAudioEffectChain chain_b;
+    forge_audio_effect_chain_init(&chain_b);
+    forge_audio_effect_chain_add(&chain_b, forge_audio_biquad_process, &lp_b);
+    forge_audio_effect_chain_add(&chain_b, forge_audio_chorus_process, &ch_b);
+
+    /* Process several blocks of a 5 kHz square wave.  The rich harmonics
+     * interact differently with the chorus LFO depending on whether
+     * they are filtered before or after modulation. */
+    int total_frames = 1024;
+    float *buf_a = (float *)SDL_calloc((size_t)total_frames * 2, sizeof(float));
+    float *buf_b = (float *)SDL_calloc((size_t)total_frames * 2, sizeof(float));
+    ASSERT_TRUE(buf_a != NULL);
+    ASSERT_TRUE(buf_b != NULL);
+
+    float phase = 0.0f;
+    float pinc = 2.0f * FORGE_PI * 5000.0f / 44100.0f;
+    for (int pass = 0; pass < 10; pass++) {
+        for (int i = 0; i < total_frames; i++) {
+            /* Square wave: rich harmonics for more interaction */
+            float val = SDL_sinf(phase) >= 0.0f ? 0.5f : -0.5f;
+            buf_a[i * 2] = val; buf_a[i * 2 + 1] = val;
+            buf_b[i * 2] = val; buf_b[i * 2 + 1] = val;
+            phase += pinc;
+        }
+        forge_audio_effect_chain_process(&chain_a, buf_a, total_frames);
+        forge_audio_effect_chain_process(&chain_b, buf_b, total_frames);
+    }
+
+    /* Compare: outputs must differ */
+    float max_diff = 0.0f;
+    for (int i = 0; i < total_frames * 2; i++) {
+        float d = buf_a[i] - buf_b[i];
+        if (d < 0.0f) d = -d;
+        if (d > max_diff) max_diff = d;
+    }
+    ASSERT_TRUE(max_diff > 0.001f);
+
+    SDL_free(buf_a);
+    SDL_free(buf_b);
+    forge_audio_chorus_free(&ch_a);
+    forge_audio_chorus_free(&ch_b);
+    END_TEST();
+}
+
+/* Mixer: channel effect chain integration */
+static void test_mixer_channel_effect(void)
+{
+    TEST("mixer channel effect");
+    /* Create a buffer with DC = 0.5 */
+    ForgeAudioBuffer buf = make_test_buffer(256, 0.5f, 0.5f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    ForgeAudioMixer mixer = forge_audio_mixer_create();
+    int ch = forge_audio_mixer_add_channel(&mixer, &src);
+    ASSERT_TRUE(ch >= 0);
+
+    /* Add a HP filter at 20kHz to the channel — should block the DC */
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_HP, 20000.0f, 0.707f);
+    forge_audio_effect_chain_add(&mixer.channels[ch].effects,
+        forge_audio_biquad_process, &bq);
+
+    /* Mix several passes to let filter settle */
+    float out[512];
+    for (int pass = 0; pass < 10; pass++) {
+        src.cursor = 0;
+        forge_audio_mixer_mix(&mixer, out, 256);
+    }
+
+    /* Output should be near zero (DC blocked by HP) */
+    float peak = 0.0f;
+    for (int i = 200; i < 512; i++) {
+        float a = out[i] < 0.0f ? -out[i] : out[i];
+        if (a > peak) peak = a;
+    }
+    ASSERT_TRUE(peak < 0.05f);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+/* Mixer: master effect chain integration */
+static void test_mixer_master_effect(void)
+{
+    TEST("mixer master effect");
+    ForgeAudioBuffer buf = make_test_buffer(256, 0.5f, 0.5f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    ForgeAudioMixer mixer = forge_audio_mixer_create();
+    int ch = forge_audio_mixer_add_channel(&mixer, &src);
+    ASSERT_TRUE(ch >= 0);
+
+    /* Add HP at 20kHz on the MASTER bus — should block DC */
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_HP, 20000.0f, 0.707f);
+    forge_audio_effect_chain_add(&mixer.master_effects,
+        forge_audio_biquad_process, &bq);
+
+    float out[512];
+    for (int pass = 0; pass < 10; pass++) {
+        src.cursor = 0;
+        forge_audio_mixer_mix(&mixer, out, 256);
+    }
+
+    float peak = 0.0f;
+    for (int i = 200; i < 512; i++) {
+        float a = out[i] < 0.0f ? -out[i] : out[i];
+        if (a > peak) peak = a;
+    }
+    ASSERT_TRUE(peak < 0.05f);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
+/* Mixer: no-effect backward compatibility (existing tests cover this
+ * implicitly, but an explicit check is good documentation) */
+static void test_mixer_no_effect_backward_compat(void)
+{
+    TEST("mixer no-effect backward compat");
+    ForgeAudioBuffer buf = make_test_buffer(256, 0.5f, 0.5f);
+    ForgeAudioSource src = forge_audio_source_create(&buf, 1.0f, true);
+    src.playing = true;
+
+    ForgeAudioMixer mixer = forge_audio_mixer_create();
+    int ch = forge_audio_mixer_add_channel(&mixer, &src);
+    ASSERT_TRUE(ch >= 0);
+    /* No effects added — effect_count is 0 from SDL_memset */
+    ASSERT_TRUE(mixer.channels[ch].effects.effect_count == 0);
+    ASSERT_TRUE(mixer.master_effects.effect_count == 0);
+
+    float out[128];
+    forge_audio_mixer_mix(&mixer, out, 64);
+
+    /* Should produce non-zero output (DC signal through mixer) */
+    float peak = 0.0f;
+    for (int i = 0; i < 128; i++) {
+        float a = out[i] < 0.0f ? -out[i] : out[i];
+        if (a > peak) peak = a;
+    }
+    ASSERT_TRUE(peak > 0.05f);
+
+    free_test_buffer(&buf);
+    END_TEST();
+}
+
 /* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -3071,6 +3961,40 @@ int main(int argc, char *argv[])
     test_layer_group_nan_dt();
     test_layer_group_zero_weight_phase_lock();
     test_stream_64bit_float_rejected();
+
+    /* DSP effect tests (Lesson 06) */
+    test_biquad_lp_passes_dc();
+    test_biquad_lp_attenuates_high();
+    test_biquad_hp_blocks_dc();
+    test_biquad_hp_passes_high();
+    test_biquad_bp_center();
+    test_biquad_reset();
+    test_biquad_dirty_check();
+    test_biquad_nan_rejection();
+    test_delay_silence();
+    test_delay_impulse_echo();
+    test_delay_feedback_decay();
+    test_delay_zero_feedback();
+    test_delay_set_time();
+    test_delay_init_free();
+    test_reverb_silence();
+    test_reverb_impulse_tail();
+    test_reverb_reset();
+    test_reverb_init_free();
+    test_reverb_dry_only();
+    test_reverb_nan_rejection();
+    test_delay_nan_rejection();
+    test_chorus_phase_wrap();
+    test_chorus_dc();
+    test_chorus_init_free();
+    test_chorus_zero_depth();
+    test_chain_empty_passthrough();
+    test_chain_bypass();
+    test_chain_wet_dry_blend();
+    test_chain_order_matters();
+    test_mixer_channel_effect();
+    test_mixer_master_effect();
+    test_mixer_no_effect_backward_compat();
 
     /* Clean up temporary test WAV files */
     SDL_RemovePath(TEST_WAV_PATH);

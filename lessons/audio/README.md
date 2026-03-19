@@ -43,6 +43,7 @@ serve to illustrate and control what the listener hears.
 | [<img src="03-audio-mixing/assets/screenshot.png" width="480" alt="Audio Mixing"/>](03-audio-mixing/) | [**03 — Audio Mixing**](03-audio-mixing/) | Multi-channel mixer, per-channel volume/pan/mute/solo, soft clipping, peak metering |
 | [<img src="04-spatial-audio/assets/screenshot.png" width="480" alt="Spatial Audio"/>](04-spatial-audio/) | [**04 — Spatial Audio**](04-spatial-audio/) | 3D positioning, distance attenuation, stereo pan from position, Doppler pitch shift |
 | [<img src="05-music-streaming/assets/screenshot.png" width="480" alt="Music & Streaming"/>](05-music-streaming/) | [**05 — Music & Streaming**](05-music-streaming/) | Chunked WAV streaming, ring buffer, crossfade, loop-with-intro, adaptive music layers |
+| [<img src="06-dsp-effects/assets/screenshot.png" width="480" alt="DSP Effects"/>](06-dsp-effects/) | [**06 — DSP Effects**](06-dsp-effects/) | Biquad filter, delay line, Schroeder reverb, chorus, effect chains, presets |
 
 ## Shared library
 
