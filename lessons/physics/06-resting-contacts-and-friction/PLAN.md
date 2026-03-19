@@ -34,12 +34,12 @@ preview with simple shapes. First physics lesson with full forge UI overlay.
 
 ### New constants
 
-- `FORGE_PHYSICS_MAX_RB_CONTACTS` (64)
 - `FORGE_PHYSICS_DEFAULT_STATIC_FRICTION` (0.6)
 - `FORGE_PHYSICS_DEFAULT_DYNAMIC_FRICTION` (0.4)
 - `FORGE_PHYSICS_CONTACT_SOLVER_ITERATIONS` (10)
 - `FORGE_PHYSICS_BAUMGARTE_FACTOR` (0.2) — positional correction bias
 - `FORGE_PHYSICS_PENETRATION_SLOP` (0.01) — overlap tolerance
+- `FORGE_PHYSICS_RB_RESTING_THRESHOLD` (0.5) — velocity below which contacts are resting
 
 ## Demo program (3 scenes)
 

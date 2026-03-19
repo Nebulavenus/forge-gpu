@@ -54,7 +54,6 @@
 
 /* Particle limits */
 #define MAX_PARTICLES        50
-#define MAX_CONTACTS         FORGE_PHYSICS_MAX_CONTACTS
 #define MAX_CONSTRAINTS      20
 
 /* Scene 1: Two-Body Collision */
@@ -197,7 +196,7 @@ typedef struct app_state {
     ForgePhysicsParticle           particles[MAX_PARTICLES];       /* current simulation state */
     ForgePhysicsParticle           initial_particles[MAX_PARTICLES]; /* snapshot for reset */
     ForgePhysicsDistanceConstraint constraints[MAX_CONSTRAINTS];   /* Newton's cradle ropes */
-    ForgePhysicsContact            contacts[MAX_CONTACTS];         /* collision output buffer */
+    ForgePhysicsContact            *contacts;                      /* dynamic collision output array */
 
     int num_particles;    /* active particle count for current scene */
     int num_constraints;  /* active constraint count (0 except scene 3) */
@@ -206,7 +205,6 @@ typedef struct app_state {
     /* Simulation control */
     int   scene_index;  /* selected scene, 0-3 */
     float accumulator;  /* leftover time for fixed-timestep loop [s] */
-    float sim_time;     /* total elapsed simulation time [s] */
     bool  paused;       /* true when simulation is frozen */
     float speed_scale;  /* time multiplier: 1.0 normal, 0.25 slow motion */
 
@@ -447,7 +445,6 @@ static void init_current_scene(app_state *state)
     }
 
     state->accumulator = 0.0f;
-    state->sim_time    = 0.0f;
 }
 
 /* ── Reset simulation ────────────────────────────────────────────── */
@@ -459,7 +456,6 @@ static void reset_simulation(app_state *state)
     }
     state->active_contacts = 0;
     state->accumulator     = 0.0f;
-    state->sim_time        = 0.0f;
 }
 
 /* ── Physics step ────────────────────────────────────────────────── */
@@ -499,7 +495,7 @@ static void physics_step(app_state *state)
     /* Detect and resolve all sphere-sphere collisions */
     state->active_contacts = forge_physics_collide_particles_step(
         state->particles, state->num_particles,
-        state->contacts, MAX_CONTACTS);
+        &state->contacts);
 
     /* Ground plane collision for all particles */
     vec3 ground_normal = vec3_create(0.0f, 1.0f, 0.0f);
@@ -585,7 +581,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     /* Simulation state */
     state->scene_index     = 0;
     state->accumulator     = 0.0f;
-    state->sim_time        = 0.0f;
     state->paused          = false;
     state->speed_scale     = 1.0f;
     state->ui_window = forge_ui_window_state_default(
@@ -602,22 +597,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     return SDL_APP_CONTINUE;
 
 init_fail:
-    /* Release any GPU buffers allocated before the failure */
-    if (forge_scene_device(&state->scene)) {
-        if (state->sphere_vb)
-            SDL_ReleaseGPUBuffer(forge_scene_device(&state->scene),
-                                 state->sphere_vb);
-        if (state->sphere_ib)
-            SDL_ReleaseGPUBuffer(forge_scene_device(&state->scene),
-                                 state->sphere_ib);
-        if (state->cylinder_vb)
-            SDL_ReleaseGPUBuffer(forge_scene_device(&state->scene),
-                                 state->cylinder_vb);
-        if (state->cylinder_ib)
-            SDL_ReleaseGPUBuffer(forge_scene_device(&state->scene),
-                                 state->cylinder_ib);
-    }
-    forge_scene_destroy(&state->scene);
+    /* SDL calls SDL_AppQuit after SDL_AppInit returns failure (because
+     * *appstate is already set), so let SDL_AppQuit handle all GPU buffer
+     * and scene cleanup — releasing here would double-free. */
     return SDL_APP_FAILURE;
 }
 
@@ -709,7 +691,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         while (state->accumulator >= PHYSICS_DT) {
             physics_step(state);
             state->accumulator -= PHYSICS_DT;
-            state->sim_time    += PHYSICS_DT;
         }
     }
 
@@ -995,6 +976,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
                                  state->cylinder_ib);
     }
 
+    forge_arr_free(state->contacts);
     forge_scene_destroy(&state->scene);
     SDL_free(state);
 }

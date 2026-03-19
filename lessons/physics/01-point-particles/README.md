@@ -347,10 +347,10 @@ This lesson creates `common/physics/forge_physics.h` with the following API:
 | `forge_physics_collide_plane()` | Detect and resolve sphere-plane collision with restitution |
 | `forge_physics_clear_forces()` | Zero the force accumulator (for manual use outside the integration cycle) |
 
-The library is header-only, allocates no heap memory, and depends only on
-`common/math/forge_math.h`. All functions are `static inline`. Static particles
-(`mass = 0`, `inv_mass = 0`) are skipped by all force and integration
-functions.
+The library is header-only and depends on `common/math/forge_math.h` and
+`common/containers/forge_containers.h`. All functions are `static inline`.
+Static particles (`mass = 0`, `inv_mass = 0`) are skipped by all force and
+integration functions.
 
 See: [common/physics/README.md](../../../common/physics/README.md) for the full
 API reference.

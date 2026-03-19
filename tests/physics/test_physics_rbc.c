@@ -10,6 +10,10 @@
 
 #include "test_physics_common.h"
 
+/* Maximum RB contacts for test buffers — geometry-bounded, not library-bounded.
+ * Box-plane produces up to 8 contacts; with N bodies the worst case is 8*N. */
+#define RBC_MAX_CONTACTS 64
+
 /* ── Test constants for rigid body contacts ────────────────────────────── */
 
 #define RBC_SPHERE_RADIUS    0.5f
@@ -26,7 +30,7 @@
 #define RBC_INIT_VEL_X       2.0f       /* horizontal velocity for friction  */
 #define RBC_INIT_VEL_Y_NEG  -1.0f       /* downward velocity for contact     */
 #define RBC_FALL_VEL        -5.0f       /* fast downward for bounce tests    */
-#define RBC_BOUNCE_VEL      -3.0f       /* moderate downward for bounce      */
+#define RBC_GRAVITY_Y       -9.81f      /* gravitational acceleration (m/s²) */
 #define RBC_RESTING_VEL     -0.1f       /* very slow — triggers resting      */
 #define RBC_CONTACT_PEN      0.05f      /* small penetration for resting     */
 #define RBC_CONTACT_PEN_MED  0.2f       /* medium penetration for friction   */
@@ -350,6 +354,57 @@ static void test_rb_box_plane_non_unit_normal(void)
     ASSERT_TRUE(n_unit == 4);
     ASSERT_NEAR(c_scaled[0].penetration, c_unit[0].penetration, EPSILON);
     ASSERT_NEAR(c_scaled[0].normal.y, c_unit[0].normal.y, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_box_plane_nan_half_extents(void)
+{
+    TEST("rb_box_plane: NaN half_extents returns 0 contacts");
+    vec3 he = vec3_create(RBC_BOX_HALF, RBC_BOX_HALF, RBC_BOX_HALF);
+    ForgePhysicsRigidBody rb = rbc_make_box(
+        vec3_create(0, RBC_BOX_Y_PEN, 0), he);
+    vec3 nan_he = vec3_create(NAN, RBC_BOX_HALF, RBC_BOX_HALF);
+    ForgePhysicsRBContact contacts[8];
+    int n = forge_physics_rb_collide_box_plane(
+        &rb, 0, nan_he, vec3_create(0, 0, 0), vec3_create(0, 1, 0),
+        RBC_MU_S, RBC_MU_D, contacts, 8);
+    ASSERT_TRUE(n == 0);
+    END_TEST();
+}
+
+static void test_rb_sphere_sphere_nan_radius(void)
+{
+    TEST("rb_sphere_sphere: NaN radius returns false");
+    ForgePhysicsRigidBody a = rbc_make_sphere(vec3_create(0, 0, 0), RBC_SPHERE_RADIUS);
+    ForgePhysicsRigidBody b = rbc_make_sphere(
+        vec3_create(RBC_PAIR_OFFSET_X, 0, 0), RBC_SPHERE_RADIUS);
+    ForgePhysicsRBContact c;
+    float nan_r = NAN;
+    ASSERT_TRUE(!forge_physics_rb_collide_sphere_sphere(
+        &a, 0, nan_r, &b, 1, RBC_SPHERE_RADIUS,
+        RBC_MU_S, RBC_MU_D, &c));
+    ASSERT_TRUE(!forge_physics_rb_collide_sphere_sphere(
+        &a, 0, RBC_SPHERE_RADIUS, &b, 1, nan_r,
+        RBC_MU_S, RBC_MU_D, &c));
+    END_TEST();
+}
+
+static void test_rb_sphere_sphere_inf_radius(void)
+{
+    TEST("rb_sphere_sphere: INFINITY radius returns false (both paths)");
+    ForgePhysicsRigidBody a = rbc_make_sphere(vec3_create(0, 0, 0), RBC_SPHERE_RADIUS);
+    ForgePhysicsRigidBody b = rbc_make_sphere(
+        vec3_create(RBC_PAIR_OFFSET_X, 0, 0), RBC_SPHERE_RADIUS);
+    ForgePhysicsRBContact c;
+    float inf_r = INFINITY;
+    /* Test radius_a = INFINITY */
+    ASSERT_TRUE(!forge_physics_rb_collide_sphere_sphere(
+        &a, 0, inf_r, &b, 1, RBC_SPHERE_RADIUS,
+        RBC_MU_S, RBC_MU_D, &c));
+    /* Test radius_b = INFINITY */
+    ASSERT_TRUE(!forge_physics_rb_collide_sphere_sphere(
+        &a, 0, RBC_SPHERE_RADIUS, &b, 1, inf_r,
+        RBC_MU_S, RBC_MU_D, &c));
     END_TEST();
 }
 
@@ -708,8 +763,8 @@ static void test_rb_solver_iterations_stable(void)
     float residual_1  = SDL_fabsf(bodies1[0].velocity.y) + SDL_fabsf(bodies1[1].velocity.y);
     ASSERT_TRUE(residual_1 < 50.0f);
     ASSERT_TRUE(residual_10 < 50.0f);
-    ASSERT_TRUE(!isnan(bodies10[0].velocity.y));
-    ASSERT_TRUE(!isnan(bodies10[1].velocity.y));
+    ASSERT_TRUE(forge_isfinite(bodies10[0].velocity.y));
+    ASSERT_TRUE(forge_isfinite(bodies10[1].velocity.y));
     /* Solver should have corrected downward velocity */
     ASSERT_TRUE(bodies10[0].velocity.y > RBC_SOLVER_INIT_VY);
     ASSERT_TRUE(bodies10[1].velocity.y > RBC_SOLVER_INIT_VY);
@@ -726,7 +781,7 @@ static void test_rb_solver_ground_contact_stable(void)
     bodies[1] = rbc_make_box(vec3_create(0, RBC_BOX_HALF * 3.0f, 0), he);
     bodies[2] = rbc_make_box(vec3_create(0, RBC_BOX_HALF * 5.0f, 0), he);
 
-    vec3 gravity = vec3_create(0, -9.81f, 0);
+    vec3 gravity = vec3_create(0, RBC_GRAVITY_Y, 0);
     vec3 plane_pt = vec3_create(0, 0, 0);
     vec3 plane_n  = vec3_create(0, 1, 0);
 
@@ -736,14 +791,14 @@ static void test_rb_solver_ground_contact_stable(void)
         for (int i = 0; i < 3; i++)
             forge_physics_rigid_body_integrate(&bodies[i], RBC_DT);
 
-        ForgePhysicsRBContact contacts[FORGE_PHYSICS_MAX_RB_CONTACTS];
+        ForgePhysicsRBContact contacts[RBC_MAX_CONTACTS];
         int num_contacts = 0;
-        for (int i = 0; i < 3 && num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS - 8; i++) {
+        for (int i = 0; i < 3 && num_contacts < RBC_MAX_CONTACTS - 8; i++) {
             num_contacts += forge_physics_rb_collide_box_plane(
                 &bodies[i], i, he, plane_pt, plane_n,
                 RBC_MU_S, RBC_MU_D,
                 &contacts[num_contacts],
-                FORGE_PHYSICS_MAX_RB_CONTACTS - num_contacts);
+                RBC_MAX_CONTACTS - num_contacts);
         }
 
         forge_physics_rb_resolve_contacts(contacts, num_contacts,
@@ -752,8 +807,7 @@ static void test_rb_solver_ground_contact_stable(void)
 
     for (int i = 0; i < 3; i++) {
         ASSERT_TRUE((bodies[i].position.y - RBC_BOX_HALF) >= -RBC_GROUND_PEN_TOL);
-        ASSERT_TRUE(!isnan(bodies[i].position.y));
-        ASSERT_TRUE(!isinf(bodies[i].position.y));
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.y));
     }
     END_TEST();
 }
@@ -773,7 +827,7 @@ static void test_rb_contact_determinism(void)
 {
     TEST("rb_contact: two identical runs produce identical results");
     vec3 he = vec3_create(RBC_BOX_HALF, RBC_BOX_HALF, RBC_BOX_HALF);
-    vec3 gravity = vec3_create(0, -9.81f, 0);
+    vec3 gravity = vec3_create(0, RBC_GRAVITY_Y, 0);
     vec3 plane_pt = vec3_create(0, 0, 0);
     vec3 plane_n  = vec3_create(0, 1, 0);
 
@@ -837,7 +891,7 @@ static void test_rb_contact_no_nan(void)
     bodies[1] = rbc_make_sphere(vec3_create(1, 3, 0), RBC_SPHERE_RADIUS);
     bodies[1].velocity = vec3_create(-1, -3, 0);
 
-    vec3 gravity = vec3_create(0, -9.81f, 0);
+    vec3 gravity = vec3_create(0, RBC_GRAVITY_Y, 0);
     vec3 plane_pt = vec3_create(0, 0, 0);
     vec3 plane_n  = vec3_create(0, 1, 0);
 
@@ -847,17 +901,17 @@ static void test_rb_contact_no_nan(void)
         for (int i = 0; i < 2; i++)
             forge_physics_rigid_body_integrate(&bodies[i], RBC_DT);
 
-        ForgePhysicsRBContact contacts[FORGE_PHYSICS_MAX_RB_CONTACTS];
+        ForgePhysicsRBContact contacts[RBC_MAX_CONTACTS];
         int nc = 0;
         nc += forge_physics_rb_collide_box_plane(
             &bodies[0], 0, he, plane_pt, plane_n,
             RBC_MU_S, RBC_MU_D, &contacts[nc],
-            FORGE_PHYSICS_MAX_RB_CONTACTS - nc);
+            RBC_MAX_CONTACTS - nc);
         ForgePhysicsRBContact sc;
         if (forge_physics_rb_collide_sphere_plane(
                 &bodies[1], 1, RBC_SPHERE_RADIUS, plane_pt, plane_n,
                 RBC_MU_S, RBC_MU_D, &sc)) {
-            if (nc < FORGE_PHYSICS_MAX_RB_CONTACTS) {
+            if (nc < RBC_MAX_CONTACTS) {
                 contacts[nc++] = sc;
             }
         }
@@ -868,32 +922,19 @@ static void test_rb_contact_no_nan(void)
     }
 
     for (int i = 0; i < 2; i++) {
-        ASSERT_TRUE(!isnan(bodies[i].position.x));
-        ASSERT_TRUE(!isnan(bodies[i].position.y));
-        ASSERT_TRUE(!isnan(bodies[i].position.z));
-        ASSERT_TRUE(!isinf(bodies[i].position.x));
-        ASSERT_TRUE(!isinf(bodies[i].position.y));
-        ASSERT_TRUE(!isinf(bodies[i].position.z));
-        ASSERT_TRUE(!isnan(bodies[i].velocity.x));
-        ASSERT_TRUE(!isnan(bodies[i].velocity.y));
-        ASSERT_TRUE(!isnan(bodies[i].velocity.z));
-        ASSERT_TRUE(!isinf(bodies[i].velocity.x));
-        ASSERT_TRUE(!isinf(bodies[i].velocity.y));
-        ASSERT_TRUE(!isinf(bodies[i].velocity.z));
-        ASSERT_TRUE(!isnan(bodies[i].angular_velocity.x));
-        ASSERT_TRUE(!isnan(bodies[i].angular_velocity.y));
-        ASSERT_TRUE(!isnan(bodies[i].angular_velocity.z));
-        ASSERT_TRUE(!isinf(bodies[i].angular_velocity.x));
-        ASSERT_TRUE(!isinf(bodies[i].angular_velocity.y));
-        ASSERT_TRUE(!isinf(bodies[i].angular_velocity.z));
-        ASSERT_TRUE(!isnan(bodies[i].orientation.w));
-        ASSERT_TRUE(!isnan(bodies[i].orientation.x));
-        ASSERT_TRUE(!isnan(bodies[i].orientation.y));
-        ASSERT_TRUE(!isnan(bodies[i].orientation.z));
-        ASSERT_TRUE(!isinf(bodies[i].orientation.w));
-        ASSERT_TRUE(!isinf(bodies[i].orientation.x));
-        ASSERT_TRUE(!isinf(bodies[i].orientation.y));
-        ASSERT_TRUE(!isinf(bodies[i].orientation.z));
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.x));
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.y));
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.z));
+        ASSERT_TRUE(forge_isfinite(bodies[i].velocity.x));
+        ASSERT_TRUE(forge_isfinite(bodies[i].velocity.y));
+        ASSERT_TRUE(forge_isfinite(bodies[i].velocity.z));
+        ASSERT_TRUE(forge_isfinite(bodies[i].angular_velocity.x));
+        ASSERT_TRUE(forge_isfinite(bodies[i].angular_velocity.y));
+        ASSERT_TRUE(forge_isfinite(bodies[i].angular_velocity.z));
+        ASSERT_TRUE(forge_isfinite(bodies[i].orientation.w));
+        ASSERT_TRUE(forge_isfinite(bodies[i].orientation.x));
+        ASSERT_TRUE(forge_isfinite(bodies[i].orientation.y));
+        ASSERT_TRUE(forge_isfinite(bodies[i].orientation.z));
     }
     END_TEST();
 }
@@ -919,6 +960,7 @@ void run_rbc_tests(void)
     test_rb_box_plane_rotated();
     test_rb_box_plane_null();
     test_rb_box_plane_non_unit_normal();
+    test_rb_box_plane_nan_half_extents();
 
     SDL_Log("--- rb contact resolution ---");
     test_rb_contact_resolve_normal_impulse();
@@ -939,6 +981,8 @@ void run_rbc_tests(void)
     test_rb_collide_sphere_sphere_both_static();
     test_rb_collide_sphere_sphere_null();
     test_rb_collide_sphere_sphere_friction_stored();
+    test_rb_sphere_sphere_nan_radius();
+    test_rb_sphere_sphere_inf_radius();
 
     SDL_Log("--- rb iterative solver ---");
     test_rb_solver_iterations_stable();

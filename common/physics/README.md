@@ -4,7 +4,7 @@ Header-only physics simulation library for forge-gpu. The physics lessons
 teach concepts; this library is what remains when the learning is done. Every
 lesson extends it, and it is the primary deliverable of the physics track.
 
-The library must be robust, correct, performant, tested, safe, and valid.
+The library must be correct, performant, tested, safe, and valid.
 Every function implements a named algorithm, cites its source, handles
 degenerate inputs, and has corresponding tests in `tests/physics/`.
 
@@ -14,8 +14,11 @@ degenerate inputs, and has corresponding tests in `tests/physics/`.
 #include "physics/forge_physics.h"
 ```
 
-The library depends on `common/math/forge_math.h` for vector, matrix, and
-quaternion operations.
+The library depends on:
+
+- `common/math/forge_math.h` — vector, matrix, and quaternion operations
+- `common/containers/forge_containers.h` — dynamic arrays for contacts and
+  SAP broadphase storage
 
 ## API Reference
 
@@ -48,12 +51,12 @@ quaternion operations.
 | `forge_physics_collide_sphere_sphere()` | Detect overlap between two particle spheres, fill contact |
 | `forge_physics_resolve_contact()` | Apply impulse + positional correction for one contact |
 | `forge_physics_resolve_contacts()` | Resolve an array of contacts (single pass) |
-| `forge_physics_collide_particles_all()` | O(n²) all-pairs sphere-sphere detection |
-| `forge_physics_collide_particles_step()` | Convenience: detect all + resolve all in one call |
+| `forge_physics_collide_particles_all()` | O(n²) all-pairs detection into dynamic array (`**out_contacts`) |
+| `forge_physics_collide_particles_step()` | Detection + resolution into dynamic array (`**out_contacts`) |
 
 Types: `ForgePhysicsContact` — contact normal, point, penetration, particle indices.
 
-Constants: `FORGE_PHYSICS_MAX_CONTACTS` (256), `FORGE_PHYSICS_RESTING_THRESHOLD` (0.5 m/s).
+Constants: `FORGE_PHYSICS_RESTING_THRESHOLD` (0.5 m/s).
 
 ### Lesson 04 — Rigid Body State and Orientation
 
@@ -99,8 +102,7 @@ Constants: `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` (100 rad/s),
 Types: `ForgePhysicsRBContact` — contact point, normal, penetration depth, body indices,
 static and dynamic friction coefficients.
 
-Constants: `FORGE_PHYSICS_MAX_RB_CONTACTS` (64),
-`FORGE_PHYSICS_DEFAULT_STATIC_FRICTION` (0.6),
+Constants: `FORGE_PHYSICS_DEFAULT_STATIC_FRICTION` (0.6),
 `FORGE_PHYSICS_DEFAULT_DYNAMIC_FRICTION` (0.4),
 `FORGE_PHYSICS_CONTACT_SOLVER_ITERATIONS` (10),
 `FORGE_PHYSICS_BAUMGARTE_FACTOR` (0.2),
@@ -130,18 +132,39 @@ Types: `ForgePhysicsShapeType` (enum), `ForgePhysicsCollisionShape` (tagged unio
 Constants: `FORGE_PHYSICS_SHAPE_MIN_DIM` (1e-5),
 `FORGE_PHYSICS_CAPSULE_HEMI_CENTROID_FRAC` (3/8).
 
+### Lesson 08 — Sweep-and-Prune Broadphase
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_sap_init()` | Zero-initialize a SAP world (sets pointers to NULL) |
+| `forge_physics_sap_destroy()` | Free dynamic endpoint and pair arrays |
+| `forge_physics_sap_select_axis()` | Choose sweep axis with greatest AABB center variance |
+| `forge_physics_sap_update()` | Populate endpoints, insertion-sort, sweep, output pairs |
+| `forge_physics_sap_pair_count()` | Return number of overlapping pairs |
+| `forge_physics_sap_get_pairs()` | Return pointer to pairs array |
+| `forge_physics_vec3_axis()` | Extract a vec3 component by axis index (0=X, 1=Y, 2=Z) |
+
+Types: `ForgePhysicsSAPEndpoint`, `ForgePhysicsSAPPair`,
+`ForgePhysicsSAPWorld` (dynamic arrays via `forge_containers.h`).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 08–14 | *See [PLAN.md](../../PLAN.md)* | Broadphase, GJK/EPA, constraints, solver |
+| 09–14 | *See [PLAN.md](../../PLAN.md)* | GJK/EPA, constraints, solver |
 
 ## Design
 
 - **Header-only** — `static inline` functions, no separate compilation unit
 - **Uses forge_math** — Vectors (`vec3`), quaternions (`quat`), matrices (`mat4`)
+- **Uses forge_containers** — Dynamic arrays for contacts and SAP broadphase
 - **Naming** — `forge_physics_` prefix for functions, `ForgePhysics` for types
-- **No allocations** — Functions operate on caller-owned data
+- **No hardcoded limits** — Contact buffers and SAP arrays grow dynamically.
+  SAP body indices are `uint16_t`, capping broadphase at 65 535 bodies per world
+- **Init/destroy lifecycle** — SAP worlds must be initialized with
+  `forge_physics_sap_init()` and freed with `forge_physics_sap_destroy()`.
+  Particle contact arrays are caller-owned dynamic arrays freed with
+  `forge_arr_free()`.
 - **Deterministic** — Fixed timestep input produces identical output
 - **Numerically safe** — No unguarded divisions, no unvalidated normalizations,
   values with physical bounds are clamped
@@ -160,3 +183,4 @@ Constants: `FORGE_PHYSICS_SHAPE_MIN_DIM` (1e-5),
 | [Physics L05](../../lessons/physics/05-forces-and-torques/) | `forge_physics_rigid_body_apply_gravity()`, `forge_physics_rigid_body_apply_linear_drag()`, `forge_physics_rigid_body_apply_angular_drag()`, `forge_physics_rigid_body_apply_friction()` |
 | [Physics L06](../../lessons/physics/06-resting-contacts-and-friction/) | `ForgePhysicsRBContact`, `forge_physics_rb_collide_sphere_plane()`, `forge_physics_rb_collide_sphere_sphere()`, `forge_physics_rb_collide_box_plane()`, `forge_physics_rb_resolve_contact()`, `forge_physics_rb_resolve_contacts()` |
 | [Physics L07](../../lessons/physics/07-collision-shapes/) | `ForgePhysicsCollisionShape`, `forge_physics_shape_sphere()`, `forge_physics_shape_box()`, `forge_physics_shape_capsule()`, `forge_physics_shape_support()`, `forge_physics_shape_compute_aabb()`, `forge_physics_aabb_overlap()`, `forge_physics_rigid_body_set_inertia_from_shape()` |
+| [Physics L08](../../lessons/physics/08-sweep-and-prune/) | `ForgePhysicsSAPWorld`, `forge_physics_sap_init()`, `forge_physics_sap_destroy()`, `forge_physics_sap_update()`, `forge_physics_sap_select_axis()`, `forge_physics_sap_pair_count()`, `forge_physics_sap_get_pairs()` |

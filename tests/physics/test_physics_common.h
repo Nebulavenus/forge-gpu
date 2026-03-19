@@ -1,7 +1,8 @@
 /*
  * Physics Test Framework — shared macros and counters
  *
- * Included by test_physics.c, test_physics_rbc.c, and test_physics_shapes.c
+ * Included by test_physics.c, test_physics_rbc.c, test_physics_shapes.c,
+ * test_physics_sap.c, and test_physics_production.c
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -10,8 +11,29 @@
 #define TEST_PHYSICS_COMMON_H
 
 #include <SDL3/SDL.h>
-#include <math.h>
 #include "math/forge_math.h"
+
+/* NaN and infinity constants — C99 defines NAN and INFINITY in <math.h>, which
+ * SDL3/SDL.h transitively includes on most platforms.  These fallbacks use
+ * compiler builtins where available, and volatile runtime division elsewhere
+ * to avoid MSVC error C2124 (compile-time division by zero). */
+#ifndef NAN
+#if defined(__GNUC__) || defined(__clang__)
+#define NAN __builtin_nanf("")
+#else
+static float forge_test__make_nan(void) { volatile float z = 0.0f; return z / z; }
+#define NAN forge_test__make_nan()
+#endif
+#endif
+#ifndef INFINITY
+#if defined(__GNUC__) || defined(__clang__)
+#define INFINITY __builtin_inff()
+#else
+static float forge_test__make_inf(void) { volatile float z = 0.0f; return 1.0f / z; }
+#define INFINITY forge_test__make_inf()
+#endif
+#endif
+#include "containers/forge_containers.h"
 #include "physics/forge_physics.h"
 
 /* ── Test counters (defined in test_physics.c) ──────────────────────────── */
@@ -25,6 +47,7 @@ extern int fail_count;
 void run_rbc_tests(void);
 void run_collision_shape_tests(void);
 void run_sap_tests(void);
+void run_production_tests(void);
 
 /* ── Shared test constants ─────────────────────────────────────────────── */
 

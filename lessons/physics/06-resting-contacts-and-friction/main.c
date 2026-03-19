@@ -55,6 +55,7 @@
 
 /* Scene limits */
 #define MAX_BODIES           16
+#define MAX_RB_CONTACTS      (8 * MAX_BODIES)  /* 8 contacts per box */
 
 /* Scene 1: Resting Contacts — objects settle on ground */
 #define S1_NUM_BODIES        5
@@ -79,7 +80,6 @@
 /* Scene 3: Stacking — tower of objects */
 #define S3_NUM_BODIES        6
 #define S3_MASS              5.0f
-#define S3_BOX_HALF          0.5f
 #define S3_SPHERE_RADIUS     0.5f
 #define S3_BASE_Y            0.5f
 #define S3_LAYER_HEIGHT      1.05f
@@ -146,32 +146,26 @@
 #define COLOR_RED_R          0.9f
 #define COLOR_RED_G          0.3f
 #define COLOR_RED_B          0.2f
-#define COLOR_RED_A          1.0f
 
 #define COLOR_BLUE_R         0.2f
 #define COLOR_BLUE_G         0.5f
 #define COLOR_BLUE_B         0.9f
-#define COLOR_BLUE_A         1.0f
 
 #define COLOR_GREEN_R        0.3f
 #define COLOR_GREEN_G        0.8f
 #define COLOR_GREEN_B        0.3f
-#define COLOR_GREEN_A        1.0f
 
 #define COLOR_ORANGE_R       0.9f
 #define COLOR_ORANGE_G       0.6f
 #define COLOR_ORANGE_B       0.1f
-#define COLOR_ORANGE_A       1.0f
 
 #define COLOR_PURPLE_R       0.7f
 #define COLOR_PURPLE_G       0.3f
 #define COLOR_PURPLE_B       0.9f
-#define COLOR_PURPLE_A       1.0f
 
 #define COLOR_TEAL_R         0.2f
 #define COLOR_TEAL_G         0.8f
 #define COLOR_TEAL_B         0.8f
-#define COLOR_TEAL_A         1.0f
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -180,7 +174,6 @@ typedef struct BodyRenderInfo {
     int   shape_type;     /* SHAPE_CUBE or SHAPE_SPHERE */
     vec3  render_scale;   /* scale factors for the unit mesh */
     float color[4];       /* RGBA color for this body */
-    float half_h;         /* half-height for ground collision */
     vec3  half_extents;   /* box half-extents (for box-plane detection) */
     float sphere_radius;  /* sphere radius (for sphere-plane detection) */
 } BodyRenderInfo;
@@ -269,7 +262,6 @@ static void init_box_body(app_state *state, int idx, vec3 pos,
 
     state->body_info[idx].shape_type = SHAPE_CUBE;
     state->body_info[idx].render_scale = half_ext;
-    state->body_info[idx].half_h = half_ext.y;
     state->body_info[idx].half_extents = half_ext;
     state->body_info[idx].sphere_radius = 0.0f;
     set_color(&state->body_info[idx], cr, cg, cb);
@@ -287,7 +279,6 @@ static void init_sphere_body(app_state *state, int idx, vec3 pos,
 
     state->body_info[idx].shape_type = SHAPE_SPHERE;
     state->body_info[idx].render_scale = vec3_create(radius, radius, radius);
-    state->body_info[idx].half_h = radius;
     state->body_info[idx].half_extents = vec3_create(0, 0, 0);
     state->body_info[idx].sphere_radius = radius;
     set_color(&state->body_info[idx], cr, cg, cb);
@@ -369,7 +360,7 @@ static void init_scene_2(app_state *state)
 
 /* Scene 3: Stacking — tower of spheres.
  * All spheres so body-body collision works (sphere-sphere detection).
- * Box-box and sphere-box require GJK (Lesson 08). */
+ * Box-box and sphere-box require GJK (a future lesson). */
 static void init_scene_3(app_state *state)
 {
     state->num_bodies = S3_NUM_BODIES;
@@ -446,7 +437,7 @@ static void physics_step(app_state *state)
     }
 
     /* Detect contacts with ground plane */
-    ForgePhysicsRBContact contacts[FORGE_PHYSICS_MAX_RB_CONTACTS];
+    ForgePhysicsRBContact contacts[MAX_RB_CONTACTS];
     int num_contacts = 0;
 
     for (int i = 0; i < state->num_bodies; i++) {
@@ -457,7 +448,7 @@ static void physics_step(app_state *state)
             if (forge_physics_rb_collide_sphere_plane(
                     &state->bodies[i], i, info->sphere_radius,
                     plane_pt, plane_n, mu_s, mu_d, &c)) {
-                if (num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS) {
+                if (num_contacts < MAX_RB_CONTACTS) {
                     contacts[num_contacts++] = c;
                 }
             }
@@ -467,17 +458,17 @@ static void physics_step(app_state *state)
                 &state->bodies[i], i, info->half_extents,
                 plane_pt, plane_n, mu_s, mu_d,
                 &contacts[num_contacts],
-                FORGE_PHYSICS_MAX_RB_CONTACTS - num_contacts);
+                MAX_RB_CONTACTS - num_contacts);
             num_contacts += n;
         }
     }
 
     /* Detect pairwise sphere-sphere contacts (body-body collisions).
      * O(n^2) all-pairs — acceptable for small body counts in this lesson.
-     * Broadphase optimization is covered in Lesson 07. */
-    for (int i = 0; i < state->num_bodies && num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS; i++) {
+     * Broadphase optimization is covered in Lesson 08. */
+    for (int i = 0; i < state->num_bodies && num_contacts < MAX_RB_CONTACTS; i++) {
         if (state->body_info[i].shape_type != SHAPE_SPHERE) continue;
-        for (int j = i + 1; j < state->num_bodies && num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS; j++) {
+        for (int j = i + 1; j < state->num_bodies && num_contacts < MAX_RB_CONTACTS; j++) {
             if (state->body_info[j].shape_type != SHAPE_SPHERE) continue;
             ForgePhysicsRBContact c;
             if (forge_physics_rb_collide_sphere_sphere(
@@ -569,7 +560,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     ForgeShape cube = forge_shapes_cube(CUBE_SLICES, CUBE_STACKS);
     if (cube.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_cube failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     forge_shapes_compute_flat_normals(&cube);
     state->cube_vb = upload_shape_vb(&state->scene, &cube);
@@ -581,14 +572,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     if (!state->cube_vb || !state->cube_ib) {
         SDL_Log("ERROR: Failed to upload cube geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload sphere geometry */
     ForgeShape sphere = forge_shapes_sphere(SPHERE_SLICES, SPHERE_STACKS);
     if (sphere.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_sphere failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     state->sphere_vb = upload_shape_vb(&state->scene, &sphere);
     state->sphere_ib = forge_scene_upload_buffer(&state->scene,
@@ -599,7 +590,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     if (!state->sphere_vb || !state->sphere_ib) {
         SDL_Log("ERROR: Failed to upload sphere geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Default UI parameters */
@@ -620,6 +611,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     init_current_scene(state);
 
     return SDL_APP_CONTINUE;
+
+init_fail:
+    /* SDL calls SDL_AppQuit after SDL_AppInit returns failure (because
+     * *appstate is already set), so let SDL_AppQuit handle all GPU buffer
+     * and scene cleanup — releasing here would double-free. */
+    return SDL_APP_FAILURE;
 }
 
 /* Switch to a scene by index and reinitialize simulation state */

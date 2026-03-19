@@ -1,48 +1,58 @@
 # Physics Library Scaling
 
-The physics library (`common/physics/forge_physics.h`) uses fixed-size arrays
-for all internal storage. There are no heap allocations — all buffers are
-either embedded in structs (compile-time capacity) or caller-owned (caller
-chooses size and allocation strategy).
+The physics library (`common/physics/forge_physics.h`) uses dynamic arrays
+from `forge_containers.h` for all variable-size storage. Arrays grow as
+needed with one ceiling: SAP body indices are `uint16_t`, capping the
+broadphase at 65 535 bodies per world.
 
-## Fixed-size buffers
+## Dynamic arrays (library-managed)
 
-| Buffer | Capacity | Approx. Size | Location |
-|---|---|---|---|
-| `ForgePhysicsSAPWorld.endpoints` | 512 (256 × 2) | 4 KB | Struct field |
-| `ForgePhysicsSAPWorld.pairs` | 4,096 | 16 KB | Struct field |
-| `sap_update` `active[]` | 256 | 256 B | Stack local |
-
-## Caller-owned buffers
-
-These functions take a pointer and capacity — the caller decides how to
-allocate (stack, heap, arena):
-
-| Buffer | Suggested cap | Used by |
+| Buffer | Container | Grows when |
 |---|---|---|
-| `ForgePhysicsContact[]` (particle) | `FORGE_PHYSICS_MAX_CONTACTS` (256) | `forge_physics_collide_particles_all/step` |
-| `ForgePhysicsContact[]` (rigid body) | `FORGE_PHYSICS_MAX_RB_CONTACTS` (64) | Rigid body collision functions |
+| `ForgePhysicsSAPWorld.endpoints` | `forge_arr` | Body count changes |
+| `ForgePhysicsSAPWorld.pairs` | `forge_arr` | New overlapping pairs detected |
 
-## Scaling bottleneck
+The SAP world must be initialized with `forge_physics_sap_init()` and freed
+with `forge_physics_sap_destroy()`. Between frames, `sap_update` clears and
+repopulates the pairs array — the backing allocation is preserved across
+frames so capacity stabilizes after warmup.
 
-The primary constraint is `FORGE_PHYSICS_SAP_MAX_BODIES = 256`. The SAP
-world struct embeds its endpoint and pair arrays at compile time, so this
-cap cannot be changed at runtime.
+## Dynamic arrays (caller-managed)
 
-256 bodies is sufficient for the physics lessons and small games. For larger
-scenes (thousands of bodies), the SAP world would need to switch from inline
-arrays to dynamically allocated storage — `sap_init` would take a
-`max_bodies` parameter, and a `sap_destroy` function would be added for
-cleanup. Alternatively, a spatial hash grid or BVH would replace the SAP
-broadphase entirely.
+These functions write contacts into a caller-owned dynamic array:
+
+| Function | Output | Ownership |
+|---|---|---|
+| `forge_physics_collide_particles_all()` | `ForgePhysicsContact **out_contacts` | Caller calls `forge_arr_free()` |
+| `forge_physics_collide_particles_step()` | `ForgePhysicsContact **out_contacts` | Caller calls `forge_arr_free()` |
+
+When using `collide_particles_all()` directly, callers should call
+`forge_arr_set_length(contacts, 0)` each frame to clear the array without
+releasing the allocation, then pass `&contacts` to the detection function.
+The convenience wrapper `collide_particles_step()` clears automatically
+each call — no manual reset needed.
+
+## Fixed-size buffers (caller-owned)
+
+These functions write into a caller-provided buffer with a `max_contacts`
+parameter — the caller chooses the buffer size:
+
+| Function | Max contacts per call | Sizing guideline |
+|---|---|---|
+| `forge_physics_rb_collide_box_plane()` | Up to 8 (geometry-bounded) | 8 × body count |
+| `forge_physics_rb_collide_sphere_plane()` | 1 | N/A |
+| `forge_physics_rb_collide_sphere_sphere()` | 1 | N/A |
+
+## Temporary allocations
+
+| Allocation | Size | Lifetime |
+|---|---|---|
+| `sap_update` active set | `count × (sizeof(uint16_t) + sizeof(int))` | Arena — reset each `sap_update` call, backing memory reused across frames |
 
 ## Constants reference
 
 | Constant | Value | Purpose |
 |---|---|---|
-| `FORGE_PHYSICS_SAP_MAX_BODIES` | 256 | Max bodies in broadphase |
-| `FORGE_PHYSICS_SAP_MAX_PAIRS` | 4,096 | Max overlapping pairs (overflow flagged via `pair_overflow`) |
-| `FORGE_PHYSICS_MAX_CONTACTS` | 256 | Suggested particle contact buffer size |
-| `FORGE_PHYSICS_MAX_RB_CONTACTS` | 64 | Suggested rigid body contact buffer size |
 | `FORGE_PHYSICS_MAX_VELOCITY` | 500.0 | Velocity clamp |
 | `FORGE_PHYSICS_MAX_ANGULAR_VELOCITY` | 100.0 | Angular velocity clamp |
+| `FORGE_PHYSICS_EPSILON` | 1e-6 | Floating-point comparison guard |

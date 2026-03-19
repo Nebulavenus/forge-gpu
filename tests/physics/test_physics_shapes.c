@@ -860,8 +860,13 @@ static void test_capsule_inertia_hemisphere_transverse(void)
  * direction, or orientation. These guard paths were added during PR review.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define CS_NAN_VAL  (0.0f / 0.0f)
-#define CS_INF_VAL  (1.0f / 0.0f)
+/* Runtime NaN/Inf generators — MSVC rejects compile-time 0/0 (C2124).
+ * The volatile qualifier prevents the compiler from evaluating at compile
+ * time, producing NaN/Inf at runtime on all platforms. */
+static float cs_make_nan(void) { volatile float z = 0.0f; return z / z; }
+static float cs_make_inf(void) { volatile float z = 0.0f; return 1.0f / z; }
+#define CS_NAN_VAL  cs_make_nan()
+#define CS_INF_VAL  cs_make_inf()
 
 static void test_support_nan_position(void)
 {

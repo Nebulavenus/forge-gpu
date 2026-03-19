@@ -311,9 +311,8 @@ This lesson extends `common/physics/forge_physics.h` with the following API:
 | `forge_physics_constraint_solve_distance()` | Project two particles toward a target distance (mass-weighted) |
 | `forge_physics_constraints_solve()` | Gauss-Seidel multi-pass solver for multiple distance constraints |
 
-The library remains header-only, allocates no heap memory, and handles
-degenerate cases (coincident particles, out-of-bounds indices, both-static
-pairs) safely.
+The library remains header-only and handles degenerate cases (coincident
+particles, out-of-bounds indices, both-static pairs) safely.
 
 See: [common/physics/README.md](../../../common/physics/README.md) for the full
 API reference.

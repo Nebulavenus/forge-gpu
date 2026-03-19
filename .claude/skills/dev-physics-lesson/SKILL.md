@@ -7,7 +7,7 @@ argument-hint: "[number] [topic-name] [description]"
 Every physics lesson produces two things: **library code** and a **demo
 program**. The library — `common/physics/forge_physics.h` — is the crown
 jewel. The lessons teach concepts; the library is what remains when the
-learning is done. It must be robust, thorough, correct, performant, tested,
+learning is done. It must be thorough, correct, performant, tested,
 safe, and valid. The demo program visualizes the library in action, rendered
 in real time with SDL GPU.
 
@@ -148,8 +148,8 @@ function must be defensible.
 
 - `static inline` for all functions — no separate `.c` compilation unit
 - Guard with `#ifndef FORGE_PHYSICS_H` / `#define` / `#endif`
-- Include only `"math/forge_math.h"` and standard C headers
-- No heap allocation — functions operate on caller-owned data
+- Include `"math/forge_math.h"`, `"containers/forge_containers.h"`, and `<SDL3/SDL.h>` — never include `<math.h>`, `<string.h>`, or `<stdlib.h>` directly
+- Use dynamic arrays (`forge_containers.h`) for variable-size outputs (contacts, SAP pairs)
 - Deterministic: identical inputs and fixed timestep produce identical outputs
 
 **Documentation (every function, no exceptions):**
@@ -200,7 +200,7 @@ Every doc comment must include:
   `forge_physics_apply_gravity()`, `forge_physics_collide_sphere_plane()`
 - Types: `ForgePhysicsNoun` — e.g. `ForgePhysicsParticle`,
   `ForgePhysicsContact`, `ForgePhysicsRigidBody`
-- Constants: `FORGE_PHYSICS_UPPER` — e.g. `FORGE_PHYSICS_MAX_CONTACTS`
+- Constants: `FORGE_PHYSICS_UPPER` — e.g. `FORGE_PHYSICS_MAX_VELOCITY`
 
 **Core types to establish in Lesson 01:**
 
@@ -208,7 +208,10 @@ Every doc comment must include:
 #ifndef FORGE_PHYSICS_H
 #define FORGE_PHYSICS_H
 
+#include <SDL3/SDL.h>
 #include "math/forge_math.h"
+#include "containers/forge_containers.h"
+#include "arena/forge_arena.h"
 
 /* --- Particle ----------------------------------------------------------- */
 

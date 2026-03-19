@@ -70,17 +70,16 @@ This lesson adds the following to `common/physics/forge_physics.h`:
 
 | Function | Purpose |
 |----------|---------|
-| `forge_physics_sap_init` | Zero-initialize a SAP world |
+| `forge_physics_sap_init` | Zero-initialize a SAP world (sets pointers to NULL) |
+| `forge_physics_sap_destroy` | Free dynamic endpoint and pair arrays |
 | `forge_physics_sap_select_axis` | Pick the axis with greatest center variance |
 | `forge_physics_sap_update` | Populate endpoints, insertion-sort, sweep, output pairs |
 | `forge_physics_sap_pair_count` | Number of overlapping pairs |
 | `forge_physics_sap_get_pairs` | Pointer to the pair array |
 | `forge_physics_vec3_axis` | Extract a vec3 component by index |
 
-Types: `ForgePhysicsSAPEndpoint`, `ForgePhysicsSAPPair`, `ForgePhysicsSAPWorld`
-
-Constants: `FORGE_PHYSICS_SAP_MAX_BODIES` (256),
-`FORGE_PHYSICS_SAP_MAX_PAIRS` (1024)
+Types: `ForgePhysicsSAPEndpoint`, `ForgePhysicsSAPPair`,
+`ForgePhysicsSAPWorld` (dynamic arrays via `forge_containers.h`)
 
 ## Controls
 

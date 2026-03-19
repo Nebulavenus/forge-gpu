@@ -53,6 +53,7 @@
 
 /* Scene limits */
 #define MAX_BODIES           16
+#define MAX_RB_CONTACTS      (8 * MAX_BODIES)  /* 8 contacts per box */
 
 /* Scene 1: Shape Gallery — one of each shape */
 #define S1_NUM_BODIES        3
@@ -505,7 +506,7 @@ static void physics_step(app_state *state)
     /* Detect contacts with ground plane.
      * Dispatch based on ForgePhysicsCollisionShape.type instead of ad-hoc
      * BodyRenderInfo fields — the core improvement of this lesson. */
-    ForgePhysicsRBContact contacts[FORGE_PHYSICS_MAX_RB_CONTACTS];
+    ForgePhysicsRBContact contacts[MAX_RB_CONTACTS];
     int num_contacts = 0;
 
     for (int i = 0; i < state->num_bodies; i++) {
@@ -517,7 +518,7 @@ static void physics_step(app_state *state)
             if (forge_physics_rb_collide_sphere_plane(
                     &state->bodies[i], i, shape->data.sphere.radius,
                     plane_pt, plane_n, DEFAULT_MU_S, DEFAULT_MU_D, &c)) {
-                if (num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS) {
+                if (num_contacts < MAX_RB_CONTACTS) {
                     contacts[num_contacts++] = c;
                 }
             }
@@ -529,7 +530,7 @@ static void physics_step(app_state *state)
                 &state->bodies[i], i, shape->data.box.half_extents,
                 plane_pt, plane_n, DEFAULT_MU_S, DEFAULT_MU_D,
                 &contacts[num_contacts],
-                FORGE_PHYSICS_MAX_RB_CONTACTS - num_contacts);
+                MAX_RB_CONTACTS - num_contacts);
             num_contacts += n;
             break;
         }
@@ -557,7 +558,7 @@ static void physics_step(app_state *state)
                     &temp_top, i, r, plane_pt, plane_n,
                     DEFAULT_MU_S, DEFAULT_MU_D, &c_top)) {
                 /* Fix contact point relative to actual body */
-                if (num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS) {
+                if (num_contacts < MAX_RB_CONTACTS) {
                     contacts[num_contacts++] = c_top;
                 }
             }
@@ -571,7 +572,7 @@ static void physics_step(app_state *state)
             if (forge_physics_rb_collide_sphere_plane(
                     &temp_bot, i, r, plane_pt, plane_n,
                     DEFAULT_MU_S, DEFAULT_MU_D, &c_bot)) {
-                if (num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS) {
+                if (num_contacts < MAX_RB_CONTACTS) {
                     contacts[num_contacts++] = c_bot;
                 }
             }
@@ -586,10 +587,10 @@ static void physics_step(app_state *state)
     /* Detect pairwise sphere-sphere contacts (body-body collisions).
      * Only between sphere-typed shapes for now. */
     for (int i = 0; i < state->num_bodies &&
-         num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS; i++) {
+         num_contacts < MAX_RB_CONTACTS; i++) {
         if (state->shapes[i].type != FORGE_PHYSICS_SHAPE_SPHERE) continue;
         for (int j = i + 1; j < state->num_bodies &&
-             num_contacts < FORGE_PHYSICS_MAX_RB_CONTACTS; j++) {
+             num_contacts < MAX_RB_CONTACTS; j++) {
             if (state->shapes[j].type != FORGE_PHYSICS_SHAPE_SPHERE) continue;
             ForgePhysicsRBContact c;
             if (forge_physics_rb_collide_sphere_sphere(
@@ -792,14 +793,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (!state->wireframe_pipeline) {
         SDL_Log("ERROR: Failed to create wireframe pipeline: %s",
                 SDL_GetError());
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload cube geometry */
     ForgeShape cube = forge_shapes_cube(CUBE_SLICES, CUBE_STACKS);
     if (cube.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_cube failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     forge_shapes_compute_flat_normals(&cube);
     state->cube_vb = upload_shape_vb(&state->scene, &cube);
@@ -810,14 +811,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&cube);
     if (!state->cube_vb || !state->cube_ib) {
         SDL_Log("ERROR: Failed to upload cube geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload sphere geometry */
     ForgeShape sphere = forge_shapes_sphere(SPHERE_SLICES, SPHERE_STACKS);
     if (sphere.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_sphere failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     state->sphere_vb = upload_shape_vb(&state->scene, &sphere);
     state->sphere_ib = forge_scene_upload_buffer(&state->scene,
@@ -827,7 +828,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&sphere);
     if (!state->sphere_vb || !state->sphere_ib) {
         SDL_Log("ERROR: Failed to upload sphere geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload capsule geometry */
@@ -837,7 +838,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->capsule_mesh_half_h);
     if (capsule.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_capsule failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     state->capsule_vb = upload_shape_vb(&state->scene, &capsule);
     state->capsule_ib = forge_scene_upload_buffer(&state->scene,
@@ -847,14 +848,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&capsule);
     if (!state->capsule_vb || !state->capsule_ib) {
         SDL_Log("ERROR: Failed to upload capsule geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Small sphere for support point marker */
     ForgeShape marker = forge_shapes_sphere(MARKER_SLICES, MARKER_STACKS);
     if (marker.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_sphere (marker) failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     state->marker_vb = upload_shape_vb(&state->scene, &marker);
     state->marker_ib = forge_scene_upload_buffer(&state->scene,
@@ -864,7 +865,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&marker);
     if (!state->marker_vb || !state->marker_ib) {
         SDL_Log("ERROR: Failed to upload marker geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Default state */
@@ -881,6 +882,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     init_current_scene(state);
 
     return SDL_APP_CONTINUE;
+
+init_fail:
+    /* SDL calls SDL_AppQuit after SDL_AppInit returns failure (because
+     * *appstate is already set), so let SDL_AppQuit handle all GPU buffer
+     * and scene cleanup — releasing here would double-free. */
+    return SDL_APP_FAILURE;
 }
 
 /* ── SDL_AppIterate ──────────────────────────────────────────────── */

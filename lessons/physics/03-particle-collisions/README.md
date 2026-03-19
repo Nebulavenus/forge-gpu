@@ -203,9 +203,9 @@ The all-pairs approach is simple and correct for small particle counts (up to
 reduces detection to approximately $O(n)$ by only testing nearby pairs -- this
 is covered in a later lesson.
 
-The contact buffer has a fixed capacity (`FORGE_PHYSICS_MAX_CONTACTS = 256`).
-For $n$ particles, the theoretical maximum number of simultaneous contacts is
-$n(n-1)/2$. If the buffer fills, additional contacts are silently dropped.
+The contact buffer is a dynamic array (`forge_containers.h`) that grows as
+needed. For $n$ particles, the theoretical maximum number of simultaneous
+contacts is $n(n-1)/2$ — all of which are detected without truncation.
 
 ### Momentum conservation
 
@@ -329,17 +329,16 @@ This lesson extends `common/physics/forge_physics.h` with the following API:
 | Type / Function | Purpose |
 |---|---|
 | `ForgePhysicsContact` | Struct: normal, contact point, penetration depth, particle indices (a, b) |
-| `FORGE_PHYSICS_MAX_CONTACTS` | Maximum contact buffer capacity (256) |
 | `FORGE_PHYSICS_RESTING_THRESHOLD` | Closing velocity below which restitution is zeroed (0.5 m/s) |
 | `forge_physics_collide_sphere_sphere()` | Test two particles for sphere-sphere overlap; fill contact on hit |
 | `forge_physics_resolve_contact()` | Apply impulse response and positional correction for one contact |
 | `forge_physics_resolve_contacts()` | Resolve an array of contacts in a single pass |
-| `forge_physics_collide_particles_all()` | O(n²) all-pairs detection; returns contact count |
-| `forge_physics_collide_particles_step()` | Detection + resolution in one call; returns contact count |
+| `forge_physics_collide_particles_all()` | O(n²) all-pairs detection into dynamic array; returns contact count |
+| `forge_physics_collide_particles_step()` | Detection + resolution into dynamic array; returns contact count |
 
-The library remains header-only, allocates no heap memory, and handles
-degenerate cases (coincident centers, zero-radius particles, both-static pairs)
-safely.
+The library remains header-only and handles degenerate cases (coincident
+centers, zero-radius particles, both-static pairs) safely. Contact arrays
+use `forge_containers.h` dynamic arrays — no hardcoded capacity limits.
 
 See: [common/physics/README.md](../../../common/physics/README.md) for the full
 API reference.

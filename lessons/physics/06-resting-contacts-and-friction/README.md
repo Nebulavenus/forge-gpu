@@ -189,7 +189,7 @@ restitution is set to zero. This prevents the infinite micro-bouncing that
 would otherwise occur as objects try to settle:
 
 ```c
-if (fabsf(v_n) < FORGE_PHYSICS_RB_RESTING_THRESHOLD) {
+if (SDL_fabsf(v_n) < FORGE_PHYSICS_RB_RESTING_THRESHOLD) {
     e = 0.0f;  /* no bounce — absorb remaining energy */
 }
 ```

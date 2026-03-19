@@ -67,8 +67,6 @@
 /* Scene 2: Axis Visualization — scripted positions for endpoint display */
 #define S2_NUM_BODIES       12
 #define S2_BODY_Y            1.0f
-#define S2_SPREAD            12.0f
-
 /* Contact buffer — 40 spheres produce up to 40 ground contacts plus
  * sphere-sphere contacts from SAP pairs. 256 gives comfortable headroom. */
 #define MAX_CONTACTS         256
@@ -446,7 +444,8 @@ static void init_current_scene(app_state *state)
             state->bodies[i].orientation);
     }
 
-    /* Run initial SAP */
+    /* Run initial SAP — destroy first in case this is a reset/scene change */
+    forge_physics_sap_destroy(&state->sap);
     forge_physics_sap_init(&state->sap);
     state->sap.sweep_axis = forge_physics_sap_select_axis(
         state->cached_aabbs, state->num_bodies);
@@ -488,8 +487,7 @@ static void physics_step(app_state *state)
     }
 
     /* Detect contacts with ground plane — dispatch based on shape type.
-     * Use a larger local buffer than FORGE_PHYSICS_MAX_RB_CONTACTS (64)
-     * because 40 spheres plus sphere-sphere contacts can exceed it. */
+     * Use a local buffer sized for this lesson's body count. */
     ForgePhysicsRBContact contacts[MAX_CONTACTS];
     int num_contacts = 0;
 
@@ -959,14 +957,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (!state->wireframe_pipeline) {
         SDL_Log("ERROR: Failed to create wireframe pipeline: %s",
                 SDL_GetError());
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload cube geometry */
     ForgeShape cube = forge_shapes_cube(CUBE_SLICES, CUBE_STACKS);
     if (cube.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_cube failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     forge_shapes_compute_flat_normals(&cube);
     state->cube_vb = upload_shape_vb(&state->scene, &cube);
@@ -977,14 +975,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&cube);
     if (!state->cube_vb || !state->cube_ib) {
         SDL_Log("ERROR: Failed to upload cube geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload sphere geometry */
     ForgeShape sphere = forge_shapes_sphere(SPHERE_SLICES, SPHERE_STACKS);
     if (sphere.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_sphere failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     state->sphere_vb = upload_shape_vb(&state->scene, &sphere);
     state->sphere_ib = forge_scene_upload_buffer(&state->scene,
@@ -994,7 +992,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&sphere);
     if (!state->sphere_vb || !state->sphere_ib) {
         SDL_Log("ERROR: Failed to upload sphere geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Generate and upload capsule geometry */
@@ -1004,7 +1002,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         state->capsule_mesh_half_h);
     if (capsule.vertex_count == 0) {
         SDL_Log("ERROR: forge_shapes_capsule failed");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
     state->capsule_vb = upload_shape_vb(&state->scene, &capsule);
     state->capsule_ib = forge_scene_upload_buffer(&state->scene,
@@ -1014,7 +1012,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     forge_shapes_free(&capsule);
     if (!state->capsule_vb || !state->capsule_ib) {
         SDL_Log("ERROR: Failed to upload capsule geometry");
-        return SDL_APP_FAILURE;
+        goto init_fail;
     }
 
     /* Default state */
@@ -1026,10 +1024,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     state->ui_window = forge_ui_window_state_default(
         PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
 
-    forge_physics_sap_init(&state->sap);
     init_current_scene(state);
 
     return SDL_APP_CONTINUE;
+
+init_fail:
+    /* SDL calls SDL_AppQuit after SDL_AppInit returns failure (because
+     * *appstate is already set), so let SDL_AppQuit handle all GPU buffer,
+     * SAP, and scene cleanup — releasing here would double-free. */
+    return SDL_APP_FAILURE;
 }
 
 /* ── SDL_AppQuit ─────────────────────────────────────────────────── */
@@ -1056,6 +1059,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         if (state->capsule_ib) SDL_ReleaseGPUBuffer(dev, state->capsule_ib);
     }
 
+    forge_physics_sap_destroy(&state->sap);
     forge_scene_destroy(&state->scene);
     SDL_free(state);
 }

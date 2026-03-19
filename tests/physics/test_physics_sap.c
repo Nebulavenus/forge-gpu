@@ -10,7 +10,8 @@
 
 /* ── Helper: create AABB from center and half-extents ─────────────────── */
 
-#define SAP_HALF 0.5f
+#define SAP_HALF            0.5f
+#define SAP_DIRTY_SENTINEL  99    /* non-zero sentinel to verify init zeroes fields */
 
 static ForgePhysicsAABB make_aabb(float cx, float cy, float cz,
                                   float hx, float hy, float hz)
@@ -27,7 +28,8 @@ static bool sap_has_pair(const ForgePhysicsSAPWorld *w, int a, int b)
 {
     uint16_t pa = (uint16_t)(a < b ? a : b);
     uint16_t pb = (uint16_t)(a < b ? b : a);
-    for (int i = 0; i < w->pair_count; i++) {
+    int n = forge_physics_sap_pair_count(w);
+    for (int i = 0; i < n; i++) {
         if (w->pairs[i].a == pa && w->pairs[i].b == pb) return true;
     }
     return false;
@@ -37,15 +39,20 @@ static bool sap_has_pair(const ForgePhysicsSAPWorld *w, int a, int b)
 
 static void test_sap_init(void)
 {
-    TEST("SAP_init — zeroes all fields");
+    TEST("SAP_init — zeroes all fields including pointers");
     ForgePhysicsSAPWorld w;
-    SDL_memset(&w, 0xFF, sizeof(w));
+    /* Dirty all fields so init must explicitly zero them */
+    w.endpoints  = (ForgePhysicsSAPEndpoint *)(uintptr_t)0xDEADBEEF;
+    w.pairs      = (ForgePhysicsSAPPair *)(uintptr_t)0xDEADBEEF;
+    w.sweep_axis = SAP_DIRTY_SENTINEL;
+    w.sort_ops   = SAP_DIRTY_SENTINEL;
     forge_physics_sap_init(&w);
-    ASSERT_TRUE(w.endpoint_count == 0);
-    ASSERT_TRUE(w.pair_count == 0);
+    ASSERT_TRUE(w.endpoints == NULL);
+    ASSERT_TRUE(w.pairs == NULL);
     ASSERT_TRUE(w.sweep_axis == 0);
     ASSERT_TRUE(w.sort_ops == 0);
-    ASSERT_TRUE(!w.pair_overflow);
+    ASSERT_TRUE(w.sweep_arena.first != NULL);  /* arena backing block allocated */
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -57,6 +64,41 @@ static void test_sap_init_null(void)
     END_TEST();
 }
 
+static void test_sap_destroy_null(void)
+{
+    TEST("SAP_destroy — NULL is safe");
+    forge_physics_sap_destroy(NULL);  /* must not crash */
+    ASSERT_TRUE(true);
+    END_TEST();
+}
+
+static void test_sap_destroy_empty(void)
+{
+    TEST("SAP_destroy — empty world is safe");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+    forge_physics_sap_destroy(&w);
+    ASSERT_TRUE(w.endpoints == NULL);
+    ASSERT_TRUE(w.pairs == NULL);
+    END_TEST();
+}
+
+static void test_sap_destroy_double(void)
+{
+    TEST("SAP_destroy — double destroy is safe");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+    ForgePhysicsAABB aabbs[2] = {
+        make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+    };
+    forge_physics_sap_update(&w, aabbs, 2);
+    forge_physics_sap_destroy(&w);
+    forge_physics_sap_destroy(&w);  /* second destroy must not crash */
+    ASSERT_TRUE(w.endpoints == NULL);
+    END_TEST();
+}
+
 static void test_sap_zero_bodies(void)
 {
     TEST("SAP_update — zero bodies produces zero pairs");
@@ -64,7 +106,7 @@ static void test_sap_zero_bodies(void)
     forge_physics_sap_init(&w);
     forge_physics_sap_update(&w, NULL, 0);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
-    ASSERT_TRUE(forge_physics_sap_get_pairs(&w) != NULL);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -76,6 +118,7 @@ static void test_sap_one_body(void)
     ForgePhysicsAABB aabbs[1] = { make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF) };
     forge_physics_sap_update(&w, aabbs, 1);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -86,11 +129,12 @@ static void test_sap_two_overlapping(void)
     forge_physics_sap_init(&w);
     ForgePhysicsAABB aabbs[2] = {
         make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
-        make_aabb(0.5f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
     };
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
     ASSERT_TRUE(sap_has_pair(&w, 0, 1));
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -105,6 +149,7 @@ static void test_sap_two_separated(void)
     };
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -121,6 +166,7 @@ static void test_sap_pair_ordering(void)
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
     ASSERT_TRUE(w.pairs[0].a < w.pairs[0].b);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -131,7 +177,7 @@ static void test_sap_chain_overlaps(void)
     forge_physics_sap_init(&w);
     /* A=[0..1], B=[0.8..1.8], C=[1.6..2.6] — A overlaps B, B overlaps C, A does not overlap C */
     ForgePhysicsAABB aabbs[3] = {
-        make_aabb(0.5f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
         make_aabb(1.3f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
         make_aabb(2.1f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
     };
@@ -140,6 +186,7 @@ static void test_sap_chain_overlaps(void)
     ASSERT_TRUE(sap_has_pair(&w, 0, 1));
     ASSERT_TRUE(sap_has_pair(&w, 1, 2));
     ASSERT_TRUE(!sap_has_pair(&w, 0, 2));
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -154,6 +201,7 @@ static void test_sap_all_same_position(void)
     forge_physics_sap_update(&w, aabbs, 4);
     /* 4 bodies all overlapping: C(4,2) = 6 pairs */
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 6);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -203,7 +251,7 @@ static void test_sap_incremental_move(void)
     forge_physics_sap_init(&w);
     ForgePhysicsAABB aabbs[2] = {
         make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
-        make_aabb(0.5f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
     };
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
@@ -212,6 +260,7 @@ static void test_sap_incremental_move(void)
     aabbs[1] = make_aabb(100, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -227,36 +276,28 @@ static void test_sap_no_duplicates(void)
     };
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
-static void test_sap_max_capacity(void)
+static void test_sap_large_body_count(void)
 {
-    TEST("SAP_update — handles SAP_MAX_BODIES bodies");
+    TEST("SAP_update — handles 500 bodies (beyond old 256 limit)");
     ForgePhysicsSAPWorld w;
     forge_physics_sap_init(&w);
-    ForgePhysicsAABB aabbs[FORGE_PHYSICS_SAP_MAX_BODIES];
+    #define SAP_LARGE_COUNT 500
+    ForgePhysicsAABB *aabbs = (ForgePhysicsAABB *)SDL_calloc(
+        SAP_LARGE_COUNT, sizeof(ForgePhysicsAABB));
+    ASSERT_TRUE(aabbs != NULL);
     /* Spread bodies far apart so no pairs */
-    for (int i = 0; i < FORGE_PHYSICS_SAP_MAX_BODIES; i++)
+    for (int i = 0; i < SAP_LARGE_COUNT; i++)
         aabbs[i] = make_aabb((float)i * 10.0f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
-    forge_physics_sap_update(&w, aabbs, FORGE_PHYSICS_SAP_MAX_BODIES);
+    forge_physics_sap_update(&w, aabbs, SAP_LARGE_COUNT);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
-    ASSERT_TRUE(w.endpoint_count == FORGE_PHYSICS_SAP_MAX_BODIES * 2);
-    END_TEST();
-}
-
-static void test_sap_over_capacity_clamp(void)
-{
-    TEST("SAP_update — count > SAP_MAX_BODIES is clamped");
-    ForgePhysicsSAPWorld w;
-    forge_physics_sap_init(&w);
-    /* Allocate a full-size array so the clamped read is in bounds */
-    ForgePhysicsAABB aabbs[FORGE_PHYSICS_SAP_MAX_BODIES];
-    for (int i = 0; i < FORGE_PHYSICS_SAP_MAX_BODIES; i++)
-        aabbs[i] = make_aabb((float)i * 10.0f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
-    forge_physics_sap_update(&w, aabbs, FORGE_PHYSICS_SAP_MAX_BODIES + 10);
-    /* Clamped to max bodies, endpoints should be 2 * max */
-    ASSERT_TRUE(w.endpoint_count == FORGE_PHYSICS_SAP_MAX_BODIES * 2);
+    ASSERT_TRUE((int)forge_arr_length(w.endpoints) == SAP_LARGE_COUNT * 2);
+    SDL_free(aabbs);
+    forge_physics_sap_destroy(&w);
+    #undef SAP_LARGE_COUNT
     END_TEST();
 }
 
@@ -300,6 +341,7 @@ static void test_sap_brute_force_comparison(void)
         }
     }
 
+    forge_physics_sap_destroy(&w);
     #undef BF_SPACING
     #undef BF_COUNT
     END_TEST();
@@ -330,6 +372,7 @@ static void test_sap_touching_counts_as_overlap(void)
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
     ASSERT_TRUE(sap_has_pair(&w, 0, 1));
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -341,7 +384,7 @@ static void test_sap_sweep_axis_clamped(void)
     w.sweep_axis = 5;  /* positive out-of-range */
     ForgePhysicsAABB aabbs[2] = {
         make_aabb(0.0f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
-        make_aabb(0.5f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
     };
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(w.sweep_axis == 0);
@@ -353,6 +396,7 @@ static void test_sap_sweep_axis_clamped(void)
     forge_physics_sap_update(&w, aabbs, 2);
     ASSERT_TRUE(w.sweep_axis == 0);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -389,38 +433,186 @@ static void test_sap_temporal_coherence(void)
     /* Frame 3: change count — forces rebuild, but must still be correct */
     ForgePhysicsAABB aabbs2[2] = {
         make_aabb(0.0f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
-        make_aabb(0.5f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
     };
     forge_physics_sap_update(&w, aabbs2, 2);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
     ASSERT_TRUE(sap_has_pair(&w, 0, 1));
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
-static void test_sap_pair_overflow(void)
+static void test_sap_all_pairs_no_overflow(void)
 {
-    TEST("SAP_update — sets pair_overflow when buffer is exceeded");
+    TEST("SAP_update — dynamic arrays grow without overflow");
     ForgePhysicsSAPWorld w;
     forge_physics_sap_init(&w);
 
-    /* No overflow for a simple scene */
-    ForgePhysicsAABB simple[2] = {
-        make_aabb(0.0f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
-        make_aabb(0.5f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF),
+    /* Place 256 bodies at the same position. C(256,2) = 32,640 pairs.
+     * With dynamic arrays this must succeed — no overflow flag, no cap. */
+    #define SAP_DENSE_COUNT 256
+    ForgePhysicsAABB *dense = (ForgePhysicsAABB *)SDL_calloc(
+        SAP_DENSE_COUNT, sizeof(ForgePhysicsAABB));
+    ASSERT_TRUE(dense != NULL);
+    for (int i = 0; i < SAP_DENSE_COUNT; i++)
+        dense[i] = make_aabb(0.0f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF);
+    forge_physics_sap_update(&w, dense, SAP_DENSE_COUNT);
+    int expected_pairs = SAP_DENSE_COUNT * (SAP_DENSE_COUNT - 1) / 2;
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == expected_pairs);
+    SDL_free(dense);
+    forge_physics_sap_destroy(&w);
+    #undef SAP_DENSE_COUNT
+    END_TEST();
+}
+
+static void test_sap_no_duplicates_3_coincident(void)
+{
+    TEST("SAP_update — 3 coincident bodies, no duplicate pairs");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+    ForgePhysicsAABB aabbs[3];
+    for (int i = 0; i < 3; i++)
+        aabbs[i] = make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
+    forge_physics_sap_update(&w, aabbs, 3);
+    /* C(3,2) = 3 unique pairs — verify no duplicates */
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 3);
+    ASSERT_TRUE(sap_has_pair(&w, 0, 1));
+    ASSERT_TRUE(sap_has_pair(&w, 0, 2));
+    ASSERT_TRUE(sap_has_pair(&w, 1, 2));
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_body_count_change_rebuilds_endpoints(void)
+{
+    TEST("SAP_update — changing body count rebuilds endpoints correctly");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    /* Frame 1: 4 separated bodies */
+    ForgePhysicsAABB aabbs4[4];
+    for (int i = 0; i < 4; i++)
+        aabbs4[i] = make_aabb((float)i * 5.0f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
+    forge_physics_sap_update(&w, aabbs4, 4);
+    ASSERT_TRUE((int)forge_arr_length(w.endpoints) == 8);
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+
+    /* Frame 2: shrink to 2 overlapping bodies */
+    ForgePhysicsAABB aabbs2[2] = {
+        make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        make_aabb(SAP_HALF, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
     };
-    forge_physics_sap_update(&w, simple, 2);
-    ASSERT_TRUE(!w.pair_overflow);
+    forge_physics_sap_update(&w, aabbs2, 2);
+    ASSERT_TRUE((int)forge_arr_length(w.endpoints) == 4);
     ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 1);
 
-    /* Trigger overflow: place all MAX_BODIES at the same position.
-     * Every body overlaps every other: C(N,2) = N*(N-1)/2 = 32,640 pairs,
-     * which exceeds FORGE_PHYSICS_SAP_MAX_PAIRS (4096). */
-    ForgePhysicsAABB dense[FORGE_PHYSICS_SAP_MAX_BODIES];
-    for (int i = 0; i < FORGE_PHYSICS_SAP_MAX_BODIES; i++)
-        dense[i] = make_aabb(0.0f, 0.0f, 0.0f, SAP_HALF, SAP_HALF, SAP_HALF);
-    forge_physics_sap_update(&w, dense, FORGE_PHYSICS_SAP_MAX_BODIES);
-    ASSERT_TRUE(w.pair_overflow);
-    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == FORGE_PHYSICS_SAP_MAX_PAIRS);
+    /* Frame 3: grow to 3 separated bodies */
+    ForgePhysicsAABB aabbs3[3];
+    for (int i = 0; i < 3; i++)
+        aabbs3[i] = make_aabb((float)i * 10.0f, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
+    forge_physics_sap_update(&w, aabbs3, 3);
+    ASSERT_TRUE((int)forge_arr_length(w.endpoints) == 6);
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_destroy_clears_populated_world(void)
+{
+    TEST("SAP_destroy — clears populated world, fields reset");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    /* Populate with 5 overlapping bodies */
+    ForgePhysicsAABB aabbs[5];
+    for (int i = 0; i < 5; i++)
+        aabbs[i] = make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF);
+    forge_physics_sap_update(&w, aabbs, 5);
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 10);  /* C(5,2) */
+    ASSERT_TRUE(w.endpoints != NULL);
+    ASSERT_TRUE(w.pairs != NULL);
+
+    forge_physics_sap_destroy(&w);
+    ASSERT_TRUE(w.endpoints == NULL);
+    ASSERT_TRUE(w.pairs == NULL);
+    END_TEST();
+}
+
+static void test_sap_update_negative_count(void)
+{
+    TEST("SAP_update — negative count treated as zero");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+    forge_physics_sap_update(&w, NULL, -1);
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_pair_count_null(void)
+{
+    TEST("SAP_pair_count — NULL world returns 0");
+    ASSERT_TRUE(forge_physics_sap_pair_count(NULL) == 0);
+    END_TEST();
+}
+
+static void test_sap_nan_aabb_no_pairs(void)
+{
+    TEST("SAP_update — NaN AABB endpoints clamped to 0, body excluded from pairs");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    /* Body 0: valid AABB at origin.
+     * Body 1: NaN AABB — should be clamped to a zero-size point at 0,
+     *         so its min and max endpoints coincide and it overlaps body 0
+     *         only because both collapse to the same point.  The important
+     *         invariant: no NaN in the output and no crash. */
+    ForgePhysicsAABB aabbs[2] = {
+        make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        { .min = vec3_create(NAN, NAN, NAN),
+          .max = vec3_create(NAN, NAN, NAN) },
+    };
+    forge_physics_sap_update(&w, aabbs, 2);
+
+    /* Verify no endpoint value is NaN */
+    int ep_count = (int)forge_arr_length(w.endpoints);
+    for (int i = 0; i < ep_count; i++) {
+        ASSERT_TRUE(w.endpoints[i].value == w.endpoints[i].value);  /* not NaN */
+    }
+
+    /* NaN AABB body must produce zero pairs — the sweep skips bodies
+     * with non-finite AABBs to prevent bogus overlap results. */
+    int n = forge_physics_sap_pair_count(&w);
+    ASSERT_TRUE(n == 0);
+
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_inf_aabb_no_crash(void)
+{
+    TEST("SAP_update — +inf AABB body excluded from pairs, no crash");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    ForgePhysicsAABB aabbs[2] = {
+        make_aabb(0, 0, 0, SAP_HALF, SAP_HALF, SAP_HALF),
+        { .min = vec3_create(-INFINITY, -INFINITY, -INFINITY),
+          .max = vec3_create(INFINITY, INFINITY, INFINITY) },
+    };
+    forge_physics_sap_update(&w, aabbs, 2);
+
+    /* All endpoint values must be finite */
+    int ep_count = (int)forge_arr_length(w.endpoints);
+    for (int i = 0; i < ep_count; i++) {
+        ASSERT_TRUE(forge_isfinite(w.endpoints[i].value));
+    }
+
+    /* Inf AABB body must not produce pairs */
+    ASSERT_TRUE(forge_physics_sap_pair_count(&w) == 0);
+
+    forge_physics_sap_destroy(&w);
     END_TEST();
 }
 
@@ -431,6 +623,9 @@ void run_sap_tests(void)
     SDL_Log("--- SAP broadphase ---");
     test_sap_init();
     test_sap_init_null();
+    test_sap_destroy_null();
+    test_sap_destroy_empty();
+    test_sap_destroy_double();
     test_sap_zero_bodies();
     test_sap_one_body();
     test_sap_two_overlapping();
@@ -443,12 +638,18 @@ void run_sap_tests(void)
     test_sap_axis_select_z();
     test_sap_incremental_move();
     test_sap_no_duplicates();
-    test_sap_max_capacity();
-    test_sap_over_capacity_clamp();
+    test_sap_large_body_count();
     test_sap_brute_force_comparison();
     test_sap_touching_counts_as_overlap();
     test_sap_sweep_axis_clamped();
     test_sap_temporal_coherence();
-    test_sap_pair_overflow();
+    test_sap_all_pairs_no_overflow();
     test_sap_vec3_axis_invalid();
+    test_sap_no_duplicates_3_coincident();
+    test_sap_body_count_change_rebuilds_endpoints();
+    test_sap_destroy_clears_populated_world();
+    test_sap_update_negative_count();
+    test_sap_pair_count_null();
+    test_sap_nan_aabb_no_pairs();
+    test_sap_inf_aabb_no_crash();
 }

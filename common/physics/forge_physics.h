@@ -7,11 +7,13 @@
  *
  * Design principles:
  *   - Header-only with static inline functions — no link-time surprises
- *   - No heap allocation — all state is caller-owned
+ *   - Dynamic arrays (forge_containers.h) for contacts and SAP storage;
+ *     callers must call the appropriate destroy/free functions
  *   - Deterministic: same inputs always produce same outputs
  *   - Guard all divisions and normalizations against degenerate inputs
  *
  * Depends on: common/math/forge_math.h (vec3 type and operations)
+ *             common/containers/forge_containers.h (dynamic arrays)
  *
  * See: lessons/physics/ for lessons teaching each concept.
  *
@@ -22,7 +24,10 @@
 #define FORGE_PHYSICS_H
 
 #include "math/forge_math.h"
+#include "containers/forge_containers.h"
+#include "arena/forge_arena.h"
 #include <stdbool.h>   /* bool */
+#include <stdint.h>    /* UINT16_MAX */
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
 
@@ -95,7 +100,7 @@ typedef struct ForgePhysicsParticle {
     float inv_mass;       /* 1/mass, precomputed; 0 for static particles */
     float damping;        /* velocity damping per frame [0..1], 0 = no damping, 1 = full stop */
     float restitution;    /* coefficient of restitution [0..1], 0 = inelastic, 1 = perfectly elastic */
-    float radius;         /* collision radius for sphere-plane tests (meters) */
+    float radius;         /* collision sphere radius — sphere-sphere and sphere-plane tests (meters) */
 } ForgePhysicsParticle;
 
 /* A spring connecting two particles with Hooke's law and velocity damping.
@@ -193,6 +198,10 @@ static inline ForgePhysicsParticle forge_physics_particle_create(
 {
     ForgePhysicsParticle p;
 
+    /* Sanitize position — NaN/Inf would propagate into collision detection. */
+    if (!forge_isfinite(vec3_length_squared(position))) {
+        position = vec3_create(0.0f, 0.0f, 0.0f);
+    }
     p.position      = position;
     p.prev_position = position;
     p.velocity      = vec3_create(0.0f, 0.0f, 0.0f);
@@ -207,18 +216,18 @@ static inline ForgePhysicsParticle forge_physics_particle_create(
         p.inv_mass = 0.0f;
     }
 
-    /* Clamp damping to [0, 1]. */
-    if (damping < 0.0f)      damping = 0.0f;
+    /* Clamp damping to [0, 1] — NaN fails both comparisons, so default to 0. */
+    if (!forge_isfinite(damping) || damping < 0.0f) damping = 0.0f;
     else if (damping > 1.0f) damping = 1.0f;
     p.damping = damping;
 
-    /* Clamp restitution to [0, 1]. */
-    if (restitution < 0.0f)      restitution = 0.0f;
+    /* Clamp restitution to [0, 1] — NaN fails both comparisons, so default to 0. */
+    if (!forge_isfinite(restitution) || restitution < 0.0f) restitution = 0.0f;
     else if (restitution > 1.0f) restitution = 1.0f;
     p.restitution = restitution;
 
-    /* Clamp radius to non-negative. */
-    p.radius = (radius > 0.0f) ? radius : 0.0f;
+    /* Clamp radius to non-negative — reject NaN and infinity. */
+    p.radius = (forge_isfinite(radius) && radius > 0.0f) ? radius : 0.0f;
 
     return p;
 }
@@ -254,6 +263,8 @@ static inline ForgePhysicsParticle forge_physics_particle_create(
  */
 static inline void forge_physics_apply_gravity(ForgePhysicsParticle *p, vec3 gravity)
 {
+    if (!p) return;
+
     /* Static particles are unaffected by forces. */
     if (p->inv_mass == 0.0f) {
         return;
@@ -293,13 +304,16 @@ static inline void forge_physics_apply_gravity(ForgePhysicsParticle *p, vec3 gra
  */
 static inline void forge_physics_apply_drag(ForgePhysicsParticle *p, float drag_coeff)
 {
+    if (!p) return;
+
     /* Static particles are unaffected by forces. */
     if (p->inv_mass == 0.0f) {
         return;
     }
 
-    /* Negative drag would inject energy — clamp to zero. */
-    if (drag_coeff < 0.0f) drag_coeff = 0.0f;
+    /* Negative drag would inject energy, NaN would poison the accumulator —
+     * clamp to zero in both cases. */
+    if (!forge_isfinite(drag_coeff) || drag_coeff < 0.0f) drag_coeff = 0.0f;
 
     /* F_drag = -drag * v */
     vec3 drag_force = vec3_scale(p->velocity, -drag_coeff);
@@ -336,6 +350,8 @@ static inline void forge_physics_apply_drag(ForgePhysicsParticle *p, float drag_
  */
 static inline void forge_physics_apply_force(ForgePhysicsParticle *p, vec3 force)
 {
+    if (!p) return;
+
     /* Static particles are unaffected by forces. */
     if (p->inv_mass == 0.0f) {
         return;
@@ -385,6 +401,8 @@ static inline void forge_physics_apply_force(ForgePhysicsParticle *p, vec3 force
  */
 static inline void forge_physics_integrate(ForgePhysicsParticle *p, float dt)
 {
+    if (!p) return;
+
     /* Reject non-positive or non-finite timesteps.
      * NaN fails all comparisons, so check explicitly. */
     if (!(dt > 0.0f) || !forge_isfinite(dt)) {
@@ -393,6 +411,21 @@ static inline void forge_physics_integrate(ForgePhysicsParticle *p, float dt)
 
     /* Static particles do not move. */
     if (p->inv_mass == 0.0f) {
+        return;
+    }
+
+    /* Reject particles whose state has become non-finite (NaN/inf).
+     * IEEE 754: NaN comparisons return false, so velocity-clamping guards
+     * like `speed_sq > MAX` silently pass NaN through.  Catching it here
+     * prevents one corrupted particle from poisoning the simulation. */
+    if (!forge_isfinite(vec3_length_squared(p->velocity)) ||
+        !forge_isfinite(vec3_length_squared(p->position)) ||
+        !forge_isfinite(vec3_length_squared(p->force_accum))) {
+        /* Restore last known-good transform and zero all dynamics so the
+         * corrupted state does not propagate into collision detection. */
+        p->position    = p->prev_position;
+        p->velocity    = vec3_create(0.0f, 0.0f, 0.0f);
+        p->force_accum = vec3_create(0.0f, 0.0f, 0.0f);
         return;
     }
 
@@ -484,10 +517,22 @@ static inline void forge_physics_integrate(ForgePhysicsParticle *p, float dt)
 static inline bool forge_physics_collide_plane(
     ForgePhysicsParticle *p, vec3 plane_normal, float plane_d)
 {
-    /* Guard against degenerate (zero-length) normals and normalize for
-     * robustness — callers may pass non-unit normals by accident. */
+    if (!p) return false;
+
+    /* Reject non-finite inputs — NaN normal would bypass the epsilon check
+     * (NaN < epsilon is false) and corrupt the particle state.  Also reject
+     * non-finite position since vec3_dot would produce NaN distance. */
+    if (!forge_isfinite(vec3_length_squared(p->position)) ||
+        !(p->radius > FORGE_PHYSICS_EPSILON) ||
+        !forge_isfinite(p->radius) ||
+        !forge_isfinite(plane_d)) {
+        return false;
+    }
+
+    /* Guard against degenerate (zero-length) or non-finite normals. */
     float normal_len_sq = vec3_length_squared(plane_normal);
-    if (normal_len_sq < FORGE_PHYSICS_EPSILON) {
+    if (!forge_isfinite(normal_len_sq) ||
+        !(normal_len_sq > FORGE_PHYSICS_EPSILON)) {
         return false;
     }
 
@@ -561,6 +606,7 @@ static inline bool forge_physics_collide_plane(
  */
 static inline void forge_physics_clear_forces(ForgePhysicsParticle *p)
 {
+    if (!p) return;
     p->force_accum = vec3_create(0.0f, 0.0f, 0.0f);
 }
 
@@ -601,9 +647,12 @@ static inline ForgePhysicsSpring forge_physics_spring_create(
     ForgePhysicsSpring s;
     s.a = a;
     s.b = b;
-    s.rest_length = (rest_length > 0.0f) ? rest_length : 0.0f;
-    s.stiffness   = (stiffness > 0.0f)   ? stiffness   : 0.0f;
-    s.damping     = (damping > 0.0f)     ? damping     : 0.0f;
+    s.rest_length = (forge_isfinite(rest_length) && rest_length > 0.0f)
+                        ? rest_length : 0.0f;
+    s.stiffness   = (forge_isfinite(stiffness) && stiffness > 0.0f)
+                        ? stiffness : 0.0f;
+    s.damping     = (forge_isfinite(damping) && damping > 0.0f)
+                        ? damping : 0.0f;
     return s;
 }
 
@@ -732,7 +781,8 @@ forge_physics_constraint_distance_create(
     ForgePhysicsDistanceConstraint c;
     c.a = a;
     c.b = b;
-    c.distance  = (distance > 0.0f) ? distance : 0.0f;
+    c.distance  = (forge_isfinite(distance) && distance > 0.0f)
+                      ? distance : 0.0f;
 
     if (!(stiffness >= 0.0f))  stiffness = 0.0f;   /* catches NaN */
     else if (stiffness > 1.0f) stiffness = 1.0f;
@@ -911,16 +961,6 @@ typedef struct ForgePhysicsContact {
     int   particle_b;   /* index of second particle, must be in [0, count)          */
 } ForgePhysicsContact;
 
-/* Maximum number of contacts returned by forge_physics_collide_particles_all().
- *
- * For N particles the theoretical maximum is N*(N-1)/2 contacts. This
- * limit caps the contact buffer at 256 entries, which is sufficient for
- * ~23 mutually-colliding particles. If the scene exceeds this limit,
- * additional contacts are silently dropped — increase this constant or
- * implement spatial partitioning (see Physics Lesson 07).
- */
-#define FORGE_PHYSICS_MAX_CONTACTS 256
-
 /* Closing velocity threshold below which restitution is zeroed.
  *
  * When two particles collide with a relative closing velocity below
@@ -950,7 +990,7 @@ typedef struct ForgePhysicsContact {
  *     point = pos_b + normal * (radius_b - penetration / 2)
  *
  * Edge cases:
- *   - Either radius is non-positive: no collision possible, returns false
+ *   - Either radius is non-positive, subnormal, NaN, or infinite: returns false
  *   - Both particles are static (inv_mass == 0): skip, returns false
  *   - Coincident centers (dist < epsilon): uses arbitrary normal (0, 1, 0)
  *     to resolve the degenerate case deterministically
@@ -985,8 +1025,11 @@ static inline bool forge_physics_collide_sphere_sphere(
     const ForgePhysicsParticle *a, const ForgePhysicsParticle *b,
     int idx_a, int idx_b, ForgePhysicsContact *out)
 {
-    /* Zero-radius particles cannot collide. */
-    if (a->radius <= 0.0f || b->radius <= 0.0f) {
+    if (!a || !b || !out) return false;
+
+    /* Zero, subnormal, NaN, or infinite radius cannot collide. */
+    if (!(a->radius > FORGE_PHYSICS_EPSILON) || !forge_isfinite(a->radius) ||
+        !(b->radius > FORGE_PHYSICS_EPSILON) || !forge_isfinite(b->radius)) {
         return false;
     }
 
@@ -1159,7 +1202,7 @@ static inline void forge_physics_resolve_contact(
  * by applying impulse-based velocity response and positional correction.
  * A single pass is sufficient for scenes with few simultaneous contacts;
  * for dense stacking scenarios, multiple solver iterations improve
- * convergence (see Physics Lesson 07).
+ * convergence (see Physics Lesson 06).
  *
  * Algorithm:
  *   for each contact in [0, num_contacts):
@@ -1197,37 +1240,39 @@ static inline void forge_physics_resolve_contacts(
 /* Detect all sphere-sphere collisions among an array of particles.
  *
  * Performs an O(n^2) all-pairs test, checking every unique particle pair
- * for overlap. Detected contacts are written into the caller-provided
- * contacts array up to max_contacts. If more collisions exist than
- * max_contacts allows, additional contacts are silently dropped.
+ * for overlap. Detected contacts are appended to the caller-provided
+ * dynamic array (forge_containers.h). The array is NOT cleared — the
+ * caller should call forge_arr_set_length(*out_contacts, 0) before this
+ * function if a fresh detection pass is desired. (The convenience wrapper
+ * forge_physics_collide_particles_step() clears automatically each call.)
  *
  * For large particle counts, replace this brute-force approach with
- * spatial partitioning (grid, octree) — see Physics Lesson 07.
+ * spatial partitioning (grid, octree) — see Physics Lesson 08.
  *
  * Algorithm:
- *   count = 0
  *   for i in [0, n-1):
  *     for j in [i+1, n):
  *       if collide_sphere_sphere(i, j):
- *         contacts[count++] = result
- *         if count == max_contacts: return count
- *   return count
+ *         forge_arr_append(*out_contacts, result)
+ *   return forge_arr_length(*out_contacts)
  *
  * Parameters:
  *   particles     (const ForgePhysicsParticle*) — particle array; must not be NULL
  *   num_particles (int)                         — number of particles
- *   contacts      (ForgePhysicsContact*)        — output contact buffer; must not
- *                                                 be NULL and have room for at least
- *                                                 max_contacts entries
- *   max_contacts  (int)                         — capacity of the contacts buffer
+ *   out_contacts  (ForgePhysicsContact**)       — pointer to a dynamic array of
+ *                                                 contacts; must not be NULL. The
+ *                                                 pointed-to array may be NULL
+ *                                                 (will be allocated on first append).
  *
  * Returns:
- *   The number of contacts detected and written into the buffer.
+ *   The total number of contacts in the dynamic array after detection.
  *
  * Usage:
- *   ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+ *   ForgePhysicsContact *contacts = NULL;
  *   int n = forge_physics_collide_particles_all(
- *       particles, num_particles, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+ *       particles, num_particles, &contacts);
+ *   // ... use contacts[0..n-1] ...
+ *   forge_arr_free(contacts);
  *
  * Reference: Ericson, "Real-Time Collision Detection", Ch. 11 —
  * brute-force collision detection and the need for broad-phase pruning.
@@ -1236,39 +1281,36 @@ static inline void forge_physics_resolve_contacts(
  */
 static inline int forge_physics_collide_particles_all(
     const ForgePhysicsParticle *particles, int num_particles,
-    ForgePhysicsContact *contacts, int max_contacts)
+    ForgePhysicsContact **out_contacts)
 {
-    if (!particles || num_particles <= 1 || !contacts || max_contacts <= 0) {
+    if (!particles || num_particles <= 1 || !out_contacts) {
         return 0;
     }
 
-    int count = 0;
-
     for (int i = 0; i < num_particles - 1; i++) {
         for (int j = i + 1; j < num_particles; j++) {
-            if (count >= max_contacts) {
-                return count;
-            }
+            ForgePhysicsContact c;
             if (forge_physics_collide_sphere_sphere(
-                    &particles[i], &particles[j], i, j, &contacts[count])) {
-                count++;
+                    &particles[i], &particles[j], i, j, &c)) {
+                forge_arr_append(*out_contacts, c);
             }
         }
     }
 
-    return count;
+    return (int)forge_arr_length(*out_contacts);
 }
 
 /* Detect and resolve all particle collisions in one step.
  *
  * Convenience function that performs both the detection and resolution
- * phases: first runs O(n^2) all-pairs sphere-sphere detection, then
- * resolves all detected contacts with impulse-based response and
- * positional correction.
+ * phases: first runs O(n^2) all-pairs sphere-sphere detection into a
+ * dynamic array, then resolves all detected contacts with impulse-based
+ * response and positional correction.
  *
  * Algorithm:
- *   num_contacts = collide_particles_all(particles, contacts)
- *   resolve_contacts(contacts, num_contacts, particles)
+ *   forge_arr_set_length(*out_contacts, 0)
+ *   num_contacts = collide_particles_all(particles, out_contacts)
+ *   resolve_contacts(*out_contacts, num_contacts, particles)
  *   return num_contacts
  *
  * Parameters:
@@ -1276,18 +1318,19 @@ static inline int forge_physics_collide_particles_all(
  *                                           Velocities and positions are modified
  *                                           in place during resolution.
  *   num_particles (int)                   — number of particles
- *   contacts      (ForgePhysicsContact*) — scratch buffer for detected contacts;
- *                                           must have room for max_contacts entries
- *   max_contacts  (int)                  — capacity of the contacts buffer
+ *   out_contacts  (ForgePhysicsContact**) — pointer to a dynamic array of contacts;
+ *                                           cleared and repopulated each call
  *
  * Returns:
  *   The number of contacts detected and resolved.
  *
  * Usage:
- *   ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+ *   ForgePhysicsContact *contacts = NULL;
  *   int n = forge_physics_collide_particles_step(
- *       particles, num_particles, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+ *       particles, num_particles, &contacts);
  *   SDL_Log("Resolved %d collisions this frame", n);
+ *   // ... later ...
+ *   forge_arr_free(contacts);
  *
  * Reference: Millington, "Game Physics Engine Development", Ch. 7 —
  * the complete contact resolution pipeline (detect → resolve).
@@ -1296,14 +1339,18 @@ static inline int forge_physics_collide_particles_all(
  */
 static inline int forge_physics_collide_particles_step(
     ForgePhysicsParticle *particles, int num_particles,
-    ForgePhysicsContact *contacts, int max_contacts)
+    ForgePhysicsContact **out_contacts)
 {
+    if (!out_contacts) return 0;
+
+    forge_arr_set_length(*out_contacts, 0);
+
     int num_contacts = forge_physics_collide_particles_all(
-        particles, num_particles, contacts, max_contacts);
+        particles, num_particles, out_contacts);
 
     if (num_contacts > 0) {
         forge_physics_resolve_contacts(
-            contacts, num_contacts, particles, num_particles);
+            *out_contacts, num_contacts, particles, num_particles);
     }
 
     return num_contacts;
@@ -1404,6 +1451,10 @@ static inline ForgePhysicsRigidBody forge_physics_rigid_body_create(
 {
     ForgePhysicsRigidBody rb;
 
+    /* Sanitize position — NaN/Inf would propagate into collision detection. */
+    if (!forge_isfinite(vec3_length_squared(position))) {
+        position = vec3_create(0.0f, 0.0f, 0.0f);
+    }
     rb.position         = position;
     rb.prev_position    = position;
     rb.orientation      = quat_identity();
@@ -1422,16 +1473,18 @@ static inline ForgePhysicsRigidBody forge_physics_rigid_body_create(
         rb.inv_mass = 0.0f;
     }
 
-    /* Clamp damping and restitution to [0..1] */
-    if (damping < 0.0f) damping = 0.0f;
+    /* Clamp damping and restitution to [0..1] — NaN fails both comparisons,
+     * so check finiteness first and default to 0. */
+    if (!forge_isfinite(damping) || damping < 0.0f) damping = 0.0f;
     if (damping > 1.0f) damping = 1.0f;
     rb.damping = damping;
 
-    if (angular_damping < 0.0f) angular_damping = 0.0f;
+    if (!forge_isfinite(angular_damping) || angular_damping < 0.0f)
+        angular_damping = 0.0f;
     if (angular_damping > 1.0f) angular_damping = 1.0f;
     rb.angular_damping = angular_damping;
 
-    if (restitution < 0.0f) restitution = 0.0f;
+    if (!forge_isfinite(restitution) || restitution < 0.0f) restitution = 0.0f;
     if (restitution > 1.0f) restitution = 1.0f;
     rb.restitution = restitution;
 
@@ -1739,6 +1792,9 @@ static inline void forge_physics_rigid_body_update_derived(
  * Full symplectic Euler integration for rigid bodies:
  *
  *   1. Guard: skip static bodies (inv_mass == 0)
+ *   1b. Guard: if any state field is non-finite (velocity, angular_velocity,
+ *       position, force_accum, torque_accum, orientation), clear accumulators
+ *       and return — prevents one corrupted body from poisoning the simulation
  *   2. Save prev_position and prev_orientation (for render interpolation)
  *   3. Linear acceleration:  a = F * inv_mass
  *   4. Angular acceleration: alpha = I_world_inv * (tau - omega x (I_world * omega))
@@ -1782,6 +1838,27 @@ static inline void forge_physics_rigid_body_integrate(
 {
     if (!rb || rb->inv_mass == 0.0f) return;
     if (!(dt > 0.0f) || !forge_isfinite(dt)) return;  /* rejects <= 0, NaN, +inf */
+
+    /* Reject bodies whose state has become non-finite (NaN/inf).
+     * IEEE 754: NaN comparisons return false, so velocity-clamping guards
+     * like `v_len > MAX` silently pass NaN through.  Catching it here
+     * prevents one corrupted body from poisoning the whole simulation. */
+    if (!forge_isfinite(vec3_length_squared(rb->velocity)) ||
+        !forge_isfinite(vec3_length_squared(rb->angular_velocity)) ||
+        !forge_isfinite(vec3_length_squared(rb->position)) ||
+        !forge_isfinite(vec3_length_squared(rb->force_accum)) ||
+        !forge_isfinite(vec3_length_squared(rb->torque_accum)) ||
+        !forge_isfinite(quat_length_sq(rb->orientation))) {
+        /* Restore last known-good transform and zero all dynamics so the
+         * corrupted state does not propagate into collision detection. */
+        rb->position         = rb->prev_position;
+        rb->orientation      = rb->prev_orientation;
+        rb->velocity         = vec3_create(0.0f, 0.0f, 0.0f);
+        rb->angular_velocity = vec3_create(0.0f, 0.0f, 0.0f);
+        rb->force_accum      = vec3_create(0.0f, 0.0f, 0.0f);
+        rb->torque_accum     = vec3_create(0.0f, 0.0f, 0.0f);
+        return;
+    }
 
     /* ── Save previous state for render interpolation ─────────────────── */
     rb->prev_position    = rb->position;
@@ -2111,14 +2188,6 @@ static inline mat4 forge_physics_rigid_body_get_transform(
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
 
-/* Maximum number of rigid body contacts per step.
- *
- * Each box-plane collision can produce up to 8 contacts (all corners below
- * the plane). With N bodies, the worst case for plane contacts alone is
- * 8*N. 64 is generous for the small scenes in these lessons.
- */
-#define FORGE_PHYSICS_MAX_RB_CONTACTS 64
-
 /* Default Coulomb friction coefficients (reference values).
  *
  * Static friction must be >= dynamic friction. These are combined between
@@ -2221,7 +2290,7 @@ typedef struct ForgePhysicsRBContact {
  * Parameters:
  *   body         — the rigid body (sphere shape)
  *   body_idx     — index of this body in the body array
- *   radius       — sphere radius (m), must be > 0
+ *   radius       — sphere radius (m), must be > 0 and finite
  *   plane_point  — any point on the plane (m)
  *   plane_normal — outward normal of the plane (must be unit length)
  *   mu_s         — static friction coefficient for this contact
@@ -2250,7 +2319,7 @@ static inline bool forge_physics_rb_collide_sphere_plane(
     ForgePhysicsRBContact *out)
 {
     if (!body || !out) return false;
-    if (!(radius > FORGE_PHYSICS_EPSILON)) return false;
+    if (!(radius > FORGE_PHYSICS_EPSILON) || !forge_isfinite(radius)) return false;
     float normal_len_sq = vec3_length_squared(plane_normal);
     if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return false;
     plane_normal = vec3_scale(plane_normal, 1.0f / SDL_sqrtf(normal_len_sq));
@@ -2297,7 +2366,7 @@ static inline bool forge_physics_rb_collide_sphere_plane(
  * Parameters:
  *   body         — the rigid body (box shape)
  *   body_idx     — index of this body in the body array
- *   half_extents — half-width, half-height, half-depth (m)
+ *   half_extents — half-width, half-height, half-depth (m); must be finite
  *   plane_point  — any point on the plane (m)
  *   plane_normal — outward normal of the plane (must be unit length)
  *   mu_s         — static friction coefficient
@@ -2328,6 +2397,8 @@ static inline int forge_physics_rb_collide_box_plane(
     ForgePhysicsRBContact *out, int max_contacts)
 {
     if (!body || !out || max_contacts <= 0) return 0;
+    if (!forge_isfinite(half_extents.x) || !forge_isfinite(half_extents.y) ||
+        !forge_isfinite(half_extents.z)) return 0;
     float normal_len_sq = vec3_length_squared(plane_normal);
     if (!(normal_len_sq > FORGE_PHYSICS_EPSILON)) return 0;
     plane_normal = vec3_scale(plane_normal, 1.0f / SDL_sqrtf(normal_len_sq));
@@ -2399,10 +2470,10 @@ static inline int forge_physics_rb_collide_box_plane(
  * Parameters:
  *   a         — first rigid body (must not be NULL)
  *   idx_a     — index of body A in the bodies array
- *   radius_a  — collision radius of body A (must be > 0)
+ *   radius_a  — collision radius of body A (must be > 0 and finite)
  *   b         — second rigid body (must not be NULL)
  *   idx_b     — index of body B in the bodies array
- *   radius_b  — collision radius of body B (must be > 0)
+ *   radius_b  — collision radius of body B (must be > 0 and finite)
  *   mu_s      — static friction coefficient for the contact (>= 0)
  *   mu_d      — dynamic friction coefficient for the contact (>= 0)
  *   out       — receives the contact if overlap detected (must not be NULL)
@@ -2427,7 +2498,8 @@ static inline bool forge_physics_rb_collide_sphere_sphere(
     float mu_s, float mu_d, ForgePhysicsRBContact *out)
 {
     if (!a || !b || !out) return false;
-    if (radius_a <= 0.0f || radius_b <= 0.0f) return false;
+    if (!(radius_a > FORGE_PHYSICS_EPSILON) || !forge_isfinite(radius_a) ||
+        !(radius_b > FORGE_PHYSICS_EPSILON) || !forge_isfinite(radius_b)) return false;
 
     /* Two static bodies cannot collide. */
     if (a->inv_mass == 0.0f && b->inv_mass == 0.0f) return false;
@@ -3322,6 +3394,22 @@ static inline ForgePhysicsAABB forge_physics_shape_compute_aabb(
 
 /* ── AABB utility functions ────────────────────────────────────────────── */
 
+/* Check whether all components of an AABB are finite (not NaN or infinity).
+ *
+ * Returns false if any min or max component is non-finite. Used by the SAP
+ * broadphase to skip bodies with corrupted AABBs before calling aabb_overlap,
+ * which would produce bogus results (NaN comparisons always return false,
+ * causing separation tests to fail).
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
+ */
+static inline bool forge_physics_aabb_isfinite(ForgePhysicsAABB a)
+{
+    return forge_isfinite(a.min.x) && forge_isfinite(a.min.y) &&
+           forge_isfinite(a.min.z) && forge_isfinite(a.max.x) &&
+           forge_isfinite(a.max.y) && forge_isfinite(a.max.z);
+}
+
 /* Test whether two AABBs overlap.
  *
  * Two AABBs overlap if and only if their projections overlap on all three
@@ -3419,19 +3507,6 @@ static inline vec3 forge_physics_aabb_extents(ForgePhysicsAABB aabb)
  * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
  * ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── SAP Constants ─────────────────────────────────────────────────────── */
-
-/* Maximum number of bodies the SAP broadphase can handle.
- * Each body produces 2 endpoints, so the endpoint array is 2 * this value.
- */
-#define FORGE_PHYSICS_SAP_MAX_BODIES  256
-
-/* Maximum number of overlapping pairs the SAP broadphase can report.
- * If the scene produces more pairs than this, the excess is dropped and
- * world->pair_overflow is set to true so callers can detect truncation.
- */
-#define FORGE_PHYSICS_SAP_MAX_PAIRS   4096
-
 /* ── SAP Types ─────────────────────────────────────────────────────────── */
 
 /* A single endpoint on the sweep axis.
@@ -3441,9 +3516,9 @@ static inline vec3 forge_physics_aabb_extents(ForgePhysicsAABB aabb)
  * identifies overlapping intervals.
  */
 typedef struct ForgePhysicsSAPEndpoint {
-    float    value;       /* coordinate on the sweep axis */
-    uint16_t body_index;  /* which body this endpoint belongs to */
-    bool     is_min;      /* true = opening endpoint, false = closing */
+    float    value;       /* coordinate on the sweep axis (meters) */
+    uint16_t body_index;  /* index into caller's AABB/body array [0, count) — uint16_t caps body count at UINT16_MAX */
+    bool     is_min;      /* true = min (opening) endpoint, false = max (closing) — controls active-set open/close during sweep */
 } ForgePhysicsSAPEndpoint;
 
 /* An overlapping pair found by the broadphase.
@@ -3451,23 +3526,26 @@ typedef struct ForgePhysicsSAPEndpoint {
  * Invariant: a < b always, ensuring each pair is stored uniquely.
  */
 typedef struct ForgePhysicsSAPPair {
-    uint16_t a;
-    uint16_t b;
+    uint16_t a;  /* body index A, range [0, count); always < b */
+    uint16_t b;  /* body index B, range [0, count); always > a */
 } ForgePhysicsSAPPair;
 
 /* Sweep-and-prune broadphase world state.
  *
- * Holds the endpoint array, output pair buffer, and bookkeeping.
- * All storage is inline — no heap allocation.
+ * Holds dynamic endpoint and pair arrays managed by forge_containers.h.
+ * Call forge_physics_sap_init() before first use and
+ * forge_physics_sap_destroy() when done to free the backing memory.
+ *
+ * Non-copyable: Do not assign, copy, or pass by value. Always use pointers.
+ * Shallow copies alias the heap-owned endpoints/pairs arrays and cause
+ * double-free on destroy.
  */
 typedef struct ForgePhysicsSAPWorld {
-    ForgePhysicsSAPEndpoint endpoints[FORGE_PHYSICS_SAP_MAX_BODIES * 2];
-    ForgePhysicsSAPPair     pairs[FORGE_PHYSICS_SAP_MAX_PAIRS];
-    int                     endpoint_count;
-    int                     pair_count;
-    int                     sweep_axis;   /* 0 = X, 1 = Y, 2 = Z */
-    int                     sort_ops;     /* insertion-sort swap count (diagnostic) */
-    bool                    pair_overflow; /* true if pairs exceeded MAX_PAIRS */
+    ForgePhysicsSAPEndpoint *endpoints;   /* sorted endpoint array — NULL before init, populated by sap_update (forge_containers) */
+    ForgePhysicsSAPPair     *pairs;       /* overlapping pairs found during sweep — NULL before init, populated by sap_update (forge_containers) */
+    ForgeArena               sweep_arena; /* scratch memory for the sweep active set — reset each sap_update, freed by sap_destroy */
+    int                     sweep_axis;   /* 0 = X, 1 = Y, 2 = Z — reset to 0 by sap_destroy */
+    int                     sort_ops;     /* insertion-sort swap count from last sap_update — >= 0; near 0 means good temporal coherence; reset each sap_update call */
 } ForgePhysicsSAPWorld;
 
 /* ── SAP Helper Functions ──────────────────────────────────────────────── */
@@ -3494,7 +3572,7 @@ static inline float forge_physics_vec3_axis(vec3 v, int axis)
 
 /* Zero-initialize a SAP world.
  *
- * Clears all endpoints, pairs, and counters. Must be called before first use.
+ * Sets all pointers to NULL and counters to zero. Must be called before first use.
  *
  * Parameters:
  *   world — SAP world to initialize (must not be NULL)
@@ -3504,7 +3582,34 @@ static inline float forge_physics_vec3_axis(vec3 v, int axis)
 static inline void forge_physics_sap_init(ForgePhysicsSAPWorld *world)
 {
     if (!world) return;
-    SDL_memset(world, 0, sizeof(*world));
+    world->endpoints  = NULL;
+    world->pairs      = NULL;
+    world->sweep_arena = forge_arena_create(0);
+    world->sweep_axis = 0;
+    world->sort_ops   = 0;
+}
+
+/* Free all memory owned by a SAP world.
+ *
+ * Releases the dynamic endpoint and pair arrays, and resets sweep_axis
+ * and sort_ops to 0. The world struct itself is caller-owned and not
+ * freed. Safe to call on an already-destroyed or zero-initialized world.
+ * After destroy, all memory is freed and pointers are NULL. Call
+ * sap_init() before reuse.
+ *
+ * Parameters:
+ *   world — SAP world to destroy (NULL is safe)
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
+ */
+static inline void forge_physics_sap_destroy(ForgePhysicsSAPWorld *world)
+{
+    if (!world) return;
+    forge_arr_free(world->endpoints);
+    forge_arr_free(world->pairs);
+    forge_arena_destroy(&world->sweep_arena);
+    world->sweep_axis = 0;
+    world->sort_ops   = 0;
 }
 
 /* Select the sweep axis with greatest AABB center variance.
@@ -3567,13 +3672,12 @@ static inline int forge_physics_sap_select_axis(
  *   3. Sweeps left-to-right: on a min endpoint, tests the new body against
  *      all currently active bodies using full 3-axis AABB overlap; on a max
  *      endpoint, removes the body from the active set
- *   4. Outputs pairs (a < b) into world->pairs, capped at SAP_MAX_PAIRS.
- *      Sets world->pair_overflow if the cap is exceeded.
+ *   4. Outputs pairs (a < b) into world->pairs (dynamic array, grows as needed)
  *
  * Parameters:
  *   world — SAP world (must be initialized)
  *   aabbs — array of AABBs to test
- *   count — number of AABBs (clamped to SAP_MAX_BODIES)
+ *   count — number of AABBs (clamped to 65535 — body indices are uint16_t)
  *
  * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
  */
@@ -3583,16 +3687,18 @@ static inline void forge_physics_sap_update(
 {
     if (!world) return;
     if (!aabbs || count <= 0) {
-        world->endpoint_count = 0;
-        world->pair_count = 0;
+        forge_arr_set_length(world->endpoints, 0);
+        forge_arr_set_length(world->pairs, 0);
         world->sort_ops = 0;
-        world->pair_overflow = false;
         return;
     }
 
-    /* Clamp to max bodies */
-    if (count > FORGE_PHYSICS_SAP_MAX_BODIES)
-        count = FORGE_PHYSICS_SAP_MAX_BODIES;
+    /* Body indices are stored as uint16_t — cap count to avoid truncation. */
+    if (count > UINT16_MAX) {
+        SDL_Log("WARNING: forge_physics_sap_update: count %d exceeds UINT16_MAX, "
+                "clamped to %d", count, (int)UINT16_MAX);
+        count = UINT16_MAX;
+    }
 
     int axis = world->sweep_axis;
     if (axis < 0 || axis > 2) {
@@ -3608,11 +3714,16 @@ static inline void forge_physics_sap_update(
      * order from the previous frame so the insertion sort stays near-linear
      * (temporal coherence). */
     int ep_count = count * 2;
-    bool rebuild = (world->endpoint_count != ep_count);
+    bool rebuild = ((int)forge_arr_length(world->endpoints) != ep_count);
 
     if (rebuild) {
-        /* Full rebuild: assign body_index and is_min, then set values */
-        world->endpoint_count = ep_count;
+        /* Full rebuild: resize and assign body_index and is_min */
+        forge_arr_set_length(world->endpoints, (size_t)ep_count);
+        if ((int)forge_arr_length(world->endpoints) != ep_count) {
+            SDL_Log("ERROR: forge_physics_sap_update: endpoint allocation failed");
+            forge_arr_set_length(world->pairs, 0);
+            return;
+        }
         for (int i = 0; i < count; i++) {
             world->endpoints[i * 2 + 0].body_index = (uint16_t)i;
             world->endpoints[i * 2 + 0].is_min     = true;
@@ -3621,12 +3732,18 @@ static inline void forge_physics_sap_update(
         }
     }
 
-    /* Refresh projected values from current AABBs */
+    /* Refresh projected values from current AABBs.  Reject non-finite AABB
+     * values — NaN would corrupt the insertion sort order and produce
+     * incorrect broadphase results silently.  Non-finite min/max are
+     * replaced with 0, collapsing the AABB to a point at the origin so
+     * the body participates in no pairs. */
     for (int i = 0; i < ep_count; i++) {
         int bi = world->endpoints[i].body_index;
-        world->endpoints[i].value = world->endpoints[i].is_min
+        float v = world->endpoints[i].is_min
             ? forge_physics_vec3_axis(aabbs[bi].min, axis)
             : forge_physics_vec3_axis(aabbs[bi].max, axis);
+        if (!forge_isfinite(v)) v = 0.0f;
+        world->endpoints[i].value = v;
     }
 
     /* Step 2: Insertion sort — O(n) for nearly-sorted (temporally coherent) data */
@@ -3650,48 +3767,83 @@ static inline void forge_physics_sap_update(
     }
 
     /* Step 3: Sweep — track active bodies, test overlaps on min endpoints */
-    world->pair_count = 0;
-    world->pair_overflow = false;
+    forge_arr_set_length(world->pairs, 0);  /* clear pairs, preserve allocation */
 
-    /* Active set: which bodies currently have an open (min seen, max not yet) interval.
+    /* Active set: a dense list of body indices for O(k) pairing where k is
+     * the number of currently active bodies, plus a position map for O(1)
+     * swap-removal when a max endpoint closes an interval.
      *
-     * Implementation note: the inner loop scans the flat active[] array, making
-     * the sweep O(n * k) where k is the average active count. A production engine
-     * would use a linked list of active bodies for O(k) per endpoint. The flat
-     * array is simpler and sufficient for SAP_MAX_BODIES (256). */
-    bool active[FORGE_PHYSICS_SAP_MAX_BODIES];
-    SDL_memset(active, 0, sizeof(active));
+     * active_list[0..active_count-1] — dense array of active body indices
+     * active_pos[body_index] — position of body_index in active_list, or
+     *                          -1 if inactive.
+     *
+     * Allocated from the world's sweep arena — reset (not freed) each
+     * frame so the backing memory is reused without per-frame allocs. */
+    forge_arena_reset(&world->sweep_arena);
+    uint16_t *active_list = (uint16_t *)forge_arena_alloc(
+        &world->sweep_arena, (size_t)count * sizeof(uint16_t));
+    int *active_pos = (int *)forge_arena_alloc(
+        &world->sweep_arena, (size_t)count * sizeof(int));
+    if (!active_list || !active_pos) {
+        SDL_Log("ERROR: forge_physics_sap_update: active set allocation failed — "
+               "endpoints sorted but pairs empty");
+        return;
+    }
+    int active_count = 0;
+    /* Arena zeroes memory on reset; -1 marks inactive, so set explicitly. */
+    for (int i = 0; i < count; i++) active_pos[i] = -1;
 
     for (int i = 0; i < ep_count; i++) {
         ForgePhysicsSAPEndpoint *ep = &world->endpoints[i];
 
         if (ep->is_min) {
-            /* New body enters — test against all currently active bodies */
-            for (int b = 0; b < count; b++) {
-                if (!active[b]) continue;
-                if (b == (int)ep->body_index) continue;
+            /* Skip bodies with non-finite AABBs — endpoint values were
+             * sanitized above, but aabb_overlap() reads the original AABB
+             * where NaN comparisons always return false, causing all
+             * separation tests to fail (bogus overlap). */
+            if (!forge_physics_aabb_isfinite(aabbs[ep->body_index])) {
+                continue;
+            }
+
+            /* New body enters — test against all currently active bodies.
+             * Only iterates the dense active list (O(k) not O(n)). */
+            for (int j = 0; j < active_count; j++) {
+                int b = active_list[j];
 
                 /* Full 3-axis AABB overlap test */
                 if (forge_physics_aabb_overlap(aabbs[ep->body_index], aabbs[b])) {
-                    if (world->pair_count < FORGE_PHYSICS_SAP_MAX_PAIRS) {
-                        uint16_t pa = ep->body_index;
-                        uint16_t pb = (uint16_t)b;
-                        /* Enforce a < b ordering */
-                        if (pa > pb) { uint16_t tmp = pa; pa = pb; pb = tmp; }
-                        world->pairs[world->pair_count].a = pa;
-                        world->pairs[world->pair_count].b = pb;
-                        world->pair_count++;
-                    } else {
-                        world->pair_overflow = true;
-                    }
+                    uint16_t pa = ep->body_index;
+                    uint16_t pb = (uint16_t)b;
+                    /* Enforce a < b ordering */
+                    if (pa > pb) { uint16_t tmp = pa; pa = pb; pb = tmp; }
+                    ForgePhysicsSAPPair pair;
+                    pair.a = pa;
+                    pair.b = pb;
+                    forge_arr_append(world->pairs, pair);
                 }
             }
-            active[ep->body_index] = true;
+            /* Add to active set */
+            active_pos[ep->body_index] = active_count;
+            active_list[active_count]  = ep->body_index;
+            active_count++;
         } else {
-            /* Body exits — remove from active set */
-            active[ep->body_index] = false;
+            /* Body exits — swap-remove from dense active list in O(1) */
+            int pos = active_pos[ep->body_index];
+            if (pos >= 0 && pos < active_count) {
+                active_count--;
+                if (pos < active_count) {
+                    /* Swap last element into the vacated slot */
+                    uint16_t last = active_list[active_count];
+                    active_list[pos] = last;
+                    active_pos[last] = pos;
+                }
+                active_pos[ep->body_index] = -1;
+            }
         }
     }
+
+    /* Arena memory stays alive for reuse next frame — reset in the next
+     * sap_update call, freed by sap_destroy. */
 }
 
 /* Return the number of overlapping pairs found in the last update.
@@ -3700,11 +3852,13 @@ static inline void forge_physics_sap_update(
  *   world — SAP world
  *
  * Returns: pair count (0 if world is NULL)
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
  */
 static inline int forge_physics_sap_pair_count(const ForgePhysicsSAPWorld *world)
 {
     if (!world) return 0;
-    return world->pair_count;
+    return (int)forge_arr_length(world->pairs);
 }
 
 /* Return a pointer to the overlapping pairs array.
@@ -3716,6 +3870,8 @@ static inline int forge_physics_sap_pair_count(const ForgePhysicsSAPWorld *world
  *   world — SAP world
  *
  * Returns: pointer to pairs array (NULL if world is NULL)
+ *
+ * See: Physics Lesson 08 — Sweep-and-Prune Broadphase
  */
 static inline const ForgePhysicsSAPPair *forge_physics_sap_get_pairs(
     const ForgePhysicsSAPWorld *world)

@@ -65,7 +65,7 @@ int fail_count = 0;
 #define INT_HEIGHT        100.0f
 #define INT_MASS          2.0f
 #define INT_TIME_1SEC     1.0f
-#define INT_EXPECTED_VY   (-9.81f)   /* GRAVITY_Y * INT_TIME_1SEC */
+#define INT_EXPECTED_VY   (GRAVITY_Y)   /* GRAVITY_Y * INT_TIME_1SEC */
 #define INT_EXPECTED_PY   90.19f     /* INT_HEIGHT + INT_EXPECTED_VY * INT_TIME_1SEC */
 #define INT_TOLERANCE     0.01f
 
@@ -392,8 +392,7 @@ static void test_integrate_velocity_clamping(void)
 
     float speed = vec3_length(p.velocity);
     ASSERT_TRUE(speed <= FORGE_PHYSICS_MAX_VELOCITY + EPSILON);
-    ASSERT_TRUE(!isnan(p.position.x));
-    ASSERT_TRUE(!isinf(p.position.x));
+    ASSERT_TRUE(forge_isfinite(p.position.x));
     END_TEST();
 }
 
@@ -525,12 +524,12 @@ static void test_determinism(void)
         forge_physics_apply_gravity(&a, gravity);
         forge_physics_apply_drag(&a, DET_DRAG);
         forge_physics_integrate(&a, PHYSICS_DT);
-        forge_physics_collide_plane(&a, ground_normal, 0.0f);
+        (void)forge_physics_collide_plane(&a, ground_normal, 0.0f);
 
         forge_physics_apply_gravity(&b, gravity);
         forge_physics_apply_drag(&b, DET_DRAG);
         forge_physics_integrate(&b, PHYSICS_DT);
-        forge_physics_collide_plane(&b, ground_normal, 0.0f);
+        (void)forge_physics_collide_plane(&b, ground_normal, 0.0f);
     }
 
     ASSERT_NEAR(a.position.x, b.position.x, EPSILON);
@@ -560,13 +559,11 @@ static void test_energy_stability_no_nan(void)
         forge_physics_apply_gravity(&p, gravity);
         forge_physics_apply_drag(&p, NRG_DRAG);
         forge_physics_integrate(&p, PHYSICS_DT);
-        forge_physics_collide_plane(&p, ground_normal, 0.0f);
+        (void)forge_physics_collide_plane(&p, ground_normal, 0.0f);
     }
 
-    ASSERT_TRUE(!isnan(p.position.x) && !isnan(p.position.y) && !isnan(p.position.z));
-    ASSERT_TRUE(!isinf(p.position.x) && !isinf(p.position.y) && !isinf(p.position.z));
-    ASSERT_TRUE(!isnan(p.velocity.x) && !isnan(p.velocity.y) && !isnan(p.velocity.z));
-    ASSERT_TRUE(!isinf(p.velocity.x) && !isinf(p.velocity.y) && !isinf(p.velocity.z));
+    ASSERT_TRUE(forge_isfinite(p.position.x) && forge_isfinite(p.position.y) && forge_isfinite(p.position.z));
+    ASSERT_TRUE(forge_isfinite(p.velocity.x) && forge_isfinite(p.velocity.y) && forge_isfinite(p.velocity.z));
     /* Position should remain reasonable */
     ASSERT_TRUE(SDL_fabsf(p.position.x) < NRG_POS_BOUND);
     ASSERT_TRUE(SDL_fabsf(p.position.y) < NRG_POS_BOUND);
@@ -594,7 +591,7 @@ static void test_energy_stability_bounded(void)
         forge_physics_apply_gravity(&p, gravity);
         forge_physics_apply_drag(&p, NRG_DRAG);
         forge_physics_integrate(&p, PHYSICS_DT);
-        forge_physics_collide_plane(&p, plane_normal, 0.0f);
+        (void)forge_physics_collide_plane(&p, plane_normal, 0.0f);
     }
 
     /* Kinetic energy: 0.5 * m * |v|^2 */
@@ -617,7 +614,7 @@ static void test_energy_stability_bounded(void)
  * ══════════════════════════════════════════════════════════════════════════ */
 
 #define CF_FORCE_X   3.0f
-#define CF_FORCE_Y   (-9.81f)
+#define CF_FORCE_Y   (GRAVITY_Y)
 #define CF_FORCE_Z   1.5f
 
 static void test_clear_forces(void)
@@ -727,6 +724,104 @@ static void test_integrate_negative_dt(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * 10b. Particle integrate — NaN/inf state rejection
+ *
+ * The particle integrator now matches the rigid body integrator: if any
+ * state field (velocity, position, force_accum) is non-finite, the function
+ * clears the force accumulator and returns without modifying state.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+#define PNAN_POS_X     5.0f
+#define PNAN_POS_Y     3.0f
+#define PNAN_VEL_Y     2.0f
+
+static void test_particle_integrate_nan_velocity(void)
+{
+    TEST("integrate — NaN velocity is rejected (no-op)");
+    vec3 pos = vec3_create(PNAN_POS_X, PNAN_POS_Y, 0.0f);
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        pos, 1.0f, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    p.velocity = vec3_create(NAN, 0.0f, 0.0f);
+    p.force_accum = vec3_create(0.0f, GRAVITY_Y, 0.0f);
+
+    forge_physics_integrate(&p, PHYSICS_DT);
+
+    /* Position unchanged — NaN velocity triggers early return */
+    ASSERT_NEAR(p.position.x, PNAN_POS_X, EPSILON);
+    ASSERT_NEAR(p.position.y, PNAN_POS_Y, EPSILON);
+    /* Force accumulator cleared even on rejection */
+    ASSERT_NEAR(p.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(p.force_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_integrate_nan_position(void)
+{
+    TEST("integrate — NaN position: restores prev_position, zeroes all dynamics");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(PNAN_POS_X, PNAN_POS_Y, 0.0f), 1.0f, 0.0f,
+        DEFAULT_RESTIT, DEFAULT_RADIUS);
+    /* Integrate once to establish nontrivial prev_position.
+     * After integrate, prev_position holds the pre-step position and
+     * position holds the post-step position.  The bailout will restore
+     * prev_position, so capture that as the expected value. */
+    forge_physics_apply_gravity(&p, vec3_create(0.0f, GRAVITY_Y, 0.0f));
+    forge_physics_integrate(&p, PHYSICS_DT);
+    vec3 expected_restore = p.prev_position;
+    /* Corrupt position */
+    p.position = vec3_create(NAN, PNAN_POS_Y, 0.0f);
+    p.velocity = vec3_create(0.0f, PNAN_VEL_Y, 0.0f);
+
+    forge_physics_integrate(&p, PHYSICS_DT);
+
+    /* All position components restored to prev_position */
+    ASSERT_NEAR(p.position.x, expected_restore.x, EPSILON);
+    ASSERT_NEAR(p.position.y, expected_restore.y, EPSILON);
+    ASSERT_NEAR(p.position.z, expected_restore.z, EPSILON);
+    /* All velocity components zeroed */
+    ASSERT_NEAR(p.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(p.velocity.y, 0.0f, EPSILON);
+    ASSERT_NEAR(p.velocity.z, 0.0f, EPSILON);
+    /* Force accum zeroed */
+    ASSERT_NEAR(p.force_accum.x, 0.0f, EPSILON);
+    ASSERT_NEAR(p.force_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_integrate_nan_force_accum(void)
+{
+    TEST("integrate — NaN force_accum: restores prev_position, zeroes dynamics");
+    vec3 pos = vec3_create(PNAN_POS_X, PNAN_POS_Y, 0.0f);
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        pos, 1.0f, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    p.force_accum = vec3_create(NAN, 0.0f, 0.0f);
+
+    forge_physics_integrate(&p, PHYSICS_DT);
+
+    /* Position restored to prev, velocity and force zeroed */
+    ASSERT_NEAR(p.position.x, pos.x, EPSILON);
+    ASSERT_NEAR(p.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(p.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_integrate_inf_velocity(void)
+{
+    TEST("integrate — INFINITY velocity is rejected (no-op)");
+    vec3 pos = vec3_create(PNAN_POS_X, PNAN_POS_Y, 0.0f);
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        pos, 1.0f, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    p.velocity = vec3_create(INFINITY, 0.0f, 0.0f);
+
+    forge_physics_integrate(&p, PHYSICS_DT);
+
+    /* Position unchanged */
+    ASSERT_NEAR(p.position.x, PNAN_POS_X, EPSILON);
+    ASSERT_NEAR(p.position.y, PNAN_POS_Y, EPSILON);
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * 11. forge_physics_collide_plane — zero restitution (fully inelastic)
  * ══════════════════════════════════════════════════════════════════════════ */
 
@@ -780,7 +875,7 @@ static void test_particle_create_negative_mass(void)
  * ══════════════════════════════════════════════════════════════════════════ */
 
 #define VH_MASS           2000000.0f
-#define VH_INV_MASS       (1.0f / VH_MASS)   /* ~5e-7, below EPSILON */
+/* VH_INV_MASS ~5e-7, below EPSILON — see test for explanation */
 #define VH_PEN_HEIGHT     0.1f
 #define VH_PEN_VEL        (-5.0f)
 
@@ -940,9 +1035,7 @@ static void test_spring_force_compression(void)
 #define SP_DIAG_POS_Y  4.0f
 #define SP_DIAG_REST   3.0f
 #define SP_DIAG_K      20.0f
-#define SP_DIAG_DIST   5.0f  /* sqrt(9+16) */
-#define SP_DIAG_DISP   2.0f  /* 5 - 3 */
-#define SP_DIAG_F      40.0f /* 20 * 2 */
+/* SP_DIAG_DIST = sqrt(9+16) = 5, SP_DIAG_DISP = 5 - 3 = 2, SP_DIAG_F = 20 * 2 = 40 */
 #define SP_DIAG_FX     24.0f /* 40 * 3/5 */
 #define SP_DIAG_FY     32.0f /* 40 * 4/5 */
 /* Slightly looser tolerance for diagonal due to float imprecision in sqrt */
@@ -1140,8 +1233,8 @@ static void test_spring_coincident_particles(void)
     forge_physics_spring_apply(&s, particles, 2);
 
     /* No NaN, no crash, forces remain zero */
-    ASSERT_TRUE(!isnan(particles[0].force_accum.x));
-    ASSERT_TRUE(!isnan(particles[1].force_accum.x));
+    ASSERT_TRUE(forge_isfinite(particles[0].force_accum.x));
+    ASSERT_TRUE(forge_isfinite(particles[1].force_accum.x));
     ASSERT_NEAR(particles[0].force_accum.x, 0.0f, EPSILON);
     ASSERT_NEAR(particles[1].force_accum.x, 0.0f, EPSILON);
     END_TEST();
@@ -1450,18 +1543,12 @@ static void test_constraint_stability_no_nan(void)
     }
 
     for (int j = 0; j < 3; j++) {
-        ASSERT_TRUE(!isnan(particles[j].position.x));
-        ASSERT_TRUE(!isnan(particles[j].position.y));
-        ASSERT_TRUE(!isnan(particles[j].position.z));
-        ASSERT_TRUE(!isinf(particles[j].position.x));
-        ASSERT_TRUE(!isinf(particles[j].position.y));
-        ASSERT_TRUE(!isinf(particles[j].position.z));
-        ASSERT_TRUE(!isnan(particles[j].velocity.x));
-        ASSERT_TRUE(!isnan(particles[j].velocity.y));
-        ASSERT_TRUE(!isnan(particles[j].velocity.z));
-        ASSERT_TRUE(!isinf(particles[j].velocity.x));
-        ASSERT_TRUE(!isinf(particles[j].velocity.y));
-        ASSERT_TRUE(!isinf(particles[j].velocity.z));
+        ASSERT_TRUE(forge_isfinite(particles[j].position.x));
+        ASSERT_TRUE(forge_isfinite(particles[j].position.y));
+        ASSERT_TRUE(forge_isfinite(particles[j].position.z));
+        ASSERT_TRUE(forge_isfinite(particles[j].velocity.x));
+        ASSERT_TRUE(forge_isfinite(particles[j].velocity.y));
+        ASSERT_TRUE(forge_isfinite(particles[j].velocity.z));
     }
     END_TEST();
 }
@@ -1707,6 +1794,180 @@ static void test_constraints_solve_null_particles(void)
     END_TEST();
 }
 
+/* ── 28b. NULL pointer safety — particle functions ─────────────────────── */
+
+
+static void test_particle_apply_gravity_null(void)
+{
+    TEST("apply_gravity — NULL particle: no crash");
+    forge_physics_apply_gravity(NULL, vec3_create(0.0f, GRAVITY_Y, 0.0f));
+    /* Reached without crash. */
+    END_TEST();
+}
+
+static void test_particle_apply_drag_null(void)
+{
+    TEST("apply_drag — NULL particle: no crash");
+    forge_physics_apply_drag(NULL, 0.1f);
+    END_TEST();
+}
+
+static void test_particle_apply_force_null(void)
+{
+    TEST("apply_force — NULL particle: no crash");
+    forge_physics_apply_force(NULL, vec3_create(1.0f, 0.0f, 0.0f));
+    END_TEST();
+}
+
+static void test_particle_integrate_null(void)
+{
+    TEST("integrate — NULL particle: no crash");
+    forge_physics_integrate(NULL, PHYSICS_DT);
+    END_TEST();
+}
+
+static void test_particle_collide_plane_null(void)
+{
+    TEST("collide_plane — NULL particle: returns false");
+    bool hit = forge_physics_collide_plane(
+        NULL, vec3_create(0.0f, 1.0f, 0.0f), 0.0f);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_particle_clear_forces_null(void)
+{
+    TEST("clear_forces — NULL particle: no crash");
+    forge_physics_clear_forces(NULL);
+    END_TEST();
+}
+
+/* ── 28c. collide_plane NaN input rejection ──────────────────────────── */
+
+#define CP_NAN_MASS     1.0f
+#define CP_NAN_RADIUS   0.5f
+
+static void test_collide_plane_nan_normal(void)
+{
+    TEST("collide_plane — NaN normal: returns false, state unchanged");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, CP_NAN_RADIUS, 0.0f), CP_NAN_MASS,
+        0.0f, 0.0f, CP_NAN_RADIUS);
+    vec3 pos_before = p.position;
+    bool hit = forge_physics_collide_plane(
+        &p, vec3_create(NAN, 0.0f, 0.0f), 0.0f);
+    ASSERT_TRUE(!hit);
+    ASSERT_NEAR(p.position.y, pos_before.y, EPSILON);
+    END_TEST();
+}
+
+static void test_collide_plane_nan_plane_d(void)
+{
+    TEST("collide_plane — NaN plane_d: returns false, state unchanged");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, CP_NAN_RADIUS, 0.0f), CP_NAN_MASS,
+        0.0f, 0.0f, CP_NAN_RADIUS);
+    vec3 pos_before = p.position;
+    vec3 vel_before = p.velocity;
+    bool hit = forge_physics_collide_plane(
+        &p, vec3_create(0.0f, 1.0f, 0.0f), NAN);
+    ASSERT_TRUE(!hit);
+    ASSERT_NEAR(p.position.x, pos_before.x, EPSILON);
+    ASSERT_NEAR(p.position.y, pos_before.y, EPSILON);
+    ASSERT_NEAR(p.velocity.x, vel_before.x, EPSILON);
+    ASSERT_NEAR(p.velocity.y, vel_before.y, EPSILON);
+    END_TEST();
+}
+
+static void test_collide_plane_nan_position(void)
+{
+    TEST("collide_plane — NaN position: returns false, state unchanged");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, CP_NAN_RADIUS, 0.0f), CP_NAN_MASS,
+        0.0f, 0.0f, CP_NAN_RADIUS);
+    p.position = vec3_create(NAN, 0.0f, 0.0f);
+    bool hit = forge_physics_collide_plane(
+        &p, vec3_create(0.0f, 1.0f, 0.0f), 0.0f);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_plane_inf_normal(void)
+{
+    TEST("collide_plane — inf normal: returns false, state unchanged");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, CP_NAN_RADIUS, 0.0f), CP_NAN_MASS,
+        0.0f, 0.0f, CP_NAN_RADIUS);
+    vec3 pos_before = p.position;
+    vec3 vel_before = p.velocity;
+    bool hit = forge_physics_collide_plane(
+        &p, vec3_create(0.0f, INFINITY, 0.0f), 0.0f);
+    ASSERT_TRUE(!hit);
+    ASSERT_NEAR(p.position.x, pos_before.x, EPSILON);
+    ASSERT_NEAR(p.position.y, pos_before.y, EPSILON);
+    ASSERT_NEAR(p.velocity.x, vel_before.x, EPSILON);
+    ASSERT_NEAR(p.velocity.y, vel_before.y, EPSILON);
+    END_TEST();
+}
+
+/* ── 28d. Integrate bailout restores prev_position ───────────────────── */
+
+#define BAIL_MASS     1.0f
+#define BAIL_RADIUS   0.5f
+#define BAIL_POS_Y    5.0f
+
+static void test_integrate_bailout_restores_position(void)
+{
+    TEST("integrate — NaN velocity: restores prev_position, zeroes velocity");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0.0f, BAIL_POS_Y, 0.0f), BAIL_MASS,
+        0.0f, 0.0f, BAIL_RADIUS);
+    /* Integrate once to establish a valid prev_position */
+    forge_physics_integrate(&p, PHYSICS_DT);
+    vec3 good_pos = p.position;
+    /* Corrupt velocity */
+    p.velocity = vec3_create(NAN, NAN, NAN);
+    forge_physics_integrate(&p, PHYSICS_DT);
+    /* Position should be restored to prev (good_pos) */
+    ASSERT_NEAR(p.position.x, good_pos.x, EPSILON);
+    ASSERT_NEAR(p.position.y, good_pos.y, EPSILON);
+    ASSERT_NEAR(p.position.z, good_pos.z, EPSILON);
+    /* Velocity should be zeroed */
+    ASSERT_NEAR(p.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(p.velocity.y, 0.0f, EPSILON);
+    ASSERT_NEAR(p.velocity.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_bailout_restores_state(void)
+{
+    TEST("rb_integrate — NaN velocity: restores prev state, zeroes dynamics");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0.0f, BAIL_POS_Y, 0.0f), BAIL_MASS,
+        0.0f, 0.0f, 0.0f);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, BAIL_RADIUS);
+    /* Integrate once to establish valid prev state */
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    vec3 good_pos = rb.position;
+    quat good_orient = rb.orientation;
+    /* Corrupt velocity */
+    rb.velocity = vec3_create(NAN, NAN, NAN);
+    forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
+    /* Position and orientation should be restored */
+    ASSERT_NEAR(rb.position.x, good_pos.x, EPSILON);
+    ASSERT_NEAR(rb.position.y, good_pos.y, EPSILON);
+    ASSERT_NEAR(rb.position.z, good_pos.z, EPSILON);
+    ASSERT_NEAR(rb.orientation.w, good_orient.w, EPSILON);
+    /* Velocity and angular velocity should be zeroed */
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.velocity.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.velocity.z, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.angular_velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.angular_velocity.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.angular_velocity.z, 0.0f, EPSILON);
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * 29. Both-static early returns
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -1758,7 +2019,7 @@ static void test_constraint_both_static_no_movement(void)
  * 30. NaN guard — constraint_distance_create
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#define NAN_VALUE NAN  /* from <math.h> — portable NaN constant */
+#define NAN_VALUE NAN  /* portable NaN constant (guaranteed via test_physics_common.h fallback) */
 
 static void test_constraint_create_nan_stiffness(void)
 {
@@ -1784,6 +2045,232 @@ static void test_constraint_create_nan_distance(void)
     /* NaN distance: !(NaN > 0.0f) is true, so distance = 0.0f */
     ASSERT_NEAR(c.distance, 0.0f, EPSILON);
     ASSERT_TRUE(c.distance == c.distance);  /* Not NaN */
+    END_TEST();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 30b. NaN/Inf guard — particle_create, apply_drag, spring_create,
+ *      constraint_distance_create
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* NaN/Inf guard constants */
+#define NANFIN_DAMPING   0.1f
+#define NANFIN_RESTIT    0.5f
+#define NANFIN_RADIUS    0.3f
+#define NANFIN_MASS      2.0f
+#define NANFIN_DRAG      0.5f
+#define NANFIN_VEL_X     5.0f
+
+static void test_particle_create_nan_position(void)
+{
+    TEST("particle_create — NaN position sanitized to zero");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(NAN, NAN, NAN), NANFIN_MASS, NANFIN_DAMPING,
+        NANFIN_RESTIT, NANFIN_RADIUS);
+    ASSERT_NEAR(p.position.x, 0.0f, EPSILON);
+    ASSERT_NEAR(p.position.y, 0.0f, EPSILON);
+    ASSERT_NEAR(p.position.z, 0.0f, EPSILON);
+    ASSERT_NEAR(p.prev_position.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_nan_position(void)
+{
+    TEST("rigid_body_create — NaN position sanitized to zero");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(NAN, INFINITY, NAN), NANFIN_MASS, NANFIN_DAMPING,
+        NANFIN_DAMPING, NANFIN_RESTIT);
+    ASSERT_NEAR(rb.position.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.position.y, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.position.z, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.prev_position.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_create_nan_damping(void)
+{
+    TEST("particle_create — NaN damping defaults to 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NAN, NANFIN_RESTIT, NANFIN_RADIUS);
+    ASSERT_NEAR(p.damping, 0.0f, EPSILON);
+    ASSERT_TRUE(p.damping == p.damping);  /* not NaN */
+    END_TEST();
+}
+
+static void test_particle_create_nan_restitution(void)
+{
+    TEST("particle_create — NaN restitution defaults to 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, NAN, NANFIN_RADIUS);
+    ASSERT_NEAR(p.restitution, 0.0f, EPSILON);
+    ASSERT_TRUE(p.restitution == p.restitution);
+    END_TEST();
+}
+
+static void test_particle_create_inf_damping(void)
+{
+    TEST("particle_create — +inf damping clamped to 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, INFINITY, NANFIN_RESTIT, NANFIN_RADIUS);
+    ASSERT_NEAR(p.damping, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_create_inf_restitution(void)
+{
+    TEST("particle_create — +inf restitution clamped to 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, INFINITY, NANFIN_RADIUS);
+    ASSERT_NEAR(p.restitution, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_create_inf_radius(void)
+{
+    TEST("particle_create — +inf radius clamped to 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, NANFIN_RESTIT, INFINITY);
+    ASSERT_NEAR(p.radius, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_particle_create_nan_radius(void)
+{
+    TEST("particle_create — NaN radius clamped to 0");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, NANFIN_RESTIT, NAN);
+    ASSERT_NEAR(p.radius, 0.0f, EPSILON);
+    ASSERT_TRUE(p.radius == p.radius);
+    END_TEST();
+}
+
+static void test_apply_drag_nan_coeff(void)
+{
+    TEST("apply_drag — NaN coefficient treated as 0 (no force)");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, 0.0f, 0.0f, NANFIN_RADIUS);
+    p.velocity = vec3_create(NANFIN_VEL_X, 0.0f, 0.0f);
+    forge_physics_apply_drag(&p, NAN);
+    /* NaN drag → clamped to 0 → no force added */
+    ASSERT_NEAR(p.force_accum.x, 0.0f, EPSILON);
+    ASSERT_TRUE(p.force_accum.x == p.force_accum.x);
+    END_TEST();
+}
+
+static void test_apply_drag_inf_coeff(void)
+{
+    TEST("apply_drag — +inf coefficient treated as 0 (no force)");
+    ForgePhysicsParticle p = forge_physics_particle_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, 0.0f, 0.0f, NANFIN_RADIUS);
+    p.velocity = vec3_create(NANFIN_VEL_X, 0.0f, 0.0f);
+    forge_physics_apply_drag(&p, INFINITY);
+    /* +inf drag → not finite → clamped to 0 → no force added */
+    ASSERT_NEAR(p.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_spring_create_nan_stiffness(void)
+{
+    TEST("spring_create — NaN stiffness clamped to 0");
+    ForgePhysicsSpring s = forge_physics_spring_create(
+        0, 1, SP_REST_LEN, NAN, SP_DAMPING);
+    ASSERT_NEAR(s.stiffness, 0.0f, EPSILON);
+    ASSERT_TRUE(s.stiffness == s.stiffness);
+    END_TEST();
+}
+
+static void test_spring_create_inf_stiffness(void)
+{
+    TEST("spring_create — +inf stiffness clamped to 0");
+    ForgePhysicsSpring s = forge_physics_spring_create(
+        0, 1, SP_REST_LEN, INFINITY, SP_DAMPING);
+    ASSERT_NEAR(s.stiffness, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_spring_create_nan_damping(void)
+{
+    TEST("spring_create — NaN damping clamped to 0");
+    ForgePhysicsSpring s = forge_physics_spring_create(
+        0, 1, SP_REST_LEN, SP_STIFFNESS, NAN);
+    ASSERT_NEAR(s.damping, 0.0f, EPSILON);
+    ASSERT_TRUE(s.damping == s.damping);
+    END_TEST();
+}
+
+static void test_spring_create_inf_damping(void)
+{
+    TEST("spring_create — +inf damping clamped to 0");
+    ForgePhysicsSpring s = forge_physics_spring_create(
+        0, 1, SP_REST_LEN, SP_STIFFNESS, INFINITY);
+    ASSERT_NEAR(s.damping, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_spring_create_inf_rest_length(void)
+{
+    TEST("spring_create — +inf rest length clamped to 0");
+    ForgePhysicsSpring s = forge_physics_spring_create(
+        0, 1, INFINITY, SP_STIFFNESS, SP_DAMPING);
+    ASSERT_NEAR(s.rest_length, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_constraint_create_inf_distance(void)
+{
+    TEST("constraint_distance_create — +inf distance clamped to 0");
+    ForgePhysicsDistanceConstraint c =
+        forge_physics_constraint_distance_create(
+            0, 1, INFINITY, GUARD_DC_HALF);
+    ASSERT_NEAR(c.distance, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_nan_damping(void)
+{
+    TEST("rigid_body_create — NaN damping defaults to 0");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NAN, NANFIN_DAMPING, NANFIN_RESTIT);
+    ASSERT_NEAR(rb.damping, 0.0f, EPSILON);
+    ASSERT_TRUE(rb.damping == rb.damping);
+    END_TEST();
+}
+
+static void test_rb_create_nan_angular_damping(void)
+{
+    TEST("rigid_body_create — NaN angular_damping defaults to 0");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, NAN, NANFIN_RESTIT);
+    ASSERT_NEAR(rb.angular_damping, 0.0f, EPSILON);
+    ASSERT_TRUE(rb.angular_damping == rb.angular_damping);
+    END_TEST();
+}
+
+static void test_rb_create_nan_restitution(void)
+{
+    TEST("rigid_body_create — NaN restitution defaults to 0");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, NANFIN_DAMPING, NAN);
+    ASSERT_NEAR(rb.restitution, 0.0f, EPSILON);
+    ASSERT_TRUE(rb.restitution == rb.restitution);
+    END_TEST();
+}
+
+static void test_rb_create_inf_damping(void)
+{
+    TEST("rigid_body_create — +inf damping clamped to 0");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, INFINITY, NANFIN_DAMPING, NANFIN_RESTIT);
+    ASSERT_NEAR(rb.damping, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_create_inf_restitution(void)
+{
+    TEST("rigid_body_create — +inf restitution clamped to 0");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(0, 0, 0), NANFIN_MASS, NANFIN_DAMPING, NANFIN_DAMPING, INFINITY);
+    ASSERT_NEAR(rb.restitution, 0.0f, EPSILON);
     END_TEST();
 }
 
@@ -2388,12 +2875,12 @@ static void test_all_pairs_correct_count(void)
         vec3_create(AP_POS_3_X, 0.0f, 0.0f),
         AP_MASS, 0.0f, DEFAULT_RESTIT, AP_RADIUS);
 
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_all(
-        particles, AP_NUM_PARTICLES,
-        contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, AP_NUM_PARTICLES, &contacts);
 
     ASSERT_TRUE(count == AP_EXPECTED_PAIRS);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -2479,14 +2966,14 @@ static void test_collision_determinism(void)
 #define AP_CLAMP_OFFSET         0.1f   /* all overlapping */
 #define AP_CLAMP_RADIUS         0.5f
 #define AP_CLAMP_MASS           1.0f
-#define AP_CLAMP_MAX            2      /* artificially low limit */
 
 static void test_all_pairs_zero_particles(void)
 {
     TEST("collide_particles_all — 0 particles returns 0");
-    ForgePhysicsContact contacts[1];
-    int count = forge_physics_collide_particles_all(NULL, 0, contacts, 1);
+    ForgePhysicsContact *contacts = NULL;
+    int count = forge_physics_collide_particles_all(NULL, 0, &contacts);
     ASSERT_TRUE(count == 0);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -2496,9 +2983,10 @@ static void test_all_pairs_single_particle(void)
     ForgePhysicsParticle p = forge_physics_particle_create(
         vec3_create(0.0f, 0.0f, 0.0f),
         AP_CLUSTER_MASS, 0.0f, DEFAULT_RESTIT, AP_CLUSTER_RADIUS);
-    ForgePhysicsContact contacts[1];
-    int count = forge_physics_collide_particles_all(&p, 1, contacts, 1);
+    ForgePhysicsContact *contacts = NULL;
+    int count = forge_physics_collide_particles_all(&p, 1, &contacts);
     ASSERT_TRUE(count == 0);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -2511,10 +2999,11 @@ static void test_all_pairs_no_overlaps(void)
             vec3_create((float)i * AP_NOSEP_SPACING, 0.0f, 0.0f),
             AP_NOSEP_MASS, 0.0f, DEFAULT_RESTIT, AP_NOSEP_RADIUS);
     }
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_all(
-        particles, AP_NOSEP_NUM, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, AP_NOSEP_NUM, &contacts);
     ASSERT_TRUE(count == 0);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -2527,26 +3016,38 @@ static void test_all_pairs_all_overlap(void)
             vec3_create((float)i * AP_CLUSTER_OFFSET, 0.0f, 0.0f),
             AP_CLUSTER_MASS, 0.0f, DEFAULT_RESTIT, AP_CLUSTER_RADIUS);
     }
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_all(
-        particles, AP_CLUSTER_NUM, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, AP_CLUSTER_NUM, &contacts);
     ASSERT_TRUE(count == AP_CLUSTER_PAIRS);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
-static void test_all_pairs_exceeds_max_contacts(void)
+static void test_all_pairs_exceeds_old_max(void)
 {
-    TEST("collide_particles_all — max_contacts caps output");
-    ForgePhysicsParticle particles[AP_CLAMP_NUM];
-    for (int i = 0; i < AP_CLAMP_NUM; i++) {
+    TEST("collide_particles_all — dynamic array grows beyond old 256 limit");
+    /* Use enough particles that C(n,2) exceeds the old fixed-size limit of
+     * 256 contacts.  24 particles → C(24,2) = 276 contacts.
+     * All placed at the same position so every pair overlaps. */
+    #define AP_GROW_NUM    24
+    ForgePhysicsParticle *particles = (ForgePhysicsParticle *)SDL_calloc(
+        AP_GROW_NUM, sizeof(ForgePhysicsParticle));
+    ASSERT_TRUE(particles != NULL);
+    for (int i = 0; i < AP_GROW_NUM; i++) {
         particles[i] = forge_physics_particle_create(
-            vec3_create((float)i * AP_CLAMP_OFFSET, 0.0f, 0.0f),
+            vec3_create(0.0f, 0.0f, 0.0f),
             AP_CLAMP_MASS, 0.0f, DEFAULT_RESTIT, AP_CLAMP_RADIUS);
     }
-    ForgePhysicsContact contacts[AP_CLAMP_MAX];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_all(
-        particles, AP_CLAMP_NUM, contacts, AP_CLAMP_MAX);
-    ASSERT_TRUE(count == AP_CLAMP_MAX);
+        particles, AP_GROW_NUM, &contacts);
+    /* All C(n,2) pairs detected — dynamic array has no cap */
+    int expected = AP_GROW_NUM * (AP_GROW_NUM - 1) / 2;  /* 276 */
+    ASSERT_TRUE(count == expected);
+    forge_arr_free(contacts);
+    SDL_free(particles);
+    #undef AP_GROW_NUM
     END_TEST();
 }
 
@@ -2559,14 +3060,15 @@ static void test_all_pairs_contact_ordering(void)
             vec3_create((float)i * AP_CLUSTER_OFFSET, 0.0f, 0.0f),
             AP_CLUSTER_MASS, 0.0f, DEFAULT_RESTIT, AP_CLUSTER_RADIUS);
     }
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_all(
-        particles, AP_CLUSTER_NUM, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, AP_CLUSTER_NUM, &contacts);
     ASSERT_TRUE(count == AP_CLUSTER_PAIRS);
     /* Order must follow the nested i,j loop: (0,1), (0,2), (1,2) */
     ASSERT_TRUE(contacts[0].particle_a == 0 && contacts[0].particle_b == 1);
     ASSERT_TRUE(contacts[1].particle_a == 0 && contacts[1].particle_b == 2);
     ASSERT_TRUE(contacts[2].particle_a == 1 && contacts[2].particle_b == 2);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -2582,7 +3084,7 @@ static void test_all_pairs_contact_ordering(void)
 #define SS3D_DIAG_B_Y          0.5f
 #define SS3D_DIAG_RADIUS       0.5f
 #define SS3D_DIAG_MASS         1.0f
-#define SS3D_DIAG_DIST         0.70710678f  /* sqrt(0.5) */
+/* SS3D_DIAG_DIST = sqrt(0.5) = 0.7071... (used in comments only) */
 #define SS3D_DIAG_PEN          0.29289322f  /* 1.0 - sqrt(0.5) */
 #define SS3D_DIAG_NORM         (-0.70710678f) /* each component of normal */
 #define SS3D_DIAG_TOL          0.01f
@@ -3069,19 +3571,20 @@ static void test_resolve_contacts_zero_count(void)
 static void test_all_pairs_null_particles(void)
 {
     TEST("collide_particles_all — NULL particles: returns 0");
-    ForgePhysicsContact contacts[1];
-    int count = forge_physics_collide_particles_all(NULL, 5, contacts, 1);
+    ForgePhysicsContact *contacts = NULL;
+    int count = forge_physics_collide_particles_all(NULL, 5, &contacts);
     ASSERT_TRUE(count == 0);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
 static void test_all_pairs_null_contacts(void)
 {
-    TEST("collide_particles_all — NULL contacts buffer: returns 0");
+    TEST("collide_particles_all — NULL out_contacts pointer: returns 0");
     ForgePhysicsParticle p = forge_physics_particle_create(
         vec3_create(0.0f, 0.0f, 0.0f),
         NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
-    int count = forge_physics_collide_particles_all(&p, 1, NULL, 10);
+    int count = forge_physics_collide_particles_all(&p, 1, NULL);
     ASSERT_TRUE(count == 0);
     END_TEST();
 }
@@ -3089,20 +3592,69 @@ static void test_all_pairs_null_contacts(void)
 static void test_step_null_particles(void)
 {
     TEST("collide_particles_step — NULL particles: returns 0");
-    ForgePhysicsContact contacts[1];
-    int count = forge_physics_collide_particles_step(NULL, 5, contacts, 1);
+    ForgePhysicsContact *contacts = NULL;
+    int count = forge_physics_collide_particles_step(NULL, 5, &contacts);
     ASSERT_TRUE(count == 0);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
 static void test_step_null_contacts(void)
 {
-    TEST("collide_particles_step — NULL contacts: returns 0");
+    TEST("collide_particles_step — NULL out_contacts pointer: returns 0");
     ForgePhysicsParticle p = forge_physics_particle_create(
         vec3_create(0.0f, 0.0f, 0.0f),
         NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
-    int count = forge_physics_collide_particles_step(&p, 1, NULL, 10);
+    int count = forge_physics_collide_particles_step(&p, 1, NULL);
     ASSERT_TRUE(count == 0);
+    END_TEST();
+}
+
+/* ── 41b. NULL safety — collide_sphere_sphere ─────────────────────────── */
+
+static void test_collide_sphere_sphere_null_a(void)
+{
+    TEST("collide_sphere_sphere — NULL a: returns false");
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    ForgePhysicsContact c;
+    bool hit = forge_physics_collide_sphere_sphere(NULL, &b, 0, 1, &c);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_sphere_null_b(void)
+{
+    TEST("collide_sphere_sphere — NULL b: returns false");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    ForgePhysicsContact c;
+    bool hit = forge_physics_collide_sphere_sphere(&a, NULL, 0, 1, &c);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_sphere_null_out(void)
+{
+    TEST("collide_sphere_sphere — NULL out: returns false");
+    ForgePhysicsParticle a = forge_physics_particle_create(
+        vec3_create(0.0f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    ForgePhysicsParticle b = forge_physics_particle_create(
+        vec3_create(0.5f, 0.0f, 0.0f),
+        NS_MASS, 0.0f, DEFAULT_RESTIT, DEFAULT_RADIUS);
+    bool hit = forge_physics_collide_sphere_sphere(&a, &b, 0, 1, NULL);
+    ASSERT_TRUE(!hit);
+    END_TEST();
+}
+
+static void test_collide_sphere_sphere_all_null(void)
+{
+    TEST("collide_sphere_sphere — all NULL: returns false");
+    bool hit = forge_physics_collide_sphere_sphere(NULL, NULL, 0, 0, NULL);
+    ASSERT_TRUE(!hit);
     END_TEST();
 }
 
@@ -3134,14 +3686,15 @@ static void test_step_detects_and_resolves(void)
     particles[0].velocity = vec3_create(STEP_VEL, 0.0f, 0.0f);
     particles[1].velocity = vec3_create(-STEP_VEL, 0.0f, 0.0f);
 
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_step(
-        particles, 2, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, 2, &contacts);
 
     ASSERT_TRUE(count == 1);
     /* Velocities should have changed (elastic swap for equal mass) */
     ASSERT_NEAR(particles[0].velocity.x, -STEP_VEL, EPSILON);
     ASSERT_NEAR(particles[1].velocity.x, STEP_VEL, EPSILON);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -3159,14 +3712,15 @@ static void test_step_no_collisions(void)
     particles[0].velocity = vec3_create(STEP_VEL, 0.0f, 0.0f);
     particles[1].velocity = vec3_create(0.0f, 0.0f, 0.0f);
 
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_step(
-        particles, 2, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, 2, &contacts);
 
     ASSERT_TRUE(count == 0);
     /* Velocities unchanged */
     ASSERT_NEAR(particles[0].velocity.x, STEP_VEL, EPSILON);
     ASSERT_NEAR(particles[1].velocity.x, 0.0f, EPSILON);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -3184,9 +3738,9 @@ static void test_step_multiple_contacts(void)
     particles[0].velocity = vec3_create(STEP_VEL, 0.0f, 0.0f);
     particles[2].velocity = vec3_create(-STEP_VEL, 0.0f, 0.0f);
 
-    ForgePhysicsContact contacts[FORGE_PHYSICS_MAX_CONTACTS];
+    ForgePhysicsContact *contacts = NULL;
     int count = forge_physics_collide_particles_step(
-        particles, 3, contacts, FORGE_PHYSICS_MAX_CONTACTS);
+        particles, 3, &contacts);
 
     ASSERT_TRUE(count == STEP_CLUSTER_PAIRS);
 
@@ -3194,6 +3748,7 @@ static void test_step_multiple_contacts(void)
     /* At minimum, outer particles should no longer be approaching */
     ASSERT_TRUE(particles[0].velocity.x < STEP_VEL);
     ASSERT_TRUE(particles[2].velocity.x > -STEP_VEL);
+    forge_arr_free(contacts);
     END_TEST();
 }
 
@@ -3213,14 +3768,14 @@ static void test_step_multiple_contacts(void)
  * I = (1/12)*12*((2)²+(2)²) = 8 for each axis */
 #define BOX_MASS           12.0f
 #define BOX_HALF           1.0f
-#define BOX_I              8.0f
+/* BOX_I = (1/12)*12*((2)^2+(2)^2) = 8 (used in comments only) */
 #define BOX_INV_I          0.125f  /* 1/8 */
 
 /* Sphere inertia: radius=1, mass=10
  * I = (2/5)*10*1² = 4 */
 #define SPHERE_MASS        10.0f
 #define SPHERE_RADIUS      1.0f
-#define SPHERE_I           4.0f
+/* SPHERE_I = (2/5)*10*1^2 = 4 (used in comments only) */
 #define SPHERE_INV_I       0.25f   /* 1/4 */
 
 /* Cylinder inertia: radius=1, half_h=1, mass=12
@@ -3653,10 +4208,10 @@ static void test_rb_integrate_pure_linear(void)
     forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
     /* Apply gravity: F = m*g = 2 * -9.81 */
     forge_physics_rigid_body_apply_force(&rb,
-        vec3_create(0.0f, -9.81f * RB_INT_MASS, 0.0f));
+        vec3_create(0.0f, GRAVITY_Y * RB_INT_MASS, 0.0f));
     forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
     /* v = g * dt = -9.81 * (1/60) = -0.1635 */
-    ASSERT_NEAR(rb.velocity.y, -9.81f * PHYSICS_DT, RB_INT_ROT_TOL);
+    ASSERT_NEAR(rb.velocity.y, GRAVITY_Y * PHYSICS_DT, RB_INT_ROT_TOL);
     /* No angular velocity */
     ASSERT_NEAR(rb.angular_velocity.x, 0.0f, EPSILON);
     END_TEST();
@@ -3976,15 +4531,22 @@ static void test_rb_no_nan_after_many_steps(void)
     rb.angular_velocity = vec3_create(RB_QUAT_AV_X, RB_QUAT_AV_Y, RB_QUAT_AV_Z);
     for (int i = 0; i < RB_QUAT_STEPS; i++) {
         forge_physics_rigid_body_apply_force(&rb,
-            vec3_create(0, -9.81f * rb.mass, 0));
+            vec3_create(0, GRAVITY_Y * rb.mass, 0));
         forge_physics_rigid_body_integrate(&rb, PHYSICS_DT);
     }
-    ASSERT_TRUE(isfinite(rb.position.x));
-    ASSERT_TRUE(isfinite(rb.position.y));
-    ASSERT_TRUE(isfinite(rb.position.z));
-    ASSERT_TRUE(isfinite(rb.velocity.x));
-    ASSERT_TRUE(isfinite(rb.angular_velocity.x));
-    ASSERT_TRUE(isfinite(rb.orientation.w));
+    ASSERT_TRUE(forge_isfinite(rb.position.x));
+    ASSERT_TRUE(forge_isfinite(rb.position.y));
+    ASSERT_TRUE(forge_isfinite(rb.position.z));
+    ASSERT_TRUE(forge_isfinite(rb.velocity.x));
+    ASSERT_TRUE(forge_isfinite(rb.velocity.y));
+    ASSERT_TRUE(forge_isfinite(rb.velocity.z));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.x));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.y));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.z));
+    ASSERT_TRUE(forge_isfinite(rb.orientation.w));
+    ASSERT_TRUE(forge_isfinite(rb.orientation.x));
+    ASSERT_TRUE(forge_isfinite(rb.orientation.y));
+    ASSERT_TRUE(forge_isfinite(rb.orientation.z));
     END_TEST();
 }
 
@@ -3999,9 +4561,9 @@ static void test_rb_determinism(void)
     ForgePhysicsRigidBody rb2 = rb1;  /* copy after full setup */
     for (int i = 0; i < RB_DET_STEPS; i++) {
         forge_physics_rigid_body_apply_force(&rb1,
-            vec3_create(0, -9.81f * rb1.mass, 0));
+            vec3_create(0, GRAVITY_Y * rb1.mass, 0));
         forge_physics_rigid_body_apply_force(&rb2,
-            vec3_create(0, -9.81f * rb2.mass, 0));
+            vec3_create(0, GRAVITY_Y * rb2.mass, 0));
         forge_physics_rigid_body_integrate(&rb1, PHYSICS_DT);
         forge_physics_rigid_body_integrate(&rb2, PHYSICS_DT);
     }
@@ -4129,10 +4691,10 @@ static void test_rb_gyro_stability_asymmetric(void)
     for (int i = 0; i < 600; i++) {
         forge_physics_rigid_body_integrate(&rb, GYRO_DT);
     }
-    ASSERT_TRUE(isfinite(rb.angular_velocity.x));
-    ASSERT_TRUE(isfinite(rb.angular_velocity.y));
-    ASSERT_TRUE(isfinite(rb.angular_velocity.z));
-    ASSERT_TRUE(isfinite(rb.orientation.w));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.x));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.y));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.z));
+    ASSERT_TRUE(forge_isfinite(rb.orientation.w));
     float q_len = quat_length(rb.orientation);
     ASSERT_NEAR(q_len, 1.0f, 0.01f);
     END_TEST();
@@ -4171,7 +4733,7 @@ static void test_rb_inertia_box_nan_rejected(void)
         vec3_create(1.0f, 1.0f, 1.0f));
     mat3 before = rb.inv_inertia_local;
     /* Attempt NaN — should be rejected */
-    float nan_val = nanf("");
+    float nan_val = NAN;
     forge_physics_rigid_body_set_inertia_box(&rb,
         vec3_create(nan_val, 1.0f, 1.0f));
     /* Inertia should be unchanged */
@@ -4203,7 +4765,7 @@ static void test_rb_inertia_cylinder_nan_rejected(void)
         vec3_create(0, 0, 0), RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
     forge_physics_rigid_body_set_inertia_cylinder(&rb, 1.0f, 2.0f);
     mat3 before = rb.inv_inertia_local;
-    float nan_val = nanf("");
+    float nan_val = NAN;
     forge_physics_rigid_body_set_inertia_cylinder(&rb, nan_val, 2.0f);
     for (int i = 0; i < 9; i++) {
         ASSERT_NEAR(rb.inv_inertia_local.m[i], before.m[i], EPSILON);
@@ -4238,7 +4800,7 @@ static void test_rb_integrate_nan_dt(void)
     forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
     forge_physics_rigid_body_apply_force(&rb,
         vec3_create(RB_LARGE_FORCE, 0, 0));
-    float nan_val = nanf("");
+    float nan_val = NAN;
     forge_physics_rigid_body_integrate(&rb, nan_val);
     ASSERT_NEAR(rb.position.x, RB_POS_X, EPSILON);
     ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
@@ -4261,6 +4823,105 @@ static void test_rb_integrate_inf_dt(void)
     END_TEST();
 }
 
+static void test_rb_integrate_nan_velocity(void)
+{
+    TEST("integrate — NaN velocity is rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.velocity = vec3_create(NAN, 0.0f, 0.0f);
+    vec3 pos_before = rb.position;
+    forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    /* Body state unchanged — NaN velocity causes early return */
+    ASSERT_NEAR(rb.position.x, pos_before.x, EPSILON);
+    ASSERT_NEAR(rb.position.y, pos_before.y, EPSILON);
+    ASSERT_NEAR(rb.position.z, pos_before.z, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_inf_angular_velocity(void)
+{
+    TEST("integrate — INFINITY angular_velocity is rejected (no-op)");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.angular_velocity = vec3_create(0.0f, INFINITY, 0.0f);
+    vec3 pos_before = rb.position;
+    forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    /* Body state unchanged — inf angular_velocity causes early return */
+    ASSERT_NEAR(rb.position.x, pos_before.x, EPSILON);
+    ASSERT_NEAR(rb.position.y, pos_before.y, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_nan_position(void)
+{
+    TEST("integrate — NaN position: restores prev state, zeroes dynamics");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    vec3 good_pos = rb.prev_position;
+    rb.position = vec3_create(NAN, NAN, NAN);
+    rb.velocity = vec3_create(1.0f, 0.0f, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    /* Position restored, velocity zeroed */
+    ASSERT_NEAR(rb.position.x, good_pos.x, EPSILON);
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_nan_force_accum(void)
+{
+    TEST("integrate — NaN force_accum: restores prev state, zeroes dynamics");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    vec3 good_pos = rb.prev_position;
+    rb.force_accum = vec3_create(NAN, 0.0f, 0.0f);
+    forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    /* Position restored to prev, velocity and force zeroed */
+    ASSERT_NEAR(rb.position.x, good_pos.x, EPSILON);
+    ASSERT_NEAR(rb.velocity.x, 0.0f, EPSILON);
+    ASSERT_NEAR(rb.force_accum.x, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_nan_torque_accum(void)
+{
+    TEST("integrate — NaN torque_accum is rejected and cleared");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.torque_accum = vec3_create(0.0f, INFINITY, 0.0f);
+    vec3 av_before = rb.angular_velocity;
+    forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    /* Angular velocity unchanged */
+    ASSERT_NEAR(rb.angular_velocity.y, av_before.y, EPSILON);
+    /* Torque accum cleared */
+    ASSERT_NEAR(rb.torque_accum.y, 0.0f, EPSILON);
+    END_TEST();
+}
+
+static void test_rb_integrate_nan_orientation(void)
+{
+    TEST("integrate — NaN orientation is rejected");
+    ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(
+        vec3_create(RB_POS_X, RB_POS_Y, RB_POS_Z),
+        RB_MASS, RB_DAMPING, RB_ANG_DAMPING, RB_RESTIT);
+    forge_physics_rigid_body_set_inertia_sphere(&rb, SPHERE_RADIUS);
+    rb.orientation = (quat){NAN, 0.0f, 0.0f, 0.0f};
+    vec3 pos_before = rb.position;
+    forge_physics_rigid_body_integrate(&rb, GYRO_DT);
+    /* Position unchanged — NaN orientation causes early return */
+    ASSERT_NEAR(rb.position.x, pos_before.x, EPSILON);
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Lesson 05: Force Generators
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -4269,7 +4930,7 @@ static void test_rb_integrate_inf_dt(void)
 #define FG_MASS             5.0f
 #define FG_MASS_ALT         2.0f    /* alternate mass for direction tests */
 #define FG_DT               (1.0f / 60.0f)
-#define FG_GRAVITY_Y        (-9.81f)
+#define FG_GRAVITY_Y        (GRAVITY_Y)
 #define FG_DRAG_COEFF       2.0f
 #define FG_ADRAG_COEFF      1.5f
 #define FG_FRIC_COEFF       3.0f
@@ -4724,16 +5385,16 @@ static void test_rb_all_generators_no_nan(void)
                 rb.velocity.y = -rb.velocity.y * rb.restitution;
         }
     }
-    ASSERT_TRUE(isfinite(rb.position.x));
-    ASSERT_TRUE(isfinite(rb.position.y));
-    ASSERT_TRUE(isfinite(rb.position.z));
-    ASSERT_TRUE(isfinite(rb.velocity.x));
-    ASSERT_TRUE(isfinite(rb.velocity.y));
-    ASSERT_TRUE(isfinite(rb.velocity.z));
-    ASSERT_TRUE(isfinite(rb.angular_velocity.x));
-    ASSERT_TRUE(isfinite(rb.angular_velocity.y));
-    ASSERT_TRUE(isfinite(rb.angular_velocity.z));
-    ASSERT_TRUE(isfinite(rb.orientation.w));
+    ASSERT_TRUE(forge_isfinite(rb.position.x));
+    ASSERT_TRUE(forge_isfinite(rb.position.y));
+    ASSERT_TRUE(forge_isfinite(rb.position.z));
+    ASSERT_TRUE(forge_isfinite(rb.velocity.x));
+    ASSERT_TRUE(forge_isfinite(rb.velocity.y));
+    ASSERT_TRUE(forge_isfinite(rb.velocity.z));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.x));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.y));
+    ASSERT_TRUE(forge_isfinite(rb.angular_velocity.z));
+    ASSERT_TRUE(forge_isfinite(rb.orientation.w));
     float q_len = quat_length(rb.orientation);
     ASSERT_NEAR(q_len, 1.0f, FG_TOL);
     END_TEST();
@@ -4860,6 +5521,13 @@ int main(int argc, char *argv[])
     SDL_Log("--- integrate (negative dt) ---");
     test_integrate_negative_dt();
 
+    /* 10b. integrate — NaN/inf state rejection */
+    SDL_Log("--- integrate (NaN/inf state rejection) ---");
+    test_particle_integrate_nan_velocity();
+    test_particle_integrate_nan_position();
+    test_particle_integrate_nan_force_accum();
+    test_particle_integrate_inf_velocity();
+
     /* 11. collide_plane — zero restitution */
     SDL_Log("--- collide_plane (zero restitution) ---");
     test_collide_plane_zero_restitution();
@@ -4950,6 +5618,27 @@ int main(int argc, char *argv[])
     test_constraints_solve_null_constraints();
     test_constraints_solve_null_particles();
 
+    /* 28b. NULL pointer safety — particle functions */
+    SDL_Log("--- NULL pointer safety (particle functions) ---");
+    test_particle_apply_gravity_null();
+    test_particle_apply_drag_null();
+    test_particle_apply_force_null();
+    test_particle_integrate_null();
+    test_particle_collide_plane_null();
+    test_particle_clear_forces_null();
+
+    /* 28c. collide_plane NaN input rejection */
+    SDL_Log("--- collide_plane NaN guards ---");
+    test_collide_plane_nan_normal();
+    test_collide_plane_nan_plane_d();
+    test_collide_plane_nan_position();
+    test_collide_plane_inf_normal();
+
+    /* 28d. Integrate bailout restores prev_position */
+    SDL_Log("--- integrate bailout state recovery ---");
+    test_integrate_bailout_restores_position();
+    test_rb_integrate_bailout_restores_state();
+
     /* 29. Both-static early returns */
     SDL_Log("--- both-static early returns ---");
     test_spring_both_static_no_force();
@@ -4959,6 +5648,30 @@ int main(int argc, char *argv[])
     SDL_Log("--- NaN guard (constraint_distance_create) ---");
     test_constraint_create_nan_stiffness();
     test_constraint_create_nan_distance();
+
+    /* 30b. NaN/Inf guards — particle, drag, spring, constraint, rigid body */
+    SDL_Log("--- NaN/Inf guard (create + apply_drag) ---");
+    test_particle_create_nan_position();
+    test_rb_create_nan_position();
+    test_particle_create_nan_damping();
+    test_particle_create_nan_restitution();
+    test_particle_create_inf_damping();
+    test_particle_create_inf_restitution();
+    test_particle_create_inf_radius();
+    test_particle_create_nan_radius();
+    test_apply_drag_nan_coeff();
+    test_apply_drag_inf_coeff();
+    test_spring_create_nan_stiffness();
+    test_spring_create_inf_stiffness();
+    test_spring_create_nan_damping();
+    test_spring_create_inf_damping();
+    test_spring_create_inf_rest_length();
+    test_constraint_create_inf_distance();
+    test_rb_create_nan_damping();
+    test_rb_create_nan_angular_damping();
+    test_rb_create_nan_restitution();
+    test_rb_create_inf_damping();
+    test_rb_create_inf_restitution();
 
     /* 31. Empty batch + iteration clamping */
     SDL_Log("--- empty batch + iteration clamping ---");
@@ -5005,7 +5718,7 @@ int main(int argc, char *argv[])
     test_all_pairs_single_particle();
     test_all_pairs_no_overlaps();
     test_all_pairs_all_overlap();
-    test_all_pairs_exceeds_max_contacts();
+    test_all_pairs_exceeds_old_max();
     test_all_pairs_contact_ordering();
 
     /* 38. 3D geometry (non-axis-aligned) */
@@ -5038,6 +5751,10 @@ int main(int argc, char *argv[])
     test_all_pairs_null_contacts();
     test_step_null_particles();
     test_step_null_contacts();
+    test_collide_sphere_sphere_null_a();
+    test_collide_sphere_sphere_null_b();
+    test_collide_sphere_sphere_null_out();
+    test_collide_sphere_sphere_all_null();
 
     /* 42. Convenience function (collide_particles_step) */
     SDL_Log("--- collide_particles_step ---");
@@ -5139,6 +5856,12 @@ int main(int argc, char *argv[])
     test_rb_integrate_negative_dt();
     test_rb_integrate_nan_dt();
     test_rb_integrate_inf_dt();
+    test_rb_integrate_nan_velocity();
+    test_rb_integrate_inf_angular_velocity();
+    test_rb_integrate_nan_position();
+    test_rb_integrate_nan_force_accum();
+    test_rb_integrate_nan_torque_accum();
+    test_rb_integrate_nan_orientation();
 
     /* ── Lesson 05: Force Generators ───────────────────────────────────── */
 
@@ -5193,6 +5916,9 @@ int main(int argc, char *argv[])
 
     /* ── SAP Broadphase (test_physics_sap.c) ──────────────────────────── */
     run_sap_tests();
+
+    /* ── Production Hardening (test_physics_production.c) ─────────────── */
+    run_production_tests();
 
     /* Report results */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

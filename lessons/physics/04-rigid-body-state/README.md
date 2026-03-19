@@ -414,7 +414,7 @@ rb->orientation.z += half_dt * omega_q.z;
 
 /* Renormalize if drift exceeds threshold */
 float q_len_sq = quat_length_sq(rb->orientation);
-if (fabsf(q_len_sq - 1.0f) > FORGE_PHYSICS_QUAT_RENORM_THRESHOLD) {
+if (SDL_fabsf(q_len_sq - 1.0f) > FORGE_PHYSICS_QUAT_RENORM_THRESHOLD) {
     rb->orientation = quat_normalize(rb->orientation);
 }
 ```
@@ -479,9 +479,8 @@ This lesson extends `common/physics/forge_physics.h` with the following API:
 | `forge_physics_rigid_body_clear_forces()` | Zero force and torque accumulators |
 | `forge_physics_rigid_body_get_transform()` | Returns model matrix from position and orientation |
 
-The library remains header-only, allocates no heap memory, and stores inverse
-quantities (inverse mass, inverse inertia) directly to avoid divisions in the
-inner loop.
+The library remains header-only and stores inverse quantities (inverse mass,
+inverse inertia) directly to avoid divisions in the inner loop.
 
 See: [common/physics/README.md](../../../common/physics/README.md) for the full
 API reference.
