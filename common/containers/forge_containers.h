@@ -1264,8 +1264,20 @@ static inline void forge_containers__hm_free(void **p, size_t elem_size, size_t 
   #define FORGE_CONTAINERS__KEYPTR(a, k) \
       ((__typeof__((a)->key) []){(k)})
 #else
-  #define FORGE_CONTAINERS__KEYPTR(a, k) \
-      ((a)[0].key = (k), &(a)[0].key)
+  /* MSVC /Za rejects &(a)[0].key after comma-assignment (C2101).
+   * Write the key into element 0 via direct assignment, then return
+   * a pointer to it computed from the base pointer + offset.
+   * Note: uses FORGE_CONTAINERS__KEY_OFFSET defined below — safe because
+   * macro bodies expand at the call site, not at #define time. */
+  static inline void *forge_containers__keyptr_write(
+      void *elem0, size_t key_offset)
+  {
+      return (char *)elem0 + key_offset;
+  }
+  #define FORGE_CONTAINERS__KEYPTR(a, k)                                      \
+      ((a)[0].key = (k),                                                      \
+       forge_containers__keyptr_write(                                         \
+           (void *)(a), FORGE_CONTAINERS__KEY_OFFSET(a)))
 #endif
 
 /* Helper: compute key offset portably.
