@@ -9,14 +9,8 @@
  */
 
 #include <SDL3/SDL.h>
-#include <limits.h>   /* INT_MAX — not provided by SDL_stdinc.h */
 #include "math/forge_math.h"
 #include "audio/forge_audio.h"
-
-/* Portable isfinite — SDL provides isinf/isnan but no isfinite */
-#ifndef forge_isfinite
-#define forge_isfinite(x) (!SDL_isinf(x) && !SDL_isnan(x))
-#endif
 
 /* ── Test framework (same pattern as physics tests) ────────────────── */
 
@@ -75,7 +69,7 @@ static ForgeAudioBuffer make_test_buffer(int frames, float left_val,
         buf.data = NULL;
         return buf;
     }
-    if (frames > (INT_MAX / 2)) {
+    if (frames > (SDL_MAX_SINT32 / 2)) {
         SDL_Log("FATAL: frame count overflow in make_test_buffer");
         buf.sample_count = 0;
         buf.data = NULL;
@@ -885,8 +879,8 @@ static void test_mixer_volume_per_channel(void)
 
     /* channel volume=0.5, center pan → gain_l = gain_r = 0.5*0.5 = 0.25
      * Input is 1.0, so output = tanh(0.25) ≈ 0.2449 (close to 0.25 at low levels) */
-    ASSERT_NEAR(out[0], forge_audio__tanhf(0.25f), 0.01f);
-    ASSERT_NEAR(out[1], forge_audio__tanhf(0.25f), 0.01f);
+    ASSERT_NEAR(out[0], forge_audio_tanhf(0.25f), 0.01f);
+    ASSERT_NEAR(out[1], forge_audio_tanhf(0.25f), 0.01f);
 
     free_test_buffer(&buf);
     END_TEST();
@@ -963,7 +957,7 @@ static void test_mixer_solo_single(void)
 
     /* Only channel B should be heard.  buf_b has 0.5 input,
      * center pan vol=1 → gain=0.5 → 0.25 → tanh(0.25) */
-    float expected = forge_audio__tanhf(0.25f);
+    float expected = forge_audio_tanhf(0.25f);
     ASSERT_NEAR(out[0], expected, 0.01f);
 
     free_test_buffer(&buf_a);
@@ -996,7 +990,7 @@ static void test_mixer_solo_multiple(void)
     forge_audio_mixer_mix(&m, out, 4);
 
     /* Two solo'd channels each contribute 0.5 → sum 1.0 → tanh(1.0) */
-    float two_ch = forge_audio__tanhf(1.0f);
+    float two_ch = forge_audio_tanhf(1.0f);
     ASSERT_NEAR(out[0], two_ch, 0.02f);
 
     free_test_buffer(&buf);
@@ -1062,12 +1056,12 @@ static void test_mixer_tanh_near_identity(void)
 
     /* For small x, tanh(x) ≈ x */
     float x = 0.1f;
-    float y = forge_audio__tanhf(x);
+    float y = forge_audio_tanhf(x);
     ASSERT_NEAR(y, x, 0.005f);
 
     /* Even at 0.3 the error is small */
     x = 0.3f;
-    y = forge_audio__tanhf(x);
+    y = forge_audio_tanhf(x);
     ASSERT_NEAR(y, x, 0.01f);
 
     END_TEST();
@@ -1144,7 +1138,7 @@ static void test_mixer_master_volume(void)
 
     /* Pre-tanh value: 0.5 (center pan) * 0.1 (master) = 0.05
      * tanh(0.05) ≈ 0.05 */
-    ASSERT_NEAR(out[0], forge_audio__tanhf(0.05f), 0.01f);
+    ASSERT_NEAR(out[0], forge_audio_tanhf(0.05f), 0.01f);
 
     free_test_buffer(&buf);
     END_TEST();
@@ -1796,6 +1790,1141 @@ static void test_playback_rate_double_speed(void)
     END_TEST();
 }
 
+/* ── Helper: create a synthetic WAV file on disk ──────────────────── */
+
+/* Write exactly `size` bytes or return false. */
+static bool write_all(SDL_IOStream *io, const void *data, size_t size)
+{
+    return io && SDL_WriteIO(io, data, size) == size;
+}
+
+/* WAV fixture format constants */
+#define TEST_WAV_CHANNELS       2
+#define TEST_WAV_SAMPLE_RATE    44100
+#define TEST_WAV_BITS           32
+#define TEST_WAV_FMT_CHUNK_SIZE 16
+
+/* Write a test WAV with position-dependent ramp data:
+ *   left  = 0.25 + 0.50 * (i / frames)
+ *   right = 0.75 - 0.25 * (i / frames) */
+static bool write_test_wav(const char *path, int frames)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) return false;
+
+    int channels = TEST_WAV_CHANNELS;
+    int sample_rate = TEST_WAV_SAMPLE_RATE;
+    int bits = TEST_WAV_BITS;
+    int data_size = (int)((size_t)frames * (size_t)channels * (size_t)(bits / 8));
+    int fmt_chunk_size = TEST_WAV_FMT_CHUNK_SIZE;
+    int riff_size = 4 + (8 + fmt_chunk_size) + (8 + data_size);
+
+    /* RIFF header */
+    Uint8 buf4[4];
+    buf4[0] = (Uint8)(riff_size & 0xFF);
+    buf4[1] = (Uint8)((riff_size >> 8) & 0xFF);
+    buf4[2] = (Uint8)((riff_size >> 16) & 0xFF);
+    buf4[3] = (Uint8)((riff_size >> 24) & 0xFF);
+    if (!write_all(io, "RIFF", 4) || !write_all(io, buf4, 4) ||
+        !write_all(io, "WAVE", 4)) {
+        SDL_CloseIO(io); return false;
+    }
+
+    /* fmt chunk */
+    Uint8 fmt[16];
+    fmt[0] = 3; fmt[1] = 0;   /* IEEE float */
+    fmt[2] = 2; fmt[3] = 0;   /* 2 channels */
+    fmt[4] = (Uint8)(sample_rate & 0xFF);
+    fmt[5] = (Uint8)((sample_rate >> 8) & 0xFF);
+    fmt[6] = (Uint8)((sample_rate >> 16) & 0xFF);
+    fmt[7] = (Uint8)((sample_rate >> 24) & 0xFF);
+    int byte_rate = sample_rate * channels * (bits / 8);
+    fmt[8]  = (Uint8)(byte_rate & 0xFF);
+    fmt[9]  = (Uint8)((byte_rate >> 8) & 0xFF);
+    fmt[10] = (Uint8)((byte_rate >> 16) & 0xFF);
+    fmt[11] = (Uint8)((byte_rate >> 24) & 0xFF);
+    int block_align = channels * (bits / 8);
+    fmt[12] = (Uint8)(block_align & 0xFF);
+    fmt[13] = (Uint8)((block_align >> 8) & 0xFF);
+    fmt[14] = (Uint8)(TEST_WAV_BITS & 0xFF); fmt[15] = (Uint8)((TEST_WAV_BITS >> 8) & 0xFF);
+    buf4[0] = (Uint8)(fmt_chunk_size & 0xFF);
+    buf4[1] = (Uint8)((fmt_chunk_size >> 8) & 0xFF);
+    buf4[2] = 0; buf4[3] = 0;
+    if (!write_all(io, "fmt ", 4) || !write_all(io, buf4, 4) ||
+        !write_all(io, fmt, 16)) {
+        SDL_CloseIO(io); return false;
+    }
+
+    /* data chunk */
+    buf4[0] = (Uint8)(data_size & 0xFF);
+    buf4[1] = (Uint8)((data_size >> 8) & 0xFF);
+    buf4[2] = (Uint8)((data_size >> 16) & 0xFF);
+    buf4[3] = (Uint8)((data_size >> 24) & 0xFF);
+    if (!write_all(io, "data", 4) || !write_all(io, buf4, 4)) {
+        SDL_CloseIO(io); return false;
+    }
+
+    /* Write F32 stereo samples */
+    for (int i = 0; i < frames; i++) {
+        float left  = 0.25f + 0.5f * ((float)i / (float)frames);
+        float right = 0.75f - 0.25f * ((float)i / (float)frames);
+        if (!write_all(io, &left, 4) || !write_all(io, &right, 4)) {
+            SDL_CloseIO(io); return false;
+        }
+    }
+
+    SDL_CloseIO(io);
+    return true;
+}
+
+/* Write a test WAV with constant amplitude per channel. */
+static bool write_test_wav_const(const char *path, int frames,
+                                  float left_val, float right_val)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) return false;
+
+    int channels = TEST_WAV_CHANNELS;
+    int sample_rate = TEST_WAV_SAMPLE_RATE;
+    int bits = TEST_WAV_BITS;
+    int data_size = (int)((size_t)frames * (size_t)channels * (size_t)(bits / 8));
+    int fmt_chunk_size = TEST_WAV_FMT_CHUNK_SIZE;
+    int riff_size = 4 + (8 + fmt_chunk_size) + (8 + data_size);
+
+    Uint8 buf4[4];
+    buf4[0] = (Uint8)(riff_size & 0xFF);
+    buf4[1] = (Uint8)((riff_size >> 8) & 0xFF);
+    buf4[2] = (Uint8)((riff_size >> 16) & 0xFF);
+    buf4[3] = (Uint8)((riff_size >> 24) & 0xFF);
+    if (!write_all(io, "RIFF", 4) || !write_all(io, buf4, 4) ||
+        !write_all(io, "WAVE", 4)) {
+        SDL_CloseIO(io); return false;
+    }
+
+    Uint8 fmt[16];
+    fmt[0] = 3; fmt[1] = 0;
+    fmt[2] = 2; fmt[3] = 0;
+    fmt[4] = (Uint8)(sample_rate & 0xFF);
+    fmt[5] = (Uint8)((sample_rate >> 8) & 0xFF);
+    fmt[6] = (Uint8)((sample_rate >> 16) & 0xFF);
+    fmt[7] = (Uint8)((sample_rate >> 24) & 0xFF);
+    int byte_rate = sample_rate * channels * (bits / 8);
+    fmt[8]  = (Uint8)(byte_rate & 0xFF);
+    fmt[9]  = (Uint8)((byte_rate >> 8) & 0xFF);
+    fmt[10] = (Uint8)((byte_rate >> 16) & 0xFF);
+    fmt[11] = (Uint8)((byte_rate >> 24) & 0xFF);
+    int block_align = channels * (bits / 8);
+    fmt[12] = (Uint8)(block_align & 0xFF);
+    fmt[13] = (Uint8)((block_align >> 8) & 0xFF);
+    fmt[14] = (Uint8)(TEST_WAV_BITS & 0xFF); fmt[15] = (Uint8)((TEST_WAV_BITS >> 8) & 0xFF);
+    buf4[0] = (Uint8)(fmt_chunk_size & 0xFF);
+    buf4[1] = (Uint8)((fmt_chunk_size >> 8) & 0xFF);
+    buf4[2] = 0; buf4[3] = 0;
+    if (!write_all(io, "fmt ", 4) || !write_all(io, buf4, 4) ||
+        !write_all(io, fmt, 16)) {
+        SDL_CloseIO(io); return false;
+    }
+
+    buf4[0] = (Uint8)(data_size & 0xFF);
+    buf4[1] = (Uint8)((data_size >> 8) & 0xFF);
+    buf4[2] = (Uint8)((data_size >> 16) & 0xFF);
+    buf4[3] = (Uint8)((data_size >> 24) & 0xFF);
+    if (!write_all(io, "data", 4) || !write_all(io, buf4, 4)) {
+        SDL_CloseIO(io); return false;
+    }
+
+    for (int i = 0; i < frames; i++) {
+        if (!write_all(io, &left_val, 4) || !write_all(io, &right_val, 4)) {
+            SDL_CloseIO(io); return false;
+        }
+    }
+
+    SDL_CloseIO(io);
+    return true;
+}
+
+/* Path for temporary test WAV file */
+#ifdef _WIN32
+#define TEST_WAV_PATH "test_stream_tmp.wav"
+#define TEST_WAV_PATH2 "test_stream_tmp2.wav"
+#else
+#define TEST_WAV_PATH "/tmp/test_stream_tmp.wav"
+#define TEST_WAV_PATH2 "/tmp/test_stream_tmp2.wav"
+#endif
+
+/* ── Streaming tests (Lesson 05) ──────────────────────────────────── */
+
+static void test_stream_open_close(void)
+{
+    TEST("stream open/close");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 8192));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+    ASSERT_TRUE(s.playing);
+    ASSERT_TRUE(!s.finished);
+    ASSERT_TRUE(s.ring != NULL);
+    ASSERT_TRUE(s.converter != NULL);
+    ASSERT_TRUE(s.total_frames == 8192);
+    ASSERT_TRUE(s.duration > 0.0f);
+
+    forge_audio_stream_close(&s);
+    ASSERT_TRUE(s.ring == NULL);
+    ASSERT_TRUE(s.io == NULL);
+
+    END_TEST();
+}
+
+static void test_stream_read_all(void)
+{
+    TEST("stream read entire file matches load_wav");
+
+    int frames = 4096;
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, frames));
+
+    /* Load via stream */
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+
+    float *stream_out = (float *)SDL_calloc((size_t)(frames * 2), sizeof(float));
+    ASSERT_TRUE(stream_out != NULL);
+
+    int total_read = 0;
+    for (int iter = 0; iter < 20 && total_read < frames; iter++) {
+        forge_audio_stream_update(&s);
+        int got = forge_audio_stream_read(&s, stream_out + total_read * 2,
+                                          frames - total_read);
+        total_read += got;
+        if (got == 0 && s.finished) break;
+    }
+
+    /* Load via load_wav for comparison */
+    ForgeAudioBuffer buf;
+    ASSERT_TRUE(forge_audio_load_wav(TEST_WAV_PATH, &buf));
+
+    /* Compare — both should have the same data.  The stream reads
+     * additively so we need to check against the buffer. */
+    int compare_frames = total_read < forge_audio_buffer_frames(&buf)
+                       ? total_read : forge_audio_buffer_frames(&buf);
+    ASSERT_TRUE(compare_frames > 0);
+
+    bool match = true;
+    for (int i = 0; i < compare_frames * 2; i++) {
+        float diff = stream_out[i] - buf.data[i];
+        if (diff < 0.0f) diff = -diff;
+        if (diff > 0.01f) {
+            match = false;
+            break;
+        }
+    }
+    ASSERT_TRUE(match);
+
+    SDL_free(stream_out);
+    forge_audio_buffer_free(&buf);
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_loop_wrap(void)
+{
+    TEST("stream loop wraps back to start");
+
+    /* Small file — 1024 frames, loop enabled */
+    int frames = 1024;
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, frames));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+    forge_audio_stream_set_loop(&s, 0);
+    ASSERT_TRUE(s.looping);
+
+    /* Read more than the file length — should wrap */
+    float *out = (float *)SDL_calloc(4096 * 2, sizeof(float));
+    ASSERT_TRUE(out != NULL);
+
+    int total_read = 0;
+    for (int iter = 0; iter < 40; iter++) {
+        forge_audio_stream_update(&s);
+        int got = forge_audio_stream_read(&s, out, 512);
+        total_read += got;
+        if (total_read >= frames * 2) break; /* read 2x the file */
+    }
+
+    /* Should have read more than the file length */
+    ASSERT_TRUE(total_read >= frames);
+    /* Stream should still be playing (looping) */
+    ASSERT_TRUE(s.playing);
+    ASSERT_TRUE(!s.finished);
+
+    SDL_free(out);
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_loop_with_intro(void)
+{
+    TEST("stream loop-with-intro skips intro on wrap");
+
+    int frames = 2048;
+    int intro_frames = 512;
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, frames));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+    forge_audio_stream_set_loop(&s, intro_frames);
+    ASSERT_TRUE(s.loop_start_frame == intro_frames);
+
+    /* Read the entire file + more to trigger wrap */
+    float *out = (float *)SDL_calloc(4096 * 2, sizeof(float));
+    ASSERT_TRUE(out != NULL);
+
+    int total_read = 0;
+    for (int iter = 0; iter < 40; iter++) {
+        forge_audio_stream_update(&s);
+        int got = forge_audio_stream_read(&s, out, 512);
+        total_read += got;
+        if (total_read >= frames * 2) break;
+    }
+
+    ASSERT_TRUE(s.playing);
+    ASSERT_TRUE(!s.finished);
+
+    /* The bulk read above triggered at least one natural wrap.
+     * Now seek to just before the end, let the stream wrap naturally,
+     * and verify the post-wrap audio matches the ramp at intro_frames.
+     *
+     * Approach: seek to (frames - 16), drain the remaining ~16 frames
+     * plus whatever wraps around, then check the sample values. */
+    forge_audio_stream_seek(&s, frames - 16);
+    {
+        /* Drain the pre-wrap portion (~16 frames) */
+        float drain[32 * 2];
+        int drain_iter;
+        SDL_memset(drain, 0, sizeof(drain));
+        for (drain_iter = 0; drain_iter < 10; drain_iter++) {
+            forge_audio_stream_update(&s);
+            forge_audio_stream_read(&s, drain, 32);
+        }
+    }
+    /* Now the stream should have wrapped.  Read fresh post-wrap data. */
+    forge_audio_stream_update(&s);
+    float post_wrap[64 * 2];
+    SDL_memset(post_wrap, 0, sizeof(post_wrap));
+    int got = forge_audio_stream_read(&s, post_wrap, 64);
+    ASSERT_TRUE(got > 0);
+
+    /* Verify post-wrap sample is in the loop region, NOT in the intro.
+     * Ramp formula: left = 0.25 + 0.5 * (frame / total_frames).
+     * Intro region: [0.25, 0.375).  Loop region: [0.375, 0.75].
+     * The ring buffer prefetch means we can't predict the exact frame,
+     * but the value must be >= intro start value (0.375) to confirm
+     * the wrap landed past the intro. */
+    float intro_start_val = 0.25f + 0.5f * ((float)intro_frames / (float)frames);
+    ASSERT_TRUE(post_wrap[0] >= intro_start_val - 0.01f);
+
+    SDL_free(out);
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_seek(void)
+{
+    TEST("stream seek repositions and produces output");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 8192));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+
+    /* Seek to middle — cursor_frame advances past 4096 during refill,
+     * so we check playing/finished state and that data is readable */
+    forge_audio_stream_seek(&s, 4096);
+    ASSERT_TRUE(s.playing);
+    ASSERT_TRUE(!s.finished);
+
+    /* Read some data — should work */
+    float out[512 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    forge_audio_stream_update(&s);
+    int got = forge_audio_stream_read(&s, out, 512);
+    ASSERT_TRUE(got > 0);
+
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_progress(void)
+{
+    TEST("stream progress reports [0..1]");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+
+    float p0 = forge_audio_stream_progress(&s);
+    /* After opening, some data has been pre-read but not consumed,
+     * so progress should be near 0 */
+    ASSERT_TRUE(p0 >= 0.0f && p0 <= 1.0f);
+
+    /* Read most of the file */
+    float *out = (float *)SDL_calloc(4096 * 2, sizeof(float));
+    ASSERT_TRUE(out != NULL);
+    for (int iter = 0; iter < 20; iter++) {
+        forge_audio_stream_update(&s);
+        forge_audio_stream_read(&s, out, 512);
+    }
+
+    float p1 = forge_audio_stream_progress(&s);
+    ASSERT_TRUE(p1 >= 0.0f && p1 <= 1.0f);
+    /* Progress should have advanced */
+    ASSERT_TRUE(p1 > p0 || s.finished);
+
+    SDL_free(out);
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_invalid_path(void)
+{
+    TEST("stream open with invalid path returns false");
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(!forge_audio_stream_open("nonexistent_file.wav", &s));
+    ASSERT_TRUE(s.ring == NULL);
+    ASSERT_TRUE(s.io == NULL);
+
+    END_TEST();
+}
+
+static void test_stream_finished_non_looping(void)
+{
+    TEST("stream finished flag set for non-looping");
+
+    /* Small file — easy to exhaust */
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 512));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+    /* Default: not looping */
+    ASSERT_TRUE(!s.looping);
+
+    float *out = (float *)SDL_calloc(4096 * 2, sizeof(float));
+    ASSERT_TRUE(out != NULL);
+
+    /* Read until done */
+    for (int iter = 0; iter < 20; iter++) {
+        forge_audio_stream_update(&s);
+        forge_audio_stream_read(&s, out, 1024);
+    }
+
+    /* Should eventually finish */
+    ASSERT_TRUE(s.finished || s.ring_available == 0);
+
+    SDL_free(out);
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_loop_start_clamped(void)
+{
+    TEST("stream loop_start_frame clamped to total_frames");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 1024));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+
+    /* Set intro_frames beyond total — should be clamped */
+    forge_audio_stream_set_loop(&s, 999999);
+    ASSERT_TRUE(s.loop_start_frame <= s.total_frames);
+
+    /* Update should not hang even with clamped loop point */
+    float out[512 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    for (int iter = 0; iter < 10; iter++) {
+        forge_audio_stream_update(&s);
+        forge_audio_stream_read(&s, out, 512);
+    }
+    ASSERT_TRUE(s.playing);
+
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+static void test_stream_looping_no_hang(void)
+{
+    TEST("stream looping update does not hang on zero-progress");
+
+    /* Very small file — ring pre-fill may consume entire file */
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 64));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+    forge_audio_stream_set_loop(&s, 0);
+
+    /* Multiple updates should return promptly, not spin */
+    float out[256 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    for (int iter = 0; iter < 20; iter++) {
+        forge_audio_stream_update(&s);
+        forge_audio_stream_read(&s, out, 256);
+    }
+    /* If we got here, no infinite loop occurred */
+    ASSERT_TRUE(s.playing);
+
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+/* ── Crossfader tests (Lesson 05) ─────────────────────────────────── */
+
+static void test_crossfader_single_track(void)
+{
+    TEST("crossfader single track plays without crash");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioCrossfader xf;
+    forge_audio_crossfader_init(&xf);
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH, 0.0f, true));
+
+    float out[512 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    forge_audio_crossfader_update(&xf, 1.0f / 60.0f);
+    forge_audio_crossfader_read(&xf, out, 512);
+
+    /* Should have produced non-zero output */
+    bool has_signal = false;
+    for (int i = 0; i < 512 * 2; i++) {
+        if (out[i] > 0.001f || out[i] < -0.001f) { has_signal = true; break; }
+    }
+    ASSERT_TRUE(has_signal);
+
+    forge_audio_crossfader_close(&xf);
+
+    END_TEST();
+}
+
+static void test_crossfader_blend_50(void)
+{
+    TEST("crossfader at 50% blend mixes distinct sources");
+
+    /* Two WAVs with distinct constant amplitudes so we can verify blending */
+    ASSERT_TRUE(write_test_wav_const(TEST_WAV_PATH,  4096, 0.2f, 0.2f));
+    ASSERT_TRUE(write_test_wav_const(TEST_WAV_PATH2, 4096, 0.8f, 0.8f));
+
+    ForgeAudioCrossfader xf;
+    forge_audio_crossfader_init(&xf);
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH, 0.0f, true));
+
+    /* Update to establish first track */
+    forge_audio_crossfader_update(&xf, 1.0f / 60.0f);
+
+    /* Start crossfade to second track */
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH2, 1.0f, true));
+    ASSERT_TRUE(xf.fading);
+
+    /* Advance to 50% */
+    forge_audio_crossfader_update(&xf, 0.5f);
+    ASSERT_NEAR(xf.fade_progress, 0.5f, 0.05f);
+
+    float out[512 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    forge_audio_crossfader_read(&xf, out, 512);
+
+    /* At 50% equal-power: gain_out = sqrt(0.5) ≈ 0.707, gain_in = sqrt(0.5).
+     * Expected blend: (0.2 + 0.8) * sqrt(0.5) ≈ 0.7071.
+     * Assert each non-silent sample is close to this value. */
+    float expected_blend = (0.2f + 0.8f) * SDL_sqrtf(0.5f);
+    bool has_signal = false;
+    bool blend_correct = true;
+    {
+        int i;
+        for (i = 0; i < 512 * 2; i++) {
+            float v = out[i];
+            if (v > 0.001f || v < -0.001f) {
+                has_signal = true;
+                float err = v - expected_blend;
+                if (err < 0.0f) err = -err;
+                if (err > 0.05f) blend_correct = false;
+            }
+        }
+    }
+    ASSERT_TRUE(has_signal);
+    ASSERT_TRUE(blend_correct);
+
+    forge_audio_crossfader_close(&xf);
+
+    END_TEST();
+}
+
+static void test_crossfader_fade_complete(void)
+{
+    TEST("crossfader fade completes and swaps active");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH2, 4096));
+
+    ForgeAudioCrossfader xf;
+    forge_audio_crossfader_init(&xf);
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH, 0.0f, true));
+    forge_audio_crossfader_update(&xf, 1.0f / 60.0f);
+
+    int initial_active = xf.active;
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH2, 0.5f, true));
+
+    /* Advance past the fade duration */
+    forge_audio_crossfader_update(&xf, 0.6f);
+
+    ASSERT_TRUE(!xf.fading);
+    /* Active should have swapped */
+    ASSERT_TRUE(xf.active != initial_active);
+
+    forge_audio_crossfader_close(&xf);
+
+    END_TEST();
+}
+
+/* ── Layer group tests (Lesson 05) ─────────────────────────────────── */
+
+static void test_layer_group_single_layer(void)
+{
+    TEST("layer group single layer produces output");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    int idx = forge_audio_layer_group_add(&group, TEST_WAV_PATH, 1.0f);
+    ASSERT_TRUE(idx == 0);
+    ASSERT_TRUE(group.layer_count == 1);
+
+    float out[512 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    forge_audio_layer_group_update(&group, 1.0f / 60.0f);
+    forge_audio_layer_group_read(&group, out, 512);
+
+    bool has_signal = false;
+    for (int i = 0; i < 512 * 2; i++) {
+        if (out[i] > 0.001f || out[i] < -0.001f) { has_signal = true; break; }
+    }
+    ASSERT_TRUE(has_signal);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+static void test_layer_group_weight_zero_silence(void)
+{
+    TEST("layer group weight=0 produces silence");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    forge_audio_layer_group_add(&group, TEST_WAV_PATH, 0.0f);
+
+    float out[512 * 2];
+    SDL_memset(out, 0, sizeof(out));
+    forge_audio_layer_group_update(&group, 1.0f / 60.0f);
+    forge_audio_layer_group_read(&group, out, 512);
+
+    /* Weight=0 should skip this layer */
+    bool all_zero = true;
+    for (int i = 0; i < 512 * 2; i++) {
+        if (out[i] > 0.0001f || out[i] < -0.0001f) { all_zero = false; break; }
+    }
+    ASSERT_TRUE(all_zero);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+static void test_layer_group_weight_fade(void)
+{
+    TEST("layer group weight fade reaches target");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    forge_audio_layer_group_add(&group, TEST_WAV_PATH, 0.0f);
+    forge_audio_layer_group_fade_weight(&group, 0, 1.0f, 0.5f);
+
+    /* Advance past fade duration */
+    for (int i = 0; i < 60; i++) {
+        forge_audio_layer_group_update(&group, 1.0f / 60.0f);
+    }
+
+    ASSERT_NEAR(group.layers[0].weight, 1.0f, 0.05f);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+static void test_layer_group_progress(void)
+{
+    TEST("layer group progress reports [0..1]");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    forge_audio_layer_group_add(&group, TEST_WAV_PATH, 1.0f);
+
+    float p = forge_audio_layer_group_progress(&group);
+    ASSERT_TRUE(p >= 0.0f && p <= 1.0f);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+static void test_layer_group_weight_clamped(void)
+{
+    TEST("layer group add clamps weight to [0,1]");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    /* Negative weight should be clamped to 0 */
+    int idx0 = forge_audio_layer_group_add(&group, TEST_WAV_PATH, -5.0f);
+    ASSERT_TRUE(idx0 == 0);
+    ASSERT_NEAR(group.layers[0].weight, 0.0f, EPSILON);
+
+    forge_audio_layer_group_close(&group);
+
+    /* Weight > 1 should be clamped to 1 */
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+    int idx1 = forge_audio_layer_group_add(&group, TEST_WAV_PATH, 3.0f);
+    ASSERT_TRUE(idx1 == 0);
+    ASSERT_NEAR(group.layers[0].weight, 1.0f, EPSILON);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+/* Helper: write a minimal WAV with configurable fmt fields for rejection tests.
+ * Returns true if the file was written successfully. */
+static bool write_rejection_wav(const char *path, Uint16 format_tag,
+                                Uint16 channels, Uint32 sample_rate)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) return false;
+
+    int data_size = 64 * (int)channels * (TEST_WAV_BITS / 8);
+    int fmt_chunk_size = TEST_WAV_FMT_CHUNK_SIZE;
+    int riff_size = 4 + (8 + fmt_chunk_size) + (8 + data_size);
+    bool ok = true;
+
+    /* RIFF header */
+    Uint8 buf4[4];
+    buf4[0] = (Uint8)(riff_size & 0xFF);
+    buf4[1] = (Uint8)((riff_size >> 8) & 0xFF);
+    buf4[2] = (Uint8)((riff_size >> 16) & 0xFF);
+    buf4[3] = (Uint8)((riff_size >> 24) & 0xFF);
+    ok = ok && write_all(io, "RIFF", 4);
+    ok = ok && write_all(io, buf4, 4);
+    ok = ok && write_all(io, "WAVE", 4);
+
+    /* fmt chunk */
+    buf4[0] = (Uint8)(fmt_chunk_size & 0xFF);
+    buf4[1] = 0; buf4[2] = 0; buf4[3] = 0;
+    ok = ok && write_all(io, "fmt ", 4);
+    ok = ok && write_all(io, buf4, 4);
+
+    Uint8 fmt[16];
+    fmt[0] = (Uint8)(format_tag & 0xFF);
+    fmt[1] = (Uint8)((format_tag >> 8) & 0xFF);
+    fmt[2] = (Uint8)(channels & 0xFF);
+    fmt[3] = (Uint8)((channels >> 8) & 0xFF);
+    fmt[4] = (Uint8)(sample_rate & 0xFF);
+    fmt[5] = (Uint8)((sample_rate >> 8) & 0xFF);
+    fmt[6] = (Uint8)((sample_rate >> 16) & 0xFF);
+    fmt[7] = (Uint8)((sample_rate >> 24) & 0xFF);
+    /* byte_rate and block_align — computed from parameters */
+    Uint16 block_align = channels * (TEST_WAV_BITS / 8);
+    Uint32 byte_rate = sample_rate * (Uint32)block_align;
+    fmt[8]  = (Uint8)(byte_rate & 0xFF);
+    fmt[9]  = (Uint8)((byte_rate >> 8) & 0xFF);
+    fmt[10] = (Uint8)((byte_rate >> 16) & 0xFF);
+    fmt[11] = (Uint8)((byte_rate >> 24) & 0xFF);
+    fmt[12] = (Uint8)(block_align & 0xFF);
+    fmt[13] = (Uint8)((block_align >> 8) & 0xFF);
+    fmt[14] = (Uint8)(TEST_WAV_BITS & 0xFF); fmt[15] = (Uint8)((TEST_WAV_BITS >> 8) & 0xFF);
+    ok = ok && write_all(io, fmt, 16);
+
+    /* data chunk */
+    buf4[0] = (Uint8)(data_size & 0xFF);
+    buf4[1] = (Uint8)((data_size >> 8) & 0xFF);
+    buf4[2] = 0; buf4[3] = 0;
+    ok = ok && write_all(io, "data", 4);
+    ok = ok && write_all(io, buf4, 4);
+
+    /* Data is always 32-bit float (TEST_WAV_BITS == 32).  The rejection
+     * targets fmt-header fields, not the data payload. */
+    float zero = 0.0f;
+    for (int i = 0; i < 64 * (int)channels; i++) {
+        ok = ok && write_all(io, &zero, 4);
+    }
+    SDL_CloseIO(io);
+    return ok;
+}
+
+static void test_stream_zero_rate_wav_rejected(void)
+{
+    TEST("stream rejects WAV with zero sample rate");
+
+    /* Write a WAV with sample_rate = 0 — should be rejected by the parser */
+    ASSERT_TRUE(write_rejection_wav(TEST_WAV_PATH, 3, 2, 0));
+
+    /* Opening should fail */
+    ForgeAudioStream s;
+    ASSERT_TRUE(!forge_audio_stream_open(TEST_WAV_PATH, &s));
+
+    END_TEST();
+}
+
+static void test_stream_excessive_channels_rejected(void)
+{
+    TEST("stream rejects WAV with excessive channel count");
+
+    /* Write a WAV with channels = 99 — exceeds upper bound (8) */
+    ASSERT_TRUE(write_rejection_wav(TEST_WAV_PATH, 3, 99, 44100));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(!forge_audio_stream_open(TEST_WAV_PATH, &s));
+
+    END_TEST();
+}
+
+/* ── Total-frames overflow guard (PR #329 fix) ────────────────────── */
+
+static void test_stream_total_frames_nonnegative(void)
+{
+    /* Verify that total_frames and duration are positive after opening.
+     * The overflow guard (Uint64 clamp to SDL_MAX_SINT32) prevents negative
+     * values on large files, but we can only test the normal path here. */
+    TEST("stream total_frames is non-negative");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 8192));
+
+    ForgeAudioStream s;
+    ASSERT_TRUE(forge_audio_stream_open(TEST_WAV_PATH, &s));
+    ASSERT_TRUE(s.total_frames > 0);
+    ASSERT_TRUE(s.total_frames == 8192);
+    ASSERT_TRUE(s.duration > 0.0f);
+
+    forge_audio_stream_close(&s);
+
+    END_TEST();
+}
+
+/* ── Public API and safety tests (PR #329 round 5) ─────────────────── */
+
+/* Verify the public forge_audio_tanhf function works at typical values. */
+static void test_tanhf_public_api(void)
+{
+    TEST("forge_audio_tanhf public API");
+
+    /* tanh(0) = 0 */
+    ASSERT_NEAR(forge_audio_tanhf(0.0f), 0.0f, 1e-6f);
+
+    /* tanh(1) ≈ 0.7616 */
+    ASSERT_NEAR(forge_audio_tanhf(1.0f), 0.7616f, 0.001f);
+
+    /* tanh(-1) ≈ -0.7616 */
+    ASSERT_NEAR(forge_audio_tanhf(-1.0f), -0.7616f, 0.001f);
+
+    /* Symmetry: tanh(-x) = -tanh(x) */
+    float val = forge_audio_tanhf(2.5f);
+    ASSERT_NEAR(forge_audio_tanhf(-2.5f), -val, 1e-6f);
+
+    END_TEST();
+}
+
+/* Verify extreme value clamping in forge_audio_tanhf. */
+static void test_tanhf_clamp_extremes(void)
+{
+    TEST("forge_audio_tanhf clamp extremes");
+
+    /* Values beyond ±10 should clamp to ±1.0 exactly. */
+    ASSERT_NEAR(forge_audio_tanhf(100.0f), 1.0f, 0.0f);
+    ASSERT_NEAR(forge_audio_tanhf(-100.0f), -1.0f, 0.0f);
+    ASSERT_NEAR(forge_audio_tanhf(10.1f), 1.0f, 0.0f);
+    ASSERT_NEAR(forge_audio_tanhf(-10.1f), -1.0f, 0.0f);
+
+    /* Just under the clamp threshold should not clamp. */
+    float near_clamp = forge_audio_tanhf(3.0f);
+    ASSERT_TRUE(near_clamp < 1.0f);
+    ASSERT_TRUE(near_clamp > 0.99f);
+
+    END_TEST();
+}
+
+/* Verify the FORGE_AUDIO_SYNC_THRESHOLD_FLOOR constant exists and is sane. */
+static void test_sync_threshold_floor_constant(void)
+{
+    TEST("FORGE_AUDIO_SYNC_THRESHOLD_FLOOR constant");
+
+    /* The floor should be a small positive value. */
+    ASSERT_TRUE(FORGE_AUDIO_SYNC_THRESHOLD_FLOOR > 0.0f);
+    ASSERT_TRUE(FORGE_AUDIO_SYNC_THRESHOLD_FLOOR < 0.001f);
+
+    /* For a very long track (~8 million frames), the computed threshold
+     * (2.0 / total_frames) would be ~2.5e-7, which is below the floor.
+     * The floor prevents float precision from causing false re-seeks. */
+    float long_track_threshold = 2.0f / 8000000.0f;
+    ASSERT_TRUE(long_track_threshold < FORGE_AUDIO_SYNC_THRESHOLD_FLOOR);
+
+    END_TEST();
+}
+
+/* Verify that a crossfader can be closed and re-initialized. */
+static void test_crossfader_close_reinit(void)
+{
+    TEST("crossfader close then reinit");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioCrossfader xf;
+    forge_audio_crossfader_init(&xf);
+
+    /* Load a track and verify it works. */
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH, 0.0f, true));
+    ASSERT_TRUE(xf.streams[xf.active].playing);
+
+    /* Close the crossfader. */
+    forge_audio_crossfader_close(&xf);
+
+    /* Re-initialize and verify it works again. */
+    forge_audio_crossfader_init(&xf);
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH, 0.0f, true));
+    ASSERT_TRUE(xf.streams[xf.active].playing);
+
+    forge_audio_crossfader_close(&xf);
+
+    END_TEST();
+}
+
+/* Verify NaN/Inf weights are sanitized to safe values. */
+static void test_layer_group_nan_weight(void)
+{
+    TEST("layer group NaN/Inf weight sanitized");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    /* NaN weight should be sanitized to 0 */
+    volatile float zero = 0.0f;
+    float nan_val = zero / zero;  /* NaN */
+    int idx = forge_audio_layer_group_add(&group, TEST_WAV_PATH, nan_val);
+    ASSERT_TRUE(idx == 0);
+    ASSERT_NEAR(group.layers[0].weight, 0.0f, EPSILON);
+    ASSERT_NEAR(group.layers[0].weight_target, 0.0f, EPSILON);
+
+    /* NaN fade target should be sanitized */
+    forge_audio_layer_group_fade_weight(&group, 0, nan_val, 1.0f);
+    ASSERT_NEAR(group.layers[0].weight_target, 0.0f, EPSILON);
+
+    /* NaN fade duration should snap immediately */
+    forge_audio_layer_group_fade_weight(&group, 0, 0.5f, nan_val);
+    ASSERT_NEAR(group.layers[0].weight, 0.5f, EPSILON);
+    ASSERT_NEAR(group.layers[0].weight_rate, 0.0f, EPSILON);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+/* Verify that 64-bit float WAVs are rejected by the streaming parser. */
+static void test_stream_64bit_float_rejected(void)
+{
+    TEST("streaming rejects 64-bit float WAV");
+
+    /* Write a WAV with format_tag=3 (IEEE float) but 64 bits per sample.
+     * Reuse write_rejection_wav which writes format_tag=1 PCM header, then
+     * manually craft a 64-bit float header. */
+    const char *path = TEST_WAV_PATH;
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    ASSERT_TRUE(io != NULL);
+
+    /* Minimal RIFF WAV with format_tag=3 (float), 64 bits, 1 channel.
+     * Derived: block_align = channels * (bits/8) = 1 * 8 = 8
+     *          byte_rate = sample_rate * block_align = 44100 * 8 = 352800 */
+    Uint32 byte_rate = 352800;  /* 44100 * 8 */
+    Uint8 header[] = {
+        'R','I','F','F',  0,0,0,0,  /* RIFF chunk (size filled below) */
+        'W','A','V','E',
+        'f','m','t',' ',  16,0,0,0, /* fmt chunk, 16 bytes */
+        3,0,                         /* format_tag = 3 (IEEE float) */
+        1,0,                         /* channels = 1 */
+        0x44,0xAC,0,0,              /* sample_rate = 44100 */
+        (Uint8)(byte_rate),
+        (Uint8)(byte_rate >> 8),
+        (Uint8)(byte_rate >> 16),
+        (Uint8)(byte_rate >> 24),    /* byte_rate = 352800 */
+        8,0,                         /* block_align = 8 */
+        64,0,                        /* bits_per_sample = 64 */
+        'd','a','t','a',  8,0,0,0,  /* data chunk, 8 bytes */
+        0,0,0,0, 0,0,0,0            /* one 64-bit float sample */
+    };
+    /* Fix RIFF size = file_size - 8 */
+    Uint32 riff_size = (Uint32)(sizeof(header) - 8);
+    header[4] = (Uint8)(riff_size);
+    header[5] = (Uint8)(riff_size >> 8);
+    header[6] = (Uint8)(riff_size >> 16);
+    header[7] = (Uint8)(riff_size >> 24);
+
+    ASSERT_TRUE(SDL_WriteIO(io, header, sizeof(header)));
+    SDL_CloseIO(io);
+
+    ForgeAudioStream s;
+    bool opened = forge_audio_stream_open(path, &s);
+    ASSERT_TRUE(!opened);  /* Should be rejected */
+
+    SDL_RemovePath(path);
+
+    END_TEST();
+}
+
+/* Verify NaN/negative dt is rejected by crossfader_update and layer_group_update. */
+static void test_crossfader_nan_dt(void)
+{
+    TEST("crossfader_update rejects NaN/negative dt");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioCrossfader xf;
+    forge_audio_crossfader_init(&xf);
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH, 0.0f, true));
+
+    /* Start a crossfade */
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH2, 4096));
+    ASSERT_TRUE(forge_audio_crossfader_play(&xf, TEST_WAV_PATH2, 1.0f, true));
+    ASSERT_TRUE(xf.fading);
+
+    /* NaN dt should not advance fade_progress */
+    float progress_before = xf.fade_progress;
+    volatile float zero = 0.0f;
+    float nan_val = zero / zero;
+    forge_audio_crossfader_update(&xf, nan_val);
+    ASSERT_NEAR(xf.fade_progress, progress_before, EPSILON);
+
+    /* Negative dt should not advance fade_progress */
+    forge_audio_crossfader_update(&xf, -1.0f);
+    ASSERT_NEAR(xf.fade_progress, progress_before, EPSILON);
+
+    forge_audio_crossfader_close(&xf);
+
+    END_TEST();
+}
+
+/* Verify NaN/negative dt is rejected by layer_group_update. */
+static void test_layer_group_nan_dt(void)
+{
+    TEST("layer_group_update rejects NaN/negative dt");
+
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 4096));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+    forge_audio_layer_group_add(&group, TEST_WAV_PATH, 1.0f);
+
+    /* Start a weight fade */
+    forge_audio_layer_group_fade_weight(&group, 0, 0.0f, 2.0f);
+    float weight_before = group.layers[0].weight;
+
+    /* NaN dt should not advance weight */
+    volatile float zero = 0.0f;
+    float nan_val = zero / zero;
+    forge_audio_layer_group_update(&group, nan_val);
+    ASSERT_NEAR(group.layers[0].weight, weight_before, EPSILON);
+
+    /* Negative dt should not advance weight */
+    forge_audio_layer_group_update(&group, -1.0f);
+    ASSERT_NEAR(group.layers[0].weight, weight_before, EPSILON);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
+/* Verify that zero-weight layers stay phase-locked (ring buffer drained). */
+static void test_layer_group_zero_weight_phase_lock(void)
+{
+    TEST("zero-weight layers stay phase-locked");
+
+    /* Use a file larger than the ring buffer so progress is meaningful */
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH, 44100));
+    ASSERT_TRUE(write_test_wav(TEST_WAV_PATH2, 44100));
+
+    ForgeAudioLayerGroup group;
+    forge_audio_layer_group_init(&group);
+    group.playing = true;
+
+    /* Add two layers: leader at full weight, follower at zero */
+    forge_audio_layer_group_add(&group, TEST_WAV_PATH, 1.0f);
+    forge_audio_layer_group_add(&group, TEST_WAV_PATH2, 0.0f);
+
+    /* Run many update+read cycles to advance both streams.
+     * Each read drains 512 frames; need enough iterations to consume
+     * a meaningful fraction of the 44100-frame file. */
+    float out[512 * 2];
+    int iter;
+    for (iter = 0; iter < 40; iter++) {
+        forge_audio_layer_group_update(&group, 1.0f / 60.0f);
+        SDL_memset(out, 0, sizeof(out));
+        forge_audio_layer_group_read(&group, out, 512);
+    }
+
+    /* Both streams should have advanced — the zero-weight stream should
+     * NOT be stuck at the start because its ring buffer was drained. */
+    float leader_prog = forge_audio_stream_progress(&group.layers[0].stream);
+    float follower_prog = forge_audio_stream_progress(&group.layers[1].stream);
+    ASSERT_TRUE(leader_prog > 0.1f);
+    ASSERT_TRUE(follower_prog > 0.1f);
+
+    /* They should be close in progress (sync maintained) */
+    float diff = leader_prog - follower_prog;
+    if (diff < 0.0f) diff = -diff;
+    ASSERT_TRUE(diff < 0.15f);
+
+    forge_audio_layer_group_close(&group);
+
+    END_TEST();
+}
+
 /* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -1803,6 +2932,7 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
+    SDL_Init(0);
     SDL_Log("=== forge_audio.h tests ===\n");
 
     test_silent_source();
@@ -1904,8 +3034,51 @@ int main(int argc, char *argv[])
     test_playback_rate_default();
     test_playback_rate_double_speed();
 
+    /* Streaming tests (Lesson 05) */
+    test_stream_open_close();
+    test_stream_read_all();
+    test_stream_loop_wrap();
+    test_stream_loop_with_intro();
+    test_stream_seek();
+    test_stream_progress();
+    test_stream_invalid_path();
+    test_stream_finished_non_looping();
+    test_stream_loop_start_clamped();
+    test_stream_looping_no_hang();
+
+    /* Crossfader tests (Lesson 05) */
+    test_crossfader_single_track();
+    test_crossfader_blend_50();
+    test_crossfader_fade_complete();
+
+    /* Layer group tests (Lesson 05) */
+    test_layer_group_single_layer();
+    test_layer_group_weight_zero_silence();
+    test_layer_group_weight_fade();
+    test_layer_group_progress();
+    test_layer_group_weight_clamped();
+    test_stream_zero_rate_wav_rejected();
+    test_stream_excessive_channels_rejected();
+    test_stream_total_frames_nonnegative();
+
+    /* Public API and safety tests (PR #329 round 5) */
+    test_tanhf_public_api();
+    test_tanhf_clamp_extremes();
+    test_sync_threshold_floor_constant();
+    test_crossfader_close_reinit();
+    test_layer_group_nan_weight();
+    test_crossfader_nan_dt();
+    test_layer_group_nan_dt();
+    test_layer_group_zero_weight_phase_lock();
+    test_stream_64bit_float_rejected();
+
+    /* Clean up temporary test WAV files */
+    SDL_RemovePath(TEST_WAV_PATH);
+    SDL_RemovePath(TEST_WAV_PATH2);
+
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",
             pass_count, test_count, fail_count);
 
+    SDL_Quit();
     return fail_count > 0 ? 1 : 0;
 }

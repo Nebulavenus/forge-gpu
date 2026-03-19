@@ -13,6 +13,9 @@
  *   Lesson 04 — Spatial audio: distance attenuation (linear, inverse,
  *               exponential), stereo pan from 3D position, Doppler pitch
  *               shifting with fractional-rate sample interpolation.
+ *   Lesson 05 — Music streaming: chunked WAV reader with ring buffer,
+ *               crossfade between two streams (equal-power), loop-with-intro,
+ *               adaptive music layers with per-layer weight fading.
  *
  * Usage:
  *   #include "audio/forge_audio.h"
@@ -29,6 +32,7 @@
 
 #include <SDL3/SDL.h>
 #include "math/forge_math.h"
+#include "arena/forge_arena.h"
 
 /* Portable isfinite — SDL_stdinc.h does not yet provide this */
 #ifndef forge_isfinite
@@ -44,6 +48,14 @@
 
 /* Minimum meaningful fade distance — below this, snap to target */
 #define FORGE_AUDIO_FADE_EPSILON 1e-6f
+
+/* Minimum layer sync threshold — prevents false re-seeks from float
+ * precision loss on long tracks (millions of frames). */
+#define FORGE_AUDIO_SYNC_THRESHOLD_FLOOR 1e-6f
+
+/* Tanh soft-clip clamp: |x| beyond this value saturates to ±1.0.
+ * tanh(10) ≈ 0.9999999958 — close enough to 1.0 for audio. */
+#define FORGE_AUDIO_TANH_CLAMP 10.0f
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -756,12 +768,13 @@ static inline int forge_audio__clamped_channel_count(
     return n;
 }
 
-/* Private helper: tanh approximation using SDL_expf.
- * Clamps extreme values to avoid overflow in exp. */
-static inline float forge_audio__tanhf(float x)
+/* Tanh approximation using SDL_expf.
+ * Clamps extreme values to avoid overflow in exp.  Useful as a soft-clip
+ * function: maps any input smoothly into (-1, +1). */
+static inline float forge_audio_tanhf(float x)
 {
-    if (x >  10.0f) return  1.0f;
-    if (x < -10.0f) return -1.0f;
+    if (x >  FORGE_AUDIO_TANH_CLAMP) return  1.0f;
+    if (x < -FORGE_AUDIO_TANH_CLAMP) return -1.0f;
     float e2x = SDL_expf(2.0f * x);
     return (e2x - 1.0f) / (e2x + 1.0f);
 }
@@ -940,8 +953,8 @@ static inline void forge_audio_mixer_mix(ForgeAudioMixer *mixer,
         float r = out[i * 2 + 1] * mixer->master_volume;
 
         /* Soft-clip via tanh — output stays in [-1, 1] */
-        l = forge_audio__tanhf(l);
-        r = forge_audio__tanhf(r);
+        l = forge_audio_tanhf(l);
+        r = forge_audio_tanhf(r);
 
         out[i * 2]     = l;
         out[i * 2 + 1] = r;
@@ -1087,6 +1100,10 @@ static inline void forge_audio_mixer_master_peak(const ForgeAudioMixer *mixer,
 /* Mach clamp fraction — Doppler denominator/numerator floored at this
  * fraction of speed_of_sound to prevent infinity at Mach 1 */
 #define FORGE_AUDIO_MACH_CLAMP_FRACTION   0.1f
+
+/* Minimum layer weight for audibility — layers below this are skipped
+ * during mixing to avoid processing inaudible sources */
+#define FORGE_AUDIO_WEIGHT_EPSILON        0.001f
 
 /* Doppler pitch clamp range — two octaves in each direction */
 #define FORGE_AUDIO_DOPPLER_PITCH_MIN     0.5f   /* one octave down */
@@ -1362,6 +1379,1056 @@ static inline void forge_audio_spatial_apply(
         spatial->mixer->channels[spatial->channel].volume = volume;
         spatial->mixer->channels[spatial->channel].pan = pan;
     }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Lesson 05 — Music Streaming
+ *
+ * Three systems for streaming music from disk:
+ *
+ * 1. ForgeAudioStream — Reads a WAV file in small chunks through a ring
+ *    buffer, keeping memory usage constant regardless of track length.
+ *    SDL_AudioStream handles format conversion (any WAV → F32 stereo 44100).
+ *
+ * 2. ForgeAudioCrossfader — Manages two streams and crossfades between them
+ *    using equal-power gain curves (sqrt).  When a new track is requested,
+ *    the outgoing stream fades out while the incoming stream fades in.
+ *
+ * 3. ForgeAudioLayerGroup — Streams multiple stems (layers) in lockstep,
+ *    mixing them with per-layer weight.  Weights can be faded over time
+ *    for adaptive music (e.g. adding drums when combat starts).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Streaming constants ──────────────────────────────────────────────── */
+
+/* Frames per disk read — each chunk is 4096 stereo frames (~93 ms at 44100) */
+#define FORGE_AUDIO_STREAM_CHUNK_FRAMES   4096
+
+/* Number of chunks in the ring buffer — 4 chunks ≈ 0.37s at 44100 Hz */
+#define FORGE_AUDIO_STREAM_RING_CHUNKS    4
+
+/* Total ring buffer capacity in frames */
+#define FORGE_AUDIO_STREAM_RING_FRAMES \
+    (FORGE_AUDIO_STREAM_CHUNK_FRAMES * FORGE_AUDIO_STREAM_RING_CHUNKS)
+
+/* Maximum number of adaptive music layers per group */
+#define FORGE_AUDIO_MAX_LAYERS  8
+
+/* ── WAV header parser (internal) ─────────────────────────────────────── */
+
+/* Parse RIFF/WAV header to locate the 'fmt ' and 'data' chunks without
+ * reading the entire file.  This allows streaming: we only need to know
+ * the audio format and where the raw PCM data starts.
+ *
+ * Handles varied chunk orderings and skips unknown chunks (LIST, JUNK,
+ * bext, etc.) as required by the WAV specification.
+ *
+ * Returns true on success, filling out_spec, out_data_offset, and
+ * out_data_size.  On failure, returns false and logs an error. */
+static inline bool forge_audio__wav_parse_header(
+    SDL_IOStream *io,
+    SDL_AudioSpec *out_spec,
+    Uint32 *out_data_offset,
+    Uint32 *out_data_size)
+{
+    if (!io || !out_spec || !out_data_offset || !out_data_size) return false;
+
+    /* Read RIFF header (12 bytes) */
+    Uint8 header[12];
+    if (SDL_ReadIO(io, header, 12) != 12) {
+        SDL_Log("ERROR: forge_audio__wav_parse_header: failed to read RIFF header");
+        return false;
+    }
+    if (SDL_memcmp(header, "RIFF", 4) != 0 || SDL_memcmp(header + 8, "WAVE", 4) != 0) {
+        SDL_Log("ERROR: forge_audio__wav_parse_header: not a RIFF/WAVE file");
+        return false;
+    }
+
+    bool found_fmt = false;
+    bool found_data = false;
+
+    /* Walk chunks until we find both 'fmt ' and 'data' */
+    while (!found_fmt || !found_data) {
+        Uint8 chunk_header[8];
+        if (SDL_ReadIO(io, chunk_header, 8) != 8) break;
+
+        char id[5] = {0};
+        SDL_memcpy(id, chunk_header, 4);
+        Uint32 chunk_size = (Uint32)chunk_header[4]
+                          | ((Uint32)chunk_header[5] << 8)
+                          | ((Uint32)chunk_header[6] << 16)
+                          | ((Uint32)chunk_header[7] << 24);
+
+        if (SDL_memcmp(id, "fmt ", 4) == 0) {
+            /* Read format chunk — minimum 16 bytes */
+            if (chunk_size < 16) {
+                SDL_Log("ERROR: forge_audio__wav_parse_header: fmt chunk too small (%u)", chunk_size);
+                return false;
+            }
+            Uint8 fmt[40]; /* enough for WAVEFORMATEXTENSIBLE */
+            Uint32 to_read = chunk_size < 40 ? chunk_size : 40;
+            if (SDL_ReadIO(io, fmt, to_read) != (size_t)to_read) {
+                SDL_Log("ERROR: forge_audio__wav_parse_header: failed to read fmt chunk");
+                return false;
+            }
+            Uint16 format_tag = (Uint16)(fmt[0] | (fmt[1] << 8));
+            Uint16 channels   = (Uint16)(fmt[2] | (fmt[3] << 8));
+            Uint32 sample_rate = (Uint32)fmt[4] | ((Uint32)fmt[5] << 8)
+                               | ((Uint32)fmt[6] << 16) | ((Uint32)fmt[7] << 24);
+            Uint16 bits_per_sample = (Uint16)(fmt[14] | (fmt[15] << 8));
+
+            if (channels == 0 || channels > 8 || sample_rate == 0 || sample_rate > 192000) {
+                SDL_Log("ERROR: forge_audio__wav_parse_header: invalid fmt (channels=%u, rate=%u)",
+                        channels, sample_rate);
+                return false;
+            }
+
+            /* Map format tag to SDL_AudioFormat */
+            SDL_AudioFormat sdl_fmt;
+            if (format_tag == 3) {
+                /* IEEE float — only 32-bit is supported for streaming */
+                if (bits_per_sample != 32) {
+                    SDL_Log("ERROR: forge_audio__wav_parse_header: unsupported float bit depth %u"
+                            " (streaming only supports 32-bit float)", bits_per_sample);
+                    return false;
+                }
+                sdl_fmt = SDL_AUDIO_F32LE;
+            } else if (format_tag == 1) {
+                /* PCM integer */
+                switch (bits_per_sample) {
+                case 8:  sdl_fmt = SDL_AUDIO_U8; break;
+                case 16: sdl_fmt = SDL_AUDIO_S16LE; break;
+                case 32: sdl_fmt = SDL_AUDIO_S32LE; break;
+                default:
+                    /* Note: 24-bit PCM is supported by forge_audio_load_wav()
+                     * (via SDL_LoadWAV) but not by the streaming parser.
+                     * 24-bit WAVs should use the non-streaming path. */
+                    SDL_Log("ERROR: forge_audio__wav_parse_header: unsupported PCM bit depth %u"
+                            " (streaming supports 8/16/32-bit PCM and 32-bit float;"
+                            " use forge_audio_load_wav() for 24-bit WAV files)",
+                            bits_per_sample);
+                    return false;
+                }
+            } else if (format_tag == 0xFFFE) {
+                /* WAVEFORMATEXTENSIBLE — check SubFormat GUID prefix */
+                if (chunk_size >= 40) {
+                    Uint16 sub_tag = (Uint16)(fmt[24] | (fmt[25] << 8));
+                    if (sub_tag == 3) {
+                        if (bits_per_sample != 32) {
+                            SDL_Log("ERROR: forge_audio__wav_parse_header: unsupported extensible float bit depth %u",
+                                    bits_per_sample);
+                            return false;
+                        }
+                        sdl_fmt = SDL_AUDIO_F32LE;
+                    } else if (sub_tag == 1) {
+                        switch (bits_per_sample) {
+                        case 16: sdl_fmt = SDL_AUDIO_S16LE; break;
+                        case 32: sdl_fmt = SDL_AUDIO_S32LE; break;
+                        default:
+                            SDL_Log("ERROR: forge_audio__wav_parse_header: unsupported extensible PCM bit depth %u",
+                                    bits_per_sample);
+                            return false;
+                        }
+                    } else {
+                        SDL_Log("ERROR: forge_audio__wav_parse_header: unsupported extensible sub-format %u",
+                                sub_tag);
+                        return false;
+                    }
+                } else {
+                    SDL_Log("ERROR: forge_audio__wav_parse_header: extensible format but chunk too small");
+                    return false;
+                }
+            } else {
+                SDL_Log("ERROR: forge_audio__wav_parse_header: unsupported format tag 0x%04X",
+                        format_tag);
+                return false;
+            }
+
+            out_spec->format = sdl_fmt;
+            out_spec->channels = (int)channels;
+            out_spec->freq = (int)sample_rate;
+            found_fmt = true;
+
+            /* Skip remaining bytes if fmt chunk was larger than what we read */
+            if (chunk_size > to_read) {
+                if (SDL_SeekIO(io, (Sint64)(chunk_size - to_read), SDL_IO_SEEK_CUR) < 0) {
+                    SDL_Log("ERROR: forge_audio__wav_parse_header: SDL_SeekIO (skip fmt remainder): %s", SDL_GetError());
+                    return false;
+                }
+            }
+        } else if (SDL_memcmp(id, "data", 4) == 0) {
+            {
+                Sint64 tell = SDL_TellIO(io);
+                if (tell < 0) {
+                    SDL_Log("ERROR: forge_audio__wav_parse_header: SDL_TellIO failed: %s",
+                            SDL_GetError());
+                    return false;
+                }
+                *out_data_offset = (Uint32)tell;
+            }
+            *out_data_size = chunk_size;
+            found_data = true;
+            /* Don't seek past data — we know where it is now */
+            if (!found_fmt) {
+                /* Need to keep scanning for fmt — skip over data */
+                if (SDL_SeekIO(io, (Sint64)chunk_size, SDL_IO_SEEK_CUR) < 0) {
+                    SDL_Log("ERROR: forge_audio__wav_parse_header: SDL_SeekIO (skip data): %s", SDL_GetError());
+                    return false;
+                }
+            }
+        } else {
+            /* Unknown chunk (LIST, JUNK, bext, etc.) — skip */
+            if (SDL_SeekIO(io, (Sint64)chunk_size, SDL_IO_SEEK_CUR) < 0) {
+                SDL_Log("ERROR: forge_audio__wav_parse_header: SDL_SeekIO (skip chunk '%.4s'): %s", id, SDL_GetError());
+                return false;
+            }
+        }
+
+        /* WAV chunks are word-aligned — skip padding byte if odd size */
+        if (chunk_size & 1) {
+            if (SDL_SeekIO(io, 1, SDL_IO_SEEK_CUR) < 0) {
+                SDL_Log("ERROR: forge_audio__wav_parse_header: SDL_SeekIO (padding): %s", SDL_GetError());
+                return false;
+            }
+        }
+    }
+
+    if (!found_fmt || !found_data) {
+        SDL_Log("ERROR: forge_audio__wav_parse_header: missing %s%s chunk(s)",
+                found_fmt ? "" : "fmt ", found_data ? "" : "data");
+        return false;
+    }
+    return true;
+}
+
+/* ── ForgeAudioStream — Chunked WAV reader ────────────────────────────── */
+
+/* A streaming WAV reader that loads audio in small chunks through a ring
+ * buffer, keeping memory usage constant (~128 KB) regardless of track length.
+ *
+ * The stream reads raw samples from the WAV file, pushes them through an
+ * SDL_AudioStream for format conversion (any format → F32 stereo 44100 Hz),
+ * and stores the converted output in a ring buffer.  Consumers call
+ * forge_audio_stream_read() to pull frames from the ring buffer.
+ *
+ * For looping, the stream wraps back to either the file start or a
+ * configurable loop-start point (for intro + loop body patterns). */
+typedef struct ForgeAudioStream {
+    SDL_IOStream   *io;              /* open file handle (owned) */
+    Uint32          data_offset;     /* byte offset of PCM data in file */
+    Uint32          data_size;       /* total bytes of PCM data */
+    SDL_AudioSpec   file_spec;       /* native format of the WAV file */
+    SDL_AudioStream *converter;      /* format conversion (file → canonical) */
+    float          *ring;            /* ring buffer (RING_FRAMES * 2 floats) */
+    int             ring_write;      /* next frame write position (ring index) */
+    int             ring_read;       /* next frame read position (ring index) */
+    int             ring_available;  /* frames available to read */
+    int             total_frames;    /* total frames in file (estimated from data size) */
+    int             cursor_frame;    /* logical frame position in source file */
+    bool            playing;
+    bool            looping;
+    int             loop_start_frame; /* intro ends here; loop body starts (0 = loop entire file) */
+    bool            finished;        /* reached end (non-looping) */
+    float           duration;        /* total duration in seconds (of source file) */
+    /* Pre-allocated scratch buffers (stream-lifetime, avoids per-frame malloc) */
+    Uint8          *raw_buf;         /* disk read buffer (CHUNK_FRAMES * bpf bytes) */
+    int             raw_buf_size;    /* size of raw_buf in bytes */
+    float          *pull_buf;        /* converter pull buffer (CHUNK_FRAMES * 2 floats) */
+} ForgeAudioStream;
+
+/* Internal: compute bytes per frame for the file's native format */
+static inline int forge_audio__stream_file_bpf(const ForgeAudioStream *s)
+{
+    return SDL_AUDIO_BYTESIZE(s->file_spec.format) * s->file_spec.channels;
+}
+
+/* Internal: read one chunk from disk, push through converter, write to ring.
+ * Returns number of converted frames written to ring. */
+static inline int forge_audio__stream_fill_chunk(ForgeAudioStream *s)
+{
+    if (!s || !s->io || !s->converter || !s->ring) return 0;
+
+    int bpf = forge_audio__stream_file_bpf(s);
+    if (bpf <= 0) return 0;
+
+    /* How many source frames remain in the file?  Use Sint64 to avoid
+     * integer overflow for files longer than ~6 minutes at 48 kHz stereo float. */
+    Sint64 remaining_bytes = (Sint64)s->data_size - (Sint64)s->cursor_frame * bpf;
+    if (remaining_bytes <= 0) return 0;
+
+    int chunk_bytes = FORGE_AUDIO_STREAM_CHUNK_FRAMES * bpf;
+    if (remaining_bytes < (Sint64)chunk_bytes) chunk_bytes = (int)remaining_bytes;
+
+    /* Read raw data from disk using the pre-allocated buffer */
+    if (chunk_bytes > s->raw_buf_size) chunk_bytes = s->raw_buf_size;
+
+    size_t got = SDL_ReadIO(s->io, s->raw_buf, (size_t)chunk_bytes);
+    if (got == 0) return 0;
+
+    s->cursor_frame += (int)got / bpf;
+
+    /* Push raw data into converter */
+    if (!SDL_PutAudioStreamData(s->converter, s->raw_buf, (int)got)) {
+        SDL_Log("WARN: forge_audio__stream_fill_chunk: SDL_PutAudioStreamData failed: %s",
+                SDL_GetError());
+        return 0;
+    }
+
+    /* Pull converted F32 stereo data from converter into ring buffer
+     * using the pre-allocated pull buffer */
+    int frames_written = 0;
+    int ring_cap = FORGE_AUDIO_STREAM_RING_FRAMES;
+    int pull_max = FORGE_AUDIO_STREAM_CHUNK_FRAMES;
+
+    while (s->ring_available < ring_cap) {
+        int want_frames = ring_cap - s->ring_available;
+        if (want_frames > pull_max) want_frames = pull_max;
+
+        int got_bytes = SDL_GetAudioStreamData(s->converter, s->pull_buf,
+                                                want_frames * 2 * (int)sizeof(float));
+        if (got_bytes < 0) {
+            SDL_Log("ERROR: SDL_GetAudioStreamData failed: %s", SDL_GetError());
+            s->playing = false;
+            s->finished = true;
+            return frames_written;
+        }
+        if (got_bytes == 0) break;
+
+        int got_frames = got_bytes / (2 * (int)sizeof(float));
+        for (int i = 0; i < got_frames; i++) {
+            int wi = ((s->ring_write + i) % ring_cap) * 2;
+            s->ring[wi]     = s->pull_buf[i * 2];
+            s->ring[wi + 1] = s->pull_buf[i * 2 + 1];
+        }
+        s->ring_write = (s->ring_write + got_frames) % ring_cap;
+        s->ring_available += got_frames;
+        frames_written += got_frames;
+    }
+
+    return frames_written;
+}
+
+/* Open a WAV file for streaming.  Parses the header, allocates the ring
+ * buffer, creates the format converter, and pre-fills the ring.
+ *
+ * The stream starts in playing state.  The caller must call
+ * forge_audio_stream_update() each frame to keep the ring buffer fed.
+ *
+ * Returns true on success.  On failure, the stream is zeroed. */
+static inline bool forge_audio_stream_open(const char *path,
+                                            ForgeAudioStream *s)
+{
+    if (!path || !s) {
+        SDL_Log("ERROR: forge_audio_stream_open: invalid args");
+        return false;
+    }
+    SDL_memset(s, 0, sizeof(*s));
+
+    s->io = SDL_IOFromFile(path, "rb");
+    if (!s->io) {
+        SDL_Log("ERROR: forge_audio_stream_open: cannot open '%s': %s", path, SDL_GetError());
+        return false;
+    }
+
+    if (!forge_audio__wav_parse_header(s->io, &s->file_spec, &s->data_offset, &s->data_size)) {
+        SDL_CloseIO(s->io);
+        SDL_memset(s, 0, sizeof(*s));
+        return false;
+    }
+
+    int bpf = SDL_AUDIO_BYTESIZE(s->file_spec.format) * s->file_spec.channels;
+    if (bpf <= 0) {
+        SDL_Log("ERROR: forge_audio_stream_open: invalid bytes-per-frame");
+        SDL_CloseIO(s->io);
+        SDL_memset(s, 0, sizeof(*s));
+        return false;
+    }
+    Uint64 raw_frames = (Uint64)s->data_size / (Uint32)bpf;
+    if (raw_frames > (Uint64)SDL_MAX_SINT32) {
+        SDL_Log("ERROR: forge_audio_stream_open: file too large for streaming"
+                " (%" SDL_PRIu64 " frames exceeds int range)", raw_frames);
+        SDL_CloseIO(s->io);
+        SDL_memset(s, 0, sizeof(*s));
+        return false;
+    }
+    s->total_frames = (int)raw_frames;
+    s->duration = (float)s->total_frames / (float)s->file_spec.freq;
+
+    /* Create format converter: file format → canonical F32 stereo 44100 */
+    SDL_AudioSpec dst_spec;
+    dst_spec.format = FORGE_AUDIO_FORMAT;
+    dst_spec.channels = FORGE_AUDIO_CHANNELS;
+    dst_spec.freq = FORGE_AUDIO_SAMPLE_RATE;
+
+    s->converter = SDL_CreateAudioStream(&s->file_spec, &dst_spec);
+    if (!s->converter) {
+        SDL_Log("ERROR: forge_audio_stream_open: SDL_CreateAudioStream failed: %s",
+                SDL_GetError());
+        SDL_CloseIO(s->io);
+        SDL_memset(s, 0, sizeof(*s));
+        return false;
+    }
+
+    /* Allocate ring buffer and scratch buffers (all stream-lifetime) */
+    s->ring = (float *)SDL_calloc((size_t)(FORGE_AUDIO_STREAM_RING_FRAMES * 2), sizeof(float));
+    s->raw_buf_size = FORGE_AUDIO_STREAM_CHUNK_FRAMES * bpf;
+    s->raw_buf = (Uint8 *)SDL_malloc((size_t)s->raw_buf_size);
+    s->pull_buf = (float *)SDL_malloc((size_t)(FORGE_AUDIO_STREAM_CHUNK_FRAMES * 2) * sizeof(float));
+    if (!s->ring || !s->raw_buf || !s->pull_buf) {
+        SDL_Log("ERROR: forge_audio_stream_open: buffer allocation failed");
+        SDL_free(s->ring);
+        SDL_free(s->raw_buf);
+        SDL_free(s->pull_buf);
+        SDL_DestroyAudioStream(s->converter);
+        SDL_CloseIO(s->io);
+        SDL_memset(s, 0, sizeof(*s));
+        return false;
+    }
+
+    /* Seek to start of PCM data */
+    if (SDL_SeekIO(s->io, (Sint64)s->data_offset, SDL_IO_SEEK_SET) < 0) {
+        SDL_Log("ERROR: SDL_SeekIO failed in forge_audio_stream_open: %s", SDL_GetError());
+        SDL_DestroyAudioStream(s->converter);
+        SDL_free(s->ring);
+        SDL_free(s->raw_buf);
+        SDL_free(s->pull_buf);
+        SDL_CloseIO(s->io);
+        SDL_memset(s, 0, sizeof(*s));
+        return false;
+    }
+    s->cursor_frame = 0;
+    s->playing = true;
+
+    /* Pre-fill the ring buffer */
+    for (int i = 0; i < FORGE_AUDIO_STREAM_RING_CHUNKS; i++) {
+        forge_audio__stream_fill_chunk(s);
+    }
+
+    return true;
+}
+
+/* Refill the ring buffer from disk.  Call once per frame.
+ *
+ * Reads chunks from the WAV file until the ring buffer is full or the file
+ * ends.  For looping streams, wraps back to the loop start point when the
+ * file end is reached.  For non-looping streams, marks the stream as
+ * finished when all data has been consumed. */
+static inline void forge_audio_stream_update(ForgeAudioStream *s)
+{
+    if (!s || !s->playing || s->finished) return;
+
+    int bpf = forge_audio__stream_file_bpf(s);
+    if (bpf <= 0) return;
+
+    int ring_cap = FORGE_AUDIO_STREAM_RING_FRAMES;
+
+    /* Fill until ring is full or file runs out */
+    while (s->ring_available < ring_cap - FORGE_AUDIO_STREAM_CHUNK_FRAMES) {
+        Sint64 remaining_bytes = (Sint64)s->data_size - (Sint64)s->cursor_frame * bpf;
+        if (remaining_bytes <= 0) {
+            if (s->looping) {
+                /* Wrap to loop start point */
+                int loop_start = s->loop_start_frame;
+                Sint64 loop_byte_offset = (Sint64)loop_start * bpf;
+                if (SDL_SeekIO(s->io, (Sint64)s->data_offset + loop_byte_offset,
+                               SDL_IO_SEEK_SET) < 0) {
+                    SDL_Log("ERROR: forge_audio_stream_update: SDL_SeekIO failed (loop wrap): %s",
+                            SDL_GetError());
+                    s->playing = false;
+                    s->finished = true;
+                    return;
+                }
+                s->cursor_frame = loop_start;
+
+                /* Clear the converter to discard stale resampler tail data.
+                 * Flush would push remaining samples from the file end into the
+                 * output queue, splicing them before the loop-start data. */
+                if (!SDL_ClearAudioStream(s->converter)) {
+                    SDL_Log("ERROR: SDL_ClearAudioStream failed: %s", SDL_GetError());
+                    s->playing = false;
+                    s->finished = true;
+                    return;
+                }
+            } else {
+                /* Flush converter — there may be remaining converted data */
+                if (!SDL_FlushAudioStream(s->converter)) {
+                    SDL_Log("ERROR: SDL_FlushAudioStream failed: %s", SDL_GetError());
+                    s->playing = false;
+                    s->finished = true;
+                    return;
+                }
+                /* Pull any last converted frames using pre-allocated pull_buf */
+                int pull_max = FORGE_AUDIO_STREAM_CHUNK_FRAMES;
+                while (s->ring_available < ring_cap) {
+                    int want = ring_cap - s->ring_available;
+                    if (want > pull_max) want = pull_max;
+                    int got_bytes = SDL_GetAudioStreamData(s->converter, s->pull_buf,
+                        want * 2 * (int)sizeof(float));
+                    if (got_bytes < 0) {
+                        SDL_Log("ERROR: SDL_GetAudioStreamData (drain) failed: %s",
+                                SDL_GetError());
+                        s->playing = false;
+                        s->finished = true;
+                        return;
+                    }
+                    if (got_bytes == 0) break;
+                    int got_frames = got_bytes / (2 * (int)sizeof(float));
+                    for (int i = 0; i < got_frames; i++) {
+                        int wi = ((s->ring_write + i) % ring_cap) * 2;
+                        s->ring[wi]     = s->pull_buf[i * 2];
+                        s->ring[wi + 1] = s->pull_buf[i * 2 + 1];
+                    }
+                    s->ring_write = (s->ring_write + got_frames) % ring_cap;
+                    s->ring_available += got_frames;
+                }
+                s->finished = true;
+                return;
+            }
+        }
+
+        int wrote = forge_audio__stream_fill_chunk(s);
+        if (wrote == 0) break;  /* no progress — avoid infinite loop */
+    }
+}
+
+/* Read frames from the ring buffer into an output buffer (additive).
+ *
+ * Adds the stream's audio to the output — does NOT zero the output first.
+ * This allows mixing multiple streams into the same buffer.
+ *
+ * Returns the number of frames actually read.  If the ring is empty,
+ * returns 0 (silence — the output is not modified). */
+static inline int forge_audio_stream_read(ForgeAudioStream *s,
+                                           float *out, int frames)
+{
+    if (!s || !out || frames <= 0) return 0;
+    /* Allow reads when finished (playing=false, finished=true) so
+     * remaining ring buffer data drains after the stream ends. */
+    if (!s->playing && !s->finished) return 0;
+
+    int ring_cap = FORGE_AUDIO_STREAM_RING_FRAMES;
+    int to_read = frames;
+    if (to_read > s->ring_available) to_read = s->ring_available;
+
+    for (int i = 0; i < to_read; i++) {
+        int ri = ((s->ring_read + i) % ring_cap) * 2;
+        out[i * 2]     += s->ring[ri];
+        out[i * 2 + 1] += s->ring[ri + 1];
+    }
+    s->ring_read = (s->ring_read + to_read) % ring_cap;
+    s->ring_available -= to_read;
+
+    /* If stream is finished and ring is empty, stop playing */
+    if (s->finished && s->ring_available == 0) {
+        s->playing = false;
+    }
+
+    return to_read;
+}
+
+/* Seek to a specific frame in the source file.  Flushes the converter
+ * and ring buffer, then refills from the new position. */
+static inline void forge_audio_stream_seek(ForgeAudioStream *s, int frame)
+{
+    if (!s || !s->io || !s->converter) return;
+
+    int bpf = forge_audio__stream_file_bpf(s);
+    if (bpf <= 0) return;
+
+    if (frame < 0) frame = 0;
+    if (frame > s->total_frames) frame = s->total_frames;
+
+    /* Seek in file (Sint64 to avoid overflow for long files) */
+    Sint64 byte_offset = (Sint64)frame * bpf;
+    if (SDL_SeekIO(s->io, (Sint64)s->data_offset + byte_offset, SDL_IO_SEEK_SET) < 0) {
+        SDL_Log("ERROR: forge_audio_stream_seek: SDL_SeekIO failed: %s", SDL_GetError());
+        return; /* keep previous valid stream state */
+    }
+
+    /* Clear converter (discard stale data) before committing new state.
+     * If clear fails, the file cursor is at the new position but we
+     * don't update ring/cursor — the stream stops to avoid corruption. */
+    if (!SDL_ClearAudioStream(s->converter)) {
+        SDL_Log("ERROR: SDL_ClearAudioStream failed in seek: %s", SDL_GetError());
+        s->playing = false;
+        s->finished = true;
+        return;
+    }
+    s->cursor_frame = frame;
+    s->ring_read = 0;
+    s->ring_write = 0;
+    s->ring_available = 0;
+    s->finished = false;
+    s->playing = true;
+
+    /* Refill ring */
+    for (int i = 0; i < FORGE_AUDIO_STREAM_RING_CHUNKS; i++) {
+        forge_audio__stream_fill_chunk(s);
+    }
+}
+
+/* Close a stream, releasing all resources. */
+static inline void forge_audio_stream_close(ForgeAudioStream *s)
+{
+    if (!s) return;
+    if (s->converter) SDL_DestroyAudioStream(s->converter);
+    if (s->ring) SDL_free(s->ring);
+    if (s->raw_buf) SDL_free(s->raw_buf);
+    if (s->pull_buf) SDL_free(s->pull_buf);
+    if (s->io) SDL_CloseIO(s->io);
+    SDL_memset(s, 0, sizeof(*s));
+}
+
+/* Return playback progress as a fraction [0..1].
+ * Based on ring read position relative to estimated total converted frames.
+ * Returns 0 if the stream is not open. */
+static inline float forge_audio_stream_progress(const ForgeAudioStream *s)
+{
+    if (!s || s->total_frames <= 0) return 0.0f;
+
+    /* Estimate converted frames from the source frame count and sample rate ratio */
+    float ratio = (float)FORGE_AUDIO_SAMPLE_RATE / (float)s->file_spec.freq;
+    float total_converted = (float)s->total_frames * ratio;
+    if (total_converted <= 0.0f) return 0.0f;
+
+    /* The cursor_frame tells us how far we've read from disk (in source frames).
+     * Subtract the ring_available to get how far the consumer has actually consumed.
+     * For looping streams, cursor_frame resets on wrap but ring_available still
+     * holds pre-wrap frames — clamp to [0, total_converted] to avoid a jump. */
+    float consumed_source = (float)s->cursor_frame * ratio - (float)s->ring_available;
+    if (consumed_source < 0.0f) {
+        /* Wrap: estimate position from what the ring still holds */
+        consumed_source = total_converted + consumed_source;
+        if (consumed_source < 0.0f) consumed_source = 0.0f;
+    }
+
+    float progress = consumed_source / total_converted;
+    if (progress > 1.0f) progress = 1.0f;
+    return progress;
+}
+
+/* Configure loop-with-intro.  The stream plays from the beginning through
+ * the intro, then loops back to intro_frames on each wrap.
+ *
+ * intro_frames is in source file frames (before resampling).  Pass 0 to
+ * loop the entire file from the start. */
+static inline void forge_audio_stream_set_loop(ForgeAudioStream *s,
+                                                int intro_frames)
+{
+    if (!s) return;
+    s->looping = true;
+    int clamped = intro_frames > 0 ? intro_frames : 0;
+    if (clamped >= s->total_frames) {
+        /* Loop body would be zero-length — clamp to leave at least one frame */
+        clamped = s->total_frames > 0 ? s->total_frames - 1 : 0;
+    }
+    s->loop_start_frame = clamped;
+}
+
+/* ── ForgeAudioCrossfader — Two-stream crossfade ──────────────────────── */
+
+/* Manages two ForgeAudioStream slots and crossfades between them using
+ * equal-power gain curves.  When a new track is requested, it opens
+ * in the inactive slot and fades in while the active slot fades out.
+ *
+ * Equal-power crossfade: gain_out = sqrt(1 - t), gain_in = sqrt(t).
+ * This preserves perceived loudness at the midpoint, unlike linear
+ * crossfade which produces a 3 dB dip at t = 0.5. */
+typedef struct ForgeAudioCrossfader {
+    ForgeAudioStream  streams[2];    /* slot A and B */
+    int               active;        /* which slot is currently primary (0 or 1) */
+    float             fade_progress; /* 0.0 = fully active, 1.0 = fully other */
+    float             fade_duration; /* crossfade length in seconds */
+    bool              fading;        /* true while a crossfade is in progress */
+    float             volume;        /* master gain applied to both streams */
+    ForgeArena        scratch;       /* frame-scoped arena for read scratch buffers */
+} ForgeAudioCrossfader;
+
+/* Initialize a crossfader to default state. */
+static inline void forge_audio_crossfader_init(ForgeAudioCrossfader *xf)
+{
+    if (!xf) return;
+    SDL_memset(xf, 0, sizeof(*xf));
+    xf->volume = 1.0f;
+    xf->scratch = forge_arena_create(0);
+}
+
+/* Start playing a new track with crossfade from the current track.
+ *
+ * Opens the new track in the inactive slot and begins a crossfade
+ * over fade_duration seconds.  If no track is currently playing,
+ * the new track starts immediately at full volume.
+ *
+ * If loop is true, the new track loops indefinitely. */
+static inline bool forge_audio_crossfader_play(ForgeAudioCrossfader *xf,
+                                                const char *path,
+                                                float fade_duration,
+                                                bool loop)
+{
+    if (!xf || !path) return false;
+
+    int incoming = 1 - xf->active;
+
+    /* Close any existing stream in the incoming slot */
+    forge_audio_stream_close(&xf->streams[incoming]);
+
+    if (!forge_audio_stream_open(path, &xf->streams[incoming])) {
+        return false;
+    }
+    if (loop) {
+        forge_audio_stream_set_loop(&xf->streams[incoming], 0);
+    }
+
+    /* If the active slot has a playing stream, start crossfade */
+    if (xf->streams[xf->active].playing && fade_duration > 0.0f) {
+        xf->fading = true;
+        xf->fade_progress = 0.0f;
+        xf->fade_duration = fade_duration;
+    } else {
+        /* No current track or no fade — switch immediately */
+        int outgoing = xf->active;
+        forge_audio_stream_close(&xf->streams[outgoing]);
+        xf->active = incoming;
+        xf->fading = false;
+        xf->fade_progress = 0.0f;
+    }
+
+    return true;
+}
+
+/* Advance the crossfade and update both streams.  Call once per frame. */
+static inline void forge_audio_crossfader_update(ForgeAudioCrossfader *xf,
+                                                  float dt)
+{
+    if (!xf || !forge_isfinite(dt) || dt < 0.0f) return;
+
+    /* Update both streams */
+    forge_audio_stream_update(&xf->streams[0]);
+    forge_audio_stream_update(&xf->streams[1]);
+
+    /* Advance crossfade */
+    if (xf->fading) {
+        if (xf->fade_duration > 0.0f) {
+            xf->fade_progress += dt / xf->fade_duration;
+        } else {
+            xf->fade_progress = 1.0f;
+        }
+        if (xf->fade_progress >= 1.0f) {
+            xf->fade_progress = 1.0f;
+            xf->fading = false;
+            /* Swap active slot */
+            int outgoing = xf->active;
+            xf->active = 1 - xf->active;
+            xf->fade_progress = 0.0f;
+            /* Stop the outgoing stream */
+            xf->streams[outgoing].playing = false;
+        }
+    }
+}
+
+/* Read from the crossfader into an output buffer (additive).
+ *
+ * During a crossfade, both streams are mixed with equal-power gains.
+ * Outside a crossfade, only the active stream contributes. */
+static inline void forge_audio_crossfader_read(ForgeAudioCrossfader *xf,
+                                                float *out, int frames)
+{
+    if (!xf || !out || frames <= 0) return;
+
+    /* Reset the scratch arena — all allocations from last read are freed */
+    forge_arena_reset(&xf->scratch);
+    size_t buf_bytes = (size_t)(frames * 2) * sizeof(float);
+
+    if (xf->fading) {
+        float t = xf->fade_progress;
+        float gain_out = SDL_sqrtf(1.0f - t);  /* outgoing stream */
+        float gain_in  = SDL_sqrtf(t);          /* incoming stream */
+
+        float *tmp_out = (float *)forge_arena_alloc(&xf->scratch, buf_bytes);
+        float *tmp_in  = (float *)forge_arena_alloc(&xf->scratch, buf_bytes);
+        if (tmp_out && tmp_in) {
+            SDL_memset(tmp_out, 0, buf_bytes);
+            SDL_memset(tmp_in, 0, buf_bytes);
+            forge_audio_stream_read(&xf->streams[xf->active], tmp_out, frames);
+            forge_audio_stream_read(&xf->streams[1 - xf->active], tmp_in, frames);
+
+            for (int i = 0; i < frames * 2; i++) {
+                out[i] += (tmp_out[i] * gain_out + tmp_in[i] * gain_in) * xf->volume;
+            }
+        } else {
+            SDL_Log("forge_audio: crossfader scratch arena OOM (%zu bytes)", buf_bytes * 2);
+        }
+    } else {
+        /* Only active stream */
+        if (xf->streams[xf->active].playing) {
+            float *tmp = (float *)forge_arena_alloc(&xf->scratch, buf_bytes);
+            if (tmp) {
+                SDL_memset(tmp, 0, buf_bytes);
+                forge_audio_stream_read(&xf->streams[xf->active], tmp, frames);
+                for (int i = 0; i < frames * 2; i++) {
+                    out[i] += tmp[i] * xf->volume;
+                }
+            }
+        }
+    }
+}
+
+/* Close both streams and reset the crossfader.
+ * The crossfader must be re-initialized with forge_audio_crossfader_init()
+ * before it can be used again. */
+static inline void forge_audio_crossfader_close(ForgeAudioCrossfader *xf)
+{
+    if (!xf) return;
+    forge_audio_stream_close(&xf->streams[0]);
+    forge_audio_stream_close(&xf->streams[1]);
+    forge_arena_destroy(&xf->scratch);
+    SDL_memset(xf, 0, sizeof(*xf));
+}
+
+/* ── ForgeAudioLayerGroup — Adaptive music layers ─────────────────────── */
+
+/* A single layer within an adaptive music group.  Each layer is a
+ * ForgeAudioStream playing a stem (e.g. drums, bass, melody) with
+ * a weight that controls its contribution to the mix.
+ *
+ * Weights can be faded over time for smooth transitions between
+ * game states (e.g. fading in drums when combat starts). */
+typedef struct ForgeAudioLayer {
+    ForgeAudioStream  stream;
+    float             weight;         /* current mix weight [0..1] */
+    float             weight_target;  /* target weight for fading */
+    float             weight_rate;    /* |change| per second (0 = no fade) */
+    bool              active;         /* true if this layer is in use */
+} ForgeAudioLayer;
+
+/* A group of synchronized layers that stream in lockstep.
+ *
+ * All layers play the same-length audio files and stay sample-aligned.
+ * The leader layer drives the cursor position; non-leaders re-sync if
+ * they drift by more than 2 frames. */
+typedef struct ForgeAudioLayerGroup {
+    ForgeAudioLayer   layers[FORGE_AUDIO_MAX_LAYERS];
+    int               layer_count;
+    bool              playing;
+    bool              looping;
+    float             volume;         /* group master gain */
+    int               leader;         /* index of the layer driving cursor sync */
+    ForgeArena        scratch;        /* frame-scoped arena for read scratch buffers */
+} ForgeAudioLayerGroup;
+
+/* Initialize a layer group to default state. */
+static inline void forge_audio_layer_group_init(ForgeAudioLayerGroup *group)
+{
+    if (!group) return;
+    SDL_memset(group, 0, sizeof(*group));
+    group->volume = 1.0f;
+    group->scratch = forge_arena_create(0);
+}
+
+/* Add a layer to the group.  Opens the WAV file for streaming and sets
+ * the initial weight.
+ *
+ * Returns the layer index (0-based), or -1 on failure. */
+static inline int forge_audio_layer_group_add(ForgeAudioLayerGroup *group,
+                                               const char *path,
+                                               float weight)
+{
+    if (!group || !path) return -1;
+    if (group->layer_count >= FORGE_AUDIO_MAX_LAYERS) {
+        SDL_Log("ERROR: forge_audio_layer_group_add: max layers (%d) reached",
+                FORGE_AUDIO_MAX_LAYERS);
+        return -1;
+    }
+
+    int idx = group->layer_count;
+    ForgeAudioLayer *layer = &group->layers[idx];
+    SDL_memset(layer, 0, sizeof(*layer));
+
+    if (!forge_audio_stream_open(path, &layer->stream)) {
+        return -1;
+    }
+
+    if (!forge_isfinite(weight)) weight = 0.0f;
+    float clamped = weight < 0.0f ? 0.0f : (weight > 1.0f ? 1.0f : weight);
+    layer->weight = clamped;
+    layer->weight_target = clamped;
+    layer->weight_rate = 0.0f;
+    layer->active = true;
+
+    if (group->looping) {
+        forge_audio_stream_set_loop(&layer->stream, 0);
+    }
+
+    group->layer_count++;
+    return idx;
+}
+
+/* Start a weight fade on a specific layer.
+ *
+ * The weight moves from its current value toward target over duration
+ * seconds.  Pass duration=0 to snap immediately. */
+static inline void forge_audio_layer_group_fade_weight(
+    ForgeAudioLayerGroup *group, int layer, float target, float duration)
+{
+    if (!group || layer < 0 || layer >= group->layer_count) return;
+
+    ForgeAudioLayer *l = &group->layers[layer];
+    if (!forge_isfinite(target)) target = 0.0f;
+    l->weight_target = target < 0.0f ? 0.0f : (target > 1.0f ? 1.0f : target);
+
+    if (!forge_isfinite(duration) || duration <= 0.0f) {
+        l->weight = l->weight_target;
+        l->weight_rate = 0.0f;
+    } else {
+        float diff = l->weight_target - l->weight;
+        if (diff < 0.0f) diff = -diff;
+        l->weight_rate = diff / duration;
+    }
+}
+
+/* Update weight fades and sync layer cursors.  Call once per frame.
+ *
+ * Advances weight fades on all layers and ensures all layers stay
+ * synchronized with the leader layer's cursor position. */
+static inline void forge_audio_layer_group_update(
+    ForgeAudioLayerGroup *group, float dt)
+{
+    if (!group || !group->playing || !forge_isfinite(dt) || dt < 0.0f) return;
+
+    /* Update weight fades */
+    for (int i = 0; i < group->layer_count; i++) {
+        ForgeAudioLayer *l = &group->layers[i];
+        if (!l->active || l->weight_rate <= 0.0f) continue;
+
+        float step = l->weight_rate * dt;
+        if (l->weight < l->weight_target) {
+            l->weight += step;
+            if (l->weight >= l->weight_target) {
+                l->weight = l->weight_target;
+                l->weight_rate = 0.0f;
+            }
+        } else if (l->weight > l->weight_target) {
+            l->weight -= step;
+            if (l->weight <= l->weight_target) {
+                l->weight = l->weight_target;
+                l->weight_rate = 0.0f;
+            }
+        }
+    }
+
+    /* Update all streams (refill ring buffers from disk) */
+    for (int i = 0; i < group->layer_count; i++) {
+        if (!group->layers[i].active) continue;
+        forge_audio_stream_update(&group->layers[i].stream);
+    }
+
+    /* Sync non-leader layers to leader cursor.
+     * All layers should read from the same logical position.  If a layer
+     * drifts by more than 2 frames, re-seek it to match the leader. */
+    if (group->leader >= 0 && group->leader < group->layer_count) {
+        ForgeAudioStream *lead = &group->layers[group->leader].stream;
+        float lead_progress = forge_audio_stream_progress(lead);
+
+        for (int i = 0; i < group->layer_count; i++) {
+            if (i == group->leader || !group->layers[i].active) continue;
+            ForgeAudioStream *s = &group->layers[i].stream;
+            float s_progress = forge_audio_stream_progress(s);
+
+            /* If progress differs by more than ~2 frames worth, re-sync.
+             * Use a minimum threshold to avoid false triggers from float
+             * precision loss on large frame counts. */
+            float threshold = 2.0f / (float)(s->total_frames > 0 ? s->total_frames : 1);
+            if (threshold < FORGE_AUDIO_SYNC_THRESHOLD_FLOOR)
+                threshold = FORGE_AUDIO_SYNC_THRESHOLD_FLOOR;
+            float diff = lead_progress - s_progress;
+            if (diff < 0.0f) diff = -diff;
+            /* Wrap-aware: at a loop boundary (e.g. 0.01 vs 0.99) the
+             * circular distance is 0.02, not 0.98. */
+            if (lead->looping && s->looping && diff > 0.5f)
+                diff = 1.0f - diff;
+            if (diff > threshold) {
+                /* Derive target frame from leader progress — this stays
+                 * correct across loop boundaries because progress wraps
+                 * consistently for both leader and follower. */
+                int target_frame = (int)(lead_progress * (float)s->total_frames);
+                if (target_frame < 0) target_frame = 0;
+                if (target_frame > s->total_frames) target_frame = s->total_frames;
+                forge_audio_stream_seek(s, target_frame);
+            }
+        }
+    }
+}
+
+/* Read from all layers and mix into output buffer (additive).
+ *
+ * Each layer contributes proportionally to its weight.  The group
+ * master volume is applied on top. */
+static inline void forge_audio_layer_group_read(
+    ForgeAudioLayerGroup *group, float *out, int frames)
+{
+    if (!group || !out || frames <= 0 || !group->playing) return;
+
+    /* Reset the scratch arena — all per-layer buffers from last read are freed */
+    forge_arena_reset(&group->scratch);
+    size_t buf_bytes = (size_t)(frames * 2) * sizeof(float);
+
+    for (int i = 0; i < group->layer_count; i++) {
+        ForgeAudioLayer *l = &group->layers[i];
+        if (!l->active) continue;
+
+        /* Bump-allocate from the arena — no per-layer malloc/free */
+        float *tmp = (float *)forge_arena_alloc(&group->scratch, buf_bytes);
+        if (!tmp) {
+            SDL_Log("forge_audio: layer group scratch arena OOM (%zu bytes)", buf_bytes);
+            continue;
+        }
+        SDL_memset(tmp, 0, buf_bytes);
+
+        /* Always read to keep the stream phase-locked with the leader,
+         * even for silent layers — otherwise the ring fills up and sync
+         * has to keep re-seeking. */
+        forge_audio_stream_read(&l->stream, tmp, frames);
+
+        float gain = l->weight * group->volume;
+        if (gain < FORGE_AUDIO_WEIGHT_EPSILON) {
+            continue; /* consumed but silent — skip accumulation */
+        }
+        for (int j = 0; j < frames * 2; j++) {
+            out[j] += tmp[j] * gain;
+        }
+    }
+}
+
+/* Seek all layers to a specific source frame. */
+static inline void forge_audio_layer_group_seek(
+    ForgeAudioLayerGroup *group, int frame)
+{
+    if (!group) return;
+    for (int i = 0; i < group->layer_count; i++) {
+        if (!group->layers[i].active) continue;
+        forge_audio_stream_seek(&group->layers[i].stream, frame);
+    }
+}
+
+/* Close all layers and reset the group. */
+static inline void forge_audio_layer_group_close(ForgeAudioLayerGroup *group)
+{
+    if (!group) return;
+    for (int i = 0; i < group->layer_count; i++) {
+        forge_audio_stream_close(&group->layers[i].stream);
+    }
+    forge_arena_destroy(&group->scratch);
+    SDL_memset(group, 0, sizeof(*group));
+}
+
+/* Return playback progress [0..1] based on the leader layer. */
+static inline float forge_audio_layer_group_progress(
+    const ForgeAudioLayerGroup *group)
+{
+    if (!group || group->layer_count == 0) return 0.0f;
+    int leader = group->leader;
+    if (leader < 0 || leader >= group->layer_count) leader = 0;
+    return forge_audio_stream_progress(&group->layers[leader].stream);
 }
 
 #endif /* FORGE_AUDIO_H */

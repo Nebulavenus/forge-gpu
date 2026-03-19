@@ -77,11 +77,36 @@ Also modified in Lesson 04: `ForgeAudioSource` gained `playback_rate` and
 interpolation. At rate 1.0 with no fractional accumulation, the mixer takes
 the integer-step fast path — identical to Lessons 01–03.
 
+### Lesson 05 — Music & Streaming
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `forge_audio_stream_open` | `(const char *path, ForgeAudioStream *s) → bool` | Open WAV for chunked streaming via ring buffer |
+| `forge_audio_stream_update` | `(ForgeAudioStream *s)` | Refill ring buffer from disk (call once per frame) |
+| `forge_audio_stream_read` | `(ForgeAudioStream *s, float *out, int frames) → int` | Read from ring buffer into output (additive) |
+| `forge_audio_stream_seek` | `(ForgeAudioStream *s, int frame)` | Seek to source frame, flush and refill ring |
+| `forge_audio_stream_close` | `(ForgeAudioStream *s)` | Release ring buffer, converter, and file handle |
+| `forge_audio_stream_progress` | `(const ForgeAudioStream *s) → float` | Playback progress [0..1] |
+| `forge_audio_stream_set_loop` | `(ForgeAudioStream *s, int intro_frames)` | Enable looping with optional intro skip |
+| `forge_audio_crossfader_init` | `(ForgeAudioCrossfader *xf)` | Initialize crossfader to defaults |
+| `forge_audio_crossfader_play` | `(ForgeAudioCrossfader *xf, const char *path, float fade_dur, bool loop) → bool` | Start new track with equal-power crossfade |
+| `forge_audio_crossfader_update` | `(ForgeAudioCrossfader *xf, float dt)` | Advance crossfade and update streams |
+| `forge_audio_crossfader_read` | `(ForgeAudioCrossfader *xf, float *out, int frames)` | Read crossfaded audio (additive) |
+| `forge_audio_crossfader_close` | `(ForgeAudioCrossfader *xf)` | Close both streams |
+| `forge_audio_layer_group_init` | `(ForgeAudioLayerGroup *group)` | Initialize layer group |
+| `forge_audio_layer_group_add` | `(ForgeAudioLayerGroup *group, const char *path, float weight) → int` | Add a streaming layer (returns index) |
+| `forge_audio_layer_group_fade_weight` | `(ForgeAudioLayerGroup *group, int layer, float target, float dur)` | Fade layer weight over duration |
+| `forge_audio_layer_group_update` | `(ForgeAudioLayerGroup *group, float dt)` | Update fades, sync cursors, refill rings |
+| `forge_audio_layer_group_read` | `(ForgeAudioLayerGroup *group, float *out, int frames)` | Mix weighted layers into output (additive) |
+| `forge_audio_layer_group_seek` | `(ForgeAudioLayerGroup *group, int frame)` | Seek all layers |
+| `forge_audio_layer_group_close` | `(ForgeAudioLayerGroup *group)` | Close all layers |
+| `forge_audio_layer_group_progress` | `(const ForgeAudioLayerGroup *group) → float` | Leader layer progress [0..1] |
+
 ### Planned API (future lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 05–06 | *See [PLAN.md](../../PLAN.md)* | Streaming, DSP effects |
+| 06 | *See [PLAN.md](../../PLAN.md)* | DSP effects |
 
 ## Design
 
@@ -100,3 +125,4 @@ the integer-step fast path — identical to Lessons 01–03.
 | [Audio 02](../../lessons/audio/02-sound-effects/) | `ForgeAudioPool`, `forge_audio_pool_play`, `forge_audio_pool_mix`, `forge_audio_source_fade_in`, `forge_audio_source_fade_out` |
 | [Audio 03](../../lessons/audio/03-audio-mixing/) | `ForgeAudioMixer`, `forge_audio_mixer_create`, `forge_audio_mixer_add_channel`, `forge_audio_mixer_mix`, `forge_audio_mixer_update_peaks` |
 | [Audio 04](../../lessons/audio/04-spatial-audio/) | `ForgeAudioListener`, `ForgeAudioSpatialSource`, `forge_audio_listener_from_camera`, `forge_audio_spatial_source_create`, `forge_audio_spatial_apply` |
+| [Audio 05](../../lessons/audio/05-music-streaming/) | `ForgeAudioStream`, `ForgeAudioLayerGroup`, `forge_audio_stream_open`, `forge_audio_layer_group_add`, `forge_audio_layer_group_read`, `forge_audio_layer_group_fade_weight` |

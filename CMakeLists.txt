@@ -3,6 +3,7 @@ project(forge-gpu LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 # Generate compile_commands.json for clangd / editors
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -178,6 +179,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/audio/02-sound-effects)
     add_subdirectory(lessons/audio/03-audio-mixing)
     add_subdirectory(lessons/audio/04-spatial-audio)
+    add_subdirectory(lessons/audio/05-music-streaming)
 endif()
 
 # ── Asset Pipeline Tools ───────────────────────────────────────────────────

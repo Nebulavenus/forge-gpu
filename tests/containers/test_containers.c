@@ -1573,6 +1573,430 @@ static void test_shm_delete_stress(void)
     forge_shm_free(map);
 }
 
+/* ── Stale temp state regression (PR #329 fix) ───────────────────────────── */
+
+/* Verify that consecutive hm_put operations don't leave stale temp state
+ * that corrupts the map.  The fix initializes hdr->temp = -1 at the top
+ * of each put_key call so a failed intermediate step can't leave a stale
+ * index for the macro layer to write into. */
+static void test_hm_put_consecutive_no_stale_temp(void)
+{
+    IntMap *map = NULL;
+
+    /* Rapid-fire puts: each should get its own slot */
+    int i;
+    for (i = 0; i < 50; i++) {
+        forge_hm_put(map, i, i * 10);
+    }
+
+    TEST_BEGIN("test_hm_put_consecutive_no_stale_temp");
+    {
+        CHECK(forge_hm_length(map) == 50,
+              "50 distinct keys should produce length 50");
+
+        /* Verify every entry is correct — stale temp would cause overwrites */
+        int all_correct = 1;
+        for (i = 0; i < 50; i++) {
+            if (forge_hm_get(map, i) != i * 10) {
+                all_correct = 0;
+                break;
+            }
+        }
+        CHECK(all_correct, "all 50 entries should have correct values");
+
+        /* Overwrite half and verify — exercises the found >= 0 path */
+        for (i = 0; i < 25; i++) {
+            forge_hm_put(map, i, i * 20);
+        }
+        CHECK(forge_hm_length(map) == 50,
+              "overwrites should not increase length");
+        CHECK(forge_hm_get(map, 0) == 0,     "key 0 overwritten to 0");
+        CHECK(forge_hm_get(map, 24) == 480,  "key 24 overwritten to 480");
+        CHECK(forge_hm_get(map, 25) == 250,  "key 25 unchanged at 250");
+    }
+    TEST_END();
+    forge_hm_free(map);
+}
+
+/* Same test for string hash maps — exercises shm_put_key temp_key clearing. */
+static void test_shm_put_consecutive_no_stale_temp(void)
+{
+    StrMap *map = NULL;
+    forge_shm_init_strdup(map);
+
+    char key[32];
+    int i;
+    for (i = 0; i < 50; i++) {
+        SDL_snprintf(key, sizeof(key), "key_%03d", i);
+        forge_shm_put(map, key, i);
+    }
+
+    TEST_BEGIN("test_shm_put_consecutive_no_stale_temp");
+    {
+        CHECK(forge_shm_length(map) == 50,
+              "50 distinct string keys should produce length 50");
+
+        int all_correct = 1;
+        for (i = 0; i < 50; i++) {
+            SDL_snprintf(key, sizeof(key), "key_%03d", i);
+            if (forge_shm_get(map, key) != i) {
+                all_correct = 0;
+                break;
+            }
+        }
+        CHECK(all_correct, "all 50 string entries should have correct values");
+    }
+    TEST_END();
+    forge_shm_free(map);
+}
+
+/* Verify that the overflow guard in index_new doesn't break normal allocation.
+ * We can't trigger SIZE_MAX in a test, but we confirm that hash maps with
+ * many entries (triggering multiple resizes) work correctly. */
+static void test_hm_index_alloc_under_stress(void)
+{
+    IntMap *map = NULL;
+    int i;
+
+    /* Insert enough entries to trigger several hash table resizes.
+     * Each resize doubles the slot count and calls index_new. */
+    for (i = 0; i < 500; i++) {
+        forge_hm_put(map, i, i);
+    }
+
+    TEST_BEGIN("test_hm_index_alloc_under_stress");
+    {
+        CHECK(forge_hm_length(map) == 500,
+              "500 entries after multiple resizes");
+
+        /* Spot-check values survived the resizes */
+        CHECK(forge_hm_get(map, 0) == 0,       "first entry intact");
+        CHECK(forge_hm_get(map, 249) == 249,    "middle entry intact");
+        CHECK(forge_hm_get(map, 499) == 499,    "last entry intact");
+
+        /* Verify no entry was lost */
+        int found = 0;
+        for (i = 0; i < 500; i++) {
+            if (forge_hm_find_index(map, i) >= 0) found++;
+        }
+        CHECK(found == 500, "all 500 entries findable by index");
+    }
+    TEST_END();
+    forge_hm_free(map);
+}
+
+/* ── C99 portability regression (PR #329 — typeof removal) ───────────────── */
+
+/* Verify that rvalue (literal) keys work.  Without __typeof__, KEYPTR writes
+ * the key into element 0 of the data array.  This test catches regressions
+ * in the KEYPTR macro on compilers without __typeof__. */
+static void test_hm_rvalue_keys(void)
+{
+    IntMap *map = NULL;
+
+    /* All keys are integer literals — rvalues, not addressable. */
+    forge_hm_put(map, 100, 1);
+    forge_hm_put(map, 200, 2);
+    forge_hm_put(map, 300, 3);
+
+    TEST_BEGIN("test_hm_rvalue_keys");
+    {
+        CHECK(forge_hm_length(map) == 3, "3 rvalue-key entries");
+        CHECK(forge_hm_get(map, 100) == 1, "get(100) == 1");
+        CHECK(forge_hm_get(map, 200) == 2, "get(200) == 2");
+        CHECK(forge_hm_get(map, 300) == 3, "get(300) == 3");
+
+        /* Overwrite with rvalue key */
+        forge_hm_put(map, 200, 99);
+        CHECK(forge_hm_get(map, 200) == 99, "overwrite with rvalue key");
+        CHECK(forge_hm_length(map) == 3,     "length unchanged after overwrite");
+    }
+    TEST_END();
+    forge_hm_free(map);
+}
+
+/* Verify keys survive data-array reallocation.  The key-copy buffer in
+ * hm_put_key copies key bytes to the stack before arr_maybe_grow, so the
+ * hash re-find after grow reads from valid memory. */
+static void test_hm_key_survives_realloc(void)
+{
+    IntMap *map = NULL;
+    int i;
+
+    /* Insert enough entries to force multiple data-array reallocations.
+     * Initial capacity is small; each grow roughly doubles it. */
+    for (i = 0; i < 200; i++) {
+        forge_hm_put(map, i * 7, i);  /* non-sequential keys stress hashing */
+    }
+
+    TEST_BEGIN("test_hm_key_survives_realloc");
+    {
+        CHECK(forge_hm_length(map) == 200, "200 entries after reallocations");
+
+        /* Every key should be findable and have the correct value. */
+        int ok = 1;
+        for (i = 0; i < 200; i++) {
+            if (forge_hm_get(map, i * 7) != i) { ok = 0; break; }
+        }
+        CHECK(ok, "all keys intact after data-array reallocations");
+
+        /* Delete some entries and re-insert — exercises grow after tombstones */
+        for (i = 0; i < 100; i++) {
+            forge_hm_remove(map, i * 7);
+        }
+        for (i = 200; i < 300; i++) {
+            forge_hm_put(map, i * 7, i);
+        }
+        CHECK(forge_hm_length(map) == 200, "200 entries after delete + reinsert");
+        CHECK(forge_hm_get(map, 200 * 7) == 200, "new entry after tombstone reuse");
+        CHECK(forge_hm_get(map, 150 * 7) == 150, "surviving entry intact");
+    }
+    TEST_END();
+    forge_hm_free(map);
+}
+
+/* Verify that KEY_OFFSET works on a freshly initialized map (exercises the
+ * pointer-arithmetic path on compilers without __typeof__). */
+static void test_hm_first_put_on_null(void)
+{
+    IntMap *map = NULL;
+
+    TEST_BEGIN("test_hm_first_put_on_null");
+    {
+        /* First operation on a NULL map — KEY_OFFSET must work after
+         * ensure_default creates the data array. */
+        CHECK(forge_hm_length(map) == 0, "NULL map has length 0");
+        forge_hm_put(map, 42, 100);
+        REQUIRE(map != NULL, "map should be non-NULL after first put");
+        CHECK(forge_hm_length(map) == 1, "length 1 after first put");
+        CHECK(forge_hm_get(map, 42) == 100, "get returns value from first put");
+    }
+    TEST_END();
+    forge_hm_free(map);
+}
+
+/* Verify forge_hm_free and forge_shm_free on NULL maps don't crash. */
+static void test_free_null_map(void)
+{
+    IntMap *imap = NULL;
+    StrMap *smap = NULL;
+
+    TEST_BEGIN("test_free_null_map");
+    {
+        /* These should be no-ops, not crashes. */
+        forge_hm_free(imap);
+        forge_shm_free(smap);
+        CHECK(imap == NULL, "imap still NULL after free");
+        CHECK(smap == NULL, "smap still NULL after free");
+    }
+    TEST_END();
+}
+
+/* ── Bounds-check helper tests (PR #329 round 5) ────────────────────────── */
+
+/* Verify that forge_arr_pop works correctly through the bounds-check helper. */
+static void test_arr_pop_valid(void)
+{
+    int *arr = NULL;
+    forge_arr_append(arr, 10);
+    forge_arr_append(arr, 20);
+    forge_arr_append(arr, 30);
+    TEST_BEGIN("test_arr_pop_valid");
+    {
+        /* Pop should return last element and decrement length. */
+        int val = forge_arr_pop(arr);
+        CHECK(val == 30, "popped value should be 30");
+        CHECK(forge_arr_length(arr) == 2, "length should be 2 after pop");
+
+        val = forge_arr_pop(arr);
+        CHECK(val == 20, "second pop should return 20");
+        CHECK(forge_arr_length(arr) == 1, "length should be 1 after second pop");
+
+        val = forge_arr_pop(arr);
+        CHECK(val == 10, "third pop should return 10");
+        CHECK(forge_arr_length(arr) == 0, "length should be 0 after third pop");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify that forge_arr_last works correctly through the bounds-check helper. */
+static void test_arr_last_valid(void)
+{
+    float *arr = NULL;
+    forge_arr_append(arr, 1.5f);
+    forge_arr_append(arr, 2.5f);
+    TEST_BEGIN("test_arr_last_valid");
+    {
+        CHECK(forge_arr_last(arr) == 2.5f, "last should return 2.5f");
+        CHECK(forge_arr_length(arr) == 2, "length unchanged by last");
+
+        /* After appending another, last should update. */
+        forge_arr_append(arr, 9.0f);
+        CHECK(forge_arr_last(arr) == 9.0f, "last should return 9.0f after append");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify that forge_arr_delete_at works with bounds-check helper. */
+static void test_arr_delete_at_valid(void)
+{
+    int *arr = NULL;
+    int i;
+    for (i = 0; i < 5; i++) forge_arr_append(arr, i + 1);
+    TEST_BEGIN("test_arr_delete_at_valid");
+    {
+        /* Delete first element: [1,2,3,4,5] => [2,3,4,5] */
+        forge_arr_delete_at(arr, 0);
+        CHECK(forge_arr_length(arr) == 4, "length should be 4");
+        CHECK(arr[0] == 2, "arr[0] should be 2");
+
+        /* Delete last element: [2,3,4,5] => [2,3,4] */
+        forge_arr_delete_at(arr, 3);
+        CHECK(forge_arr_length(arr) == 3, "length should be 3");
+        CHECK(arr[2] == 4, "arr[2] should be 4");
+
+        /* Delete middle: [2,3,4] => [2,4] */
+        forge_arr_delete_at(arr, 1);
+        CHECK(forge_arr_length(arr) == 2, "length should be 2");
+        CHECK(arr[0] == 2 && arr[1] == 4, "remaining should be 2, 4");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify that forge_arr_swap_remove works with bounds-check helper. */
+static void test_arr_swap_remove_valid(void)
+{
+    int *arr = NULL;
+    int i;
+    for (i = 0; i < 4; i++) forge_arr_append(arr, (i + 1) * 10);
+    TEST_BEGIN("test_arr_swap_remove_valid");
+    {
+        /* [10,20,30,40] => swap_remove(1) => [10,40,30] */
+        forge_arr_swap_remove(arr, 1);
+        CHECK(forge_arr_length(arr) == 3, "length should be 3");
+        CHECK(arr[0] == 10, "arr[0] should be 10");
+        CHECK(arr[1] == 40, "arr[1] should be 40 (swapped from last)");
+        CHECK(arr[2] == 30, "arr[2] should be 30");
+
+        /* Swap-remove last element: [10,40,30] => swap_remove(2) => [10,40] */
+        forge_arr_swap_remove(arr, 2);
+        CHECK(forge_arr_length(arr) == 2, "length should be 2");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify forge_arr_insert_at bounds-check helper with valid indices. */
+static void test_arr_insert_at_bounds(void)
+{
+    int *arr = NULL;
+    forge_arr_append(arr, 10);
+    forge_arr_append(arr, 30);
+    TEST_BEGIN("test_arr_insert_at_bounds");
+    {
+        /* Insert at middle (valid: i <= length): [10,30] => [10,20,30] */
+        forge_arr_insert_at(arr, 1, 20);
+        CHECK(forge_arr_length(arr) == 3, "length should be 3");
+        CHECK(arr[0] == 10 && arr[1] == 20 && arr[2] == 30,
+              "elements should be 10, 20, 30");
+
+        /* Insert at end (i == length): [10,20,30] => [10,20,30,40] */
+        forge_arr_insert_at(arr, 3, 40);
+        CHECK(forge_arr_length(arr) == 4, "length should be 4");
+        CHECK(arr[3] == 40, "arr[3] should be 40");
+
+        /* Insert at beginning (i == 0): [10,20,30,40] => [5,10,20,30,40] */
+        forge_arr_insert_at(arr, 0, 5);
+        CHECK(forge_arr_length(arr) == 5, "length should be 5");
+        CHECK(arr[0] == 5, "arr[0] should be 5");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify forge_arr_insert_n_at bounds-check helper. */
+static void test_arr_insert_n_at_bounds(void)
+{
+    int *arr = NULL;
+    forge_arr_append(arr, 1);
+    forge_arr_append(arr, 4);
+    TEST_BEGIN("test_arr_insert_n_at_bounds");
+    {
+        /* Insert 2 elements at index 1: [1,4] => [1,0,0,4] */
+        forge_arr_insert_n_at(arr, 1, 2);
+        CHECK(forge_arr_length(arr) == 4, "length should be 4");
+        CHECK(arr[0] == 1, "arr[0] should be 1");
+        CHECK(arr[1] == 0 && arr[2] == 0, "inserted elements should be 0");
+        CHECK(arr[3] == 4, "arr[3] should be 4");
+
+        /* Insert at end (i == length) */
+        forge_arr_insert_n_at(arr, 4, 1);
+        CHECK(forge_arr_length(arr) == 5, "length should be 5");
+        CHECK(arr[4] == 0, "arr[4] should be 0");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify forge_arr_delete_n_at bounds-check helper. */
+static void test_arr_delete_n_at_bounds(void)
+{
+    int *arr = NULL;
+    int i;
+    for (i = 0; i < 6; i++) forge_arr_append(arr, (i + 1) * 10);
+    TEST_BEGIN("test_arr_delete_n_at_bounds");
+    {
+        /* [10,20,30,40,50,60] => delete 2 at index 1 => [10,40,50,60] */
+        forge_arr_delete_n_at(arr, 1, 2);
+        CHECK(forge_arr_length(arr) == 4, "length should be 4");
+        CHECK(arr[0] == 10 && arr[1] == 40 && arr[2] == 50 && arr[3] == 60,
+              "elements should be 10, 40, 50, 60");
+
+        /* Delete all remaining: [10,40,50,60] => delete 4 at index 0 => [] */
+        forge_arr_delete_n_at(arr, 0, 4);
+        CHECK(forge_arr_length(arr) == 0, "length should be 0");
+    }
+    TEST_END();
+    forge_arr_free(arr);
+}
+
+/* Verify that the probe limit safety valve does not affect normal operations.
+ * Inserting and looking up many keys should work without hitting the limit. */
+static void test_hm_probe_limit_normal(void)
+{
+    IntMap *map = NULL;
+    TEST_BEGIN("test_hm_probe_limit_normal");
+    {
+        int i;
+        /* Insert 500 entries — enough to trigger multiple resizes. */
+        for (i = 0; i < 500; i++) {
+            forge_hm_put(map, i, i * 3);
+        }
+        CHECK(forge_hm_length(map) == 500, "should have 500 entries");
+
+        /* Look up all entries via forge_hm_get — should find every value. */
+        int all_found = 1;
+        for (i = 0; i < 500; i++) {
+            int val = forge_hm_get(map, i);
+            if (val != i * 3) {
+                all_found = 0;
+                break;
+            }
+        }
+        CHECK(all_found, "all 500 entries should be findable");
+
+        /* Look up missing keys — should return default (0). */
+        for (i = 500; i < 510; i++) {
+            CHECK(forge_hm_get(map, i) == 0, "missing key should return default");
+        }
+    }
+    TEST_END();
+    forge_hm_free(map);
+}
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -1679,6 +2103,30 @@ int main(int argc, char *argv[])
     test_fixup_index_correctness();
     test_shrink_rebuild();
     test_shm_delete_stress();
+
+    /* Stale temp state regression (PR #329) */
+    SDL_Log("--- Stale Temp / Overflow Guard ---");
+    test_hm_put_consecutive_no_stale_temp();
+    test_shm_put_consecutive_no_stale_temp();
+    test_hm_index_alloc_under_stress();
+
+    /* C99 portability (PR #329 — typeof removal) */
+    SDL_Log("--- C99 Portability ---");
+    test_hm_rvalue_keys();
+    test_hm_key_survives_realloc();
+    test_hm_first_put_on_null();
+    test_free_null_map();
+
+    /* Bounds-check helpers (PR #329 round 5) */
+    SDL_Log("--- Bounds-Check Helpers ---");
+    test_arr_pop_valid();
+    test_arr_last_valid();
+    test_arr_delete_at_valid();
+    test_arr_swap_remove_valid();
+    test_arr_insert_at_bounds();
+    test_arr_insert_n_at_bounds();
+    test_arr_delete_n_at_bounds();
+    test_hm_probe_limit_normal();
 
     SDL_Log("=== Results: %d/%d passed, %d failed ===",
             test_passed, test_count, test_failed);

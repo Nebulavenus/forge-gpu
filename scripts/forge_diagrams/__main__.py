@@ -35,13 +35,16 @@ from .assets import (
     diagram_texture_format_comparison,
 )
 from .audio import (
+    diagram_adaptive_layers,
     diagram_attenuation_curves,
+    diagram_crossfade_curves,
     diagram_doppler_effect,
     diagram_mixer_signal_chain,
     diagram_peak_hold_behavior,
     diagram_soft_clipping,
     diagram_spatial_setup_flow,
     diagram_stereo_pan,
+    diagram_streaming_architecture,
 )
 from .engine import (
     diagram_alignment_padding,
@@ -381,6 +384,11 @@ DIAGRAMS = {
         ("stereo_pan_diagram.png", diagram_stereo_pan),
         ("doppler_effect.png", diagram_doppler_effect),
         ("spatial_setup_flow.png", diagram_spatial_setup_flow),
+    ],
+    "audio/05": [
+        ("streaming_architecture.png", diagram_streaming_architecture),
+        ("crossfade_curves.png", diagram_crossfade_curves),
+        ("adaptive_layers.png", diagram_adaptive_layers),
     ],
     "assets/02": [
         ("block_compression.png", diagram_texture_block_compression),
@@ -858,6 +866,7 @@ DIAGRAMS = {
 LESSON_NAMES = {
     "audio/03": "audio/03-audio-mixing",
     "audio/04": "audio/04-spatial-audio",
+    "audio/05": "audio/05-music-streaming",
     "assets/02": "assets/02-texture-processing",
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",
@@ -948,10 +957,10 @@ def match_lesson(query):
             return key
 
     # Match by number suffix (e.g. "01" matches "math/01")
-    for key in DIAGRAMS:
-        num = key.split("/")[1]
-        if q == num:
-            return key
+    # Reject ambiguous bare numbers that match multiple tracks
+    matches = [key for key in DIAGRAMS if key.split("/")[1] == q]
+    if len(matches) == 1:
+        return matches[0]
 
     return None
 

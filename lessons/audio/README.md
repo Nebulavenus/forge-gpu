@@ -42,6 +42,7 @@ serve to illustrate and control what the listener hears.
 | [02](02-sound-effects/) | Sound Effects | Source pool, fire-and-forget playback, volume fading, polyphony |
 | [03](03-audio-mixing/) | Audio Mixing | Multi-channel mixer, per-channel volume/pan/mute/solo, soft clipping, peak metering |
 | [04](04-spatial-audio/) | Spatial Audio | 3D positioning, distance attenuation, stereo pan from position, Doppler pitch shift |
+| [05](05-music-streaming/) | Music & Streaming | Chunked WAV streaming, ring buffer, crossfade, loop-with-intro, adaptive music layers |
 
 ## Shared library
 

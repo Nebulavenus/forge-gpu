@@ -11,6 +11,11 @@ from .lesson_04 import (
     diagram_spatial_setup_flow,
     diagram_stereo_pan,
 )
+from .lesson_05 import (
+    diagram_adaptive_layers,
+    diagram_crossfade_curves,
+    diagram_streaming_architecture,
+)
 
 __all__: list[str] = [
     "diagram_mixer_signal_chain",
@@ -20,4 +25,7 @@ __all__: list[str] = [
     "diagram_stereo_pan",
     "diagram_doppler_effect",
     "diagram_spatial_setup_flow",
+    "diagram_streaming_architecture",
+    "diagram_crossfade_curves",
+    "diagram_adaptive_layers",
 ]

@@ -22,6 +22,15 @@
  * See: lessons/engine/13-stretchy-containers/ for a full tutorial
  * See: docs/stretchy-containers.md for the design specification
  *
+ * Limitations:
+ *   - On compilers without __typeof__ (MSVC C mode), forge_hm_get_struct
+ *     and forge_shm_get_struct invoke undefined behavior (NULL dereference)
+ *     if the very first ~80-byte allocation fails (extreme OOM).  This is
+ *     unavoidable without __typeof__ because there is no portable way to
+ *     return a zero-initialized struct of unknown type in C99.  GCC/Clang
+ *     users get a safe __typeof__-based fallback.  In practice, an 80-byte
+ *     malloc failure means the process is unrecoverable anyway.
+ *
  * SPDX-License-Identifier: Zlib
  */
 
@@ -31,6 +40,9 @@
 #include <SDL3/SDL.h>
 #include <stddef.h>   /* size_t, ptrdiff_t, offsetof */
 #include <stdint.h>   /* uintptr_t, uint32_t, uint64_t */
+/* Note: <stdlib.h> is NOT included — the project uses SDL_ equivalents.
+ * The non-__typeof__ fallback paths below handle OOM by returning the
+ * default entry (index 0) rather than calling exit(). */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Configuration
@@ -67,14 +79,14 @@
 #endif
 
 /* Rotate intrinsics for hash functions. */
-static size_t forge_containers__rotl(size_t x, int n)
+static inline size_t forge_containers__rotl(size_t x, int n)
 {
     int bits = (int)(sizeof(size_t) * 8);
     n &= bits - 1;
     return n ? (x << n) | (x >> (bits - n)) : x;
 }
 
-static size_t forge_containers__rotr(size_t x, int n)
+static inline size_t forge_containers__rotr(size_t x, int n)
 {
     int bits = (int)(sizeof(size_t) * 8);
     n &= bits - 1;
@@ -94,13 +106,54 @@ typedef struct forge_containers__header {
     size_t                        length;      /* elements currently stored */
     size_t                        capacity;    /* allocated element slots */
     forge_containers__hash_index *hash_table;  /* NULL for plain arrays */
-    ptrdiff_t                     temp;        /* scratch for macro communication */
+    ptrdiff_t                     temp;        /* scratch for macro communication (NOT thread-safe;
+                                                  * read-only lookups can use forge_hm_get_ts) */
 } forge_containers__header;
 
 /* Retrieve the header from a user pointer.  The header is stored
  * immediately before the element data. */
 #define forge_containers__hdr(p) \
     ((forge_containers__header *)((char *)(p) - sizeof(forge_containers__header)))
+
+/* ── Bounds-check helpers (expression-safe, usable in comma expressions) ── */
+
+/* Assert the array is non-empty and return the pre-decremented last index.
+ * Used by forge_arr_pop. */
+static inline size_t forge_containers__pre_pop(forge_containers__header *h)
+{
+    SDL_assert(h->length > 0);
+    return --h->length;
+}
+
+/* Assert the array is non-empty and return the last valid index.
+ * Used by forge_arr_last. */
+static inline size_t forge_containers__last_idx(forge_containers__header *h)
+{
+    SDL_assert(h->length > 0);
+    return h->length - 1;
+}
+
+/* Assert that index i is within bounds.  Used by delete/swap macros. */
+static inline size_t forge_containers__check_idx(forge_containers__header *h, size_t i)
+{
+    SDL_assert(i < h->length);
+    return i;
+}
+
+/* Assert that index i is a valid insertion point (i <= length).
+ * Used by insert macros. */
+static inline size_t forge_containers__check_insert_idx(forge_containers__header *h, size_t i)
+{
+    SDL_assert(i <= h->length);
+    return i;
+}
+
+/* Assert that range [i, i+n) is within bounds.  Used by delete_n. */
+static inline size_t forge_containers__check_range(forge_containers__header *h, size_t i, size_t n)
+{
+    SDL_assert(n <= h->length && i <= h->length - n);
+    return i;
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Array internals
@@ -109,7 +162,7 @@ typedef struct forge_containers__header {
 /* Grow the backing array so it can hold at least `needed` total elements.
  * `elem_size` is sizeof one element.  The pointer is updated in place
  * through the void** parameter. */
-static void forge_containers__arr_grow(void **p, size_t needed, size_t elem_size)
+static inline void forge_containers__arr_grow(void **p, size_t needed, size_t elem_size)
 {
     forge_containers__header *hdr = NULL;
     size_t old_cap = 0;
@@ -175,7 +228,7 @@ static void forge_containers__arr_grow(void **p, size_t needed, size_t elem_size
 }
 
 /* Ensure capacity for at least `count` more elements beyond current length. */
-static void forge_containers__arr_maybe_grow(void **p, size_t count, size_t elem_size)
+static inline void forge_containers__arr_maybe_grow(void **p, size_t count, size_t elem_size)
 {
     size_t len = *p ? forge_containers__hdr(*p)->length : 0;
     /* Overflow check on len + count. */
@@ -216,57 +269,70 @@ static void forge_containers__arr_maybe_grow(void **p, size_t count, size_t elem
 #define forge_arr_capacity(a) \
     ((a) ? forge_containers__hdr(a)->capacity : (size_t)0)
 
-/* Remove and return the last element.  No bounds check. */
+/* Remove and return the last element.  Asserts non-empty in debug builds. */
 #define forge_arr_pop(a) \
-    ((a)[--forge_containers__hdr(a)->length])
+    ((a)[forge_containers__pre_pop(forge_containers__hdr(a))])
 
-/* Return the last element without removing it.  No bounds check. */
+/* Return the last element without removing it.  Asserts non-empty in debug builds. */
 #define forge_arr_last(a) \
-    ((a)[forge_containers__hdr(a)->length - 1])
+    ((a)[forge_containers__last_idx(forge_containers__hdr(a))])
 
 /* Free all memory and set pointer to NULL. */
 #define forge_arr_free(a) \
     ((a) ? (void)(SDL_free(forge_containers__hdr(a)), (a) = NULL) : (void)0)
 
-/* Insert one element at index i, shifting subsequent elements right. */
+/* Insert one element at index i, shifting subsequent elements right.
+ * Asserts i <= length in debug builds. */
 #define forge_arr_insert_at(a, i, val)                                       \
     (forge_containers__arr_maybe_grow((void **)&(a), 1, sizeof(*(a))),       \
      forge_containers__has_room(a)                                           \
-         ? (SDL_memmove(&(a)[(i) + 1], &(a)[(i)],                           \
+         ? (forge_containers__check_insert_idx(forge_containers__hdr(a),     \
+                                               (size_t)(i)),                 \
+            SDL_memmove(&(a)[(i) + 1], &(a)[(i)],                           \
                  (forge_containers__hdr(a)->length - (size_t)(i))             \
                      * sizeof(*(a))),                                         \
             forge_containers__hdr(a)->length++,                               \
             (a)[(i)] = (val)) : (val))
 
-/* Insert n uninitialized elements at index i. */
+/* Insert n uninitialized elements at index i.
+ * Asserts i <= length in debug builds. */
 #define forge_arr_insert_n_at(a, i, n)                                       \
     (forge_containers__arr_maybe_grow((void **)&(a), (n), sizeof(*(a))),     \
      ((a) && forge_containers__hdr(a)->length + (size_t)(n)                  \
            <= forge_containers__hdr(a)->capacity)                             \
-         ? (SDL_memmove(&(a)[(i) + (n)], &(a)[(i)],                         \
+         ? (forge_containers__check_insert_idx(forge_containers__hdr(a),     \
+                                               (size_t)(i)),                 \
+            SDL_memmove(&(a)[(i) + (n)], &(a)[(i)],                         \
                  (forge_containers__hdr(a)->length - (size_t)(i))             \
                      * sizeof(*(a))),                                         \
             SDL_memset(&(a)[(i)], 0, (size_t)(n) * sizeof(*(a))),            \
             forge_containers__hdr(a)->length += (size_t)(n))                  \
          : (size_t)0)
 
-/* Delete the element at index i, shifting subsequent elements left. */
+/* Delete the element at index i, shifting subsequent elements left.
+ * Asserts valid index in debug builds. */
 #define forge_arr_delete_at(a, i)                                            \
-    (SDL_memmove(&(a)[(i)], &(a)[(i) + 1],                                  \
+    (forge_containers__check_idx(forge_containers__hdr(a), (size_t)(i)),     \
+     SDL_memmove(&(a)[(i)], &(a)[(i) + 1],                                  \
                  (forge_containers__hdr(a)->length - (size_t)(i) - 1)        \
                      * sizeof(*(a))),                                         \
      forge_containers__hdr(a)->length--)
 
-/* Delete n elements starting at index i. */
+/* Delete n elements starting at index i.
+ * Asserts i + n <= length in debug builds. */
 #define forge_arr_delete_n_at(a, i, n)                                       \
-    (SDL_memmove(&(a)[(i)], &(a)[(i) + (n)],                                \
+    (forge_containers__check_range(forge_containers__hdr(a),                 \
+                                   (size_t)(i), (size_t)(n)),                \
+     SDL_memmove(&(a)[(i)], &(a)[(i) + (n)],                                \
                  (forge_containers__hdr(a)->length - (size_t)(i)             \
                      - (size_t)(n)) * sizeof(*(a))),                          \
      forge_containers__hdr(a)->length -= (size_t)(n))
 
-/* O(1) unordered removal: overwrite element at i with the last element. */
+/* O(1) unordered removal: overwrite element at i with the last element.
+ * Asserts valid index in debug builds. */
 #define forge_arr_swap_remove(a, i)                                          \
-    ((a)[(i)] = (a)[forge_containers__hdr(a)->length - 1],                   \
+    (forge_containers__check_idx(forge_containers__hdr(a), (size_t)(i)),     \
+     (a)[(i)] = (a)[forge_containers__hdr(a)->length - 1],                   \
      forge_containers__hdr(a)->length--)
 
 /* Append n uninitialized elements and return pointer to the first new one.
@@ -312,11 +378,17 @@ static void forge_containers__arr_maybe_grow(void **p, size_t count, size_t elem
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* Global seed for per-table seed derivation.  Each new hash index gets
- * a unique seed derived from this, then the global seed advances via LCG. */
+ * a unique seed derived from this, then the global seed advances via LCG.
+ *
+ * Because this is a header-only library, each translation unit gets its
+ * own independent copy of this static variable.  This means hash maps
+ * created in different .c files will start with the same seed sequence.
+ * This is acceptable for hash distribution quality but means the seed
+ * is per-TU, not truly global. */
 static size_t forge_containers__global_seed = 0x31415926;
 
 /* Advance the global seed using a linear congruential generator. */
-static size_t forge_containers__advance_seed(void)
+static inline size_t forge_containers__advance_seed(void)
 {
     size_t seed = forge_containers__global_seed;
 #if INTPTR_MAX == INT64_MAX
@@ -333,7 +405,7 @@ static size_t forge_containers__advance_seed(void)
 }
 
 /* 4-byte hash (Jenkins/Wang mix).  Input is read as little-endian u32. */
-static size_t forge_containers__hash4(const void *key, size_t seed)
+static inline size_t forge_containers__hash4(const void *key, size_t seed)
 {
     uint32_t h;
     SDL_memcpy(&h, key, 4);
@@ -353,7 +425,7 @@ static size_t forge_containers__hash4(const void *key, size_t seed)
 
 /* 8-byte hash (Thomas Wang 64-bit mix).  64-bit platforms only. */
 #if INTPTR_MAX == INT64_MAX
-static size_t forge_containers__hash8(const void *key, size_t seed)
+static inline size_t forge_containers__hash8(const void *key, size_t seed)
 {
     uint64_t h;
     SDL_memcpy(&h, key, 8);
@@ -394,7 +466,7 @@ static size_t forge_containers__hash8(const void *key, size_t seed)
         (v3) ^= (v0);                                                        \
     } while (0)
 
-static size_t forge_containers__siphash(const void *key, size_t len, size_t seed)
+static inline size_t forge_containers__siphash(const void *key, size_t len, size_t seed)
 {
     const unsigned char *data = (const unsigned char *)key;
     size_t v0, v1, v2, v3;
@@ -457,7 +529,7 @@ static size_t forge_containers__siphash(const void *key, size_t len, size_t seed
 }
 
 /* Dispatch hash by key size for non-string keys. */
-static size_t forge_containers__hash(const void *key, size_t key_size, size_t seed)
+static inline size_t forge_containers__hash(const void *key, size_t key_size, size_t seed)
 {
 #ifndef FORGE_CONTAINERS_STRONG_HASH
     if (key_size == 4) return forge_containers__hash4(key, seed);
@@ -469,7 +541,7 @@ static size_t forge_containers__hash(const void *key, size_t key_size, size_t se
 }
 
 /* String hash: rotate-and-add loop + Wang avalanche. */
-static size_t forge_containers__hash_string(const char *str, size_t seed)
+static inline size_t forge_containers__hash_string(const char *str, size_t seed)
 {
     size_t h = seed;
     if (!str) return seed;
@@ -488,7 +560,7 @@ static size_t forge_containers__hash_string(const char *str, size_t seed)
 }
 
 /* Clamp hash to reserved sentinel range.  0 = empty, 1 = deleted. */
-static size_t forge_containers__hash_clamp(size_t h)
+static inline size_t forge_containers__hash_clamp(size_t h)
 {
     return h < 2 ? 2 : h;
 }
@@ -537,7 +609,7 @@ struct forge_containers__hash_index {
 };
 
 /* Compute thresholds for a given slot count. */
-static void forge_containers__compute_thresholds(forge_containers__hash_index *idx)
+static inline void forge_containers__compute_thresholds(forge_containers__hash_index *idx)
 {
     size_t sc = idx->slot_count;
     idx->grow_threshold      = sc - (sc >> 2);             /* ~75% */
@@ -547,7 +619,7 @@ static void forge_containers__compute_thresholds(forge_containers__hash_index *i
 }
 
 /* Log2 of a power-of-2 value.  Precondition: v >= 1. */
-static size_t forge_containers__log2(size_t v)
+static inline size_t forge_containers__log2(size_t v)
 {
     size_t r = 0;
     while (v > 1) { v >>= 1; r++; }
@@ -555,7 +627,7 @@ static size_t forge_containers__log2(size_t v)
 }
 
 /* Allocate a new hash index with the given slot count. */
-static forge_containers__hash_index *forge_containers__index_new(size_t slot_count, size_t seed)
+static inline forge_containers__hash_index *forge_containers__index_new(size_t slot_count, size_t seed)
 {
     size_t bucket_count;
     size_t bucket_storage;
@@ -570,12 +642,24 @@ static forge_containers__hash_index *forge_containers__index_new(size_t slot_cou
     }
 
     bucket_count   = slot_count / (size_t)FORGE_CONTAINERS_BUCKET_SIZE;
+
+    /* Overflow guard: bucket_count * sizeof(bucket) must not wrap. */
+    if (bucket_count > SIZE_MAX / sizeof(forge_containers__bucket)) {
+        SDL_Log("forge_containers: hash index size overflow");
+        return NULL;
+    }
     bucket_storage = bucket_count * sizeof(forge_containers__bucket);
     meta_size      = sizeof(forge_containers__hash_index);
 
     /* Align bucket storage to cache line. */
     aligned_offset = (meta_size + FORGE_CONTAINERS__CACHE_LINE - 1)
                      & ~(size_t)(FORGE_CONTAINERS__CACHE_LINE - 1);
+
+    /* Overflow guard: aligned_offset + bucket_storage must not wrap. */
+    if (aligned_offset > SIZE_MAX - bucket_storage) {
+        SDL_Log("forge_containers: hash index size overflow");
+        return NULL;
+    }
     total = aligned_offset + bucket_storage;
 
     idx = (forge_containers__hash_index *)SDL_malloc(total);
@@ -611,7 +695,7 @@ static forge_containers__hash_index *forge_containers__index_new(size_t slot_cou
 }
 
 /* Free a hash index and its arena blocks if any. */
-static void forge_containers__index_free(forge_containers__hash_index *idx)
+static inline void forge_containers__index_free(forge_containers__hash_index *idx)
 {
     if (!idx) return;
     /* Free arena blocks. */
@@ -634,7 +718,7 @@ static void forge_containers__index_free(forge_containers__hash_index *idx)
  * space, >= 0) or -1 if not found.  If `out_slot_bucket` and `out_slot_pos`
  * are non-NULL, they are set to the bucket/slot where the key was found
  * (or the first empty/tombstone slot for insertion). */
-static ptrdiff_t forge_containers__hm_find(
+static inline ptrdiff_t forge_containers__hm_find(
     forge_containers__hash_index *idx,
     const void *key, size_t key_size, size_t hash,
     const void *data, size_t elem_size, size_t key_offset,
@@ -646,12 +730,34 @@ static ptrdiff_t forge_containers__hm_find(
     size_t step = (size_t)FORGE_CONTAINERS_BUCKET_SIZE;
     size_t tombstone_bucket = (size_t)-1;
     size_t tombstone_slot   = (size_t)-1;
+    /* Safety limit to prevent infinite loops if the "always one empty slot"
+     * invariant is ever violated.  Each iteration scans one bucket, and
+     * quadratic probing visits at most slot_count/2 unique bucket positions
+     * on power-of-2 tables, so slot_count iterations is generous. */
+    size_t iterations = 0;
+    size_t max_iterations = idx->slot_count;
 
     for (;;) {
-        size_t bi = pos / (size_t)FORGE_CONTAINERS_BUCKET_SIZE;
-        size_t si_start = pos & ((size_t)FORGE_CONTAINERS_BUCKET_SIZE - 1);
-        size_t si;
-        forge_containers__bucket *b = &idx->buckets[bi];
+        size_t bi, si_start, si;
+        forge_containers__bucket *b;
+
+        if (iterations >= max_iterations) {
+            SDL_Log("forge_containers: probe limit reached in hm_find "
+                    "(slots=%zu) — possible invariant violation", idx->slot_count);
+            if (out_slot_bucket) {
+                if (tombstone_bucket != (size_t)-1) {
+                    *out_slot_bucket = tombstone_bucket;
+                    *out_slot_pos    = tombstone_slot;
+                } else {
+                    *out_slot_bucket = 0;
+                    *out_slot_pos    = 0;
+                }
+            }
+            return -1;
+        }
+        bi = pos / (size_t)FORGE_CONTAINERS_BUCKET_SIZE;
+        si_start = pos & ((size_t)FORGE_CONTAINERS_BUCKET_SIZE - 1);
+        b = &idx->buckets[bi];
 
         /* Scan from starting slot through end of bucket, then wrap. */
         for (si = si_start; si < (size_t)FORGE_CONTAINERS_BUCKET_SIZE; si++) {
@@ -743,12 +849,13 @@ static ptrdiff_t forge_containers__hm_find(
         /* Move to next bucket (quadratic probing). */
         pos = (pos + step) & mask;
         step += (size_t)FORGE_CONTAINERS_BUCKET_SIZE;
+        iterations++;
     }
 }
 
 /* Rebuild the hash index with a new slot count.  Reinserts all live entries.
  * The data array is unaffected — only the index changes. */
-static forge_containers__hash_index *forge_containers__index_rebuild(
+static inline forge_containers__hash_index *forge_containers__index_rebuild(
     forge_containers__hash_index *old_idx,
     size_t new_slot_count,
     const void *data, size_t elem_count, size_t elem_size,
@@ -798,7 +905,7 @@ static forge_containers__hash_index *forge_containers__index_rebuild(
  * base + 1).  Returns the user-visible index of the entry.  The entry
  * at that index has its key set but value is not yet written (the macro
  * layer does that). */
-static ptrdiff_t forge_containers__hm_put_key(
+static inline ptrdiff_t forge_containers__hm_put_key(
     void **p, size_t elem_size, size_t key_offset, size_t key_size,
     const void *key, int is_string)
 {
@@ -809,6 +916,12 @@ static ptrdiff_t forge_containers__hm_put_key(
     size_t sb, sp;
     ptrdiff_t new_di;
     void *raw_base;
+    char key_buf[sizeof(Uint64)];
+
+    /* Clear stale temp state so early returns never leave a dangling index. */
+    if (*p) {
+        forge_containers__hdr(*p)->temp = -1;
+    }
 
     /* Lazy init: first put on a NULL map.
      * The user pointer points to element 0 of the raw array (the default
@@ -840,8 +953,22 @@ static ptrdiff_t forge_containers__hm_put_key(
         idx = forge_containers__index_new(
                   (size_t)FORGE_CONTAINERS_BUCKET_SIZE,
                   forge_containers__advance_seed());
-        if (!idx) return -1;
+        if (!idx) {
+            hdr->temp = -1;
+            return -1;
+        }
         hdr->hash_table = idx;
+    }
+
+    /* Copy key bytes to a stack buffer so the pointer stays valid even if
+     * arr_maybe_grow reallocates the data array (the KEYPTR macro on the
+     * non-typeof path stores the key in element 0 of the data array). */
+    /* Covers int, float, double, pointer — the common key types.  Keys
+     * larger than 8 bytes (struct keys) skip the copy; those callers must
+     * ensure the key pointer is not into the data array. */
+    if (key_size <= sizeof(key_buf)) {
+        SDL_memcpy(key_buf, key, key_size);
+        key = (const void *)key_buf;
     }
 
     /* Compute hash. */
@@ -882,7 +1009,10 @@ static ptrdiff_t forge_containers__hm_put_key(
     forge_containers__arr_maybe_grow(p, 1, elem_size);
     hdr = forge_containers__hdr(*p);
     /* Check that grow succeeded (capacity > length). */
-    if (hdr->length >= hdr->capacity) return -1;
+    if (hdr->length >= hdr->capacity) {
+        hdr->temp = -1;
+        return -1;
+    }
     raw_base = *p;
 
     /* The new entry goes at raw index = hdr->length.
@@ -911,7 +1041,7 @@ static ptrdiff_t forge_containers__hm_put_key(
 }
 
 /* Remove a key from the hash map.  Returns 1 if deleted, 0 if not found. */
-static int forge_containers__hm_remove(
+static inline int forge_containers__hm_remove(
     void **p, size_t elem_size, size_t key_offset, size_t key_size,
     const void *key, int is_string)
 {
@@ -1045,7 +1175,7 @@ static int forge_containers__hm_remove(
 }
 
 /* Find a key's user-visible index.  Returns >= 0 if found, -1 otherwise. */
-static ptrdiff_t forge_containers__hm_find_index(
+static inline ptrdiff_t forge_containers__hm_find_index(
     void *p, size_t elem_size, size_t key_offset, size_t key_size,
     const void *key, int is_string)
 {
@@ -1075,7 +1205,7 @@ static ptrdiff_t forge_containers__hm_find_index(
 
 /* Lazy-init the data array for get operations on NULL maps.
  * Creates the default element but no hash index. */
-static void forge_containers__hm_ensure_default(void **p, size_t elem_size)
+static inline void forge_containers__hm_ensure_default(void **p, size_t elem_size)
 {
     if (!*p) {
         forge_containers__arr_grow(p, 1, elem_size);
@@ -1088,7 +1218,7 @@ static void forge_containers__hm_ensure_default(void **p, size_t elem_size)
 }
 
 /* Free a hash map: free strdup keys, arena blocks, hash index, data array. */
-static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_offset,
+static inline void forge_containers__hm_free(void **p, size_t elem_size, size_t key_offset,
                                        int is_string)
 {
     forge_containers__header *hdr;
@@ -1123,57 +1253,135 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* Helper: take the address of a key value.  On GCC/Clang we use a compound
- * literal so rvalues work.  On MSVC, keys must be lvalues. */
+ * literal so rvalues work.  Without __typeof__, we write the key into the
+ * default entry (element 0) and take its address — callers must ensure (a)
+ * is non-NULL via ensure_default before using this macro.
+ *
+ * The pointer may be invalidated by reallocation inside put_key.  The
+ * put_key function copies key bytes into a stack buffer (sizeof(Uint64))
+ * before any grow can happen, keeping the key valid through reallocation. */
 #if FORGE_CONTAINERS__HAS_TYPEOF
   #define FORGE_CONTAINERS__KEYPTR(a, k) \
       ((__typeof__((a)->key) []){(k)})
 #else
-  #define FORGE_CONTAINERS__KEYPTR(a, k) (&(k))
+  #define FORGE_CONTAINERS__KEYPTR(a, k) \
+      ((a)[0].key = (k), &(a)[0].key)
 #endif
+
+/* Helper: compute key offset portably.
+ * With __typeof__: compile-time offsetof (works even when a is NULL).
+ * Without: pointer arithmetic (requires a != NULL). */
+#if FORGE_CONTAINERS__HAS_TYPEOF
+  #define FORGE_CONTAINERS__KEY_OFFSET(a) \
+      offsetof(__typeof__(*(a)), key)
+#else
+  #define FORGE_CONTAINERS__KEY_OFFSET(a) \
+      ((size_t)((char *)&(a)->key - (char *)(a)))
+#endif
+
+/* ── Hash map macros ─────────────────────────────────────────────────────── */
 
 /* Put a key-value pair.  Returns the value.
  * If allocation fails, the put is skipped. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_hm_put(a, k, v)                                                \
     (forge_containers__hm_put_key(                                           \
          (void **)&(a), sizeof(*(a)),                                        \
-         offsetof(__typeof__(*(a)), key), sizeof((a)->key),                   \
+         FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),                  \
          FORGE_CONTAINERS__KEYPTR(a, k), 0),                                 \
      ((a) && forge_containers__hdr(a)->temp >= 0)                            \
          ? ((a)[forge_containers__hdr(a)->temp + 1].key = (k),               \
             (a)[forge_containers__hdr(a)->temp + 1].value = (v))             \
          : (v))
+#else
+/* Without __typeof__, ensure_default first so (a) is non-NULL for
+ * the pointer-arithmetic KEY_OFFSET. */
+#define forge_hm_put(a, k, v)                                                \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__hm_put_key(                                    \
+                (void **)&(a), sizeof(*(a)),                                  \
+                FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),            \
+                FORGE_CONTAINERS__KEYPTR(a, k), 0),                          \
+            (forge_containers__hdr(a)->temp >= 0)                            \
+                ? ((a)[forge_containers__hdr(a)->temp + 1].key = (k),        \
+                   (a)[forge_containers__hdr(a)->temp + 1].value = (v))      \
+                : (v))                                                        \
+         : (v))
+#endif
 
 /* Put a complete struct.  Returns the struct. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_hm_put_struct(a, entry)                                        \
     (forge_containers__hm_put_key(                                           \
          (void **)&(a), sizeof(*(a)),                                        \
-         offsetof(__typeof__(*(a)), key), sizeof((a)->key),                   \
+         FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),                  \
          &(entry).key, 0),                                                   \
      ((a) && forge_containers__hdr(a)->temp >= 0)                            \
          ? (a)[forge_containers__hdr(a)->temp + 1] = (entry)                 \
          : (entry))
+#else
+#define forge_hm_put_struct(a, entry)                                        \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__hm_put_key(                                    \
+                (void **)&(a), sizeof(*(a)),                                  \
+                FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),            \
+                &(entry).key, 0),                                            \
+            (forge_containers__hdr(a)->temp >= 0)                            \
+                ? (a)[forge_containers__hdr(a)->temp + 1] = (entry)          \
+                : (entry))                                                    \
+         : (entry))
+#endif
 
-/* Get the value for a key.  Returns default value (or 0 on OOM). */
+/* Get the value for a key.  Returns default value (or 0 on OOM).
+ * ensure_default guarantees (a) != NULL unless OOM. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_hm_get(a, k)                                                   \
     (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof((a)->key),        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),        \
                     FORGE_CONTAINERS__KEYPTR(a, k), 0),                       \
             (a)[forge_containers__hdr(a)->temp + 1].value)                   \
          : (__typeof__((a)->value)){0})
+#else
+#define forge_hm_get(a, k)                                                   \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__hdr(a)->temp =                                 \
+                forge_containers__hm_find_index(                              \
+                    (a), sizeof(*(a)),                                        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),        \
+                    FORGE_CONTAINERS__KEYPTR(a, k), 0),                       \
+            (a)[forge_containers__hdr(a)->temp + 1].value)                   \
+         : 0)
+#endif
 
 /* Get the full struct for a key.  Returns default struct (or zeroed on OOM). */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_hm_get_struct(a, k)                                            \
     (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof((a)->key),        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),        \
                     FORGE_CONTAINERS__KEYPTR(a, k), 0),                       \
             (a)[forge_containers__hdr(a)->temp + 1])                         \
          : (__typeof__(*(a))){0})
+#else
+#define forge_hm_get_struct(a, k)                                            \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__hdr(a)->temp =                                 \
+                forge_containers__hm_find_index(                              \
+                    (a), sizeof(*(a)),                                        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),        \
+                    FORGE_CONTAINERS__KEYPTR(a, k), 0),                       \
+            (a)[forge_containers__hdr(a)->temp + 1])                         \
+         : ((SDL_OutOfMemory(),                                              \
+             SDL_Log("FATAL: forge_containers: OOM in forge_hm_get_struct"),\
+             (a)[0])))  /* UB (NULL deref) — no way to return a zero struct
+                         * without __typeof__.  Only reachable if the very
+                         * first ~80-byte allocation fails (extreme OOM). */
+#endif
 
 /* Get a pointer to the entry.  Returns pointer to default (or NULL on OOM). */
 #define forge_hm_get_ptr(a, k)                                               \
@@ -1181,7 +1389,7 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof((a)->key),        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),        \
                     FORGE_CONTAINERS__KEYPTR(a, k), 0),                       \
             &(a)[forge_containers__hdr(a)->temp + 1])                        \
          : NULL)
@@ -1192,7 +1400,7 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof((a)->key),        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),        \
                     FORGE_CONTAINERS__KEYPTR(a, k), 0),                       \
             forge_containers__hdr(a)->temp >= 0                              \
                 ? &(a)[forge_containers__hdr(a)->temp + 1] : NULL)           \
@@ -1202,7 +1410,7 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
 #define forge_hm_find_index(a, k)                                            \
     ((a) ? forge_containers__hm_find_index(                                  \
                (a), sizeof(*(a)),                                            \
-               offsetof(__typeof__(*(a)), key), sizeof((a)->key),            \
+               FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),            \
                FORGE_CONTAINERS__KEYPTR(a, k), 0)                           \
          : (ptrdiff_t)-1)
 
@@ -1210,7 +1418,7 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
 #define forge_hm_remove(a, k)                                                \
     ((a) ? forge_containers__hm_remove(                                      \
                (void **)&(a), sizeof(*(a)),                                  \
-               offsetof(__typeof__(*(a)), key), sizeof((a)->key),            \
+               FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),            \
                FORGE_CONTAINERS__KEYPTR(a, k), 0)                           \
          : 0)
 
@@ -1220,8 +1428,9 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
 
 /* Free the hash map.  Sets pointer to NULL. */
 #define forge_hm_free(a)                                                     \
-    (forge_containers__hm_free((void **)&(a), sizeof(*(a)),                  \
-         offsetof(__typeof__(*(a)), key), 0),                                \
+    ((a) ? (forge_containers__hm_free((void **)&(a), sizeof(*(a)),           \
+                FORGE_CONTAINERS__KEY_OFFSET(a), 0), (void)0)               \
+         : (void)0,                                                          \
      (a) = NULL)
 
 /* Set the default value (returned on missed lookups). */
@@ -1235,14 +1444,25 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
      (a) ? ((a)[0] = (entry)) : (entry))
 
 /* Thread-safe get: uses external temp variable instead of header temp. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_hm_get_ts(a, k, tmp)                                           \
     (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
      (a) ? ((tmp) = forge_containers__hm_find_index(                         \
                  (a), sizeof(*(a)),                                          \
-                 offsetof(__typeof__(*(a)), key), sizeof((a)->key),          \
+                 FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),          \
                  FORGE_CONTAINERS__KEYPTR(a, k), 0),                         \
             (a)[(tmp) + 1].value)                                            \
          : (__typeof__((a)->value)){0})
+#else
+#define forge_hm_get_ts(a, k, tmp)                                           \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? ((tmp) = forge_containers__hm_find_index(                         \
+                 (a), sizeof(*(a)),                                          \
+                 FORGE_CONTAINERS__KEY_OFFSET(a), sizeof((a)->key),          \
+                 FORGE_CONTAINERS__KEYPTR(a, k), 0),                         \
+            (a)[(tmp) + 1].value)                                            \
+         : 0)
+#endif
 
 /* Iterate: entries are at indices 1..length in the raw array,
  * which means (a)[1] through (a)[hdr->length-1] in direct access.
@@ -1256,7 +1476,7 @@ static void forge_containers__hm_free(void **p, size_t elem_size, size_t key_off
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* Allocate a string in the arena.  Returns pointer to the copy. */
-static char *forge_containers__arena_strdup(forge_containers__hash_index *idx,
+static inline char *forge_containers__arena_strdup(forge_containers__hash_index *idx,
                                              const char *str)
 {
     size_t len = SDL_strlen(str) + 1;  /* include null terminator */
@@ -1330,7 +1550,7 @@ static char *forge_containers__arena_strdup(forge_containers__hash_index *idx,
  * String map put key (handles strdup/arena allocation)
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static ptrdiff_t forge_containers__shm_put_key(
+static inline ptrdiff_t forge_containers__shm_put_key(
     void **p, size_t elem_size, size_t key_offset, const char *key)
 {
     forge_containers__header *hdr;
@@ -1346,6 +1566,14 @@ static ptrdiff_t forge_containers__shm_put_key(
     if (!key) {
         SDL_Log("forge_containers: NULL key in string map put");
         return -1;
+    }
+
+    /* Clear stale temp state so early returns never leave a dangling index. */
+    if (*p) {
+        forge_containers__hdr(*p)->temp = -1;
+        if (forge_containers__hdr(*p)->hash_table) {
+            forge_containers__hdr(*p)->hash_table->temp_key = NULL;
+        }
     }
 
     /* Lazy init. */
@@ -1375,7 +1603,10 @@ static ptrdiff_t forge_containers__shm_put_key(
         idx = forge_containers__index_new(
                   (size_t)FORGE_CONTAINERS_BUCKET_SIZE,
                   forge_containers__advance_seed());
-        if (!idx) return -1;
+        if (!idx) {
+            hdr->temp = -1;
+            return -1;
+        }
         idx->arena.mode = FORGE_CONTAINERS__MODE_USER;
         hdr->hash_table = idx;
     }
@@ -1401,11 +1632,17 @@ static ptrdiff_t forge_containers__shm_put_key(
     if (idx->arena.mode == FORGE_CONTAINERS__MODE_STRDUP) {
         size_t slen = SDL_strlen(key) + 1;
         stored_key = (char *)SDL_malloc(slen);
-        if (!stored_key) return -1;
+        if (!stored_key) {
+            hdr->temp = -1;
+            return -1;
+        }
         SDL_memcpy(stored_key, key, slen);
     } else if (idx->arena.mode == FORGE_CONTAINERS__MODE_ARENA) {
         stored_key = forge_containers__arena_strdup(idx, key);
-        if (!stored_key) return -1;
+        if (!stored_key) {
+            hdr->temp = -1;
+            return -1;
+        }
     }
     /* Grow hash index if needed (before setting temp_key, since rebuild
      * creates a new index and the old one is freed). */
@@ -1429,6 +1666,8 @@ static ptrdiff_t forge_containers__shm_put_key(
         if (idx->arena.mode == FORGE_CONTAINERS__MODE_STRDUP && stored_key != key) {
             SDL_free(stored_key);
         }
+        hdr->temp = -1;
+        idx->temp_key = NULL;
         return -1;
     }
     raw_base = *p;
@@ -1511,49 +1750,105 @@ static ptrdiff_t forge_containers__shm_put_key(
     } while (0)
 
 /* Put a key-value pair into a string map. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_shm_put(a, k, v)                                               \
     (forge_containers__shm_put_key(                                          \
          (void **)&(a), sizeof(*(a)),                                        \
-         offsetof(__typeof__(*(a)), key), (k)),                              \
+         FORGE_CONTAINERS__KEY_OFFSET(a), (k)),                              \
      ((a) && forge_containers__hdr(a)->temp >= 0)                            \
          ? ((a)[forge_containers__hdr(a)->temp + 1].key =                    \
                 forge_containers__hdr(a)->hash_table->temp_key,              \
             (a)[forge_containers__hdr(a)->temp + 1].value = (v))             \
          : (v))
+#else
+#define forge_shm_put(a, k, v)                                               \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__shm_put_key(                                   \
+                (void **)&(a), sizeof(*(a)),                                  \
+                FORGE_CONTAINERS__KEY_OFFSET(a), (k)),                       \
+            (forge_containers__hdr(a)->temp >= 0)                            \
+                ? ((a)[forge_containers__hdr(a)->temp + 1].key =             \
+                       forge_containers__hdr(a)->hash_table->temp_key,       \
+                   (a)[forge_containers__hdr(a)->temp + 1].value = (v))      \
+                : (v))                                                        \
+         : (v))
+#endif
 
 /* Put a complete struct into a string map. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_shm_put_struct(a, entry)                                       \
     (forge_containers__shm_put_key(                                          \
          (void **)&(a), sizeof(*(a)),                                        \
-         offsetof(__typeof__(*(a)), key), (entry).key),                      \
+         FORGE_CONTAINERS__KEY_OFFSET(a), (entry).key),                      \
      ((a) && forge_containers__hdr(a)->temp >= 0)                            \
          ? ((a)[forge_containers__hdr(a)->temp + 1] = (entry),               \
             (a)[forge_containers__hdr(a)->temp + 1].key =                    \
                 forge_containers__hdr(a)->hash_table->temp_key,              \
             (entry).value)                                                   \
          : (entry).value)
+#else
+#define forge_shm_put_struct(a, entry)                                       \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__shm_put_key(                                   \
+                (void **)&(a), sizeof(*(a)),                                  \
+                FORGE_CONTAINERS__KEY_OFFSET(a), (entry).key),               \
+            (forge_containers__hdr(a)->temp >= 0)                            \
+                ? ((a)[forge_containers__hdr(a)->temp + 1] = (entry),        \
+                   (a)[forge_containers__hdr(a)->temp + 1].key =             \
+                       forge_containers__hdr(a)->hash_table->temp_key,       \
+                   (entry).value)                                            \
+                : (entry).value)                                              \
+         : (entry).value)
+#endif
 
 /* Get value by string key.  Returns 0 on OOM. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_shm_get(a, k)                                                  \
     (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof(char *),          \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),          \
                     &(const char *){(k)}, 1),                                 \
             (a)[forge_containers__hdr(a)->temp + 1].value)                   \
          : (__typeof__((a)->value)){0})
+#else
+#define forge_shm_get(a, k)                                                  \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__hdr(a)->temp =                                 \
+                forge_containers__hm_find_index(                              \
+                    (a), sizeof(*(a)),                                        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),          \
+                    &(const char *){(k)}, 1),                                 \
+            (a)[forge_containers__hdr(a)->temp + 1].value)                   \
+         : 0)
+#endif
 
 /* Get full struct by string key.  Returns zeroed struct on OOM. */
+#if FORGE_CONTAINERS__HAS_TYPEOF
 #define forge_shm_get_struct(a, k)                                           \
     (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof(char *),          \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),          \
                     &(const char *){(k)}, 1),                                 \
             (a)[forge_containers__hdr(a)->temp + 1])                         \
          : (__typeof__(*(a))){0})
+#else
+#define forge_shm_get_struct(a, k)                                           \
+    (forge_containers__hm_ensure_default((void **)&(a), sizeof(*(a))),       \
+     (a) ? (forge_containers__hdr(a)->temp =                                 \
+                forge_containers__hm_find_index(                              \
+                    (a), sizeof(*(a)),                                        \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),          \
+                    &(const char *){(k)}, 1),                                 \
+            (a)[forge_containers__hdr(a)->temp + 1])                         \
+         : ((SDL_OutOfMemory(),                                              \
+             SDL_Log("FATAL: forge_containers: OOM in forge_shm_get_struct"),\
+             (a)[0])))  /* UB (NULL deref) — same limitation as hm_get_struct;
+                         * see comment above. */
+#endif
 
 /* Get pointer to entry, or pointer to default if not found. NULL on OOM. */
 #define forge_shm_get_ptr(a, k)                                              \
@@ -1561,7 +1856,7 @@ static ptrdiff_t forge_containers__shm_put_key(
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof(char *),          \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),          \
                     &(const char *){(k)}, 1),                                 \
             &(a)[forge_containers__hdr(a)->temp + 1])                        \
          : NULL)
@@ -1572,7 +1867,7 @@ static ptrdiff_t forge_containers__shm_put_key(
      (a) ? (forge_containers__hdr(a)->temp =                                 \
                 forge_containers__hm_find_index(                              \
                     (a), sizeof(*(a)),                                        \
-                    offsetof(__typeof__(*(a)), key), sizeof(char *),          \
+                    FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),          \
                     &(const char *){(k)}, 1),                                 \
             forge_containers__hdr(a)->temp >= 0                              \
                 ? &(a)[forge_containers__hdr(a)->temp + 1] : NULL)           \
@@ -1582,7 +1877,7 @@ static ptrdiff_t forge_containers__shm_put_key(
 #define forge_shm_find_index(a, k)                                           \
     ((a) ? forge_containers__hm_find_index(                                  \
                (a), sizeof(*(a)),                                            \
-               offsetof(__typeof__(*(a)), key), sizeof(char *),              \
+               FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),              \
                &(const char *){(k)}, 1)                                      \
          : (ptrdiff_t)-1)
 
@@ -1590,7 +1885,7 @@ static ptrdiff_t forge_containers__shm_put_key(
 #define forge_shm_remove(a, k)                                               \
     ((a) ? forge_containers__hm_remove(                                      \
                (void **)&(a), sizeof(*(a)),                                  \
-               offsetof(__typeof__(*(a)), key), sizeof(char *),              \
+               FORGE_CONTAINERS__KEY_OFFSET(a), sizeof(char *),              \
                &(const char *){(k)}, 1)                                      \
          : 0)
 
@@ -1599,8 +1894,9 @@ static ptrdiff_t forge_containers__shm_put_key(
 
 /* Free the string map. */
 #define forge_shm_free(a)                                                    \
-    (forge_containers__hm_free((void **)&(a), sizeof(*(a)),                  \
-         offsetof(__typeof__(*(a)), key), 1),                                \
+    ((a) ? (forge_containers__hm_free((void **)&(a), sizeof(*(a)),           \
+                FORGE_CONTAINERS__KEY_OFFSET(a), 1), (void)0)               \
+         : (void)0,                                                          \
      (a) = NULL)
 
 /* Set default value. */
