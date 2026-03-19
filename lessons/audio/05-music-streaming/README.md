@@ -17,6 +17,8 @@ mix synchronized layers with per-layer weight control.
 
 ## Result
 
+![Audio Lesson 05 screenshot: cyberpunk music player with track selector, transport controls, and adaptive layer mixing](assets/screenshot.png)
+
 A cyberpunk music player with six tracks from all three Cyberpunk Dynamic
 Bundle volumes. Each track has 3 layers that can be faded in and out
 independently. Crossfading between tracks uses equal-power gain curves

@@ -36,13 +36,13 @@ serve to illustrate and control what the listener hears.
 
 ## Lessons
 
-| # | Topic | What you'll learn |
-|---|-------|-------------------|
-| [01](01-audio-basics/) | Audio Basics | PCM fundamentals, WAV loading, F32 conversion, mixing, SDL audio streams |
-| [02](02-sound-effects/) | Sound Effects | Source pool, fire-and-forget playback, volume fading, polyphony |
-| [03](03-audio-mixing/) | Audio Mixing | Multi-channel mixer, per-channel volume/pan/mute/solo, soft clipping, peak metering |
-| [04](04-spatial-audio/) | Spatial Audio | 3D positioning, distance attenuation, stereo pan from position, Doppler pitch shift |
-| [05](05-music-streaming/) | Music & Streaming | Chunked WAV streaming, ring buffer, crossfade, loop-with-intro, adaptive music layers |
+| | Lesson | About |
+|---|--------|-------|
+| [<img src="01-audio-basics/assets/screenshot.png" width="480" alt="Audio Basics"/>](01-audio-basics/) | [**01 — Audio Basics**](01-audio-basics/) | PCM fundamentals, WAV loading, F32 conversion, mixing, SDL audio streams |
+| [<img src="02-sound-effects/assets/screenshot.png" width="480" alt="Sound Effects"/>](02-sound-effects/) | [**02 — Sound Effects**](02-sound-effects/) | Source pool, fire-and-forget playback, volume fading, polyphony |
+| [<img src="03-audio-mixing/assets/screenshot.png" width="480" alt="Audio Mixing"/>](03-audio-mixing/) | [**03 — Audio Mixing**](03-audio-mixing/) | Multi-channel mixer, per-channel volume/pan/mute/solo, soft clipping, peak metering |
+| [<img src="04-spatial-audio/assets/screenshot.png" width="480" alt="Spatial Audio"/>](04-spatial-audio/) | [**04 — Spatial Audio**](04-spatial-audio/) | 3D positioning, distance attenuation, stereo pan from position, Doppler pitch shift |
+| [<img src="05-music-streaming/assets/screenshot.png" width="480" alt="Music & Streaming"/>](05-music-streaming/) | [**05 — Music & Streaming**](05-music-streaming/) | Chunked WAV streaming, ring buffer, crossfade, loop-with-intro, adaptive music layers |
 
 ## Shared library
 
