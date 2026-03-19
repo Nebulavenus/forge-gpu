@@ -861,7 +861,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 {
                     ForgeUiRect row = forge_ui_ctx_layout_next(ui, CB_H);
                     forge_ui_ctx_layout_push(ui, row,
-                        FORGE_UI_LAYOUT_HORIZONTAL, 0.0f, 4.0f);
+                        FORGE_UI_LAYOUT_HORIZONTAL,
+                        FORGE_UI_LAYOUT_EXPLICIT_ZERO, 4.0f);
 
                     const char *lname = TRACKS[display_t].layer_names[i];
                     forge_ui_ctx_label_colored_layout(ui, lname,
