@@ -49,7 +49,7 @@ buf_info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE
 
 ```hlsl
 RWStructuredBuffer<Particle> particles     : register(u0, space1);
-RWStructuredBuffer<uint>     spawn_counter : register(u1, space1);
+RWStructuredBuffer<int>      spawn_counter : register(u1, space1);
 cbuffer SimUniforms                        : register(b0, space2);
 ```
 
@@ -59,7 +59,7 @@ Dead particles attempt to claim spawn slots atomically:
 
 ```hlsl
 if (p.pos_lifetime.w <= 0.0) {
-    uint prev;
+    int prev;
     InterlockedAdd(spawn_counter[0], -1, prev);
     if (prev > 0) {
         p = spawn_particle(idx, emitter_type);

@@ -104,6 +104,7 @@ typedef struct SimUniforms {
     uint32_t frame_counter;   /* monotonic frame index for PRNG seeding    */
     float    emitter_pos[4];  /* xyz = emitter world position, w = unused  */
     float    emitter_params[4]; /* x=type, y=speed, z=size_min, w=size_max */
+    float    extra_params[4]; /* per-emitter tunables (see shader comments) */
 } SimUniforms;
 
 /* Vertex shader uniforms — passed via SDL_PushGPUVertexUniformData */
@@ -140,7 +141,7 @@ typedef struct app_state {
 
     /* GPU buffers */
     SDL_GPUBuffer           *particle_buffer;     /* RW storage (compute) + read storage (vertex) */
-    SDL_GPUBuffer           *counter_buffer;      /* RW storage, single uint32 */
+    SDL_GPUBuffer           *counter_buffer;      /* RW storage, single int32 (signed for correct atomic decrement) */
     SDL_GPUTransferBuffer   *counter_transfer;    /* persistent 4-byte staging for counter reset */
 
     /* Atlas texture and sampler */
@@ -152,9 +153,14 @@ typedef struct app_state {
     float    spawn_rate;             /* particles per second (UI-adjustable)  */
     float    gravity;                /* gravity acceleration (m/s², negative) */
     float    drag;                   /* velocity damping coefficient          */
+    float    fire_spread;            /* fire width multiplier (1.0 = torch)   */
+    float    smoke_rise_speed;       /* smoke vertical speed multiplier       */
+    float    smoke_spread;           /* smoke horizontal spread multiplier    */
+    float    smoke_opacity;          /* smoke base opacity (0–1)              */
     int      emitter_type;           /* active EmitterType enum value         */
     float    spawn_accum;            /* fractional spawn accumulator          */
     uint32_t frame_counter;          /* monotonic frame index for PRNG seed   */
+    int      prev_emitter_type;      /* previous type — detect switches       */
     bool     burst_requested;        /* true = spawn BURST_COUNT next frame   */
 } app_state;
 
@@ -546,13 +552,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     }
 
     /* ── 5. Create spawn counter buffer ───────────────────────────── */
-    /* A single uint32 that the CPU resets each frame and the compute
-     * shader atomically decrements when spawning particles. */
+    /* A single int32 that the CPU resets each frame and the compute
+     * shader atomically decrements when spawning particles.  Signed so
+     * that InterlockedAdd past zero produces negative values (not
+     * unsigned wraparound), letting prev > 0 correctly reject excess. */
     {
         SDL_GPUBufferCreateInfo buf_info;
         SDL_zero(buf_info);
         buf_info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
-        buf_info.size  = sizeof(uint32_t);
+        buf_info.size  = sizeof(int32_t);
 
         state->counter_buffer = SDL_CreateGPUBuffer(dev, &buf_info);
         if (!state->counter_buffer) {
@@ -565,7 +573,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_GPUTransferBufferCreateInfo xfer_info;
         SDL_zero(xfer_info);
         xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        xfer_info.size  = sizeof(uint32_t);
+        xfer_info.size  = sizeof(int32_t);
 
         state->counter_transfer = SDL_CreateGPUTransferBuffer(dev, &xfer_info);
         if (!state->counter_transfer) {
@@ -576,14 +584,19 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     }
 
     /* ── 6. Initialize simulation defaults ────────────────────────── */
-    state->spawn_rate   = DEFAULT_SPAWN_RATE;
-    state->gravity      = DEFAULT_GRAVITY;
-    state->drag         = DEFAULT_DRAG;
-    state->emitter_type = EMITTER_FIRE;
+    state->spawn_rate      = DEFAULT_SPAWN_RATE;
+    state->gravity         = DEFAULT_GRAVITY;
+    state->drag            = DEFAULT_DRAG;
+    state->fire_spread     = 1.0f;
+    state->smoke_rise_speed = 1.0f;
+    state->smoke_spread    = 1.0f;
+    state->smoke_opacity   = 0.5f;
+    state->emitter_type     = EMITTER_FIRE;
+    state->prev_emitter_type = EMITTER_FIRE;
     state->spawn_accum  = 0.0f;
     state->frame_counter = 0;
     state->burst_requested = false;
-    state->ui_window = forge_ui_window_state_default(10, 10, 220, 380);
+    state->ui_window = forge_ui_window_state_default(10, 10, 280, 480);
 
     SDL_Log("Lesson 46 initialized: %d max particles, %d workgroup size",
             MAX_PARTICLES, WORKGROUP_SIZE);
@@ -641,11 +654,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     float dt = forge_scene_dt(s);
     SDL_GPUCommandBuffer *cmd = forge_scene_cmd(s);
 
+    /* ── Reset pool when emitter type changes ────────────────────── */
+    /* Setting frame_counter to 0 triggers the shader's pre-fill path,
+     * which respawns all particles with the new emitter type at
+     * randomized ages — no visible ramp-up on type switch. */
+    if (state->emitter_type != state->prev_emitter_type) {
+        state->frame_counter = 0;
+        state->prev_emitter_type = state->emitter_type;
+    }
+
     /* ── Compute spawn count for this frame ───────────────────────── */
     /* Accumulate fractional spawns so a 150/s rate at 60fps = 2.5/frame
      * correctly spawns 2 or 3 particles alternating. */
     state->spawn_accum += state->spawn_rate * dt;
-    uint32_t spawn_count = (uint32_t)state->spawn_accum;
+    int32_t spawn_count = (int32_t)state->spawn_accum;
     state->spawn_accum -= (float)spawn_count;
 
     /* Burst spawn: add extra particles on top of regular rate */
@@ -654,7 +676,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         state->burst_requested = false;
     }
 
-    /* Cap to max pool size to avoid counter underflow issues */
+    /* Cap to max pool size — the shader reads this as a signed int */
     if (spawn_count > MAX_PARTICLES) spawn_count = MAX_PARTICLES;
 
     /* ── Reset spawn counter via copy pass ────────────────────────── */
@@ -665,7 +687,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         void *mapped = SDL_MapGPUTransferBuffer(
             forge_scene_device(s), state->counter_transfer, false);
         if (mapped) {
-            SDL_memcpy(mapped, &spawn_count, sizeof(uint32_t));
+            SDL_memcpy(mapped, &spawn_count, sizeof(int32_t));
             SDL_UnmapGPUTransferBuffer(forge_scene_device(s),
                                         state->counter_transfer);
 
@@ -676,7 +698,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     state->counter_transfer, 0
                 };
                 SDL_GPUBufferRegion dst = {
-                    state->counter_buffer, 0, sizeof(uint32_t)
+                    state->counter_buffer, 0, sizeof(int32_t)
                 };
                 SDL_UploadToGPUBuffer(copy, &src, &dst, false);
                 SDL_EndGPUCopyPass(copy);
@@ -712,6 +734,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         sim.emitter_params[1] = DEFAULT_EMITTER_SPEED;
         sim.emitter_params[2] = DEFAULT_SIZE_MIN;
         sim.emitter_params[3] = DEFAULT_SIZE_MAX;
+
+        /* Per-emitter tunables — meaning depends on active emitter type */
+        sim.extra_params[0] = 0.0f;
+        sim.extra_params[1] = 0.0f;
+        sim.extra_params[2] = 0.0f;
+        sim.extra_params[3] = 0.0f;
+        if (state->emitter_type == EMITTER_FIRE) {
+            sim.extra_params[0] = state->fire_spread;
+        } else if (state->emitter_type == EMITTER_SMOKE) {
+            sim.extra_params[0] = state->smoke_rise_speed;
+            sim.extra_params[1] = state->smoke_spread;
+            sim.extra_params[2] = state->smoke_opacity;
+        }
 
         /* Push uniform data before beginning the compute pass */
         SDL_PushGPUComputeUniformData(cmd, 0, &sim, sizeof(sim));
@@ -827,7 +862,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
                 forge_ui_ctx_label_layout(ui, "", LABEL_HEIGHT / 2);
 
-                /* ── Spawn rate slider ────────────────── */
+                /* ── Spawn rate slider (all types) ────── */
                 {
                     char buf[64];
                     SDL_snprintf(buf, sizeof(buf), "Spawn: %.0f/s",
@@ -838,27 +873,74 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                            &state->spawn_rate,
                                            0.0f, 500.0f, SLIDER_HEIGHT);
 
-                /* ── Gravity slider ───────────────────── */
-                {
-                    char buf[64];
-                    SDL_snprintf(buf, sizeof(buf), "Gravity: %.1f",
-                                 (double)state->gravity);
-                    forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
-                }
-                forge_ui_ctx_slider_layout(ui, "##gravity",
-                                           &state->gravity,
-                                           -20.0f, 0.0f, SLIDER_HEIGHT);
+                /* ── Per-emitter sliders ──────────────── */
+                if (state->emitter_type == EMITTER_FOUNTAIN) {
+                    /* Gravity slider */
+                    {
+                        char buf[64];
+                        SDL_snprintf(buf, sizeof(buf), "Gravity: %.1f",
+                                     (double)state->gravity);
+                        forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    }
+                    forge_ui_ctx_slider_layout(ui, "##gravity",
+                                               &state->gravity,
+                                               -20.0f, 0.0f, SLIDER_HEIGHT);
 
-                /* ── Drag slider ──────────────────────── */
-                {
-                    char buf[64];
-                    SDL_snprintf(buf, sizeof(buf), "Drag: %.2f",
-                                 (double)state->drag);
-                    forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    /* Drag slider */
+                    {
+                        char buf[64];
+                        SDL_snprintf(buf, sizeof(buf), "Drag: %.2f",
+                                     (double)state->drag);
+                        forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    }
+                    forge_ui_ctx_slider_layout(ui, "##drag",
+                                               &state->drag,
+                                               0.0f, 5.0f, SLIDER_HEIGHT);
+                } else if (state->emitter_type == EMITTER_FIRE) {
+                    /* Spread slider — widens the flame */
+                    {
+                        char buf[64];
+                        SDL_snprintf(buf, sizeof(buf), "Spread: %.1f",
+                                     (double)state->fire_spread);
+                        forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    }
+                    forge_ui_ctx_slider_layout(ui, "##fire_spread",
+                                               &state->fire_spread,
+                                               0.2f, 5.0f, SLIDER_HEIGHT);
+                } else if (state->emitter_type == EMITTER_SMOKE) {
+                    /* Rise speed slider */
+                    {
+                        char buf[64];
+                        SDL_snprintf(buf, sizeof(buf), "Rise Speed: %.1f",
+                                     (double)state->smoke_rise_speed);
+                        forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    }
+                    forge_ui_ctx_slider_layout(ui, "##smoke_rise",
+                                               &state->smoke_rise_speed,
+                                               0.2f, 3.0f, SLIDER_HEIGHT);
+
+                    /* Spread slider */
+                    {
+                        char buf[64];
+                        SDL_snprintf(buf, sizeof(buf), "Spread: %.1f",
+                                     (double)state->smoke_spread);
+                        forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    }
+                    forge_ui_ctx_slider_layout(ui, "##smoke_spread",
+                                               &state->smoke_spread,
+                                               0.2f, 5.0f, SLIDER_HEIGHT);
+
+                    /* Opacity slider */
+                    {
+                        char buf[64];
+                        SDL_snprintf(buf, sizeof(buf), "Opacity: %.2f",
+                                     (double)state->smoke_opacity);
+                        forge_ui_ctx_label_layout(ui, buf, LABEL_HEIGHT);
+                    }
+                    forge_ui_ctx_slider_layout(ui, "##smoke_opacity",
+                                               &state->smoke_opacity,
+                                               0.05f, 1.0f, SLIDER_HEIGHT);
                 }
-                forge_ui_ctx_slider_layout(ui, "##drag",
-                                           &state->drag,
-                                           0.0f, 5.0f, SLIDER_HEIGHT);
 
                 forge_ui_ctx_label_layout(ui, "", LABEL_HEIGHT / 2);
 

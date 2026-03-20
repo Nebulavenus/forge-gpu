@@ -15,7 +15,7 @@
  *
  * Register layout (SDL GPU compute conventions):
  *   u0, space1 — RWStructuredBuffer<Particle>  (particle pool)
- *   u1, space1 — RWStructuredBuffer<uint>       (spawn counter, 1 element)
+ *   u1, space1 — RWStructuredBuffer<int>        (spawn counter, 1 element)
  *   b0, space2 — cbuffer SimUniforms            (per-frame parameters)
  *
  * SPDX-License-Identifier: Zlib
@@ -37,7 +37,7 @@ struct Particle {
 /* ── GPU resources ────────────────────────────────────────────────────── */
 
 RWStructuredBuffer<Particle> particles     : register(u0, space1);
-RWStructuredBuffer<uint>     spawn_counter : register(u1, space1);
+RWStructuredBuffer<int>      spawn_counter : register(u1, space1);
 
 cbuffer SimUniforms : register(b0, space2) {
     float  dt;               /* frame delta time (seconds)                    */
@@ -47,6 +47,10 @@ cbuffer SimUniforms : register(b0, space2) {
     float4 emitter_pos;      /* xyz = emitter world position, w = unused      */
     float4 emitter_params;   /* x = type (0=fountain,1=fire,2=smoke)          */
                              /* y = initial speed, z = size_min, w = size_max */
+    float4 extra_params;     /* per-emitter tunables (meaning varies by type) */
+                             /* fire:  x = spread multiplier (1.0 = default)  */
+                             /* smoke: x = rise speed mult, y = spread mult,  */
+                             /*        z = base opacity (0–1)                 */
 };
 
 /* ── Emitter type constants ───────────────────────────────────────────── */
@@ -102,22 +106,27 @@ Particle spawn_particle(uint idx, float emitter_type) {
         col   = float4(0.3, 0.8, 1.0, 1.0);  /* cyan */
     } else if (emitter_type < 1.5) {
         /* ── Fire: cohesive upward flame ─────────────────── */
-        pos.x += rand_range(rng, -0.1, 0.1);
-        pos.z += rand_range(rng, -0.1, 0.1);
-        vel.x = rand_range(rng, -0.2, 0.2);
+        /* extra_params.x = spread multiplier (1.0 = default torch width) */
+        float fire_spread = extra_params.x;
+        pos.x += rand_range(rng, -0.1 * fire_spread, 0.1 * fire_spread);
+        pos.z += rand_range(rng, -0.1 * fire_spread, 0.1 * fire_spread);
+        vel.x = rand_range(rng, -0.2 * fire_spread, 0.2 * fire_spread);
         vel.y = rand_range(rng, 1.5, 2.5);
-        vel.z = rand_range(rng, -0.2, 0.2);
+        vel.z = rand_range(rng, -0.2 * fire_spread, 0.2 * fire_spread);
         size  = rand_range(rng, 0.25, 0.45);
         life  = rand_range(rng, 0.6, 1.2);
         col   = float4(1.0, 0.9, 0.3, 1.0);  /* bright yellow */
     } else {
         /* ── Smoke: steady constant-speed rise, billows, fades ──── */
-        pos.x += rand_range(rng, -0.3, 0.3);
+        /* extra_params: x = rise speed mult, y = spread mult, z = opacity */
+        float smoke_rise   = extra_params.x;
+        float smoke_spread = extra_params.y;
+        pos.x += rand_range(rng, -0.3 * smoke_spread, 0.3 * smoke_spread);
         pos.y += 0.2;
-        pos.z += rand_range(rng, -0.3, 0.3);
-        vel.x = rand_range(rng, -0.15, 0.15);
-        vel.y = rand_range(rng, 1.2, 1.6);
-        vel.z = rand_range(rng, -0.15, 0.15);
+        pos.z += rand_range(rng, -0.3 * smoke_spread, 0.3 * smoke_spread);
+        vel.x = rand_range(rng, -0.15 * smoke_spread, 0.15 * smoke_spread);
+        vel.y = rand_range(rng, 1.2 * smoke_rise, 1.6 * smoke_rise);
+        vel.z = rand_range(rng, -0.15 * smoke_spread, 0.15 * smoke_spread);
         size  = rand_range(rng, 0.3, 0.5);
         life  = rand_range(rng, 4.0, 6.0);
         col   = float4(0.55, 0.53, 0.5, 0.5);
@@ -158,9 +167,10 @@ float4 compute_color(float4 start_color, float age_ratio, float emitter_type) {
         return float4(c, a);
     } else {
         /* Smoke: gray, alpha fades out gradually.
-         * Use fixed base alpha (0.6) rather than start_color.a to avoid
-         * cumulative fade — color is recomputed from scratch each frame. */
-        float base_alpha = 0.5;
+         * Use fixed base alpha rather than start_color.a to avoid
+         * cumulative fade — color is recomputed from scratch each frame.
+         * extra_params.z controls base opacity (0–1). */
+        float base_alpha = extra_params.z;
         float a = base_alpha * (1.0 - smoothstep(0.3, 1.0, age_ratio));
         return float4(0.5, 0.5, 0.5, a);
     }
@@ -203,7 +213,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
 
     if (p.pos_lifetime.w <= 0.0) {
         /* ── Dead particle: attempt to claim a spawn slot ─────────── */
-        uint prev;
+        int prev;
         InterlockedAdd(spawn_counter[0], -1, prev);
 
         if (prev > 0) {

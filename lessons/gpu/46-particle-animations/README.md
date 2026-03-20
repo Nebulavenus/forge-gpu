@@ -17,8 +17,9 @@
 A fire particle effect emits from the grid floor. Particles spawn upward with
 turbulence, transition through a yellow-orange-red color ramp, and fade out
 over their lifetime. Each particle is a camera-facing billboard quad with
-atlas-based animation. A UI panel controls spawn rate, gravity, drag, and
-emitter type.
+atlas-based animation. A UI panel provides per-emitter controls — gravity and
+drag for the fountain, spread for fire, and rise speed, spread, and opacity
+for smoke. Switching emitter types instantly re-fills the particle pool.
 
 ## Key concepts
 
@@ -33,7 +34,7 @@ reinitialize with random velocity and position based on the active emitter
 type.
 
 This architecture avoids CPU-GPU data transfer for per-particle state. The
-CPU only uploads two values per frame: the spawn budget (a single `uint32`)
+CPU only uploads two values per frame: the spawn budget (a single `int32`)
 and the simulation uniforms (delta time, gravity, drag, emitter parameters).
 
 ### Atomic spawn counter
@@ -44,17 +45,19 @@ atomically decrement this counter. If the previous value was positive, the
 thread claims a spawn slot and reinitializes its particle.
 
 ```hlsl
-uint prev;
+int prev;
 InterlockedAdd(spawn_counter[0], -1, prev);
 if (prev > 0) {
     p = spawn_particle(idx, emitter_type);
 }
 ```
 
-The counter is an unsigned integer, so concurrent decrements past zero cause
-wrap-around (0 becomes 0xFFFFFFFF). This is harmless — the `prev > 0` check
-still works correctly because only threads that read a positive previous value
-claim a spawn slot. The CPU resets the counter each frame.
+The counter is a **signed** integer. This is critical — using `uint` would
+cause the counter to wrap from 0 to 0xFFFFFFFF when threads decrement past
+zero, and `prev > 0` would evaluate to `true` for all subsequent threads
+(4 billion is greater than zero). With `int`, the counter goes negative and
+`prev > 0` correctly rejects further spawns. The CPU resets the counter each
+frame.
 
 ### Billboard rendering with vertex pulling
 
@@ -151,7 +154,7 @@ The lesson uses three shader stages with distinct register conventions:
 | Stage | Resource | HLSL Register |
 |-------|----------|---------------|
 | Compute | RW particle buffer | `u0, space1` |
-| Compute | RW spawn counter | `u1, space1` |
+| Compute | RW spawn counter (int) | `u1, space1` |
 | Compute | Uniform buffer | `b0, space2` |
 | Vertex | Storage buffer (particles) | `t0, space0` |
 | Vertex | Uniform buffer | `b0, space1` |
