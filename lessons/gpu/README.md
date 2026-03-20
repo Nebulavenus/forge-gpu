@@ -67,6 +67,7 @@ portable C interface.
 | [<img src="43-pipeline-skinned-animations/assets/screenshot.png" width="480" alt="Pipeline Skinned Animations"/>](43-pipeline-skinned-animations/) | [**43 — Pipeline Skinned Animations**](43-pipeline-skinned-animations/) | Skeletal animation with pipeline assets (.fskin joint hierarchy, .fanim keyframes), 72-byte skinned vertices, GPU joint storage buffer, transform animation |
 | [<img src="44-pipeline-morph-animations/assets/screenshot.png" width="480" alt="Pipeline Morph Animations"/>](44-pipeline-morph-animations/) | [**44 — Pipeline Morph Animations**](44-pipeline-morph-animations/) | Morph target (blend shape) animation with pipeline assets (.fmesh morph deltas, .fanim weight channels), CPU-blended deltas, GPU storage buffer displacement via SV_VertexID |
 | [<img src="45-scene-transparency-sorting/assets/screenshot.png" width="480" alt="Scene Transparency Sorting"/>](45-scene-transparency-sorting/) | [**45 — Scene Transparency Sorting**](45-scene-transparency-sorting/) | Two-pass draw splitting (opaque then sorted BLEND), centroid-based back-to-front sorting, alpha-masked shadow casting, runtime sorting toggle |
+| [<img src="46-particle-animations/assets/screenshot.png" width="480" alt="Particle Animations"/>](46-particle-animations/) | [**46 — Particle Animations**](46-particle-animations/) | GPU-driven particle system with compute shader simulation, billboard vertex pulling, texture atlas animation, atomic spawn recycling, additive and alpha blending |
 
 ## Prerequisites
 
