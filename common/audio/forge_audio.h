@@ -3175,9 +3175,13 @@ static inline void forge_audio_reverb_process(float *samples, int frames,
  *
  * Parameters:
  *   rate  — LFO frequency in Hz (0.1 - 5.0)
- *   depth — modulation depth in seconds (0.001 - 0.02)
+ *   depth — modulation depth in seconds (0.001 - 0.04)
  *   wet   — handled by effect chain wet/dry */
 
+/* Parameter ranges (shared by init and per-call validation) */
+#define FORGE_AUDIO_CHORUS_MIN_RATE   0.1f   /* Hz */
+#define FORGE_AUDIO_CHORUS_MAX_RATE   5.0f   /* Hz */
+#define FORGE_AUDIO_CHORUS_MIN_DEPTH  0.001f /* seconds */
 /* Maximum depth determines buffer size (40ms covers the full range) */
 #define FORGE_AUDIO_CHORUS_MAX_DEPTH  0.04f
 
@@ -3200,9 +3204,9 @@ static inline bool forge_audio_chorus_init(ForgeAudioChorus *ch,
     /* Sanitize non-finite inputs — NaN bypasses comparison-based clamping */
     if (!forge_isfinite(rate))  rate = FORGE_AUDIO_DEFAULT_CHORUS_RATE;
     if (!forge_isfinite(depth)) depth = FORGE_AUDIO_DEFAULT_CHORUS_DEPTH;
-    if (rate < 0.1f) rate = 0.1f;
-    if (rate > 5.0f) rate = 5.0f;
-    if (depth < 0.001f) depth = 0.001f;
+    if (rate < FORGE_AUDIO_CHORUS_MIN_RATE) rate = FORGE_AUDIO_CHORUS_MIN_RATE;
+    if (rate > FORGE_AUDIO_CHORUS_MAX_RATE) rate = FORGE_AUDIO_CHORUS_MAX_RATE;
+    if (depth < FORGE_AUDIO_CHORUS_MIN_DEPTH) depth = FORGE_AUDIO_CHORUS_MIN_DEPTH;
     if (depth > FORGE_AUDIO_CHORUS_MAX_DEPTH)
         depth = FORGE_AUDIO_CHORUS_MAX_DEPTH;
 
@@ -3252,7 +3256,22 @@ static inline void forge_audio_chorus_process(float *samples, int frames,
     if (!ch || !ch->buffer || !samples || frames <= 0 || ch->buf_frames <= 0)
         return;
 
-    float phase_inc = 2.0f * FORGE_PI * ch->rate / (float)FORGE_AUDIO_SAMPLE_RATE;
+    /* Sanitize public fields — reject NaN/Inf to prevent UB in (int) cast
+     * and poison propagation through the circular buffer.  Use local copies
+     * so the per-frame computation stays clean. */
+    float rate  = ch->rate;
+    float depth = ch->depth;
+    float phase = ch->phase;
+    if (!forge_isfinite(rate))  rate = FORGE_AUDIO_DEFAULT_CHORUS_RATE;
+    if (!forge_isfinite(depth)) depth = FORGE_AUDIO_DEFAULT_CHORUS_DEPTH;
+    if (rate < FORGE_AUDIO_CHORUS_MIN_RATE) rate = FORGE_AUDIO_CHORUS_MIN_RATE;
+    if (rate > FORGE_AUDIO_CHORUS_MAX_RATE) rate = FORGE_AUDIO_CHORUS_MAX_RATE;
+    if (depth < FORGE_AUDIO_CHORUS_MIN_DEPTH) depth = FORGE_AUDIO_CHORUS_MIN_DEPTH;
+    if (depth > FORGE_AUDIO_CHORUS_MAX_DEPTH) depth = FORGE_AUDIO_CHORUS_MAX_DEPTH;
+    if (!forge_isfinite(phase) || phase < 0.0f || phase >= 2.0f * FORGE_PI)
+        phase = 0.0f;
+
+    float phase_inc = 2.0f * FORGE_PI * rate / (float)FORGE_AUDIO_SAMPLE_RATE;
 
     for (int i = 0; i < frames; i++) {
         /* Write input to circular buffer */
@@ -3262,8 +3281,8 @@ static inline void forge_audio_chorus_process(float *samples, int frames,
         }
 
         /* LFO: modulated delay in samples */
-        float mod = ch->depth * (float)FORGE_AUDIO_SAMPLE_RATE
-                    * (0.5f + 0.5f * SDL_sinf(ch->phase));
+        float mod = depth * (float)FORGE_AUDIO_SAMPLE_RATE
+                    * (0.5f + 0.5f * SDL_sinf(phase));
 
         /* Read position with fractional part for linear interpolation */
         float read_f = (float)ch->write_pos - mod;
@@ -3287,14 +3306,17 @@ static inline void forge_audio_chorus_process(float *samples, int frames,
         }
 
         /* Advance LFO phase */
-        ch->phase += phase_inc;
-        if (ch->phase >= 2.0f * FORGE_PI)
-            ch->phase = SDL_fmodf(ch->phase, 2.0f * FORGE_PI);
+        phase += phase_inc;
+        if (phase >= 2.0f * FORGE_PI)
+            phase = SDL_fmodf(phase, 2.0f * FORGE_PI);
 
         /* Advance write position */
         ch->write_pos++;
         if (ch->write_pos >= ch->buf_frames) ch->write_pos = 0;
     }
+
+    /* Write back sanitized phase */
+    ch->phase = phase;
 }
 
 /* ── Presets ──────────────────────────────────────────────────────────

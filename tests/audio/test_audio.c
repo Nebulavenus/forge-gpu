@@ -3572,6 +3572,106 @@ static void test_chorus_zero_depth(void)
     END_TEST();
 }
 
+/* Chorus: NaN/Inf in public fields does not cause UB or poison output */
+static void test_chorus_nan_rejection(void)
+{
+    TEST("chorus NaN rejection");
+    ForgeAudioChorus ch;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 1.0f, 0.005f));
+
+    /* Fill delay buffer with valid data first */
+    float buf[128];
+    for (int i = 0; i < 128; i++) buf[i] = 0.5f;
+    forge_audio_chorus_process(buf, 64, &ch);
+
+    /* Poison all three public fields with NaN */
+    float nan_val = SDL_sqrtf(-1.0f);
+    ch.rate  = nan_val;
+    ch.depth = nan_val;
+    ch.phase = nan_val;
+
+    /* Process — output must be finite (fields sanitized internally) */
+    for (int i = 0; i < 128; i++) buf[i] = 0.5f;
+    forge_audio_chorus_process(buf, 64, &ch);
+
+    for (int i = 0; i < 128; i++) {
+        ASSERT_TRUE(forge_isfinite(buf[i]));
+    }
+
+    /* Phase should have been reset and advanced — must be finite */
+    ASSERT_TRUE(forge_isfinite(ch.phase));
+
+    /* Also test Inf — exercises the SDL_isinf path in forge_isfinite */
+    float zero = 0.0f;
+    float inf_val = 1.0f / zero;
+    ch.rate  = inf_val;
+    ch.depth = inf_val;
+    ch.phase = inf_val;
+
+    for (int i = 0; i < 128; i++) buf[i] = 0.5f;
+    forge_audio_chorus_process(buf, 64, &ch);
+
+    for (int i = 0; i < 128; i++) {
+        ASSERT_TRUE(forge_isfinite(buf[i]));
+    }
+    ASSERT_TRUE(forge_isfinite(ch.phase));
+
+    forge_audio_chorus_free(&ch);
+    END_TEST();
+}
+
+/* Chorus: finite out-of-range fields are clamped (not reset to default) */
+static void test_chorus_out_of_range_clamping(void)
+{
+    TEST("chorus out-of-range clamping");
+
+    /* ── Rate above max: compare against a reference at MAX_RATE ─── */
+    ForgeAudioChorus ch;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 1.0f, 0.005f));
+    ch.rate  = 99.0f;   /* way above MAX_RATE */
+    ch.depth = 0.005f;
+    ch.phase = 0.0f;
+
+    ForgeAudioChorus ref;
+    ASSERT_TRUE(forge_audio_chorus_init(&ref, FORGE_AUDIO_CHORUS_MAX_RATE, 0.005f));
+    ref.phase = 0.0f;
+
+    float buf_ch[128], buf_ref[128];
+    for (int i = 0; i < 128; i++) buf_ch[i] = buf_ref[i] = 0.5f;
+    forge_audio_chorus_process(buf_ch,  64, &ch);
+    forge_audio_chorus_process(buf_ref, 64, &ref);
+
+    /* Output must match the MAX_RATE reference, not the default rate */
+    for (int i = 0; i < 128; i++) {
+        ASSERT_NEAR(buf_ch[i], buf_ref[i], 1e-6f);
+    }
+    ASSERT_NEAR(ch.phase, ref.phase, 1e-6f);
+
+    forge_audio_chorus_free(&ch);
+    forge_audio_chorus_free(&ref);
+
+    /* ── Depth below min: compare against a reference at MIN_DEPTH ─ */
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, 1.0f, 0.01f));
+    ch.depth = 0.0001f;  /* way below MIN_DEPTH */
+    ch.phase = 0.0f;
+
+    ASSERT_TRUE(forge_audio_chorus_init(&ref, 1.0f, FORGE_AUDIO_CHORUS_MIN_DEPTH));
+    ref.phase = 0.0f;
+
+    for (int i = 0; i < 128; i++) buf_ch[i] = buf_ref[i] = 0.5f;
+    forge_audio_chorus_process(buf_ch,  64, &ch);
+    forge_audio_chorus_process(buf_ref, 64, &ref);
+
+    for (int i = 0; i < 128; i++) {
+        ASSERT_NEAR(buf_ch[i], buf_ref[i], 1e-6f);
+    }
+    ASSERT_NEAR(ch.phase, ref.phase, 1e-6f);
+
+    forge_audio_chorus_free(&ch);
+    forge_audio_chorus_free(&ref);
+    END_TEST();
+}
+
 /* Chain: empty chain passes through unchanged */
 static void test_chain_empty_passthrough(void)
 {
@@ -4086,6 +4186,8 @@ int main(int argc, char *argv[])
     test_chorus_dc();
     test_chorus_init_free();
     test_chorus_zero_depth();
+    test_chorus_nan_rejection();
+    test_chorus_out_of_range_clamping();
     test_chain_empty_passthrough();
     test_chain_bypass();
     test_chain_wet_dry_blend();
