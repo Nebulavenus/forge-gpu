@@ -5920,6 +5920,9 @@ int main(int argc, char *argv[])
     /* ── GJK Intersection (test_physics_gjk.c) ────────────────────────── */
     run_gjk_tests();
 
+    /* ── EPA Penetration Depth (test_physics_epa.c) ─────────────────── */
+    run_epa_tests();
+
     /* ── Production Hardening (test_physics_production.c) ─────────────── */
     run_production_tests();
 

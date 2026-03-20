@@ -2,7 +2,8 @@
  * Physics Test Framework — shared macros and counters
  *
  * Included by test_physics.c, test_physics_rbc.c, test_physics_shapes.c,
- * test_physics_sap.c, test_physics_gjk.c, and test_physics_production.c
+ * test_physics_sap.c, test_physics_gjk.c, test_physics_epa.c, and
+ * test_physics_production.c
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -49,6 +50,7 @@ void run_collision_shape_tests(void);
 void run_sap_tests(void);
 void run_gjk_tests(void);
 void run_production_tests(void);
+void run_epa_tests(void);
 
 /* ── Shared test constants ─────────────────────────────────────────────── */
 

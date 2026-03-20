@@ -12,6 +12,21 @@
  *   - Deterministic: same inputs always produce same outputs
  *   - Guard all divisions and normalizations against degenerate inputs
  *
+ * Performance note — unguarded hot-path functions:
+ *   forge_physics_shape_support() and forge_physics_gjk_support() do NOT
+ *   validate inputs for NaN/Inf. These are inner-loop functions called
+ *   hundreds to thousands of times per frame (twice per GJK iteration,
+ *   5-20 iterations per pair, tens of pairs per frame). The per-call
+ *   validation cost (13+ forge_isfinite checks) exceeds the actual
+ *   computation for simple shapes like spheres. Callers — primarily
+ *   forge_physics_gjk_intersect() and forge_physics_epa() — are
+ *   responsible for validating inputs before entering the GJK/EPA loop.
+ *   Passing NaN/Inf to these functions is undefined behavior.
+ *   Quaternions passed to these functions MUST be normalized — they do
+ *   not normalize internally. Non-unit quaternions produce incorrect
+ *   results for boxes and capsules (quat_conjugate is only the inverse
+ *   for unit quaternions).
+ *
  * Depends on: common/math/forge_math.h (vec3 type and operations)
  *             common/containers/forge_containers.h (dynamic arrays)
  *
@@ -3182,6 +3197,11 @@ static inline void forge_physics_rigid_body_set_inertia_from_shape(
  * farthest in a given direction. This is the geometric foundation of the
  * GJK (Gilbert-Johnson-Keerthi) algorithm for convex intersection testing.
  *
+ * UNGUARDED HOT PATH — no NaN/Inf validation on pos, orient, or dir.
+ * See the file header comment for rationale. Callers must ensure all
+ * inputs are finite and orient is a unit quaternion before calling.
+ * Passing NaN/Inf is undefined behavior (garbage output, no crash).
+ *
  * For each shape type:
  *
  *   Sphere:  support = center + normalize(dir) * radius
@@ -3195,13 +3215,14 @@ static inline void forge_physics_rigid_body_set_inertia_from_shape(
  *            hemisphere cap is farthest. Then find the support of that
  *            hemisphere (center + normalize(dir) * radius).
  *
- * If dir is zero or near-zero, returns the shape center (pos).
+ * If dir is zero or near-zero, returns pos (the shape center).
  *
  * Parameters:
- *   shape  — collision shape
- *   pos    — world-space position of the body
- *   orient — orientation quaternion of the body
- *   dir    — world-space direction to query (need not be normalized)
+ *   shape  — collision shape (NULL or invalid → returns pos)
+ *   pos    — world-space position (must be finite — not validated)
+ *   orient — unit quaternion (must be finite and normalized — not validated)
+ *   dir    — world-space direction (need not be normalized, must be finite
+ *            — not validated; zero-length → returns pos)
  *
  * Returns: world-space support point
  *
@@ -3214,34 +3235,37 @@ static inline vec3 forge_physics_shape_support(
     const ForgePhysicsCollisionShape *shape,
     vec3 pos, quat orient, vec3 dir)
 {
-    /* Safe fallback: use pos if finite, otherwise origin */
-    vec3 fallback = vec3_create(0.0f, 0.0f, 0.0f);
-    if (forge_isfinite(pos.x) && forge_isfinite(pos.y) && forge_isfinite(pos.z))
-        fallback = pos;
+    /* UNGUARDED HOT PATH — no NaN/Inf validation.
+     *
+     * This function is the innermost loop of GJK and EPA, called hundreds
+     * to thousands of times per physics frame. The per-call cost of
+     * validating all inputs (13 forge_isfinite checks on pos, dir, orient
+     * components, plus quaternion length and direction length checks)
+     * exceeds the actual support computation for spheres (~8 instructions)
+     * and is a significant fraction for boxes/capsules (~15-30
+     * instructions). For 50 broadphase pairs at 10 GJK iterations each,
+     * removing validation saves ~20,000 comparison instructions per frame.
+     *
+     * Callers (gjk_intersect, epa) validate inputs once before entering
+     * the iteration loop. Passing NaN/Inf position, direction, or
+     * orientation to this function is undefined behavior — results will
+     * be garbage, but no crash or memory corruption will occur.
+     *
+     * Quaternions MUST be normalized before calling. This function does
+     * not normalize internally — a non-unit quaternion produces incorrect
+     * support points for boxes and capsules because quat_conjugate() is
+     * only the inverse for unit quaternions. In practice, all callers
+     * already pass unit quaternions: rigid body integration normalizes
+     * every frame, and static bodies use quat_identity().
+     *
+     * The null-shape and zero-direction checks are retained because they
+     * guard against structural errors (missing shape setup, degenerate
+     * geometry), not transient numerical corruption. */
 
-    if (!shape || !forge_physics_shape_is_valid(shape)) return fallback;
-
-    /* Guard against non-finite inputs to prevent NaN propagation */
-    if (!forge_isfinite(pos.x) || !forge_isfinite(pos.y) || !forge_isfinite(pos.z))
-        return fallback;
-    if (!forge_isfinite(dir.x) || !forge_isfinite(dir.y) || !forge_isfinite(dir.z))
-        return fallback;
-    if (!forge_isfinite(orient.w) || !forge_isfinite(orient.x) ||
-        !forge_isfinite(orient.y) || !forge_isfinite(orient.z))
-        return fallback;
-
-    /* Normalize quaternion — conjugate of a non-unit quat is not its inverse,
-     * so box/capsule support would be incorrect without this. */
-    {
-        float qlen_sq = quat_length_sq(orient);
-        if (!forge_isfinite(qlen_sq) || !(qlen_sq > FORGE_PHYSICS_EPSILON))
-            return fallback;
-        if (SDL_fabsf(qlen_sq - 1.0f) > FORGE_PHYSICS_EPSILON)
-            orient = quat_normalize(orient);
-    }
+    if (!shape || !forge_physics_shape_is_valid(shape)) return pos;
 
     float dir_len = vec3_length(dir);
-    if (!forge_isfinite(dir_len) || dir_len < FORGE_PHYSICS_EPSILON) return fallback;
+    if (dir_len < FORGE_PHYSICS_EPSILON) return pos;
 
     vec3 dir_n = vec3_scale(dir, 1.0f / dir_len);
 
@@ -4015,17 +4039,22 @@ static inline bool gjk_validate_quat_(quat *q)
  * Both world-space positions and orientations are passed so that
  * forge_physics_shape_support() can handle oriented shapes (boxes, capsules).
  *
+ * UNGUARDED HOT PATH — no NaN/Inf validation on positions, directions, or
+ * quaternions. See the file header comment for rationale. Callers must
+ * ensure all inputs are finite before calling. Returns NaN-sentinel only
+ * for NULL or invalid shapes (structural errors).
+ *
  * Parameters:
  *   shape_a, shape_b  — collision shapes (non-NULL, must pass shape_is_valid)
- *   pos_a, pos_b      — world-space positions in meters (must be finite)
- *   orient_a, orient_b — unit quaternions (normalized internally if needed;
- *                        must be finite and non-zero-length)
+ *   pos_a, pos_b      — world-space positions in meters (must be finite —
+ *                        not validated, undefined behavior if NaN/Inf)
+ *   orient_a, orient_b — unit quaternions (must be finite and normalized —
+ *                        not validated, undefined behavior if non-unit)
  *   dir               — search direction, unitless (need not be normalized
- *                        but must be finite and non-zero)
+ *                        but must be finite and non-zero — not validated)
  *
  * Returns: fully populated ForgePhysicsGJKVertex, or NaN-sentinel vertex
- *          (all fields NaN) on invalid input — callers detect via
- *          !forge_isfinite(vec3_length_squared(v.point)).
+ *          (all fields NaN) on NULL/invalid shape input.
  *
  * See: Physics Lesson 09 — GJK Intersection Testing
  */
@@ -4034,41 +4063,41 @@ static inline ForgePhysicsGJKVertex forge_physics_gjk_support(
     const ForgePhysicsCollisionShape *shape_b, vec3 pos_b, quat orient_b,
     vec3 dir)
 {
-    /* On failure, return a NaN-sentinel vertex so callers can distinguish
-     * "invalid input" from a legitimate zero-point (coincident shapes).
-     * The existing finiteness checks in gjk_intersect catch NaN naturally. */
-    const float nan_val = SDL_sqrtf(-1.0f); /* portable NaN */
+    /* UNGUARDED HOT PATH — no NaN/Inf validation.
+     *
+     * This is the Minkowski difference support mapping, called twice per
+     * GJK iteration and twice per EPA iteration (once per shape). For a
+     * typical frame with 50 broadphase pairs and 10 GJK iterations each,
+     * this function executes ~1000 times. Each call previously paid ~30
+     * comparison instructions in NaN/Inf guards (positions, direction,
+     * quaternions, output point) — comparable to or exceeding the actual
+     * support computation for simple shapes.
+     *
+     * Input validation is the responsibility of the outer GJK/EPA entry
+     * points (forge_physics_gjk_intersect, forge_physics_epa), which
+     * validate positions, orientations, and shapes once before entering
+     * the iteration loop. Passing NaN/Inf to this function is undefined
+     * behavior — the returned vertex will contain garbage, but no crash
+     * or memory corruption will occur. The GJK loop's existing progress
+     * check (dot(new_point, dir) <= dot(closest, dir)) will detect the
+     * lack of progress from garbage support points and terminate.
+     *
+     * Quaternions MUST be normalized before calling. This function does
+     * not normalize internally — forge_physics_shape_support() uses
+     * quat_conjugate() which is only the inverse for unit quaternions.
+     * Non-unit quaternions produce incorrect Minkowski difference points.
+     *
+     * The null-shape check is retained because it guards against
+     * structural errors (missing shape setup), not numerical corruption. */
+
+    /* Null-shape guard — structural validity, not NaN/Inf */
+    const float nan_val = SDL_sqrtf(-1.0f);
     vec3 nan_vec = vec3_create(nan_val, nan_val, nan_val);
     ForgePhysicsGJKVertex fail = { nan_vec, nan_vec, nan_vec };
 
-    /* Validate shapes */
     if (!shape_a || !shape_b ||
         !forge_physics_shape_is_valid(shape_a) ||
         !forge_physics_shape_is_valid(shape_b))
-        return fail;
-
-    /* Validate positions */
-    if (!forge_isfinite(pos_a.x) || !forge_isfinite(pos_a.y) ||
-        !forge_isfinite(pos_a.z) ||
-        !forge_isfinite(pos_b.x) || !forge_isfinite(pos_b.y) ||
-        !forge_isfinite(pos_b.z))
-        return fail;
-
-    /* Validate direction — zero-length or overflowed direction has no
-     * meaningful support. Component Inf is caught first; squared-length
-     * overflow (finite components whose squares sum to Inf) is caught second. */
-    if (!forge_isfinite(dir.x) || !forge_isfinite(dir.y) ||
-        !forge_isfinite(dir.z))
-        return fail;
-    {
-        float dir_len2 = vec3_length_squared(dir);
-        if (!forge_isfinite(dir_len2) ||
-            dir_len2 <= FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON)
-            return fail;
-    }
-
-    /* Validate and normalize quaternions */
-    if (!gjk_validate_quat_(&orient_a) || !gjk_validate_quat_(&orient_b))
         return fail;
 
     ForgePhysicsGJKVertex v;
@@ -4076,12 +4105,6 @@ static inline ForgePhysicsGJKVertex forge_physics_gjk_support(
     v.sup_a = forge_physics_shape_support(shape_a, pos_a, orient_a, dir);
     v.sup_b = forge_physics_shape_support(shape_b, pos_b, orient_b, neg_dir);
     v.point = vec3_sub(v.sup_a, v.sup_b);
-
-    /* Guard against arithmetic overflow producing INF in the Minkowski
-     * difference point — this can happen when positions are very large */
-    if (!forge_isfinite(v.point.x) || !forge_isfinite(v.point.y) ||
-        !forge_isfinite(v.point.z))
-        return fail;
     return v;
 }
 
@@ -4754,6 +4777,797 @@ static inline ForgePhysicsGJKResult forge_physics_gjk_test_bodies(
     return forge_physics_gjk_intersect(
         shape_a, body_a->position, body_a->orientation,
         shape_b, body_b->position, body_b->orientation);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LESSON 10 — EPA Penetration Depth
+ *
+ * The Expanding Polytope Algorithm computes penetration depth, contact
+ * normal, and contact points from a GJK simplex that encloses the origin.
+ * GJK answers "do the shapes overlap?" — EPA answers "by how much and
+ * in which direction?"
+ *
+ * EPA takes the GJK tetrahedron (always count == 4 on intersection, inflated
+ * by gjk_inflate_simplex_) and iteratively expands it toward the boundary
+ * of the Minkowski difference. The closest face of the polytope to the
+ * origin defines the minimum translation vector (MTV): the shortest
+ * direction and distance to separate the shapes.
+ *
+ * Algorithm overview:
+ *   1. Build a polytope from the GJK tetrahedron (4 triangular faces)
+ *   2. Find the face closest to the origin
+ *   3. Query a support point in that face's normal direction
+ *   4. If the support point is not significantly farther than the face,
+ *      the closest face is on the Minkowski difference boundary — done
+ *   5. Otherwise, remove all faces visible from the new point, collect
+ *      the silhouette edges, and create new faces from each silhouette
+ *      edge to the new vertex
+ *   6. Repeat from step 2
+ *
+ * The closest-face distance monotonically increases, guaranteeing
+ * convergence.
+ *
+ * Reference: van den Bergen, "Proximity Queries and Penetration Depth
+ * Computation on 3D Game Objects" (GDC 2001).
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── EPA Constants ────────────────────────────────────────────────────────── */
+
+/* Maximum EPA iterations before giving up.
+ * Well above the typical 10–30 needed for sphere/box/capsule pairs.
+ * Matches GJK_MAX_ITERATIONS for consistency. */
+#define FORGE_PHYSICS_EPA_MAX_ITERATIONS  64
+
+/* Maximum vertices the polytope can hold.
+ * Starting with 4 (tetrahedron) + up to 64 iterations adding 1 each = 68.
+ * 128 provides generous headroom. */
+#define FORGE_PHYSICS_EPA_MAX_VERTICES   128
+
+/* Maximum faces the polytope can hold.
+ * Starting with 4 faces; each iteration removes some and adds some.
+ * Net face count grows roughly linearly with vertices. 256 provides
+ * generous headroom for the vertex cap of 128. */
+#define FORGE_PHYSICS_EPA_MAX_FACES      256
+
+/* Convergence tolerance for EPA.
+ * When the new support point distance minus the closest face distance
+ * is below this threshold, the algorithm has converged. Matches
+ * GJK_EPSILON for consistency. */
+#define FORGE_PHYSICS_EPA_EPSILON         1e-6f
+
+/* Maximum silhouette edges during polytope expansion.
+ * Each removed face contributes up to 3 edges; shared edges cancel.
+ * The silhouette of a convex region has at most as many edges as
+ * removed faces. 256 matches the face cap. */
+#define FORGE_PHYSICS_EPA_MAX_EDGES      256
+
+/* Sentinel distance for degenerate EPA faces.
+ * Used when a face's cross product is too small to compute a valid
+ * normal (collinear vertices). Must exceed any plausible squared
+ * distance in the simulation. Matches the GJK sentinel pattern. */
+#define FORGE_PHYSICS_EPA_SENTINEL_DIST  3.402823466e+38f
+
+/* ── EPA Types ────────────────────────────────────────────────────────────── */
+
+/* A single triangular face of the expanding polytope.
+ *
+ * Stores three vertex indices in counter-clockwise winding order when
+ * viewed from outside the polytope. The outward normal and distance to
+ * the origin are precomputed when the face is created and remain
+ * constant for the life of the face.
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ */
+typedef struct ForgePhysicsEPAFace {
+    int   a, b, c;  /* vertex indices into the polytope vertex array;    */
+                    /* valid range: [0, vert_count). CCW winding from    */
+                    /* outside — determines normal sign                  */
+    vec3  normal;   /* unit outward normal of this face (dimensionless)  */
+    float dist;     /* distance from origin to face plane (m, >= 0 for  */
+                    /* a valid polytope containing the origin)           */
+} ForgePhysicsEPAFace;
+
+/* A silhouette edge found during polytope expansion.
+ *
+ * When faces visible from a new support point are removed, the boundary
+ * between visible and non-visible faces forms the silhouette. Edges are
+ * stored in winding order (a→b) so new faces connecting each edge to
+ * the new vertex maintain consistent CCW orientation.
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ */
+typedef struct ForgePhysicsEPAEdge {
+    int a, b;       /* vertex indices forming the directed edge (a→b);   */
+                    /* valid range: [0, vert_count)                      */
+} ForgePhysicsEPAEdge;
+
+/* EPA result — penetration depth, contact normal, and contact points.
+ *
+ * When valid is true, the result contains the minimum translation vector
+ * (MTV): moving shape A by (normal * depth) separates the shapes.
+ *
+ * Contact points are reconstructed from the closest polytope face using
+ * barycentric interpolation of the original support points stored in
+ * each vertex.
+ *
+ * Parameters:
+ *   valid      — true if EPA converged successfully
+ *   normal     — unit penetration normal, from B toward A (matches
+ *                ForgePhysicsRBContact convention)
+ *   depth      — penetration depth in meters, >= 0
+ *   point_a    — contact point on shape A's surface (meters, world-space)
+ *   point_b    — contact point on shape B's surface (meters, world-space)
+ *   point      — midpoint of point_a and point_b (convenience)
+ *   iterations — number of expansion iterations (for diagnostics)
+ *
+ * Reference: van den Bergen, "Proximity Queries and Penetration Depth
+ * Computation on 3D Game Objects" (GDC 2001).
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ */
+typedef struct ForgePhysicsEPAResult {
+    bool  valid;       /* true if EPA converged to a valid result          */
+    vec3  normal;      /* unit penetration normal, from B toward A         */
+    float depth;       /* penetration depth (m), >= 0                      */
+    vec3  point_a;     /* contact point on shape A surface (m, world)      */
+    vec3  point_b;     /* contact point on shape B surface (m, world)      */
+    vec3  point;       /* midpoint contact = (point_a + point_b) / 2       */
+    int   iterations;  /* expansion iterations performed [0..EPA_MAX_ITER]  */
+} ForgePhysicsEPAResult;
+
+/* ── EPA Internal Helpers ─────────────────────────────────────────────────── */
+
+/* Compute an EPA face from three vertex indices.
+ *
+ * Calculates the face normal as the cross product of edges (b-a)×(c-a).
+ * The normal is oriented to point away from the polytope centroid. If
+ * the cross product is degenerate (collinear vertices), the face is
+ * returned with dist = FORGE_PHYSICS_EPA_SENTINEL_DIST as a sentinel.
+ *
+ * Parameters:
+ *   a, b, c   — vertex indices into the vertex array
+ *   verts     — the polytope vertex array
+ *   centroid  — centroid of the polytope (for outward-normal orientation)
+ *
+ * Returns: populated ForgePhysicsEPAFace with precomputed normal and dist.
+ */
+static inline ForgePhysicsEPAFace epa_make_face_(
+    int a, int b, int c,
+    const ForgePhysicsGJKVertex *verts,
+    vec3 centroid)
+{
+    ForgePhysicsEPAFace face;
+    face.a = a;
+    face.b = b;
+    face.c = c;
+
+    vec3 ab = vec3_sub(verts[b].point, verts[a].point);
+    vec3 ac = vec3_sub(verts[c].point, verts[a].point);
+    vec3 n  = vec3_cross(ab, ac);
+
+    float len_sq = vec3_length_squared(n);
+    if (len_sq < FORGE_PHYSICS_EPA_EPSILON * FORGE_PHYSICS_EPA_EPSILON) {
+        /* Degenerate face — collinear vertices */
+        face.normal = vec3_create(0.0f, 0.0f, 0.0f);
+        face.dist   = FORGE_PHYSICS_EPA_SENTINEL_DIST;
+        return face;
+    }
+
+    float inv_len = 1.0f / SDL_sqrtf(len_sq);
+    n = vec3_scale(n, inv_len);
+
+    /* Ensure the normal points away from the centroid.
+     * If dot(n, vertex_a - centroid) < 0, the normal faces inward — flip it
+     * and reverse the winding so the face remains CCW from outside. */
+    vec3 to_face = vec3_sub(verts[a].point, centroid);
+    if (vec3_dot(n, to_face) < 0.0f) {
+        n = vec3_scale(n, -1.0f);
+        face.b = c;
+        face.c = b;
+    }
+
+    face.normal = n;
+    /* Distance from origin to the face plane = dot(normal, any_vertex) */
+    face.dist = vec3_dot(n, verts[face.a].point);
+    /* Clamp to non-negative — the origin should be inside the polytope,
+     * but floating point can produce tiny negative values */
+    if (face.dist < 0.0f) face.dist = 0.0f;
+
+    return face;
+}
+
+/* Find the index of the face closest to the origin.
+ *
+ * Linear scan through all faces. Returns the index of the face with
+ * the smallest dist value. If face_count is 0, returns -1.
+ *
+ * Parameters:
+ *   faces      — array of polytope faces
+ *   face_count — number of valid faces in the array
+ *
+ * Returns: index of closest face, or -1 if no faces.
+ */
+static inline int epa_find_closest_face_(
+    const ForgePhysicsEPAFace *faces, int face_count)
+{
+    int   best_idx  = -1;
+    float best_dist = FORGE_PHYSICS_EPA_SENTINEL_DIST;
+
+    for (int i = 0; i < face_count; i++) {
+        if (faces[i].dist < best_dist) {
+            best_dist = faces[i].dist;
+            best_idx  = i;
+        }
+    }
+    return best_idx;
+}
+
+/* Add or cancel a silhouette edge.
+ *
+ * If the reverse edge (b, a) already exists in the edge list, both are
+ * removed (shared edge between two visible faces). Otherwise, the edge
+ * (a, b) is appended.
+ *
+ * This implements the standard EPA edge-bookkeeping: when removing faces
+ * visible from a new support point, each face contributes its 3 edges.
+ * Shared edges between two visible faces appear as (a,b) and (b,a) and
+ * cancel out. The remaining edges form the silhouette.
+ *
+ * Parameters:
+ *   edges      — edge array (modified in place)
+ *   edge_count — pointer to current edge count (modified in place)
+ *   a, b       — vertex indices forming the directed edge
+ *   max_edges  — capacity of the edge array
+ */
+static inline void epa_add_edge_(
+    ForgePhysicsEPAEdge *edges, int *edge_count,
+    int a, int b, int max_edges)
+{
+    /* Check for reverse edge — if found, remove it (shared edge cancels) */
+    for (int i = 0; i < *edge_count; i++) {
+        if (edges[i].a == b && edges[i].b == a) {
+            /* Remove by swapping with last */
+            edges[i] = edges[*edge_count - 1];
+            (*edge_count)--;
+            return;
+        }
+    }
+
+    /* No reverse found — add as new silhouette edge */
+    if (*edge_count >= max_edges) return; /* safety cap */
+    edges[*edge_count].a = a;
+    edges[*edge_count].b = b;
+    (*edge_count)++;
+}
+
+/* Project the origin onto a triangle face and compute barycentric coords.
+ *
+ * Given three polytope vertices forming a face, projects the origin (0,0,0)
+ * onto the face plane and computes the barycentric coordinates (u, v, w)
+ * such that origin_proj = u*A + v*B + w*C and u + v + w = 1.
+ *
+ * These coordinates are used to interpolate the original support points
+ * (sup_a, sup_b) to reconstruct the contact point on each shape's surface.
+ *
+ * Parameters:
+ *   verts — the polytope vertex array
+ *   face  — the face to project onto
+ *   u, v, w — output barycentric coordinates
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Section 3.4 —
+ * Barycentric coordinates.
+ */
+static inline void epa_barycentric_on_face_(
+    const ForgePhysicsGJKVertex *verts,
+    const ForgePhysicsEPAFace *face,
+    float *u, float *v, float *w)
+{
+    vec3 a = verts[face->a].point;
+    vec3 b = verts[face->b].point;
+    vec3 c = verts[face->c].point;
+
+    /* Project the origin onto the face plane. Since the origin is at
+     * (0,0,0), the projection is simply P = dist * normal, where dist
+     * is the face's precomputed distance from the origin to the plane. */
+    vec3 p = vec3_scale(face->normal, face->dist);
+
+    /* Compute barycentric coords of P in triangle ABC.
+     * Using the Gram-matrix (dot product) method — Ericson §3.4. */
+    vec3 v0 = vec3_sub(b, a);
+    vec3 v1 = vec3_sub(c, a);
+    vec3 v2 = vec3_sub(p, a);
+
+    float d00 = vec3_dot(v0, v0);
+    float d01 = vec3_dot(v0, v1);
+    float d11 = vec3_dot(v1, v1);
+    float d20 = vec3_dot(v2, v0);
+    float d21 = vec3_dot(v2, v1);
+
+    float denom = d00 * d11 - d01 * d01;
+    if (SDL_fabsf(denom) < FORGE_PHYSICS_EPA_EPSILON) {
+        /* Degenerate triangle — distribute weight equally */
+        *u = 1.0f / 3.0f;
+        *v = 1.0f / 3.0f;
+        *w = 1.0f / 3.0f;
+        return;
+    }
+
+    float inv_denom = 1.0f / denom;
+    float bary_v = (d11 * d20 - d01 * d21) * inv_denom;
+    float bary_w = (d00 * d21 - d01 * d20) * inv_denom;
+    float bary_u = 1.0f - bary_v - bary_w;
+
+    /* Clamp to handle numerical edge cases */
+    if (bary_u < 0.0f) bary_u = 0.0f;
+    if (bary_v < 0.0f) bary_v = 0.0f;
+    if (bary_w < 0.0f) bary_w = 0.0f;
+    float sum = bary_u + bary_v + bary_w;
+    if (sum > FORGE_PHYSICS_EPA_EPSILON) {
+        float inv_sum = 1.0f / sum;
+        bary_u *= inv_sum;
+        bary_v *= inv_sum;
+        bary_w *= inv_sum;
+    } else {
+        bary_u = 1.0f / 3.0f;
+        bary_v = 1.0f / 3.0f;
+        bary_w = 1.0f / 3.0f;
+    }
+
+    *u = bary_u;
+    *v = bary_v;
+    *w = bary_w;
+}
+
+/* ── EPA Public API ───────────────────────────────────────────────────────── */
+
+/* Compute penetration depth and contact information using EPA.
+ *
+ * Takes a GJK result that reports intersection (intersecting == true,
+ * simplex.count == 4) and expands the simplex into a polytope that
+ * approximates the boundary of the Minkowski difference. The closest
+ * face of the polytope to the origin defines the minimum translation
+ * vector (MTV).
+ *
+ * Algorithm:
+ *   1. Copy the 4 GJK simplex vertices into the polytope vertex array
+ *   2. Build 4 triangular faces from the tetrahedron with outward normals
+ *   3. Loop:
+ *      a. Find the face closest to the origin
+ *      b. Query a new support point in that face's normal direction
+ *      c. If dot(new_point, normal) - face_dist < EPA_EPSILON → converged
+ *      d. Remove all faces visible from the new point
+ *      e. Collect silhouette edges from removed faces
+ *      f. Create new faces from each silhouette edge to the new vertex
+ *   4. Reconstruct contact points via barycentric interpolation
+ *
+ * The closest-face distance increases monotonically, guaranteeing
+ * convergence within EPA_MAX_ITERATIONS for any convex shape pair.
+ *
+ * Parameters:
+ *   gjk_result — result from forge_physics_gjk_intersect(); must have
+ *                intersecting == true and simplex.count == 4
+ *   shape_a    — collision shape A (must pass forge_physics_shape_is_valid)
+ *   pos_a      — world-space position of shape A (meters, must be finite)
+ *   orient_a   — orientation of shape A (unit quaternion; normalized
+ *                internally via gjk_validate_quat_ — same as gjk_intersect)
+ *   shape_b    — collision shape B (must pass forge_physics_shape_is_valid)
+ *   pos_b      — world-space position of shape B (meters, must be finite)
+ *   orient_b   — orientation of shape B (unit quaternion; same as orient_a)
+ *
+ * Returns:
+ *   ForgePhysicsEPAResult — valid == true if converged. normal points from
+ *   B toward A. depth is the penetration depth in meters. point_a and
+ *   point_b are the contact points on each shape's surface.
+ *
+ * Returns invalid (valid == false) if:
+ *   - GJK result is not intersecting or simplex count != 4
+ *   - Any input pointer is NULL or shape is invalid
+ *   - Quaternion is non-finite or zero-length (rejected by gjk_validate_quat_)
+ *   - Polytope degenerates (all faces become invalid)
+ *   - Vertex or face arrays overflow
+ *
+ * Stack budget: ~14 KB (128 GJKVertex × 36 B + 256 EPAFace × 28 B +
+ * 256 EPAEdge × 8 B). Safe on desktop; may need heap allocation for
+ * embedded targets with small stacks.
+ *
+ * Usage:
+ *   ForgePhysicsGJKResult gjk = forge_physics_gjk_intersect(
+ *       &shape_a, pos_a, orient_a, &shape_b, pos_b, orient_b);
+ *   if (gjk.intersecting) {
+ *       ForgePhysicsEPAResult epa = forge_physics_epa(
+ *           &gjk, &shape_a, pos_a, orient_a, &shape_b, pos_b, orient_b);
+ *       if (epa.valid) {
+ *           SDL_Log("Depth: %.4f, Normal: (%.2f, %.2f, %.2f)",
+ *                   epa.depth, epa.normal.x, epa.normal.y, epa.normal.z);
+ *       }
+ *   }
+ *
+ * Reference: van den Bergen, "Proximity Queries and Penetration Depth
+ * Computation on 3D Game Objects" (GDC 2001).
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ */
+static inline ForgePhysicsEPAResult forge_physics_epa(
+    const ForgePhysicsGJKResult *gjk_result,
+    const ForgePhysicsCollisionShape *shape_a, vec3 pos_a, quat orient_a,
+    const ForgePhysicsCollisionShape *shape_b, vec3 pos_b, quat orient_b)
+{
+    ForgePhysicsEPAResult result;
+    SDL_memset(&result, 0, sizeof(result));
+
+    /* ── Validate inputs ──────────────────────────────────────────────── */
+    if (!gjk_result || !shape_a || !shape_b) return result;
+    if (!gjk_result->intersecting) return result;
+    if (gjk_result->simplex.count != 4) return result;
+    if (!forge_physics_shape_is_valid(shape_a) ||
+        !forge_physics_shape_is_valid(shape_b))
+        return result;
+
+    /* Validate positions for finite values */
+    if (!forge_isfinite(pos_a.x) || !forge_isfinite(pos_a.y) ||
+        !forge_isfinite(pos_a.z))
+        return result;
+    if (!forge_isfinite(pos_b.x) || !forge_isfinite(pos_b.y) ||
+        !forge_isfinite(pos_b.z))
+        return result;
+
+    /* Validate and normalize orientations — use the same helper as
+     * gjk_intersect so that EPA expands with identical quaternions to
+     * those used when building the GJK simplex. Without this, slightly
+     * off-unit body orientations would produce different support points
+     * in the EPA expansion than in the GJK simplex, skewing depth/normal. */
+    if (!gjk_validate_quat_(&orient_a) || !gjk_validate_quat_(&orient_b))
+        return result;
+
+    /* ── Initialize polytope from GJK tetrahedron ─────────────────────── */
+    ForgePhysicsGJKVertex verts[FORGE_PHYSICS_EPA_MAX_VERTICES];
+    ForgePhysicsEPAFace   faces[FORGE_PHYSICS_EPA_MAX_FACES];
+    int vert_count = 4;
+    int face_count = 0;
+
+    /* Copy GJK simplex vertices and validate for finite values */
+    for (int i = 0; i < 4; i++) {
+        verts[i] = gjk_result->simplex.verts[i];
+        if (!forge_isfinite(vec3_length_squared(verts[i].point)))
+            return result;
+    }
+
+    /* Compute the centroid of the initial tetrahedron as the interior
+     * reference point for outward-normal orientation. The centroid is
+     * guaranteed to be strictly inside the tetrahedron (assuming the
+     * tetrahedron has non-zero volume, which GJK inflation ensures).
+     *
+     * Note: the centroid is computed once and not updated as the polytope
+     * grows. This is safe because epa_make_face_ only needs any point
+     * that is strictly interior to the polytope, and the centroid of the
+     * initial tetrahedron remains interior as the polytope only expands
+     * outward from it. */
+    vec3 interior_ref = vec3_create(0.0f, 0.0f, 0.0f);
+    for (int i = 0; i < 4; i++) {
+        interior_ref = vec3_add(interior_ref, verts[i].point);
+    }
+    interior_ref = vec3_scale(interior_ref, 0.25f);
+
+    /* Build 4 faces from the tetrahedron.
+     * Vertices: 0, 1, 2, 3. The four faces are:
+     *   (0,1,2), (0,2,3), (0,3,1), (1,3,2)
+     * epa_make_face_ orients normals outward using the interior ref. */
+    faces[0] = epa_make_face_(0, 1, 2, verts, interior_ref);
+    faces[1] = epa_make_face_(0, 2, 3, verts, interior_ref);
+    faces[2] = epa_make_face_(0, 3, 1, verts, interior_ref);
+    faces[3] = epa_make_face_(1, 3, 2, verts, interior_ref);
+    face_count = 4;
+
+    /* Check for degenerate initial polytope */
+    for (int i = 0; i < face_count; i++) {
+        if (faces[i].dist >= FORGE_PHYSICS_EPA_SENTINEL_DIST) {
+            /* Degenerate face in initial polytope — cannot proceed */
+            return result;
+        }
+    }
+
+    /* ── Main EPA loop ────────────────────────────────────────────────── */
+    int closest_face = -1;
+    ForgePhysicsEPAFace saved_closest;  /* best face before failed expansion */
+    bool use_saved = false;             /* true if expansion failed mid-mutation */
+
+    for (int iter = 0; iter < FORGE_PHYSICS_EPA_MAX_ITERATIONS; iter++) {
+        result.iterations = iter + 1;
+
+        /* Find the face closest to the origin */
+        closest_face = epa_find_closest_face_(faces, face_count);
+        if (closest_face < 0) return result; /* no faces — degenerate */
+
+        ForgePhysicsEPAFace *cf = &faces[closest_face];
+
+        /* Query a new support point in the closest face's normal direction */
+        ForgePhysicsGJKVertex new_vert = forge_physics_gjk_support(
+            shape_a, pos_a, orient_a,
+            shape_b, pos_b, orient_b,
+            cf->normal);
+
+        /* Check for invalid support point */
+        if (!forge_isfinite(vec3_length_squared(new_vert.point)))
+            return result;
+
+        /* Convergence check: has the new support point extended the
+         * polytope significantly beyond the closest face? */
+        float new_dist = vec3_dot(cf->normal, new_vert.point);
+        if (new_dist - cf->dist < FORGE_PHYSICS_EPA_EPSILON) {
+            /* Converged — the closest face is on the Minkowski boundary */
+            break;
+        }
+
+        /* Check vertex capacity */
+        if (vert_count >= FORGE_PHYSICS_EPA_MAX_VERTICES)
+            break; /* capacity reached — use best result so far */
+
+        /* Add new vertex */
+        int new_idx = vert_count;
+        verts[vert_count++] = new_vert;
+
+        /* Save the closest face before mutating the face array. If
+         * expansion fails (degenerate faces, capacity overflow), we
+         * use this saved face for the result instead of rescanning
+         * a torn polytope with missing faces. */
+        saved_closest = *cf;
+
+        /* Remove all faces visible from the new point and collect
+         * silhouette edges. A face is visible if the new point is on
+         * the positive side of the face plane:
+         *   dot(face_normal, new_point - face_vertex) > 0
+         * which simplifies to:
+         *   dot(face_normal, new_point) > face_dist */
+        ForgePhysicsEPAEdge edges[FORGE_PHYSICS_EPA_MAX_EDGES];
+        int edge_count = 0;
+
+        int i = 0;
+        while (i < face_count) {
+            float d = vec3_dot(faces[i].normal, new_vert.point);
+            if (d > faces[i].dist + FORGE_PHYSICS_EPA_EPSILON) {
+                /* Face is visible from new point — remove it and add
+                 * its edges to the silhouette edge list */
+                epa_add_edge_(edges, &edge_count,
+                              faces[i].a, faces[i].b,
+                              FORGE_PHYSICS_EPA_MAX_EDGES);
+                epa_add_edge_(edges, &edge_count,
+                              faces[i].b, faces[i].c,
+                              FORGE_PHYSICS_EPA_MAX_EDGES);
+                epa_add_edge_(edges, &edge_count,
+                              faces[i].c, faces[i].a,
+                              FORGE_PHYSICS_EPA_MAX_EDGES);
+
+                /* Remove face by swapping with last */
+                faces[i] = faces[face_count - 1];
+                face_count--;
+                /* Don't increment i — re-check the swapped face */
+            } else {
+                i++;
+            }
+        }
+
+        /* Create new faces from each silhouette edge to the new vertex.
+         * The edge winding (a→b) combined with the new vertex produces
+         * a CCW face when viewed from outside. */
+        bool expansion_ok = true;
+        for (int e = 0; e < edge_count; e++) {
+            if (face_count >= FORGE_PHYSICS_EPA_MAX_FACES) {
+                /* Face capacity exhausted mid-expansion — the polytope
+                 * has holes and cannot produce a valid result. */
+                expansion_ok = false;
+                break;
+            }
+
+            ForgePhysicsEPAFace new_face = epa_make_face_(
+                edges[e].a, edges[e].b, new_idx,
+                verts, interior_ref);
+
+            /* Degenerate face (collinear edge + vertex) — the polytope
+             * will have a hole where this face should be. Stop expanding
+             * immediately; adding more faces to a broken polytope is
+             * pointless. The outer loop will use the best result so far. */
+            if (new_face.dist >= FORGE_PHYSICS_EPA_SENTINEL_DIST) {
+                expansion_ok = false;
+                break;
+            }
+
+            faces[face_count++] = new_face;
+        }
+
+        /* If expansion failed (capacity or degenerate faces), stop
+         * iterating — the polytope may have holes. Use the saved
+         * closest face from before the mutation, not the torn hull. */
+        if (!expansion_ok) {
+            use_saved = true;
+            break;
+        }
+
+        /* If no faces remain, the polytope has degenerated */
+        if (face_count == 0) return result;
+    }
+
+    /* ── Extract result from closest face ─────────────────────────────── */
+    const ForgePhysicsEPAFace *cf;
+    if (use_saved) {
+        /* Expansion failed mid-mutation — the face array has holes.
+         * Use the saved closest face from before the failed expansion. */
+        cf = &saved_closest;
+    } else {
+        closest_face = epa_find_closest_face_(faces, face_count);
+        if (closest_face < 0) return result;
+        cf = &faces[closest_face];
+    }
+
+    /* Validate the closest face has a finite normal and distance */
+    if (!forge_isfinite(cf->dist) || !forge_isfinite(cf->normal.x) ||
+        !forge_isfinite(cf->normal.y) || !forge_isfinite(cf->normal.z))
+        return result;
+
+    result.valid  = true;
+    /* Negate the outward normal to match the physics convention:
+     * "normal from B toward A" (same as ForgePhysicsRBContact).
+     *
+     * The EPA polytope represents the Minkowski difference A − B. Its
+     * outward face normal N points away from the origin, in the direction
+     * that separates A − B from the origin. To separate the shapes,
+     * move A by −N·depth or equivalently move B by N·depth. The contact
+     * convention is that the normal points from B toward A, which is −N:
+     * applying a positive impulse along −N pushes A away from B. */
+    result.normal = vec3_scale(cf->normal, -1.0f);
+    result.depth  = cf->dist;
+
+    /* Reconstruct contact points using barycentric interpolation.
+     * The closest face has three vertices, each storing the original
+     * support points from shape A and shape B. The barycentric
+     * coordinates of the origin's projection onto the face let us
+     * interpolate to find the contact point on each shape's surface. */
+    float u, v, w;
+    epa_barycentric_on_face_(verts, cf, &u, &v, &w);
+
+    vec3 sa_a = verts[cf->a].sup_a;
+    vec3 sa_b = verts[cf->b].sup_a;
+    vec3 sa_c = verts[cf->c].sup_a;
+
+    vec3 sb_a = verts[cf->a].sup_b;
+    vec3 sb_b = verts[cf->b].sup_b;
+    vec3 sb_c = verts[cf->c].sup_b;
+
+    /* point_a = u * sup_a_A + v * sup_a_B + w * sup_a_C */
+    result.point_a = vec3_add(
+        vec3_add(vec3_scale(sa_a, u), vec3_scale(sa_b, v)),
+        vec3_scale(sa_c, w));
+
+    /* point_b = u * sup_b_A + v * sup_b_B + w * sup_b_C */
+    result.point_b = vec3_add(
+        vec3_add(vec3_scale(sb_a, u), vec3_scale(sb_b, v)),
+        vec3_scale(sb_c, w));
+
+    /* Midpoint contact */
+    result.point = vec3_scale(vec3_add(result.point_a, result.point_b), 0.5f);
+
+    /* Final sanity check — reject if any output is non-finite */
+    if (!forge_isfinite(vec3_length_squared(result.point_a)) ||
+        !forge_isfinite(vec3_length_squared(result.point_b)) ||
+        !forge_isfinite(vec3_length_squared(result.point)) ||
+        !forge_isfinite(result.depth)) {
+        result.valid = false;
+        return result;
+    }
+
+    return result;
+}
+
+/* Compute EPA penetration depth for two rigid bodies.
+ *
+ * Convenience wrapper that extracts position and orientation from rigid
+ * body structs and delegates to forge_physics_epa(). Mirrors the pattern
+ * of forge_physics_gjk_test_bodies().
+ *
+ * Parameters:
+ *   gjk_result — GJK intersection result (must be intersecting, count==4)
+ *   body_a     — rigid body A (must not be NULL)
+ *   shape_a    — collision shape for body A
+ *   body_b     — rigid body B (must not be NULL)
+ *   shape_b    — collision shape for body B
+ *
+ * Returns: ForgePhysicsEPAResult — valid == false on NULL input.
+ *
+ * Usage:
+ *   ForgePhysicsGJKResult gjk = forge_physics_gjk_test_bodies(
+ *       &body_a, &shape_a, &body_b, &shape_b);
+ *   if (gjk.intersecting) {
+ *       ForgePhysicsEPAResult epa = forge_physics_epa_bodies(
+ *           &gjk, &body_a, &shape_a, &body_b, &shape_b);
+ *   }
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ */
+static inline ForgePhysicsEPAResult forge_physics_epa_bodies(
+    const ForgePhysicsGJKResult *gjk_result,
+    const ForgePhysicsRigidBody *body_a,
+    const ForgePhysicsCollisionShape *shape_a,
+    const ForgePhysicsRigidBody *body_b,
+    const ForgePhysicsCollisionShape *shape_b)
+{
+    ForgePhysicsEPAResult empty;
+    SDL_memset(&empty, 0, sizeof(empty));
+
+    if (!body_a || !body_b || !shape_a || !shape_b || !gjk_result)
+        return empty;
+
+    return forge_physics_epa(
+        gjk_result,
+        shape_a, body_a->position, body_a->orientation,
+        shape_b, body_b->position, body_b->orientation);
+}
+
+/* Run GJK + EPA and produce a rigid body contact in one call.
+ *
+ * Combines the full narrowphase pipeline: GJK intersection test followed
+ * by EPA penetration depth computation. If both succeed, populates a
+ * ForgePhysicsRBContact with the contact normal, point, depth, and
+ * friction coefficients.
+ *
+ * This is the intended entry point for physics simulation loops that
+ * need convex-convex contact generation between arbitrary shape pairs.
+ *
+ * Parameters:
+ *   body_a, body_b     — rigid bodies (must not be NULL)
+ *   shape_a, shape_b   — collision shapes (must be valid)
+ *   idx_a, idx_b       — body indices for the contact struct
+ *   mu_s               — static friction coefficient, >= 0
+ *   mu_d               — dynamic friction coefficient, >= 0
+ *   out                — output contact (must not be NULL)
+ *
+ * Returns: true if a contact was generated, false if shapes are
+ *          separated or inputs are invalid.
+ *
+ * Usage:
+ *   ForgePhysicsRBContact contact;
+ *   if (forge_physics_gjk_epa_contact(
+ *           &bodies[i], &shapes[i],
+ *           &bodies[j], &shapes[j],
+ *           i, j, 0.6f, 0.4f, &contact))
+ *   {
+ *       forge_physics_rb_resolve_contact(
+ *           &contact, bodies, num_bodies, PHYSICS_DT);
+ *   }
+ *
+ * See: Physics Lesson 10 — EPA Penetration Depth
+ */
+static inline bool forge_physics_gjk_epa_contact(
+    const ForgePhysicsRigidBody *body_a,
+    const ForgePhysicsCollisionShape *shape_a,
+    const ForgePhysicsRigidBody *body_b,
+    const ForgePhysicsCollisionShape *shape_b,
+    int idx_a, int idx_b,
+    float mu_s, float mu_d,
+    ForgePhysicsRBContact *out)
+{
+    if (!body_a || !body_b || !shape_a || !shape_b || !out) return false;
+
+    /* Step 1: GJK intersection test */
+    ForgePhysicsGJKResult gjk = forge_physics_gjk_test_bodies(
+        body_a, shape_a, body_b, shape_b);
+    if (!gjk.intersecting) return false;
+
+    /* Step 2: EPA penetration depth */
+    ForgePhysicsEPAResult epa = forge_physics_epa_bodies(
+        &gjk, body_a, shape_a, body_b, shape_b);
+    if (!epa.valid) return false;
+
+    /* Step 3: Populate contact */
+    out->point       = epa.point;
+    out->normal      = epa.normal;
+    out->penetration = epa.depth;
+    out->body_a      = idx_a;
+    out->body_b      = idx_b;
+    out->static_friction  = (forge_isfinite(mu_s) && mu_s > 0.0f) ? mu_s : 0.0f;
+    out->dynamic_friction = (forge_isfinite(mu_d) && mu_d > 0.0f) ? mu_d : 0.0f;
+
+    return true;
 }
 
 #endif /* FORGE_PHYSICS_H */

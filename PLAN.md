@@ -10,7 +10,7 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Engine Lessons 01–13** — From Intro to C through Stretchy Containers
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Physics Lessons 01–09** — From Point Particles through GJK Intersection
+- **Physics Lessons 01–10** — From Point Particles through EPA Penetration Depth
 - **Audio Lessons 01–06** — From Audio Basics through DSP Effects
 - **Asset Lessons 01–13** — From Pipeline Scaffold through Morph Targets
 
@@ -49,7 +49,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 - [x] **Physics Lesson 08 — Sweep-and-Prune Broadphase** — Sort-and-sweep broadphase using L07's AABBs; axis projection and pair tracking; incremental updates for moving objects
 - [x] **Physics Lesson 09 — GJK Intersection Testing** — Gilbert-Johnson-Keerthi algorithm for boolean intersection testing; Minkowski difference intuition; simplex evolution; support function interface from L07
-- [ ] **Physics Lesson 10 — EPA Penetration Depth** — Expanding Polytope Algorithm for penetration depth and contact normal from a GJK simplex; polytope expansion and convergence; connecting EPA output to contact generation
+- [x] **Physics Lesson 10 — EPA Penetration Depth** — Expanding Polytope Algorithm for penetration depth and contact normal from a GJK simplex; polytope expansion and convergence; connecting EPA output to contact generation
 - [ ] **Physics Lesson 11 — Contact Manifold** — Generating contact points from GJK/EPA results; contact point reduction (Sutherland-Hodgman clipping); manifold caching and persistent contact IDs across frames
 
 ### Rigid Body Dynamics

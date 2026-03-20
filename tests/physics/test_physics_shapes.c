@@ -861,61 +861,10 @@ static float cs_make_inf(void) { volatile float z = 0.0f; return 1.0f / z; }
 #define CS_NAN_VAL  cs_make_nan()
 #define CS_INF_VAL  cs_make_inf()
 
-static void test_support_nan_position(void)
-{
-    TEST("CS_support_nan_position_returns_origin")
-    ForgePhysicsCollisionShape s = forge_physics_shape_sphere(CS_SPHERE_RADIUS);
-    vec3 nan_pos = vec3_create(CS_NAN_VAL, 0.0f, 0.0f);
-    vec3 sp = forge_physics_shape_support(&s, nan_pos, quat_identity(),
-        vec3_create(1, 0, 0));
-    /* NaN pos → fallback is origin (0,0,0) */
-    ASSERT_TRUE(forge_isfinite(sp.x));
-    ASSERT_NEAR(sp.x, 0.0f, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.y, 0.0f, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.z, 0.0f, CS_SUPPORT_EPS);
-    END_TEST();
-}
-
-static void test_support_nan_direction(void)
-{
-    TEST("CS_support_nan_direction_returns_pos")
-    ForgePhysicsCollisionShape s = forge_physics_shape_sphere(CS_SPHERE_RADIUS);
-    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
-    vec3 nan_dir = vec3_create(CS_NAN_VAL, 0.0f, 0.0f);
-    vec3 sp = forge_physics_shape_support(&s, pos, quat_identity(), nan_dir);
-    /* Finite pos + NaN dir → fallback is pos */
-    ASSERT_NEAR(sp.x, CS_TRANSLATE_X, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.y, CS_TRANSLATE_Y, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.z, CS_TRANSLATE_Z, CS_SUPPORT_EPS);
-    END_TEST();
-}
-
-static void test_support_nan_orientation(void)
-{
-    TEST("CS_support_nan_orientation_returns_pos")
-    ForgePhysicsCollisionShape s = forge_physics_shape_sphere(CS_SPHERE_RADIUS);
-    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
-    quat nan_orient = quat_create(CS_NAN_VAL, 0.0f, 0.0f, 0.0f);
-    vec3 sp = forge_physics_shape_support(&s, pos, nan_orient,
-        vec3_create(1, 0, 0));
-    ASSERT_NEAR(sp.x, CS_TRANSLATE_X, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.y, CS_TRANSLATE_Y, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.z, CS_TRANSLATE_Z, CS_SUPPORT_EPS);
-    END_TEST();
-}
-
-static void test_support_inf_direction(void)
-{
-    TEST("CS_support_inf_direction_returns_pos")
-    ForgePhysicsCollisionShape s = forge_physics_shape_sphere(CS_SPHERE_RADIUS);
-    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
-    vec3 inf_dir = vec3_create(CS_INF_VAL, 0.0f, 0.0f);
-    vec3 sp = forge_physics_shape_support(&s, pos, quat_identity(), inf_dir);
-    ASSERT_NEAR(sp.x, CS_TRANSLATE_X, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.y, CS_TRANSLATE_Y, CS_SUPPORT_EPS);
-    ASSERT_NEAR(sp.z, CS_TRANSLATE_Z, CS_SUPPORT_EPS);
-    END_TEST();
-}
+/* NaN/Inf validation tests for forge_physics_shape_support() removed —
+ * the function no longer guards against non-finite inputs for performance
+ * (see forge_physics.h header comment). Callers are responsible for
+ * ensuring finite inputs before entering the GJK/EPA inner loop. */
 
 static void test_aabb_nan_position(void)
 {
@@ -1007,57 +956,13 @@ static void test_aabb_expand_nan_margin(void)
 /* ═══════════════════════════════════════════════════════════════════════════
  * Non-unit quaternion normalization tests
  *
- * Verifies that shape_support and shape_compute_aabb internally normalize
- * non-unit quaternions, producing the same results as a pre-normalized quat.
+ * Verifies that shape_compute_aabb internally normalizes non-unit
+ * quaternions, producing the same results as a pre-normalized quat.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void test_support_nonunit_quat_box(void)
-{
-    TEST("CS_support_nonunit_quat_box")
-    vec3 he = vec3_create(CS_BOX_HALF_X, CS_BOX_HALF_Y, CS_BOX_HALF_Z);
-    ForgePhysicsCollisionShape s = forge_physics_shape_box(he);
-    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
-    vec3 dir = vec3_create(CS_DET_DIR_X, CS_DET_DIR_Y, CS_DET_DIR_Z);
-
-    /* Unit quaternion — reference result */
-    quat unit_q = quat_from_euler(CS_ROT_45_DEG, CS_DET_PITCH, 0.0f);
-    vec3 ref = forge_physics_shape_support(&s, pos, unit_q, dir);
-
-    /* Scaled (non-unit) quaternion — same rotation, length != 1 */
-    quat scaled_q = (quat){ unit_q.w * CS_NONUNIT_QUAT_SCALE,
-                            unit_q.x * CS_NONUNIT_QUAT_SCALE,
-                            unit_q.y * CS_NONUNIT_QUAT_SCALE,
-                            unit_q.z * CS_NONUNIT_QUAT_SCALE };
-    vec3 result = forge_physics_shape_support(&s, pos, scaled_q, dir);
-
-    ASSERT_NEAR(result.x, ref.x, CS_SUPPORT_EPS);
-    ASSERT_NEAR(result.y, ref.y, CS_SUPPORT_EPS);
-    ASSERT_NEAR(result.z, ref.z, CS_SUPPORT_EPS);
-    END_TEST();
-}
-
-static void test_support_nonunit_quat_capsule(void)
-{
-    TEST("CS_support_nonunit_quat_capsule")
-    ForgePhysicsCollisionShape s = forge_physics_shape_capsule(
-        CS_CAPSULE_RADIUS, CS_CAPSULE_HALF_H);
-    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
-    vec3 dir = vec3_create(CS_DET_DIR_X, CS_DET_DIR_Y, CS_DET_DIR_Z);
-
-    quat unit_q = quat_from_euler(CS_ROT_45_DEG, CS_DET_PITCH, 0.0f);
-    vec3 ref = forge_physics_shape_support(&s, pos, unit_q, dir);
-
-    quat scaled_q = (quat){ unit_q.w * CS_NONUNIT_QUAT_SCALE,
-                            unit_q.x * CS_NONUNIT_QUAT_SCALE,
-                            unit_q.y * CS_NONUNIT_QUAT_SCALE,
-                            unit_q.z * CS_NONUNIT_QUAT_SCALE };
-    vec3 result = forge_physics_shape_support(&s, pos, scaled_q, dir);
-
-    ASSERT_NEAR(result.x, ref.x, CS_SUPPORT_EPS);
-    ASSERT_NEAR(result.y, ref.y, CS_SUPPORT_EPS);
-    ASSERT_NEAR(result.z, ref.z, CS_SUPPORT_EPS);
-    END_TEST();
-}
+/* Non-unit quaternion normalization tests for forge_physics_shape_support()
+ * removed — the function no longer normalizes quaternions internally.
+ * Callers must pass unit quaternions. */
 
 static void test_aabb_nonunit_quat_box(void)
 {
@@ -1158,7 +1063,7 @@ void run_collision_shape_tests(void)
 {
     SDL_Log("\n=== Collision Shape Tests ===\n");
 
-    /* Shape creation (6) */
+    /* Shape creation (5) */
     test_shape_create_sphere();
     test_shape_create_box();
     test_shape_create_capsule();
@@ -1231,11 +1136,7 @@ void run_collision_shape_tests(void)
     /* Hemisphere inertia coefficient (1) */
     test_capsule_inertia_hemisphere_transverse();
 
-    /* Non-finite input guards (10) */
-    test_support_nan_position();
-    test_support_nan_direction();
-    test_support_nan_orientation();
-    test_support_inf_direction();
+    /* Non-finite input guards (6 — support NaN/Inf tests removed, see above) */
     test_aabb_nan_position();
     test_aabb_nan_orientation();
     test_aabb_inf_position();
@@ -1243,9 +1144,7 @@ void run_collision_shape_tests(void)
     test_aabb_null_shape();
     test_aabb_expand_nan_margin();
 
-    /* Non-unit quaternion normalization (4) */
-    test_support_nonunit_quat_box();
-    test_support_nonunit_quat_capsule();
+    /* Non-unit quaternion normalization (2 — support tests removed, see above) */
     test_aabb_nonunit_quat_box();
     test_aabb_nonunit_quat_capsule();
 

@@ -11,9 +11,6 @@
 /* ── Shared test constants ─────────────────────────────────────────────── */
 
 /* Shape dimensions */
-/* Portable INF without <math.h> — float overflow produces +INF per IEEE 754 */
-static const float GJK_TEST_INF = 1e38f * 1e38f;
-
 #define GJK_SPHERE_RADIUS       1.0f
 #define GJK_BOX_HALF            1.0f    /* unit cube half-extent per axis */
 #define GJK_CAPSULE_RADIUS      0.5f
@@ -58,9 +55,6 @@ static const float GJK_TEST_INF = 1e38f * 1e38f;
 #define GJK_BODY_DRAG           0.01f
 #define GJK_BODY_ANG_DRAG       0.01f
 #define GJK_BODY_RESTIT         0.5f
-
-/* Support function validation tests */
-#define GJK_SUPPORT_ZERO_DIR_EPS  1e-7f  /* below GJK_EPSILON — zero-length direction */
 
 /* Coplanar / degenerate tetrahedron tests (division-by-zero guards) */
 #define GJK_FLAT_HALF_THIN      1e-6f   /* near-zero half-extent for flat boxes */
@@ -1230,101 +1224,11 @@ static void test_gjk_support_invalid_shape(void)
     END_TEST();
 }
 
-static void test_gjk_support_nan_position(void)
-{
-    TEST("GJK_support_nan_position — NaN position → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(1.0f, 0.0f, 0.0f);
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(SDL_sqrtf(-1.0f), 0.0f, 0.0f), identity,
-        &sb, vec3_create(0.0f, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
-
-static void test_gjk_support_inf_position(void)
-{
-    TEST("GJK_support_inf_position — infinite position → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(1.0f, 0.0f, 0.0f);
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(GJK_TEST_INF, 0.0f, 0.0f), identity,
-        &sb, vec3_create(0.0f, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
-
-static void test_gjk_support_zero_direction(void)
-{
-    TEST("GJK_support_zero_direction — zero-length dir → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(0.0f, 0.0f, 0.0f);
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(0.0f, 0.0f, 0.0f), identity,
-        &sb, vec3_create(1.0f, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
-
-static void test_gjk_support_near_zero_direction(void)
-{
-    TEST("GJK_support_near_zero_dir — sub-epsilon dir → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(GJK_SUPPORT_ZERO_DIR_EPS, 0.0f, 0.0f);
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(0.0f, 0.0f, 0.0f), identity,
-        &sb, vec3_create(1.0f, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
-
-static void test_gjk_support_nan_direction(void)
-{
-    TEST("GJK_support_nan_direction — NaN direction → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(SDL_sqrtf(-1.0f), 1.0f, 0.0f);
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(0.0f, 0.0f, 0.0f), identity,
-        &sb, vec3_create(0.0f, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
-
-static void test_gjk_support_zero_quat(void)
-{
-    TEST("GJK_support_zero_quat — zero quaternion → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat zero_q = { 0.0f, 0.0f, 0.0f, 0.0f };
-    vec3 dir = vec3_create(1.0f, 0.0f, 0.0f);
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(0.0f, 0.0f, 0.0f), zero_q,
-        &sb, vec3_create(0.0f, 0.0f, 0.0f), quat_identity(), dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
+/* NaN/Inf/zero-direction/zero-quat validation tests for
+ * forge_physics_gjk_support() removed — the function no longer guards
+ * against non-finite inputs for performance (see forge_physics.h header
+ * comment). Callers (gjk_intersect, epa) validate inputs before entering
+ * the iteration loop. */
 
 /* ── Tests: simplex inflation — intersecting results always have count == 4 ─ */
 
@@ -1381,22 +1285,8 @@ static void test_gjk_deep_overlap_simplex_valid(void)
 
 #define GJK_HUGE_POS  2e38f  /* large enough that pos_b - pos_a overflows float */
 
-static void test_gjk_support_overflow_zeroed(void)
-{
-    TEST("GJK_support_overflow — huge positions overflow v.point → zeroed vertex");
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(1.0f, 0.0f, 0.0f);
-
-    /* Place shapes at positions whose difference overflows float */
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(-GJK_HUGE_POS, 0.0f, 0.0f), identity,
-        &sb, vec3_create( GJK_HUGE_POS, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
+/* test_gjk_support_overflow_zeroed removed — gjk_support no longer
+ * validates for overflow/Inf (see forge_physics.h header comment). */
 
 static void test_gjk_intersect_overflow_no_false_positive(void)
 {
@@ -1414,23 +1304,8 @@ static void test_gjk_intersect_overflow_no_false_positive(void)
     END_TEST();
 }
 
-static void test_gjk_support_direction_overflow_zeroed(void)
-{
-    TEST("GJK_support_dir_overflow — finite components whose squares overflow → zeroed");
-    /* Components are individually finite but large enough that their squares
-     * overflow float, producing INF in vec3_length_squared(dir). */
-    ForgePhysicsCollisionShape sa = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    ForgePhysicsCollisionShape sb = forge_physics_shape_sphere(GJK_SPHERE_RADIUS);
-    quat identity = quat_identity();
-    vec3 dir = vec3_create(2e19f, 2e19f, 2e19f);  /* each² ≈ 4e38 > FLT_MAX */
-
-    ForgePhysicsGJKVertex v = forge_physics_gjk_support(
-        &sa, vec3_create(0.0f, 0.0f, 0.0f), identity,
-        &sb, vec3_create(1.0f, 0.0f, 0.0f), identity, dir);
-
-    ASSERT_VERTEX_INVALID(v);
-    END_TEST();
-}
+/* test_gjk_support_direction_overflow_zeroed removed — gjk_support no
+ * longer validates for direction overflow (see forge_physics.h header). */
 
 static void test_gjk_intersection_always_tetrahedron(void)
 {
@@ -1585,16 +1460,10 @@ void run_gjk_tests(void)
     test_gjk_test_bodies_matches();
     test_gjk_test_bodies_null_body();
 
-    /* Support function input validation */
+    /* Support function input validation (NaN/Inf/zero-dir/zero-quat tests removed) */
     test_gjk_support_null_shape_a();
     test_gjk_support_null_shape_b();
     test_gjk_support_invalid_shape();
-    test_gjk_support_nan_position();
-    test_gjk_support_inf_position();
-    test_gjk_support_zero_direction();
-    test_gjk_support_near_zero_direction();
-    test_gjk_support_nan_direction();
-    test_gjk_support_zero_quat();
 
     /* EPA simplex contract */
     test_gjk_coincident_spheres_simplex_count();
@@ -1617,9 +1486,7 @@ void run_gjk_tests(void)
     test_gjk_flat_box_stability_sweep();
     test_gjk_flat_box_determinism();
 
-    /* INF overflow guards */
-    test_gjk_support_overflow_zeroed();
-    test_gjk_support_direction_overflow_zeroed();
+    /* INF overflow guards (support tests removed — see forge_physics.h header) */
     test_gjk_intersect_overflow_no_false_positive();
     test_gjk_invalid_input_no_false_positive();
 

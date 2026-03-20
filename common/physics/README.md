@@ -162,11 +162,27 @@ Types: `ForgePhysicsGJKVertex` (Minkowski point + per-shape support points),
 Constants: `FORGE_PHYSICS_GJK_MAX_ITERATIONS` (64),
 `FORGE_PHYSICS_GJK_EPSILON` (1e-6).
 
+### Lesson 10 — EPA Penetration Depth
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_epa()` | EPA penetration depth, contact normal, and contact points from GJK simplex |
+| `forge_physics_epa_bodies()` | Convenience: extract pos/orient from rigid bodies, call epa |
+| `forge_physics_gjk_epa_contact()` | Combined GJK+EPA pipeline producing a ForgePhysicsRBContact |
+
+Types: `ForgePhysicsEPAFace` (polytope triangle with precomputed normal/dist),
+`ForgePhysicsEPAEdge` (silhouette edge for polytope expansion),
+`ForgePhysicsEPAResult` (valid flag, normal, depth, contact points, iterations).
+
+Constants: `FORGE_PHYSICS_EPA_MAX_ITERATIONS` (64),
+`FORGE_PHYSICS_EPA_MAX_VERTICES` (128), `FORGE_PHYSICS_EPA_MAX_FACES` (256),
+`FORGE_PHYSICS_EPA_EPSILON` (1e-6).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 10–14 | *See [PLAN.md](../../PLAN.md)* | EPA, contact manifolds, constraints, solver |
+| 11–14 | *TBD* | Contact manifolds, constraints, solver |
 
 ## Design
 
@@ -200,3 +216,4 @@ Constants: `FORGE_PHYSICS_GJK_MAX_ITERATIONS` (64),
 | [Physics L07](../../lessons/physics/07-collision-shapes/) | `ForgePhysicsCollisionShape`, `forge_physics_shape_sphere()`, `forge_physics_shape_box()`, `forge_physics_shape_capsule()`, `forge_physics_shape_support()`, `forge_physics_shape_compute_aabb()`, `forge_physics_aabb_overlap()`, `forge_physics_rigid_body_set_inertia_from_shape()` |
 | [Physics L08](../../lessons/physics/08-sweep-and-prune/) | `ForgePhysicsSAPWorld`, `forge_physics_sap_init()`, `forge_physics_sap_destroy()`, `forge_physics_sap_update()`, `forge_physics_sap_select_axis()`, `forge_physics_sap_pair_count()`, `forge_physics_sap_get_pairs()` |
 | [Physics L09](../../lessons/physics/09-gjk-intersection/) | `ForgePhysicsGJKResult`, `forge_physics_gjk_support()`, `forge_physics_gjk_intersect()`, `forge_physics_gjk_test_bodies()` |
+| [Physics L10](../../lessons/physics/10-epa-penetration-depth/) | `ForgePhysicsEPAResult`, `forge_physics_epa()`, `forge_physics_epa_bodies()`, `forge_physics_gjk_epa_contact()` |
