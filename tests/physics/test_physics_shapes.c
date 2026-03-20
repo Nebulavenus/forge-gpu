@@ -53,6 +53,7 @@
 #define CS_DET_DIR_X          0.6f         /* determinism test reference direction */
 #define CS_DET_DIR_Y         -0.7f
 #define CS_DET_DIR_Z          0.38f
+#define CS_NONUNIT_QUAT_SCALE 2.5f         /* scale factor for non-unit quaternion tests */
 
 /* Helper: create a dynamic body with given mass */
 static ForgePhysicsRigidBody cs_make_body(vec3 pos)
@@ -94,14 +95,6 @@ static void test_shape_create_capsule(void)
     ASSERT_TRUE(s.type == FORGE_PHYSICS_SHAPE_CAPSULE);
     ASSERT_NEAR(s.data.capsule.radius, CS_CAPSULE_RADIUS, EPSILON);
     ASSERT_NEAR(s.data.capsule.half_height, CS_CAPSULE_HALF_H, EPSILON);
-    END_TEST();
-}
-
-static void test_shape_create_sphere_negative_clamped(void)
-{
-    TEST("CS_shape_create_sphere_negative_clamped")
-    ForgePhysicsCollisionShape s = forge_physics_shape_sphere(CS_NEG_RADIUS);
-    ASSERT_TRUE(s.data.sphere.radius > 0.0f);
     END_TEST();
 }
 
@@ -1011,6 +1004,122 @@ static void test_aabb_expand_nan_margin(void)
  * Determinism Test
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Non-unit quaternion normalization tests
+ *
+ * Verifies that shape_support and shape_compute_aabb internally normalize
+ * non-unit quaternions, producing the same results as a pre-normalized quat.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void test_support_nonunit_quat_box(void)
+{
+    TEST("CS_support_nonunit_quat_box")
+    vec3 he = vec3_create(CS_BOX_HALF_X, CS_BOX_HALF_Y, CS_BOX_HALF_Z);
+    ForgePhysicsCollisionShape s = forge_physics_shape_box(he);
+    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
+    vec3 dir = vec3_create(CS_DET_DIR_X, CS_DET_DIR_Y, CS_DET_DIR_Z);
+
+    /* Unit quaternion — reference result */
+    quat unit_q = quat_from_euler(CS_ROT_45_DEG, CS_DET_PITCH, 0.0f);
+    vec3 ref = forge_physics_shape_support(&s, pos, unit_q, dir);
+
+    /* Scaled (non-unit) quaternion — same rotation, length != 1 */
+    quat scaled_q = (quat){ unit_q.w * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.x * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.y * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.z * CS_NONUNIT_QUAT_SCALE };
+    vec3 result = forge_physics_shape_support(&s, pos, scaled_q, dir);
+
+    ASSERT_NEAR(result.x, ref.x, CS_SUPPORT_EPS);
+    ASSERT_NEAR(result.y, ref.y, CS_SUPPORT_EPS);
+    ASSERT_NEAR(result.z, ref.z, CS_SUPPORT_EPS);
+    END_TEST();
+}
+
+static void test_support_nonunit_quat_capsule(void)
+{
+    TEST("CS_support_nonunit_quat_capsule")
+    ForgePhysicsCollisionShape s = forge_physics_shape_capsule(
+        CS_CAPSULE_RADIUS, CS_CAPSULE_HALF_H);
+    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
+    vec3 dir = vec3_create(CS_DET_DIR_X, CS_DET_DIR_Y, CS_DET_DIR_Z);
+
+    quat unit_q = quat_from_euler(CS_ROT_45_DEG, CS_DET_PITCH, 0.0f);
+    vec3 ref = forge_physics_shape_support(&s, pos, unit_q, dir);
+
+    quat scaled_q = (quat){ unit_q.w * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.x * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.y * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.z * CS_NONUNIT_QUAT_SCALE };
+    vec3 result = forge_physics_shape_support(&s, pos, scaled_q, dir);
+
+    ASSERT_NEAR(result.x, ref.x, CS_SUPPORT_EPS);
+    ASSERT_NEAR(result.y, ref.y, CS_SUPPORT_EPS);
+    ASSERT_NEAR(result.z, ref.z, CS_SUPPORT_EPS);
+    END_TEST();
+}
+
+static void test_aabb_nonunit_quat_box(void)
+{
+    TEST("CS_aabb_nonunit_quat_box")
+    vec3 he = vec3_create(CS_BOX_HALF_X, CS_BOX_HALF_Y, CS_BOX_HALF_Z);
+    ForgePhysicsCollisionShape s = forge_physics_shape_box(he);
+    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
+
+    quat unit_q = quat_from_euler(CS_ROT_45_DEG, CS_DET_PITCH, 0.0f);
+    ForgePhysicsAABB ref = forge_physics_shape_compute_aabb(&s, pos, unit_q);
+
+    quat scaled_q = (quat){ unit_q.w * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.x * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.y * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.z * CS_NONUNIT_QUAT_SCALE };
+    ForgePhysicsAABB result = forge_physics_shape_compute_aabb(&s, pos, scaled_q);
+
+    ASSERT_NEAR(result.min.x, ref.min.x, CS_AABB_EPS);
+    ASSERT_NEAR(result.min.y, ref.min.y, CS_AABB_EPS);
+    ASSERT_NEAR(result.min.z, ref.min.z, CS_AABB_EPS);
+    ASSERT_NEAR(result.max.x, ref.max.x, CS_AABB_EPS);
+    ASSERT_NEAR(result.max.y, ref.max.y, CS_AABB_EPS);
+    ASSERT_NEAR(result.max.z, ref.max.z, CS_AABB_EPS);
+    END_TEST();
+}
+
+static void test_aabb_nonunit_quat_capsule(void)
+{
+    TEST("CS_aabb_nonunit_quat_capsule")
+    ForgePhysicsCollisionShape s = forge_physics_shape_capsule(
+        CS_CAPSULE_RADIUS, CS_CAPSULE_HALF_H);
+    vec3 pos = vec3_create(CS_TRANSLATE_X, CS_TRANSLATE_Y, CS_TRANSLATE_Z);
+
+    quat unit_q = quat_from_euler(CS_ROT_45_DEG, CS_DET_PITCH, 0.0f);
+    ForgePhysicsAABB ref = forge_physics_shape_compute_aabb(&s, pos, unit_q);
+
+    quat scaled_q = (quat){ unit_q.w * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.x * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.y * CS_NONUNIT_QUAT_SCALE,
+                            unit_q.z * CS_NONUNIT_QUAT_SCALE };
+    ForgePhysicsAABB result = forge_physics_shape_compute_aabb(&s, pos, scaled_q);
+
+    ASSERT_NEAR(result.min.x, ref.min.x, CS_AABB_EPS);
+    ASSERT_NEAR(result.min.y, ref.min.y, CS_AABB_EPS);
+    ASSERT_NEAR(result.min.z, ref.min.z, CS_AABB_EPS);
+    ASSERT_NEAR(result.max.x, ref.max.x, CS_AABB_EPS);
+    ASSERT_NEAR(result.max.y, ref.max.y, CS_AABB_EPS);
+    ASSERT_NEAR(result.max.z, ref.max.z, CS_AABB_EPS);
+    END_TEST();
+}
+
+static void test_shape_create_sphere_negative_radius(void)
+{
+    TEST("CS_shape_create_sphere_negative_radius_clamped")
+    ForgePhysicsCollisionShape s = forge_physics_shape_sphere(CS_NEG_RADIUS);
+    ASSERT_TRUE(s.type == FORGE_PHYSICS_SHAPE_SPHERE);
+    /* Negative radius should be clamped to FORGE_PHYSICS_SHAPE_MIN_DIM */
+    ASSERT_NEAR(s.data.sphere.radius, FORGE_PHYSICS_SHAPE_MIN_DIM, EPSILON);
+    ASSERT_TRUE(forge_physics_shape_is_valid(&s));
+    END_TEST();
+}
+
 static void test_support_determinism(void)
 {
     TEST("CS_support_determinism_1000_calls")
@@ -1053,7 +1162,6 @@ void run_collision_shape_tests(void)
     test_shape_create_sphere();
     test_shape_create_box();
     test_shape_create_capsule();
-    test_shape_create_sphere_negative_clamped();
     test_shape_create_box_negative_clamped();
     test_shape_create_capsule_negative_clamped();
 
@@ -1134,6 +1242,15 @@ void run_collision_shape_tests(void)
     test_support_null_shape();
     test_aabb_null_shape();
     test_aabb_expand_nan_margin();
+
+    /* Non-unit quaternion normalization (4) */
+    test_support_nonunit_quat_box();
+    test_support_nonunit_quat_capsule();
+    test_aabb_nonunit_quat_box();
+    test_aabb_nonunit_quat_capsule();
+
+    /* Negative dimension clamping (1) */
+    test_shape_create_sphere_negative_radius();
 
     /* Determinism (1) */
     test_support_determinism();

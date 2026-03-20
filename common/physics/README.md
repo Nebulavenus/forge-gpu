@@ -147,11 +147,26 @@ Constants: `FORGE_PHYSICS_SHAPE_MIN_DIM` (1e-5),
 Types: `ForgePhysicsSAPEndpoint`, `ForgePhysicsSAPPair`,
 `ForgePhysicsSAPWorld` (dynamic arrays via `forge_containers.h`).
 
+### Lesson 09 — GJK Intersection Testing
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_gjk_support()` | Minkowski difference support point (sup_A(d) − sup_B(−d)) |
+| `forge_physics_gjk_intersect()` | GJK boolean intersection test between two convex shapes |
+| `forge_physics_gjk_test_bodies()` | Convenience: extract pos/orient from rigid bodies, call gjk_intersect |
+
+Types: `ForgePhysicsGJKVertex` (Minkowski point + per-shape support points),
+`ForgePhysicsGJKSimplex` (1–4 vertex evolving simplex),
+`ForgePhysicsGJKResult` (intersecting flag, simplex for EPA, iteration count).
+
+Constants: `FORGE_PHYSICS_GJK_MAX_ITERATIONS` (64),
+`FORGE_PHYSICS_GJK_EPSILON` (1e-6).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 09–14 | *See [PLAN.md](../../PLAN.md)* | GJK/EPA, constraints, solver |
+| 10–14 | *See [PLAN.md](../../PLAN.md)* | EPA, contact manifolds, constraints, solver |
 
 ## Design
 
@@ -184,3 +199,4 @@ Types: `ForgePhysicsSAPEndpoint`, `ForgePhysicsSAPPair`,
 | [Physics L06](../../lessons/physics/06-resting-contacts-and-friction/) | `ForgePhysicsRBContact`, `forge_physics_rb_collide_sphere_plane()`, `forge_physics_rb_collide_sphere_sphere()`, `forge_physics_rb_collide_box_plane()`, `forge_physics_rb_resolve_contact()`, `forge_physics_rb_resolve_contacts()` |
 | [Physics L07](../../lessons/physics/07-collision-shapes/) | `ForgePhysicsCollisionShape`, `forge_physics_shape_sphere()`, `forge_physics_shape_box()`, `forge_physics_shape_capsule()`, `forge_physics_shape_support()`, `forge_physics_shape_compute_aabb()`, `forge_physics_aabb_overlap()`, `forge_physics_rigid_body_set_inertia_from_shape()` |
 | [Physics L08](../../lessons/physics/08-sweep-and-prune/) | `ForgePhysicsSAPWorld`, `forge_physics_sap_init()`, `forge_physics_sap_destroy()`, `forge_physics_sap_update()`, `forge_physics_sap_select_axis()`, `forge_physics_sap_pair_count()`, `forge_physics_sap_get_pairs()` |
+| [Physics L09](../../lessons/physics/09-gjk-intersection/) | `ForgePhysicsGJKResult`, `forge_physics_gjk_support()`, `forge_physics_gjk_intersect()`, `forge_physics_gjk_test_bodies()` |

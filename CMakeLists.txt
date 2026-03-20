@@ -171,6 +171,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/physics/06-resting-contacts-and-friction)
     add_subdirectory(lessons/physics/07-collision-shapes)
     add_subdirectory(lessons/physics/08-sweep-and-prune)
+    add_subdirectory(lessons/physics/09-gjk-intersection)
 endif()
 
 # ── Audio Lessons ─────────────────────────────────────────────────────────

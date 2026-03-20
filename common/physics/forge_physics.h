@@ -3230,6 +3230,16 @@ static inline vec3 forge_physics_shape_support(
         !forge_isfinite(orient.y) || !forge_isfinite(orient.z))
         return fallback;
 
+    /* Normalize quaternion — conjugate of a non-unit quat is not its inverse,
+     * so box/capsule support would be incorrect without this. */
+    {
+        float qlen_sq = quat_length_sq(orient);
+        if (!forge_isfinite(qlen_sq) || !(qlen_sq > FORGE_PHYSICS_EPSILON))
+            return fallback;
+        if (SDL_fabsf(qlen_sq - 1.0f) > FORGE_PHYSICS_EPSILON)
+            orient = quat_normalize(orient);
+    }
+
     float dir_len = vec3_length(dir);
     if (!forge_isfinite(dir_len) || dir_len < FORGE_PHYSICS_EPSILON) return fallback;
 
@@ -3331,6 +3341,16 @@ static inline ForgePhysicsAABB forge_physics_shape_compute_aabb(
     if (!forge_isfinite(orient.w) || !forge_isfinite(orient.x) ||
         !forge_isfinite(orient.y) || !forge_isfinite(orient.z))
         return aabb;
+
+    /* Normalize quaternion — quat_to_mat3 / quat_rotate_vec3 produce scaled
+     * results for non-unit quaternions, giving incorrect AABBs. */
+    {
+        float qlen_sq = quat_length_sq(orient);
+        if (!forge_isfinite(qlen_sq) || !(qlen_sq > FORGE_PHYSICS_EPSILON))
+            return aabb;
+        if (SDL_fabsf(qlen_sq - 1.0f) > FORGE_PHYSICS_EPSILON)
+            orient = quat_normalize(orient);
+    }
 
     switch (shape->type) {
     case FORGE_PHYSICS_SHAPE_SPHERE: {
@@ -3878,6 +3898,862 @@ static inline const ForgePhysicsSAPPair *forge_physics_sap_get_pairs(
 {
     if (!world) return NULL;
     return world->pairs;
+}
+
+/* =========================================================================
+ * GJK Intersection Testing
+ *
+ * The Gilbert-Johnson-Keerthi (GJK) algorithm determines whether two convex
+ * shapes overlap by iteratively building a simplex (point, line, triangle,
+ * tetrahedron) in the Minkowski difference of the two shapes. If the simplex
+ * can enclose the origin, the shapes intersect.
+ *
+ * Key insight: the Minkowski difference A⊖B = {a − b | a∈A, b∈B} contains
+ * the origin if and only if A and B intersect. GJK exploits the fact that the
+ * farthest point of A⊖B in any direction is support_A(d) − support_B(−d),
+ * which is cheap to compute for convex primitives.
+ *
+ * The simplex is preserved in the result so that EPA (Physics Lesson 10) can
+ * use it as a starting polytope for contact point and depth computation.
+ * On intersection, early-exit hits (origin on a segment, coplanar face, or
+ * collapsed direction) are inflated to a full tetrahedron (count == 4) via
+ * additional support queries before returning, so EPA can start immediately.
+ *
+ * Reference: Gilbert, Johnson, Keerthi, "A fast procedure for computing the
+ * distance between complex objects in three-dimensional space", IEEE J-RA 1988.
+ * See also: Catto, GDC 2010 "Computing Distance".
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ * ========================================================================= */
+
+/* Maximum GJK iterations before giving up.
+ * 64 is well above the typical 10–20 needed for convex primitives;
+ * a higher cap risks an infinite loop on degenerate inputs. */
+#define FORGE_PHYSICS_GJK_MAX_ITERATIONS  64
+/* Maximum simplex vertex count — 4 vertices form a tetrahedron in 3D */
+#define FORGE_PHYSICS_GJK_MAX_SIMPLEX     4
+
+/* Numerical tolerance for GJK edge-case tests (near-zero dot products,
+ * near-zero cross product magnitudes). Chosen to be larger than float
+ * rounding error but smaller than any physically meaningful distance. */
+#define FORGE_PHYSICS_GJK_EPSILON         1e-6f
+
+/* GJK vertex — one point of the Minkowski difference simplex.
+ * Stores the support points from each shape separately because EPA
+ * (Lesson 10) needs them to reconstruct the contact point via
+ * barycentric interpolation on the closest polytope face. */
+typedef struct ForgePhysicsGJKVertex {
+    vec3 point;   /* meters, world-space — Minkowski difference: sup_a − sup_b.
+                   * GJK tests this point against the origin. Any finite vec3. */
+    vec3 sup_a;   /* meters, world-space — support point on shape A's surface.
+                   * Stored separately for EPA contact reconstruction. */
+    vec3 sup_b;   /* meters, world-space — support point on shape B's surface.
+                   * Stored separately for EPA contact reconstruction. */
+} ForgePhysicsGJKVertex;
+
+/* GJK simplex — the evolving 1–4 vertex simplex that GJK maintains
+ * as it searches for the origin in the Minkowski difference. */
+typedef struct ForgePhysicsGJKSimplex {
+    ForgePhysicsGJKVertex verts[FORGE_PHYSICS_GJK_MAX_SIMPLEX];
+                                    /* simplex vertices — only verts[0..count-1]
+                                     * are valid; newest vertex at highest index.
+                                     * 4 is the max (tetrahedron in 3D). */
+    int count;                      /* 0 = uninitialized/invalid (zeroed result),
+                                     * 1–4 = active vertex count */
+} ForgePhysicsGJKSimplex;
+
+/* GJK result — output of the intersection test.
+ *
+ * The simplex is preserved so EPA (Lesson 10) can use it as a starting
+ * polytope. On intersection, the simplex is inflated to a full tetrahedron
+ * (count == 4) via additional support queries so EPA can start immediately
+ * without needing to inflate sub-dimensional simplices itself.
+ *
+ * Return-value semantics:
+ *   intersecting=true  — shapes overlap; simplex.count == 4 (inflated)
+ *   intersecting=false, iterations>0  — typically confirmed separated, but may
+ *                                        also indicate a fail-closed exit from
+ *                                        support-validation (e.g. INF overflow
+ *                                        in Minkowski point or non-finite
+ *                                        direction length squared)
+ *   intersecting=false, iterations=0  — invalid input (zeroed result)
+ *   intersecting=false, iterations=MAX — iteration cap reached (inconclusive) */
+typedef struct ForgePhysicsGJKResult {
+    bool intersecting;              /* true if shapes overlap */
+    ForgePhysicsGJKSimplex simplex; /* final simplex — count == 4 on hit
+                                     * (inflated for EPA), 0 on invalid input */
+    int iterations;                 /* 0–64 — 0 means invalid-input early exit */
+} ForgePhysicsGJKResult;
+/* Initial "infinity" for closest-distance search in degenerate-tetrahedron
+ * fallback — must exceed any plausible squared distance */
+#define FORGE_PHYSICS_GJK_SENTINEL_DIST2  1e30f
+
+/* Threshold for "nearly parallel" in cross-product basis construction
+ * (inflate helper): if |dot(v, axis)| >= this, the axis is too close to v
+ * and we pick an alternative axis for the cross product. */
+#define FORGE_PHYSICS_GJK_PARALLEL_THRESH 0.9f
+
+/* Private helper: validate a quaternion for GJK.
+ * Returns true if the quaternion is finite, non-zero, and safe to normalize.
+ * If not already unit-length, normalizes it in place. */
+static inline bool gjk_validate_quat_(quat *q)
+{
+    if (!forge_isfinite(q->w) || !forge_isfinite(q->x) ||
+        !forge_isfinite(q->y) || !forge_isfinite(q->z))
+        return false;
+    float len_sq = quat_length_sq(*q);
+    if (!forge_isfinite(len_sq) || !(len_sq > FORGE_PHYSICS_GJK_EPSILON))
+        return false;
+    if (SDL_fabsf(len_sq - 1.0f) > FORGE_PHYSICS_GJK_EPSILON)
+        *q = quat_normalize(*q);
+    return true;
+}
+
+/* Compute a Minkowski difference support vertex (support mapping step of GJK).
+ *
+ * The support of A⊖B in direction d is support_A(d) − support_B(−d).
+ * Both world-space positions and orientations are passed so that
+ * forge_physics_shape_support() can handle oriented shapes (boxes, capsules).
+ *
+ * Parameters:
+ *   shape_a, shape_b  — collision shapes (non-NULL, must pass shape_is_valid)
+ *   pos_a, pos_b      — world-space positions in meters (must be finite)
+ *   orient_a, orient_b — unit quaternions (normalized internally if needed;
+ *                        must be finite and non-zero-length)
+ *   dir               — search direction, unitless (need not be normalized
+ *                        but must be finite and non-zero)
+ *
+ * Returns: fully populated ForgePhysicsGJKVertex, or NaN-sentinel vertex
+ *          (all fields NaN) on invalid input — callers detect via
+ *          !forge_isfinite(vec3_length_squared(v.point)).
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ */
+static inline ForgePhysicsGJKVertex forge_physics_gjk_support(
+    const ForgePhysicsCollisionShape *shape_a, vec3 pos_a, quat orient_a,
+    const ForgePhysicsCollisionShape *shape_b, vec3 pos_b, quat orient_b,
+    vec3 dir)
+{
+    /* On failure, return a NaN-sentinel vertex so callers can distinguish
+     * "invalid input" from a legitimate zero-point (coincident shapes).
+     * The existing finiteness checks in gjk_intersect catch NaN naturally. */
+    const float nan_val = SDL_sqrtf(-1.0f); /* portable NaN */
+    vec3 nan_vec = vec3_create(nan_val, nan_val, nan_val);
+    ForgePhysicsGJKVertex fail = { nan_vec, nan_vec, nan_vec };
+
+    /* Validate shapes */
+    if (!shape_a || !shape_b ||
+        !forge_physics_shape_is_valid(shape_a) ||
+        !forge_physics_shape_is_valid(shape_b))
+        return fail;
+
+    /* Validate positions */
+    if (!forge_isfinite(pos_a.x) || !forge_isfinite(pos_a.y) ||
+        !forge_isfinite(pos_a.z) ||
+        !forge_isfinite(pos_b.x) || !forge_isfinite(pos_b.y) ||
+        !forge_isfinite(pos_b.z))
+        return fail;
+
+    /* Validate direction — zero-length or overflowed direction has no
+     * meaningful support. Component Inf is caught first; squared-length
+     * overflow (finite components whose squares sum to Inf) is caught second. */
+    if (!forge_isfinite(dir.x) || !forge_isfinite(dir.y) ||
+        !forge_isfinite(dir.z))
+        return fail;
+    {
+        float dir_len2 = vec3_length_squared(dir);
+        if (!forge_isfinite(dir_len2) ||
+            dir_len2 <= FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON)
+            return fail;
+    }
+
+    /* Validate and normalize quaternions */
+    if (!gjk_validate_quat_(&orient_a) || !gjk_validate_quat_(&orient_b))
+        return fail;
+
+    ForgePhysicsGJKVertex v;
+    vec3 neg_dir = vec3_scale(dir, -1.0f);
+    v.sup_a = forge_physics_shape_support(shape_a, pos_a, orient_a, dir);
+    v.sup_b = forge_physics_shape_support(shape_b, pos_b, orient_b, neg_dir);
+    v.point = vec3_sub(v.sup_a, v.sup_b);
+
+    /* Guard against arithmetic overflow producing INF in the Minkowski
+     * difference point — this can happen when positions are very large */
+    if (!forge_isfinite(v.point.x) || !forge_isfinite(v.point.y) ||
+        !forge_isfinite(v.point.z))
+        return fail;
+    return v;
+}
+
+/* Line sub-algorithm — called when the simplex has 2 vertices.
+ *
+ * Vertices are ordered [B, A] where A is the most recently added point.
+ * We test whether the origin is in the Voronoi region of the edge AB or
+ * behind A. The direction is updated to point toward the origin from the
+ * nearest feature. Returns true if the origin lies within the segment
+ * (collinear/touching case); false otherwise.
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ */
+static inline bool gjk_do_line_(
+    ForgePhysicsGJKSimplex *s, vec3 *dir)
+{
+    /* A = newest vertex, B = older vertex */
+    ForgePhysicsGJKVertex a = s->verts[1];
+    ForgePhysicsGJKVertex b = s->verts[0];
+
+    vec3 ab = vec3_sub(b.point, a.point); /* edge from A toward B */
+    vec3 ao = vec3_scale(a.point, -1.0f); /* direction from A toward origin */
+
+    if (vec3_dot(ab, ao) > 0.0f) {
+        /* Origin projects onto the interior of segment AB.
+         * New search direction: perpendicular to AB toward origin,
+         * computed via the triple cross product AB × AO × AB. */
+        vec3 cross_ab_ao = vec3_cross(ab, ao);
+        vec3 perp = vec3_cross(cross_ab_ao, ab);
+        /* Scale-aware collinearity check: |AB × AO|² ≤ ε² · |AB|² · |AO|²
+         * so the test works correctly regardless of world scale.
+         * We use the raw cross product length (not the triple cross) so
+         * units are consistent: both sides are [length⁴]. */
+        float cross_len_sq = vec3_dot(cross_ab_ao, cross_ab_ao);
+        float ab_sq = vec3_dot(ab, ab);
+        float ao_sq = vec3_dot(ao, ao);
+        float eps2 = FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON;
+        if (cross_len_sq <= eps2 * ab_sq * ao_sq) {
+            /* AB and AO are collinear — origin lies on segment AB.
+             * Project to find the closest feature. */
+            float t = (ab_sq > FORGE_PHYSICS_GJK_EPSILON)
+                ? vec3_dot(ao, ab) / ab_sq
+                : 0.0f;
+
+            if (t <= 0.0f) {
+                /* Closest to A */
+                s->verts[0] = a;
+                s->count    = 1;
+                *dir        = ao;
+                return false;
+            }
+            if (t >= 1.0f) {
+                /* Closest to B */
+                s->verts[0] = b;
+                s->count    = 1;
+                *dir        = vec3_scale(b.point, -1.0f);
+                return false;
+            }
+
+            /* Origin lies within segment AB — intersection */
+            return true;
+        } else {
+            *dir = perp;
+        }
+        /* Keep both vertices — simplex remains a line segment */
+    } else {
+        /* Origin is past A in the opposite direction of B.
+         * The best feature is A alone. */
+        s->verts[0] = a;
+        s->count    = 1;
+        *dir        = ao;
+    }
+
+    return false;
+}
+
+/* Triangle sub-algorithm — called when the simplex has 3 vertices.
+ *
+ * Vertices are ordered [C, B, A] where A is the most recently added point.
+ * We determine which Voronoi region the origin lies in and either reduce
+ * the simplex to a line (discarding one vertex) or keep the triangle and
+ * update the search direction to point toward the origin perpendicular to
+ * the triangle plane. Returns true if the origin lies on the triangle plane
+ * (coplanar/touching case); false otherwise.
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ */
+static inline bool gjk_do_triangle_(
+    ForgePhysicsGJKSimplex *s, vec3 *dir)
+{
+    /* A = newest vertex, B and C are older */
+    ForgePhysicsGJKVertex a = s->verts[2];
+    ForgePhysicsGJKVertex b = s->verts[1];
+    ForgePhysicsGJKVertex c = s->verts[0];
+
+    vec3 ab  = vec3_sub(b.point, a.point);
+    vec3 ac  = vec3_sub(c.point, a.point);
+    vec3 ao  = vec3_scale(a.point, -1.0f);
+    vec3 abc = vec3_cross(ab, ac); /* triangle normal */
+
+    /* Degenerate triangle: if the three vertices are collinear, the cross
+     * product is zero and no meaningful plane test is possible. Find the
+     * edge whose closest point to the origin is nearest and reduce to it. */
+    /* Scale-aware triangle degeneracy: |AB × AC|² ≤ ε² · |AB|² · |AC|² */
+    float abc_sq = vec3_dot(abc, abc);
+    float ab_sq_t = vec3_dot(ab, ab);
+    float ac_sq_t = vec3_dot(ac, ac);
+    float eps2_t = FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON;
+    if (abc_sq <= eps2_t * ab_sq_t * ac_sq_t) {
+        /* Project origin onto each edge and pick the closest feature. */
+        struct { ForgePhysicsGJKVertex v0, v1; float dist2; } edges[3];
+
+        /* Edge AB */
+        { float ab2 = vec3_dot(ab, ab);
+          float t = (ab2 > FORGE_PHYSICS_GJK_EPSILON) ? vec3_dot(ao, ab) / ab2 : 0.0f;
+          if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+          vec3 closest = vec3_add(a.point, vec3_scale(ab, t));
+          edges[0].v0 = b; edges[0].v1 = a;
+          edges[0].dist2 = vec3_dot(closest, closest); }
+
+        /* Edge AC */
+        { float ac2 = vec3_dot(ac, ac);
+          float t = (ac2 > FORGE_PHYSICS_GJK_EPSILON) ? vec3_dot(ao, ac) / ac2 : 0.0f;
+          if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+          vec3 closest = vec3_add(a.point, vec3_scale(ac, t));
+          edges[1].v0 = c; edges[1].v1 = a;
+          edges[1].dist2 = vec3_dot(closest, closest); }
+
+        /* Edge BC */
+        { vec3 bc = vec3_sub(c.point, b.point);
+          vec3 bo = vec3_scale(b.point, -1.0f);
+          float bc2 = vec3_dot(bc, bc);
+          float t = (bc2 > FORGE_PHYSICS_GJK_EPSILON) ? vec3_dot(bo, bc) / bc2 : 0.0f;
+          if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+          vec3 closest = vec3_add(b.point, vec3_scale(bc, t));
+          edges[2].v0 = c; edges[2].v1 = b;
+          edges[2].dist2 = vec3_dot(closest, closest); }
+
+        /* Pick the edge closest to the origin */
+        int best = 0;
+        if (edges[1].dist2 < edges[best].dist2) best = 1;
+        if (edges[2].dist2 < edges[best].dist2) best = 2;
+
+        s->verts[0] = edges[best].v0;
+        s->verts[1] = edges[best].v1;
+        s->count = 2;
+        return gjk_do_line_(s, dir);
+    }
+
+    /* Test the edge AC side: if the origin is outside the triangle along AC,
+     * reduce to segment AC. The outward perpendicular to AC (pointing away
+     * from B) within the plane of ABC is cross(ABC_normal, AC). */
+    vec3 ac_perp = vec3_cross(abc, ac);
+    if (vec3_dot(ac_perp, ao) > 0.0f) {
+        /* Origin is outside edge AC — reduce to segment [C, A] */
+        s->verts[0] = c;
+        s->verts[1] = a;
+        s->count    = 2;
+        return gjk_do_line_(s, dir);
+    }
+
+    /* Test the edge AB side: outward perpendicular to AB (pointing away
+     * from C) within the plane of ABC is cross(AB, ABC_normal). */
+    vec3 ab_perp = vec3_cross(ab, abc);
+    if (vec3_dot(ab_perp, ao) > 0.0f) {
+        /* Origin is outside edge AB — reduce to segment [B, A] */
+        s->verts[0] = b;
+        s->verts[1] = a;
+        s->count    = 2;
+        return gjk_do_line_(s, dir);
+    }
+
+    /* Origin is inside both edge regions — it projects onto the triangle face.
+     * If the origin lies ON the plane (coplanar/touching), return a hit
+     * immediately to prevent zero-advance support iterations. */
+    float plane_dot = vec3_dot(abc, ao);
+    if (SDL_fabsf(plane_dot) <= FORGE_PHYSICS_GJK_EPSILON) {
+        return true;
+    }
+    if (plane_dot > 0.0f) {
+        /* Origin is above the triangle — wind CCW, normal points to origin */
+        /* Vertex order [C, B, A] already gives upward normal; keep it */
+        *dir = abc;
+    } else {
+        /* Origin is below the triangle — flip winding so normal faces origin */
+        s->verts[0] = b;
+        s->verts[1] = c;
+        s->verts[2] = a;
+        *dir        = vec3_scale(abc, -1.0f);
+    }
+
+    return false; /* need a tetrahedron to confirm the origin is enclosed */
+}
+
+/* Tetrahedron sub-algorithm — called when the simplex has 4 vertices.
+ *
+ * Vertices are ordered [D, C, B, A] where A is the most recently added point.
+ * We test each of the three faces that include A (ABC, ACD, ADB). If the
+ * origin is on the outside of any face, we reduce to that triangle and call
+ * the triangle sub-algorithm. If the origin is inside all three faces, it is
+ * enclosed by the tetrahedron and we have confirmed intersection.
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ */
+static inline bool gjk_do_tetrahedron_(
+    ForgePhysicsGJKSimplex *s, vec3 *dir)
+{
+    /* A = newest vertex, B/C/D are older */
+    ForgePhysicsGJKVertex a = s->verts[3];
+    ForgePhysicsGJKVertex b = s->verts[2];
+    ForgePhysicsGJKVertex c = s->verts[1];
+    ForgePhysicsGJKVertex d = s->verts[0];
+
+    vec3 ab = vec3_sub(b.point, a.point);
+    vec3 ac = vec3_sub(c.point, a.point);
+    vec3 ad = vec3_sub(d.point, a.point);
+    vec3 ao = vec3_scale(a.point, -1.0f);
+
+    /* Guard against coplanar tetrahedra FIRST: if the volume is near-zero,
+     * the face-normal tests are unreliable and must not run. Compute the
+     * closest point on each candidate triangle to the origin and reduce to
+     * the triangle with the smallest distance. */
+    {
+        /* Scale-aware coplanarity: |(AB×AC)·AD| ≤ ε · |AB×AC| · |AD| */
+        vec3 ab_x_ac = vec3_cross(ab, ac);
+        float vol = SDL_fabsf(vec3_dot(ab_x_ac, ad));
+        float scale = vec3_length(ab_x_ac) * vec3_length(ad);
+        if (vol <= FORGE_PHYSICS_GJK_EPSILON * scale) {
+            /* Triangle vertices for each face (winding order for gjk_do_triangle_) */
+            ForgePhysicsGJKVertex face_verts[3][3] = {
+                { c, b, a }, { d, c, a }, { b, d, a },
+            };
+            float best_dist2 = FORGE_PHYSICS_GJK_SENTINEL_DIST2;
+            int best = 0;
+
+            for (int fi = 0; fi < 3; fi++) {
+                /* True closest point on triangle to origin using Voronoi
+                 * region tests (vertex, edge, face). Based on the standard
+                 * algorithm from Ericson, "Real-Time Collision Detection".
+                 * Handle duplicate vertices: collapse to point or segment. */
+                vec3 pa = face_verts[fi][2].point;
+                vec3 pb = face_verts[fi][1].point;
+                vec3 pc = face_verts[fi][0].point;
+
+                /* Detect duplicate vertices — collapse to point or segment */
+                vec3 ab_e = vec3_sub(pb, pa);
+                vec3 ac_e = vec3_sub(pc, pa);
+                float ab_len2 = vec3_dot(ab_e, ab_e);
+                float ac_len2 = vec3_dot(ac_e, ac_e);
+
+                float eps_len2 = FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON;
+                if (ab_len2 < eps_len2 &&
+                    ac_len2 < eps_len2) {
+                    /* All three vertices coincide — treat as point */
+                    float dist2 = vec3_dot(pa, pa);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+                if (ab_len2 < eps_len2) {
+                    /* pa == pb — closest point on segment pa-pc */
+                    float t = vec3_dot(vec3_scale(pa, -1.0f), ac_e) / ac_len2;
+                    if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+                    vec3 closest = vec3_add(pa, vec3_scale(ac_e, t));
+                    float dist2 = vec3_dot(closest, closest);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+                if (ac_len2 < eps_len2) {
+                    /* pa == pc — closest point on segment pa-pb */
+                    float t = vec3_dot(vec3_scale(pa, -1.0f), ab_e) / ab_len2;
+                    if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+                    vec3 closest = vec3_add(pa, vec3_scale(ab_e, t));
+                    float dist2 = vec3_dot(closest, closest);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+                {
+                    vec3 bc_e = vec3_sub(pc, pb);
+                    if (vec3_dot(bc_e, bc_e) < eps_len2) {
+                        /* pb == pc — closest point on segment pa-pb */
+                        float t = vec3_dot(vec3_scale(pa, -1.0f), ab_e) / ab_len2;
+                        if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+                        vec3 closest = vec3_add(pa, vec3_scale(ab_e, t));
+                        float dist2 = vec3_dot(closest, closest);
+                        if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                        continue;
+                    }
+                }
+
+                /* Full triangle — Voronoi region closest-point */
+                vec3 ap   = vec3_scale(pa, -1.0f);  /* origin - pa */
+
+                float d1 = vec3_dot(ab_e, ap);
+                float d2 = vec3_dot(ac_e, ap);
+
+                /* Vertex A region */
+                if (d1 <= 0.0f && d2 <= 0.0f) {
+                    float dist2 = vec3_dot(pa, pa);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+
+                vec3 bp = vec3_scale(pb, -1.0f);
+                float d3 = vec3_dot(ab_e, bp);
+                float d4 = vec3_dot(ac_e, bp);
+
+                /* Vertex B region */
+                if (d3 >= 0.0f && d4 <= d3) {
+                    float dist2 = vec3_dot(pb, pb);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+
+                /* Edge AB region */
+                float vc = d1 * d4 - d3 * d2;
+                if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+                    float denom_ab = d1 - d3;
+                    float vt = (denom_ab > FORGE_PHYSICS_GJK_EPSILON)
+                        ? d1 / denom_ab : 0.0f;
+                    vec3 closest = vec3_add(pa, vec3_scale(ab_e, vt));
+                    float dist2 = vec3_dot(closest, closest);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+
+                vec3 cp = vec3_scale(pc, -1.0f);
+                float d5 = vec3_dot(ab_e, cp);
+                float d6 = vec3_dot(ac_e, cp);
+
+                /* Vertex C region */
+                if (d6 >= 0.0f && d5 <= d6) {
+                    float dist2 = vec3_dot(pc, pc);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+
+                /* Edge AC region */
+                float vb = d5 * d2 - d1 * d6;
+                if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+                    float denom_ac = d2 - d6;
+                    float wt = (denom_ac > FORGE_PHYSICS_GJK_EPSILON)
+                        ? d2 / denom_ac : 0.0f;
+                    vec3 closest = vec3_add(pa, vec3_scale(ac_e, wt));
+                    float dist2 = vec3_dot(closest, closest);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+
+                /* Edge BC region */
+                float va = d3 * d6 - d5 * d4;
+                if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+                    float denom_bc = (d4 - d3) + (d5 - d6);
+                    float wt = (denom_bc > FORGE_PHYSICS_GJK_EPSILON)
+                        ? (d4 - d3) / denom_bc : 0.0f;
+                    vec3 closest = vec3_add(pb, vec3_scale(vec3_sub(pc, pb), wt));
+                    float dist2 = vec3_dot(closest, closest);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+
+                /* Face region — origin projects inside the triangle */
+                float denom_sum = va + vb + vc;
+                if (SDL_fabsf(denom_sum) < FORGE_PHYSICS_GJK_EPSILON) {
+                    /* Degenerate barycentric sum — fall back to vertex A */
+                    float dist2 = vec3_dot(pa, pa);
+                    if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+                    continue;
+                }
+                float denom_f = 1.0f / denom_sum;
+                float sv = vb * denom_f;
+                float sw = vc * denom_f;
+                vec3 closest = vec3_add(pa, vec3_add(
+                    vec3_scale(ab_e, sv), vec3_scale(ac_e, sw)));
+                float dist2 = vec3_dot(closest, closest);
+                if (dist2 < best_dist2) { best_dist2 = dist2; best = fi; }
+            }
+
+            s->verts[0] = face_verts[best][0];
+            s->verts[1] = face_verts[best][1];
+            s->verts[2] = face_verts[best][2];
+            s->count = 3;
+            return gjk_do_triangle_(s, dir);
+        }
+    }
+
+    /* Non-degenerate tetrahedron — face-normal tests are reliable.
+     * Normals of the three faces adjacent to A, pointing outward.
+     * We compute the raw cross product then flip if needed. */
+    vec3 abc = vec3_cross(ab, ac);
+    vec3 acd = vec3_cross(ac, ad);
+    vec3 adb = vec3_cross(ad, ab);
+
+    /* Ensure each normal points away from the opposite vertex */
+    if (vec3_dot(abc, ad) > 0.0f) abc = vec3_scale(abc, -1.0f);
+    if (vec3_dot(acd, ab) > 0.0f) acd = vec3_scale(acd, -1.0f);
+    if (vec3_dot(adb, ac) > 0.0f) adb = vec3_scale(adb, -1.0f);
+
+    /* Check face ABC */
+    if (vec3_dot(abc, ao) > 0.0f) {
+        s->verts[0] = c;
+        s->verts[1] = b;
+        s->verts[2] = a;
+        s->count    = 3;
+        return gjk_do_triangle_(s, dir);
+    }
+
+    /* Check face ACD */
+    if (vec3_dot(acd, ao) > 0.0f) {
+        s->verts[0] = d;
+        s->verts[1] = c;
+        s->verts[2] = a;
+        s->count    = 3;
+        return gjk_do_triangle_(s, dir);
+    }
+
+    /* Check face ADB */
+    if (vec3_dot(adb, ao) > 0.0f) {
+        s->verts[0] = b;
+        s->verts[1] = d;
+        s->verts[2] = a;
+        s->count    = 3;
+        return gjk_do_triangle_(s, dir);
+    }
+
+    /* Origin is inside all three A-adjacent faces (ABC, ACD, ADB) — the fourth
+     * face (BCD) is implicitly satisfied by the support-point advance check in
+     * the main GJK loop.  Intersection confirmed. */
+    return true;
+}
+
+/* Inflate a sub-dimensional simplex to a full tetrahedron (count == 4) so EPA
+ * can use it as a starting polytope.  Called when GJK detects intersection but
+ * exits early with count < 4 (e.g. collinear hit with count 2, coplanar hit
+ * with count 3, or direction-collapse with count 1).
+ *
+ * Strategy: query new support points along directions orthogonal to the
+ * existing simplex features to expand it to 4 vertices. */
+static inline void gjk_inflate_simplex_(
+    ForgePhysicsGJKSimplex *s,
+    const ForgePhysicsCollisionShape *shape_a, vec3 pos_a, quat orient_a,
+    const ForgePhysicsCollisionShape *shape_b, vec3 pos_b, quat orient_b)
+{
+    if (s->count >= FORGE_PHYSICS_GJK_MAX_SIMPLEX) return;
+
+    /* Compute a scale-aware duplicate threshold from existing vertices */
+    float ref_scale = 0.0f;
+    for (int ri = 0; ri < s->count; ri++) {
+        float mag = vec3_length_squared(s->verts[ri].point);
+        if (mag > ref_scale) ref_scale = mag;
+    }
+    /* dup_eps2 = (eps * max_vertex_length)^2 — degrades gracefully to
+     * absolute epsilon when vertices are near the origin */
+    float dup_eps2 = FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON
+                   * (ref_scale > 1.0f ? ref_scale : 1.0f);
+
+    /* Helper: query a new support vertex along dir and add it if finite and
+     * not a duplicate of an existing vertex */
+    #define GJK_INFLATE_ADD_(dir_vec) do { \
+        if (s->count >= FORGE_PHYSICS_GJK_MAX_SIMPLEX) break; \
+        ForgePhysicsGJKVertex nv = forge_physics_gjk_support( \
+            shape_a, pos_a, orient_a, shape_b, pos_b, orient_b, (dir_vec)); \
+        if (!forge_isfinite(vec3_length_squared(nv.point))) break; \
+        bool dup = false; \
+        for (int di = 0; di < s->count; di++) { \
+            vec3 diff = vec3_sub(nv.point, s->verts[di].point); \
+            if (vec3_length_squared(diff) < dup_eps2) { \
+                dup = true; break; \
+            } \
+        } \
+        if (!dup) { s->verts[s->count] = nv; s->count++; } \
+    } while (0)
+
+    if (s->count == 1) {
+        /* Point: try 3 axis-aligned directions */
+        GJK_INFLATE_ADD_(vec3_create(1.0f, 0.0f, 0.0f));
+        GJK_INFLATE_ADD_(vec3_create(0.0f, 1.0f, 0.0f));
+        GJK_INFLATE_ADD_(vec3_create(0.0f, 0.0f, 1.0f));
+        /* If any axis produced a duplicate, try the negative axes */
+        if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+            GJK_INFLATE_ADD_(vec3_create(-1.0f, 0.0f, 0.0f));
+        if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+            GJK_INFLATE_ADD_(vec3_create(0.0f, -1.0f, 0.0f));
+        if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+            GJK_INFLATE_ADD_(vec3_create(0.0f, 0.0f, -1.0f));
+    } else if (s->count == 2) {
+        /* Line segment: compute orthogonal directions */
+        vec3 ab = vec3_sub(s->verts[1].point, s->verts[0].point);
+        float ab_len = vec3_length(ab);
+        if (ab_len > FORGE_PHYSICS_GJK_EPSILON) {
+            vec3 ab_n = vec3_scale(ab, 1.0f / ab_len);
+            /* Pick a vector not parallel to ab for cross product */
+            vec3 up = (SDL_fabsf(ab_n.y) < FORGE_PHYSICS_GJK_PARALLEL_THRESH)
+                ? vec3_create(0.0f, 1.0f, 0.0f)
+                : vec3_create(1.0f, 0.0f, 0.0f);
+            vec3 perp1 = vec3_normalize(vec3_cross(ab_n, up));
+            vec3 perp2 = vec3_cross(ab_n, perp1);
+            GJK_INFLATE_ADD_(perp1);
+            GJK_INFLATE_ADD_(perp2);
+            if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+                GJK_INFLATE_ADD_(vec3_scale(perp1, -1.0f));
+            if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+                GJK_INFLATE_ADD_(vec3_scale(perp2, -1.0f));
+        }
+    } else if (s->count == 3) {
+        /* Triangle: compute face normal and query along it */
+        vec3 ab = vec3_sub(s->verts[1].point, s->verts[0].point);
+        vec3 ac = vec3_sub(s->verts[2].point, s->verts[0].point);
+        vec3 normal = vec3_cross(ab, ac);
+        float n_len = vec3_length(normal);
+        if (n_len > FORGE_PHYSICS_GJK_EPSILON) {
+            GJK_INFLATE_ADD_(normal);
+            if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+                GJK_INFLATE_ADD_(vec3_scale(normal, -1.0f));
+        }
+    }
+
+    #undef GJK_INFLATE_ADD_
+}
+
+/* Test whether two convex shapes intersect using the Gilbert-Johnson-Keerthi
+ * (GJK) algorithm.
+ *
+ * Both shapes are described by their collision shape definition plus a
+ * world-space position and orientation. The returned result includes the
+ * final simplex so that EPA (Physics Lesson 10) can immediately compute
+ * penetration depth and contact normal without re-running GJK.
+ *
+ * Parameters:
+ *   shape_a, shape_b   — collision shapes (non-NULL, must pass shape_is_valid)
+ *   pos_a, pos_b       — world-space positions in meters (must be finite)
+ *   orient_a, orient_b — unit quaternions (normalized internally if needed;
+ *                         must be finite and non-zero-length)
+ *
+ * Returns: ForgePhysicsGJKResult — see struct comment for return semantics.
+ *          On invalid input: zeroed result (intersecting=false, iterations=0,
+ *          simplex.count=0). On iteration cap: intersecting=false with
+ *          iterations=FORGE_PHYSICS_GJK_MAX_ITERATIONS.
+ *
+ * Reference: Gilbert, Johnson, Keerthi, IEEE J-RA 1988.
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ */
+static inline ForgePhysicsGJKResult forge_physics_gjk_intersect(
+    const ForgePhysicsCollisionShape *shape_a, vec3 pos_a, quat orient_a,
+    const ForgePhysicsCollisionShape *shape_b, vec3 pos_b, quat orient_b)
+{
+    ForgePhysicsGJKResult result;
+    SDL_memset(&result, 0, sizeof(result));
+
+    /* Guard against NULL, invalid, or degenerate inputs */
+    if (!shape_a || !shape_b) return result;
+    if (!forge_physics_shape_is_valid(shape_a) ||
+        !forge_physics_shape_is_valid(shape_b))
+        return result;
+    if (!forge_isfinite(pos_a.x) || !forge_isfinite(pos_a.y) || !forge_isfinite(pos_a.z))
+        return result;
+    if (!forge_isfinite(pos_b.x) || !forge_isfinite(pos_b.y) || !forge_isfinite(pos_b.z))
+        return result;
+    /* Validate and normalize quaternions (rejects INF, zero-length, etc.) */
+    if (!gjk_validate_quat_(&orient_a) || !gjk_validate_quat_(&orient_b))
+        return result;
+
+    /* Initial search direction: center-to-center gives a good first guess.
+     * If the centers coincide, use the X axis as a fallback.
+     * Guard against INF from very large positions overflowing vec3_sub. */
+    vec3 dir = vec3_sub(pos_b, pos_a);
+    float dir_len_sq = vec3_length_squared(dir);
+    if (!forge_isfinite(dir_len_sq))
+        return result;
+    if (dir_len_sq < FORGE_PHYSICS_GJK_EPSILON * FORGE_PHYSICS_GJK_EPSILON)
+        dir = vec3_create(1.0f, 0.0f, 0.0f);
+
+    /* First support point */
+    ForgePhysicsGJKVertex first = forge_physics_gjk_support(
+        shape_a, pos_a, orient_a, shape_b, pos_b, orient_b, dir);
+    if (!forge_isfinite(vec3_length_squared(first.point)))
+        return result;
+    result.simplex.verts[0] = first;
+    result.simplex.count    = 1;
+
+    /* New search direction: from first point toward the origin */
+    dir = vec3_scale(first.point, -1.0f);
+
+    ForgePhysicsGJKSimplex *s = &result.simplex;
+
+    for (int i = 0; i < FORGE_PHYSICS_GJK_MAX_ITERATIONS; ++i) {
+        result.iterations = i + 1;
+
+        /* Safety: re-normalise direction if it has shrunk near zero */
+        float dir_len = vec3_length(dir);
+        if (dir_len < FORGE_PHYSICS_GJK_EPSILON) {
+            /* Simplex has collapsed onto the origin — shapes are touching.
+             * Inflate to a tetrahedron so EPA has a valid starting polytope. */
+            result.intersecting = true;
+            gjk_inflate_simplex_(s, shape_a, pos_a, orient_a,
+                                     shape_b, pos_b, orient_b);
+            return result;
+        }
+
+        ForgePhysicsGJKVertex a = forge_physics_gjk_support(
+            shape_a, pos_a, orient_a, shape_b, pos_b, orient_b, dir);
+        if (!forge_isfinite(vec3_length_squared(a.point)))
+            return result;
+
+        /* If the new point did not pass the origin in direction dir, the
+         * origin is not reachable — the shapes do not intersect. */
+        if (vec3_dot(a.point, dir) < 0.0f)
+            return result; /* intersecting remains false */
+
+        /* Add the new vertex to the simplex (newest vertex goes at the end).
+         * Defensive bounds check — the sub-algorithms maintain count < 4 on
+         * non-intersecting return, but guard against future regressions. */
+        if (s->count >= FORGE_PHYSICS_GJK_MAX_SIMPLEX)
+            return result;
+        s->verts[s->count] = a;
+        s->count++;
+
+        /* Run the appropriate sub-algorithm for the current simplex size */
+        bool contained = false;
+        switch (s->count) {
+        case 2: contained = gjk_do_line_(s, &dir);        break;
+        case 3: contained = gjk_do_triangle_(s, &dir);    break;
+        case 4: contained = gjk_do_tetrahedron_(s, &dir); break;
+        default: break;
+        }
+
+        if (contained) {
+            result.intersecting = true;
+            /* Inflate sub-dimensional simplices (count < 4) to a full
+             * tetrahedron so EPA has a valid starting polytope. */
+            if (s->count < FORGE_PHYSICS_GJK_MAX_SIMPLEX) {
+                gjk_inflate_simplex_(s, shape_a, pos_a, orient_a,
+                                         shape_b, pos_b, orient_b);
+            }
+            return result;
+        }
+    }
+
+    /* Iteration cap reached without a conclusive answer — conservatively
+     * report no intersection. This should not occur with well-formed convex
+     * shapes; reaching this path indicates a degenerate geometry. */
+    return result;
+}
+
+/* Convenience wrapper: run GJK intersection test on two rigid bodies.
+ *
+ * Extracts position and orientation directly from the rigid body structs,
+ * then delegates to forge_physics_gjk_intersect(). Intended for use inside
+ * narrow-phase loops where the caller already holds body and shape pointers.
+ *
+ * Parameters:
+ *   body_a, body_b   — rigid bodies (non-NULL; position in meters,
+ *                       orientation as unit quaternion)
+ *   shape_a, shape_b — collision shapes (non-NULL, must pass shape_is_valid)
+ *
+ * Returns: ForgePhysicsGJKResult — zeroed on NULL input.
+ *          See forge_physics_gjk_intersect for full return semantics.
+ *
+ * See: Physics Lesson 09 — GJK Intersection Testing
+ */
+static inline ForgePhysicsGJKResult forge_physics_gjk_test_bodies(
+    const ForgePhysicsRigidBody *body_a, const ForgePhysicsCollisionShape *shape_a,
+    const ForgePhysicsRigidBody *body_b, const ForgePhysicsCollisionShape *shape_b)
+{
+    ForgePhysicsGJKResult empty;
+    SDL_memset(&empty, 0, sizeof(empty));
+
+    if (!body_a || !body_b || !shape_a || !shape_b) return empty;
+
+    return forge_physics_gjk_intersect(
+        shape_a, body_a->position, body_a->orientation,
+        shape_b, body_b->position, body_b->orientation);
 }
 
 #endif /* FORGE_PHYSICS_H */

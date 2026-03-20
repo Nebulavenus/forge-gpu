@@ -3182,8 +3182,9 @@ static void test_delay_impulse_echo(void)
 
     forge_audio_delay_process(buf, total_frames, &d);
 
-    /* Frame 0 should still have the original impulse */
-    ASSERT_NEAR(buf[0], 1.0f, EPSILON);
+    /* Frame 0: delay outputs only the delayed signal (no dry passthrough),
+     * so the impulse at frame 0 produces 0.0 — the echo appears later */
+    ASSERT_NEAR(buf[0], 0.0f, EPSILON);
 
     /* Around frame 441-442 (10ms delay) we should see the echo.
      * buf_frames = delay_samples + 1, so echo appears at buf_frames. */
@@ -3554,7 +3555,8 @@ static void test_chorus_zero_depth(void)
     /* Minimum depth (0.001) with very low rate */
     ASSERT_TRUE(forge_audio_chorus_init(&ch, 0.1f, 0.001f));
 
-    /* Feed DC and check that output is close to 2x input (input + delayed) */
+    /* Feed DC — chorus outputs only the delayed signal (no dry passthrough),
+     * so with near-zero depth the delayed signal equals the input */
     float buf[64];
     for (int i = 0; i < 64; i++) buf[i] = 0.5f;
 
@@ -3564,8 +3566,8 @@ static void test_chorus_zero_depth(void)
         forge_audio_chorus_process(buf, 32, &ch);
     }
 
-    /* Output should be approximately 1.0 (0.5 input + 0.5 delayed) */
-    ASSERT_NEAR(buf[60], 1.0f, 0.15f);
+    /* Output should be approximately 0.5 (delayed DC signal ≈ input DC) */
+    ASSERT_NEAR(buf[60], 0.5f, 0.15f);
     forge_audio_chorus_free(&ch);
     END_TEST();
 }
@@ -3815,6 +3817,102 @@ static void test_mixer_no_effect_backward_compat(void)
     END_TEST();
 }
 
+/* ── Init defaults match shared macros ─────────────────────────────── */
+
+static void test_biquad_init_defaults_match_macros(void)
+{
+    TEST("biquad init defaults match shared macros");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    ASSERT_NEAR(bq.cutoff, FORGE_AUDIO_DEFAULT_BIQUAD_CUTOFF, EPSILON);
+    ASSERT_NEAR(bq.q, FORGE_AUDIO_DEFAULT_BIQUAD_Q, EPSILON);
+    ASSERT_TRUE(bq.type == FORGE_AUDIO_BIQUAD_LP);
+    ASSERT_TRUE(bq.dirty);
+    END_TEST();
+}
+
+/* ── NaN parameter sanitization tests ──────────────────────────────── */
+
+static void test_biquad_set_nan_cutoff(void)
+{
+    TEST("biquad set NaN cutoff → safe default");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_LP, SDL_sqrtf(-1.0f), 0.707f);
+    /* NaN cutoff should be replaced with FORGE_AUDIO_DEFAULT_BIQUAD_CUTOFF */
+    ASSERT_TRUE(forge_isfinite(bq.cutoff));
+    ASSERT_NEAR(bq.cutoff, FORGE_AUDIO_DEFAULT_BIQUAD_CUTOFF, EPSILON);
+    END_TEST();
+}
+
+static void test_biquad_set_nan_q(void)
+{
+    TEST("biquad set NaN Q → safe default");
+    ForgeAudioBiquad bq;
+    forge_audio_biquad_init(&bq);
+    forge_audio_biquad_set(&bq, FORGE_AUDIO_BIQUAD_LP, 500.0f, SDL_sqrtf(-1.0f));
+    ASSERT_TRUE(forge_isfinite(bq.q));
+    ASSERT_NEAR(bq.q, FORGE_AUDIO_DEFAULT_BIQUAD_Q, EPSILON);
+    END_TEST();
+}
+
+static void test_delay_init_nan_time(void)
+{
+    TEST("delay init NaN time → safe default");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, SDL_sqrtf(-1.0f)));
+    /* NaN should be replaced with FORGE_AUDIO_DEFAULT_DELAY_TIME */
+    ASSERT_TRUE(forge_isfinite(d.delay_time));
+    ASSERT_NEAR(d.delay_time, FORGE_AUDIO_DEFAULT_DELAY_TIME, EPSILON);
+    ASSERT_TRUE(d.buf_frames > 0);
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+static void test_delay_set_time_nan(void)
+{
+    TEST("delay set_time NaN → safe default");
+    ForgeAudioDelay d;
+    ASSERT_TRUE(forge_audio_delay_init(&d, 0.1f));
+    forge_audio_delay_set_time(&d, SDL_sqrtf(-1.0f));
+    /* NaN should be replaced with the named default */
+    ASSERT_TRUE(forge_isfinite(d.delay_time));
+    ASSERT_NEAR(d.delay_time, FORGE_AUDIO_DEFAULT_DELAY_TIME, EPSILON);
+    ASSERT_TRUE(d.buf_frames > 0);
+    forge_audio_delay_free(&d);
+    END_TEST();
+}
+
+static void test_reverb_set_nan_params(void)
+{
+    TEST("reverb set NaN room_size/damping → safe defaults");
+    ForgeAudioReverb rv;
+    ASSERT_TRUE(forge_audio_reverb_init(&rv, 0.5f, 0.5f));
+    forge_audio_reverb_set(&rv, SDL_sqrtf(-1.0f), SDL_sqrtf(-1.0f));
+    /* NaN should be replaced with named safe defaults */
+    ASSERT_TRUE(forge_isfinite(rv.room_size));
+    ASSERT_TRUE(forge_isfinite(rv.damping));
+    ASSERT_NEAR(rv.room_size, FORGE_AUDIO_DEFAULT_REVERB_ROOM, EPSILON);
+    ASSERT_NEAR(rv.damping, FORGE_AUDIO_DEFAULT_REVERB_DAMPING, EPSILON);
+    forge_audio_reverb_free(&rv);
+    END_TEST();
+}
+
+static void test_chorus_init_nan_params(void)
+{
+    TEST("chorus init NaN rate/depth → safe defaults");
+    ForgeAudioChorus ch;
+    ASSERT_TRUE(forge_audio_chorus_init(&ch, SDL_sqrtf(-1.0f), SDL_sqrtf(-1.0f)));
+    /* NaN should be replaced with FORGE_AUDIO_DEFAULT_CHORUS_RATE/DEPTH */
+    ASSERT_TRUE(forge_isfinite(ch.rate));
+    ASSERT_TRUE(forge_isfinite(ch.depth));
+    ASSERT_NEAR(ch.rate, FORGE_AUDIO_DEFAULT_CHORUS_RATE, EPSILON);
+    ASSERT_NEAR(ch.depth, FORGE_AUDIO_DEFAULT_CHORUS_DEPTH, EPSILON);
+    ASSERT_TRUE(ch.buf_frames > 0);
+    forge_audio_chorus_free(&ch);
+    END_TEST();
+}
+
 /* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -3995,6 +4093,17 @@ int main(int argc, char *argv[])
     test_mixer_channel_effect();
     test_mixer_master_effect();
     test_mixer_no_effect_backward_compat();
+
+    /* Init defaults match shared macros */
+    test_biquad_init_defaults_match_macros();
+
+    /* NaN parameter sanitization (Lesson 06) */
+    test_biquad_set_nan_cutoff();
+    test_biquad_set_nan_q();
+    test_delay_init_nan_time();
+    test_delay_set_time_nan();
+    test_reverb_set_nan_params();
+    test_chorus_init_nan_params();
 
     /* Clean up temporary test WAV files */
     SDL_RemovePath(TEST_WAV_PATH);

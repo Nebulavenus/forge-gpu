@@ -113,6 +113,11 @@ the integer-step fast path — identical to Lessons 01–03.
 | `forge_audio_effect_chain_clear` | `(chain)` | Remove all effects (does not free userdata) |
 | `forge_audio_effect_chain_process` | `(chain, float *samples, int frames)` | Process buffer through all chain effects |
 
+Each effect slot exposes `bypass` (skip processing) and `wet` (wet/dry blend,
+default 1.0) controls. Per-channel effect chains run before channel volume/pan;
+the master effect chain runs after channel summation but before master volume
+and `tanh` soft-clipping.
+
 **Biquad Filter (Robert Bristow-Johnson Audio EQ Cookbook):**
 
 | Function | Signature | Purpose |

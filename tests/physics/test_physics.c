@@ -5917,6 +5917,9 @@ int main(int argc, char *argv[])
     /* ── SAP Broadphase (test_physics_sap.c) ──────────────────────────── */
     run_sap_tests();
 
+    /* ── GJK Intersection (test_physics_gjk.c) ────────────────────────── */
+    run_gjk_tests();
+
     /* ── Production Hardening (test_physics_production.c) ─────────────── */
     run_production_tests();
 

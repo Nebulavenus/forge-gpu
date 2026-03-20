@@ -47,6 +47,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="06-resting-contacts-and-friction/assets/screenshot.png" width="480" alt="Resting Contacts and Friction"/>](06-resting-contacts-and-friction/) | [**06 — Resting Contacts and Friction**](06-resting-contacts-and-friction/) | Sphere-plane and box-plane contact detection, Coulomb friction (static and dynamic), iterative contact solver, Baumgarte stabilization, stacking |
 | [<img src="07-collision-shapes/assets/screenshot.png" width="480" alt="Collision Shapes and Support Functions"/>](07-collision-shapes/) | [**07 — Collision Shapes and Support Functions**](07-collision-shapes/) | Collision shape tagged union, support functions (sphere, box, capsule), AABB computation from oriented shapes, AABB overlap testing, capsule inertia |
 | [<img src="08-sweep-and-prune/assets/screenshot.png" width="480" alt="Sweep-and-Prune Broadphase"/>](08-sweep-and-prune/) | [**08 — Sweep-and-Prune Broadphase**](08-sweep-and-prune/) | Sort-and-sweep broadphase, endpoint sorting, axis selection by variance, SAP pair detection, brute-force comparison |
+| [<img src="09-gjk-intersection/assets/screenshot.png" width="480" alt="GJK Intersection Testing"/>](09-gjk-intersection/) | [**09 — GJK Intersection Testing**](09-gjk-intersection/) | Gilbert-Johnson-Keerthi narrowphase, Minkowski difference, simplex evolution, support functions, SAP+GJK pipeline |
 
 ## Shared library
 

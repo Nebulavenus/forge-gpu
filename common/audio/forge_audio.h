@@ -945,13 +945,29 @@ static inline void forge_audio_mixer_mix(ForgeAudioMixer *mixer,
         if (!forge_isfinite(channel->pan))    channel->pan = 0.0f;
 
         if (skip_mix || channel->volume <= 0.0f) {
-            /* Advance cursor to stay in sync without mixing */
-            float saved_vol = channel->source->volume;
-            channel->source->volume = 0.0f;
-            float dummy[2] = {0};
-            /* source_mix at volume 0 advances cursor via its fast path */
-            forge_audio_source_mix(channel->source, dummy, frames);
-            channel->source->volume = saved_vol;
+            /* Render the real source block into scratch so effects evolve
+             * based on actual audio (not silence).  This keeps IIR state,
+             * delay lines, and reverb tails tracking the source correctly
+             * so unmuting is seamless.  The processed output is discarded. */
+            if (channel->effects.effect_count > 0) {
+                SDL_memset(scratch, 0, total_bytes);
+                float saved_vol = channel->source->volume;
+                float saved_pan = channel->source->pan;
+                channel->source->volume = 1.0f;
+                channel->source->pan    = 0.0f;
+                forge_audio_source_mix(channel->source, scratch, frames);
+                channel->source->volume = saved_vol;
+                channel->source->pan    = saved_pan;
+                forge_audio_effect_chain_process(&channel->effects,
+                                                  scratch, frames);
+            } else {
+                /* No effects — just advance cursor to stay in sync */
+                float saved_vol = channel->source->volume;
+                channel->source->volume = 0.0f;
+                float dummy[FORGE_AUDIO_CHANNELS] = {0};
+                forge_audio_source_mix(channel->source, dummy, frames);
+                channel->source->volume = saved_vol;
+            }
             continue;
         }
 
@@ -2611,14 +2627,25 @@ typedef struct ForgeAudioBiquad {
     bool dirty;
 } ForgeAudioBiquad;
 
+/* Safe fallback defaults for NaN/INF sanitization — shared between init,
+ * set, and test code so the sanitizer and initializer stay in sync. */
+#define FORGE_AUDIO_DEFAULT_BIQUAD_CUTOFF  1000.0f
+#define FORGE_AUDIO_DEFAULT_BIQUAD_Q       0.707f
+#define FORGE_AUDIO_DEFAULT_DELAY_TIME     0.3f
+#define FORGE_AUDIO_DEFAULT_REVERB_ROOM    0.5f
+#define FORGE_AUDIO_DEFAULT_REVERB_DAMPING 0.5f
+#define FORGE_AUDIO_DEFAULT_CHORUS_RATE    0.5f
+#define FORGE_AUDIO_DEFAULT_CHORUS_DEPTH   0.005f
+#define FORGE_AUDIO_DEFAULT_DELAY_FEEDBACK 0.3f
+
 /* Initialize biquad to LP 1000 Hz Q=0.707 (Butterworth). */
 static inline void forge_audio_biquad_init(ForgeAudioBiquad *bq)
 {
     if (!bq) return;
     SDL_memset(bq, 0, sizeof(*bq));
     bq->type   = FORGE_AUDIO_BIQUAD_LP;
-    bq->cutoff = 1000.0f;
-    bq->q      = 0.707f;
+    bq->cutoff = FORGE_AUDIO_DEFAULT_BIQUAD_CUTOFF;
+    bq->q      = FORGE_AUDIO_DEFAULT_BIQUAD_Q;
     bq->dirty  = true;
 }
 
@@ -2628,6 +2655,10 @@ static inline void forge_audio_biquad_set(ForgeAudioBiquad *bq,
                                            float cutoff, float q)
 {
     if (!bq) return;
+    /* Sanitize non-finite inputs — NaN comparisons always fail, bypassing
+     * the downstream clamping in biquad_compute. Default to safe values. */
+    if (!forge_isfinite(cutoff)) cutoff = FORGE_AUDIO_DEFAULT_BIQUAD_CUTOFF;
+    if (!forge_isfinite(q))      q = FORGE_AUDIO_DEFAULT_BIQUAD_Q;
     if (type != bq->type || cutoff != bq->cutoff || q != bq->q) {
         bq->type   = type;
         bq->cutoff = cutoff;
@@ -2722,8 +2753,8 @@ static inline void forge_audio_biquad_process(float *samples, int frames,
     forge_audio__biquad_compute(bq);
 
     for (int i = 0; i < frames; i++) {
-        for (int ch = 0; ch < 2; ch++) {
-            float x0 = samples[i * 2 + ch];
+        for (int ch = 0; ch < FORGE_AUDIO_CHANNELS; ch++) {
+            float x0 = samples[i * FORGE_AUDIO_CHANNELS + ch];
 
             float y0 = bq->b0 * x0
                       + bq->b1 * bq->x1[ch]
@@ -2739,7 +2770,7 @@ static inline void forge_audio_biquad_process(float *samples, int frames,
             bq->y2[ch] = bq->y1[ch];
             bq->y1[ch] = y0;
 
-            samples[i * 2 + ch] = y0;
+            samples[i * FORGE_AUDIO_CHANNELS + ch] = y0;
         }
     }
 }
@@ -2772,12 +2803,15 @@ static inline bool forge_audio_delay_init(ForgeAudioDelay *d, float time_sec)
     if (!d) return false;
     SDL_memset(d, 0, sizeof(*d));
 
+    /* Sanitize non-finite input — NaN bypasses comparison-based clamping
+     * and causes UB in the (int) cast below */
+    if (!forge_isfinite(time_sec)) time_sec = FORGE_AUDIO_DEFAULT_DELAY_TIME;
     if (time_sec < 0.001f) time_sec = 0.001f;
     if (time_sec > FORGE_AUDIO_DELAY_MAX_TIME)
         time_sec = FORGE_AUDIO_DELAY_MAX_TIME;
 
     d->delay_time = time_sec;
-    d->feedback   = 0.3f;
+    d->feedback   = FORGE_AUDIO_DEFAULT_DELAY_FEEDBACK;
     d->buf_frames = (int)(time_sec * FORGE_AUDIO_SAMPLE_RATE) + 1;
 
     size_t bytes = (size_t)d->buf_frames * FORGE_AUDIO_CHANNELS * sizeof(float);
@@ -2813,6 +2847,7 @@ static inline void forge_audio_delay_set_time(ForgeAudioDelay *d,
                                                float time_sec)
 {
     if (!d) return;
+    if (!forge_isfinite(time_sec)) time_sec = FORGE_AUDIO_DEFAULT_DELAY_TIME;
     if (time_sec < 0.001f) time_sec = 0.001f;
     if (time_sec > FORGE_AUDIO_DELAY_MAX_TIME)
         time_sec = FORGE_AUDIO_DELAY_MAX_TIME;
@@ -2843,6 +2878,7 @@ static inline void forge_audio_delay_process(float *samples, int frames,
         return;
 
     float fb = d->feedback;
+    if (!forge_isfinite(fb)) fb = FORGE_AUDIO_DEFAULT_DELAY_FEEDBACK;
     if (fb < 0.0f) fb = 0.0f;
     if (fb > 0.99f) fb = 0.99f;
 
@@ -2857,24 +2893,21 @@ static inline void forge_audio_delay_process(float *samples, int frames,
         if (read_pos < 0) read_pos = 0;
         if (read_pos >= d->buf_frames) read_pos = 0;
 
-        /* Read delayed sample */
-        float del_l = d->buffer[read_pos * 2];
-        float del_r = d->buffer[read_pos * 2 + 1];
+        /* Read delayed sample, write feedback, output delayed signal */
+        for (int c = 0; c < FORGE_AUDIO_CHANNELS; c++) {
+            float del = d->buffer[read_pos * FORGE_AUDIO_CHANNELS + c];
 
-        /* NaN/Inf rejection — prevent poison from persisting in the
-         * circular buffer where it would corrupt all subsequent output */
-        if (!forge_isfinite(del_l)) del_l = 0.0f;
-        if (!forge_isfinite(del_r)) del_r = 0.0f;
+            /* NaN/Inf rejection — prevent poison from persisting in the
+             * circular buffer where it would corrupt all subsequent output */
+            if (!forge_isfinite(del)) del = 0.0f;
 
-        /* Write new sample + feedback into buffer */
-        float in_l = samples[i * 2];
-        float in_r = samples[i * 2 + 1];
-        d->buffer[d->write_pos * 2]     = in_l + del_l * fb;
-        d->buffer[d->write_pos * 2 + 1] = in_r + del_r * fb;
+            float in = samples[i * FORGE_AUDIO_CHANNELS + c];
+            d->buffer[d->write_pos * FORGE_AUDIO_CHANNELS + c] = in + del * fb;
 
-        /* Output = input + delayed */
-        samples[i * 2]     = in_l + del_l;
-        samples[i * 2 + 1] = in_r + del_r;
+            /* Output: delayed signal only — the effect chain's wet/dry
+             * crossfade handles mixing with the original input */
+            samples[i * FORGE_AUDIO_CHANNELS + c] = del;
+        }
 
         d->write_pos++;
         if (d->write_pos >= d->buf_frames) d->write_pos = 0;
@@ -2956,6 +2989,9 @@ static inline void forge_audio_reverb_set(ForgeAudioReverb *rv,
                                            float room_size, float damping)
 {
     if (!rv) return;
+    /* Sanitize non-finite inputs — NaN bypasses comparison-based clamping */
+    if (!forge_isfinite(room_size)) room_size = FORGE_AUDIO_DEFAULT_REVERB_ROOM;
+    if (!forge_isfinite(damping))   damping = FORGE_AUDIO_DEFAULT_REVERB_DAMPING;
     if (room_size < 0.0f) room_size = 0.0f;
     if (room_size > 1.0f) room_size = 1.0f;
     if (damping < 0.0f) damping = 0.0f;
@@ -2966,7 +3002,7 @@ static inline void forge_audio_reverb_set(ForgeAudioReverb *rv,
 
     float fb = forge_audio__reverb_feedback(room_size);
 
-    for (int ch = 0; ch < 2; ch++) {
+    for (int ch = 0; ch < FORGE_AUDIO_CHANNELS; ch++) {
         for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
             rv->combs[ch][c].feedback = fb;
             rv->combs[ch][c].damp1    = damping;
@@ -3052,7 +3088,7 @@ static inline void forge_audio_reverb_reset(ForgeAudioReverb *rv)
 {
     if (!rv || !rv->heap) return;
 
-    for (int ch = 0; ch < 2; ch++) {
+    for (int ch = 0; ch < FORGE_AUDIO_CHANNELS; ch++) {
         for (int c = 0; c < FORGE_AUDIO_REVERB_NUM_COMBS; c++) {
             ForgeAudioReverbComb *comb = &rv->combs[ch][c];
             if (comb->buffer && comb->buf_len > 0) {
@@ -3112,8 +3148,8 @@ static inline void forge_audio_reverb_process(float *samples, int frames,
     if (!rv || !rv->heap || !samples || frames <= 0) return;
 
     for (int i = 0; i < frames; i++) {
-        for (int ch = 0; ch < 2; ch++) {
-            float input = samples[i * 2 + ch];
+        for (int ch = 0; ch < FORGE_AUDIO_CHANNELS; ch++) {
+            float input = samples[i * FORGE_AUDIO_CHANNELS + ch];
             float sum = 0.0f;
 
             /* Parallel comb filters */
@@ -3126,7 +3162,7 @@ static inline void forge_audio_reverb_process(float *samples, int frames,
                 sum = forge_audio__reverb_allpass(&rv->allpass[ch][a], sum);
             }
 
-            samples[i * 2 + ch] = sum;
+            samples[i * FORGE_AUDIO_CHANNELS + ch] = sum;
         }
     }
 }
@@ -3161,6 +3197,9 @@ static inline bool forge_audio_chorus_init(ForgeAudioChorus *ch,
     if (!ch) return false;
     SDL_memset(ch, 0, sizeof(*ch));
 
+    /* Sanitize non-finite inputs — NaN bypasses comparison-based clamping */
+    if (!forge_isfinite(rate))  rate = FORGE_AUDIO_DEFAULT_CHORUS_RATE;
+    if (!forge_isfinite(depth)) depth = FORGE_AUDIO_DEFAULT_CHORUS_DEPTH;
     if (rate < 0.1f) rate = 0.1f;
     if (rate > 5.0f) rate = 5.0f;
     if (depth < 0.001f) depth = 0.001f;
@@ -3217,8 +3256,10 @@ static inline void forge_audio_chorus_process(float *samples, int frames,
 
     for (int i = 0; i < frames; i++) {
         /* Write input to circular buffer */
-        ch->buffer[ch->write_pos * 2]     = samples[i * 2];
-        ch->buffer[ch->write_pos * 2 + 1] = samples[i * 2 + 1];
+        for (int c = 0; c < FORGE_AUDIO_CHANNELS; c++) {
+            ch->buffer[ch->write_pos * FORGE_AUDIO_CHANNELS + c] =
+                samples[i * FORGE_AUDIO_CHANNELS + c];
+        }
 
         /* LFO: modulated delay in samples */
         float mod = ch->depth * (float)FORGE_AUDIO_SAMPLE_RATE
@@ -3230,20 +3271,19 @@ static inline void forge_audio_chorus_process(float *samples, int frames,
 
         int   idx0 = (int)read_f;
         float frac = read_f - (float)idx0;
-        int   idx1 = idx0 + 1;
-        if (idx0 >= ch->buf_frames) idx0 -= ch->buf_frames;
-        if (idx0 < 0) idx0 = 0;
-        if (idx1 >= ch->buf_frames) idx1 -= ch->buf_frames;
-        if (idx1 < 0) idx1 = 0;
+        idx0 = idx0 % ch->buf_frames;
+        if (idx0 < 0) idx0 += ch->buf_frames;
+        int   idx1 = (idx0 + 1) % ch->buf_frames;
 
         /* Linear interpolation for each channel */
-        for (int c = 0; c < 2; c++) {
-            float s0 = ch->buffer[idx0 * 2 + c];
-            float s1 = ch->buffer[idx1 * 2 + c];
+        for (int c = 0; c < FORGE_AUDIO_CHANNELS; c++) {
+            float s0 = ch->buffer[idx0 * FORGE_AUDIO_CHANNELS + c];
+            float s1 = ch->buffer[idx1 * FORGE_AUDIO_CHANNELS + c];
             float delayed = s0 + (s1 - s0) * frac;
 
-            /* Output: input + delayed (chorus effect) */
-            samples[i * 2 + c] = samples[i * 2 + c] + delayed;
+            /* Output: delayed signal only — the effect chain's wet/dry
+             * crossfade handles mixing with the original input */
+            samples[i * FORGE_AUDIO_CHANNELS + c] = delayed;
         }
 
         /* Advance LFO phase */

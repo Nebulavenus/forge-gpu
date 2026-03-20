@@ -122,6 +122,7 @@ typedef struct app_state {
     ForgeAudioBuffer buffers[NUM_SOURCES];
     ForgeAudioSource sources[NUM_SOURCES];
     bool             source_loaded[NUM_SOURCES];
+    int              source_to_channel[NUM_SOURCES]; /* mixer channel index per source, -1 if unloaded */
     int              active_source;
 
     /* Mixer */
@@ -336,6 +337,15 @@ static void rebuild_effect_chain(app_state *state)
         int idx = forge_audio_effect_chain_add(chain,
             forge_audio_biquad_process, &state->biquad1);
         if (idx >= 0) chain->effects[idx].bypass = false;
+
+        /* Radio preset uses a second biquad (LP at 3 kHz) for band-pass */
+        if (state->active_preset == 3) {
+            forge_audio_biquad_set(&state->biquad2,
+                FORGE_AUDIO_BIQUAD_LP, 3000.0f, 0.707f);
+            idx = forge_audio_effect_chain_add(chain,
+                forge_audio_biquad_process, &state->biquad2);
+            if (idx >= 0) chain->effects[idx].bypass = false;
+        }
     }
 
     if (!state->delay_bypass) {
@@ -428,18 +438,25 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         }
     }
 
-    /* Set up mixer with loaded sources */
+    /* Set up mixer with loaded sources — track source→channel mapping */
     state->mixer = forge_audio_mixer_create();
+    for (int i = 0; i < NUM_SOURCES; i++)
+        state->source_to_channel[i] = -1;
+
+    int first_loaded = -1;
     for (int i = 0; i < NUM_SOURCES; i++) {
         if (state->source_loaded[i]) {
             int ch = forge_audio_mixer_add_channel(&state->mixer,
                                                     &state->sources[i]);
-            if (ch >= 0 && i > 0) {
+            state->source_to_channel[i] = ch;
+            if (first_loaded < 0) first_loaded = i;
+            /* Mute all except the first loaded source */
+            if (ch >= 0 && i != first_loaded) {
                 state->mixer.channels[ch].mute = true;
             }
         }
     }
-    state->active_source = 0;
+    state->active_source = (first_loaded >= 0) ? first_loaded : 0;
 
     /* Initialize DSP effects */
     if (!init_effects(state)) {
@@ -513,12 +530,12 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
             }
         }
 
-        /* 1-2: switch source */
+        /* 1-2: switch source (use source→channel mapping) */
         for (int k = 0; k < NUM_SOURCES; k++) {
             if (sc == SDL_SCANCODE_1 + k && state->source_loaded[k]) {
-                /* Mute all, unmute selected */
+                int target_ch = state->source_to_channel[k];
                 for (int j = 0; j < state->mixer.channel_count; j++) {
-                    state->mixer.channels[j].mute = (j != k);
+                    state->mixer.channels[j].mute = (j != target_ch);
                 }
                 state->active_source = k;
             }
@@ -563,9 +580,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Update VU meters */
     forge_audio_mixer_update_peaks(&state->mixer, dt);
     for (int i = 0; i < NUM_SOURCES; i++) {
-        if (i < state->mixer.channel_count) {
+        int ch = state->source_to_channel[i];
+        if (ch >= 0 && ch < state->mixer.channel_count) {
             float pl = 0.0f, pr = 0.0f;
-            forge_audio_channel_peak(&state->mixer, i, &pl, &pr);
+            forge_audio_channel_peak(&state->mixer, ch, &pl, &pr);
             vu_update(&state->source_vu_l[i], &state->source_peak_l[i],
                       &state->source_peak_timer_l[i], pl, dt);
             vu_update(&state->source_vu_r[i], &state->source_peak_r[i],
@@ -650,8 +668,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 bool was_active = is_active;
                 forge_ui_ctx_checkbox_layout(ui, label, &is_active, CB_H);
                 if (is_active && !was_active) {
+                    int target_ch = state->source_to_channel[i];
                     for (int j = 0; j < state->mixer.channel_count; j++) {
-                        state->mixer.channels[j].mute = (j != i);
+                        state->mixer.channels[j].mute = (j != target_ch);
                     }
                     state->active_source = i;
                 }
@@ -722,20 +741,21 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             forge_ui_ctx_slider_layout(ui, "Q",
                 &state->filter_q, 0.1f, 10.0f, SH);
             {
-                /* Radio-button group: checking one unchecks the others.
-                 * Re-derive from filter_type each frame so deselecting
-                 * the active type has no effect (it stays selected). */
+                /* Radio-button group: detect which checkbox was clicked
+                 * and set filter_type from the click, not from re-reading
+                 * all booleans (which causes earlier options to override). */
                 bool is_lp = (state->filter_type == 0);
                 bool is_hp = (state->filter_type == 1);
                 bool is_bp = (state->filter_type == 2);
-                forge_ui_ctx_checkbox_layout(ui, "Low-Pass", &is_lp, CB_H);
-                forge_ui_ctx_checkbox_layout(ui, "High-Pass", &is_hp, CB_H);
-                forge_ui_ctx_checkbox_layout(ui, "Band-Pass", &is_bp, CB_H);
-                /* Only switch type when a new one is checked */
-                if (is_lp) state->filter_type = 0;
-                else if (is_hp) state->filter_type = 1;
-                else if (is_bp) state->filter_type = 2;
-                /* else: user unchecked the active type — keep current */
+                bool clicked_lp =
+                    forge_ui_ctx_checkbox_layout(ui, "Low-Pass", &is_lp, CB_H);
+                bool clicked_hp =
+                    forge_ui_ctx_checkbox_layout(ui, "High-Pass", &is_hp, CB_H);
+                bool clicked_bp =
+                    forge_ui_ctx_checkbox_layout(ui, "Band-Pass", &is_bp, CB_H);
+                if (clicked_lp && is_lp) state->filter_type = 0;
+                else if (clicked_hp && is_hp) state->filter_type = 1;
+                else if (clicked_bp && is_bp) state->filter_type = 2;
             }
 
             forge_ui_ctx_separator_layout(ui, SEP);
