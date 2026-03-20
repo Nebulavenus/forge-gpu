@@ -122,6 +122,9 @@ __all__ = [
     "diagram_lod_distance_selection",
     "diagram_tbn_gram_schmidt",
     "diagram_skinning_pipeline_flow",
+    "diagram_billboard_expansion",
+    "diagram_gpu_data_flow",
+    "diagram_particle_lifecycle",
 ]
 
 from .lesson_03 import diagram_aspect_ratio, diagram_unit_circle
@@ -275,3 +278,8 @@ from .lesson_39 import (
     diagram_tbn_gram_schmidt,
 )
 from .lesson_43 import diagram_skinning_pipeline_flow
+from .lesson_46 import (
+    diagram_billboard_expansion,
+    diagram_gpu_data_flow,
+    diagram_particle_lifecycle,
+)
