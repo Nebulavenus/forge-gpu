@@ -208,10 +208,18 @@ forge-gpu/
 │   └── forge.h            # Shared utilities for lessons
 ├── tests/                 # Tests per module (arena, containers, math, obj, gltf, raster, ui, audio, physics, shapes, scene, pipeline)
 ├── scripts/
+│   ├── run.py             # Run lessons by number or name
+│   ├── setup.py           # Environment verification and first-time setup
 │   ├── compile_shaders.py # HLSL → SPIRV/DXIL/MSL shader compiler
 │   ├── compile_scene_shaders.py # Scene renderer shader compiler
+│   ├── capture_lesson.py  # Screenshot and GIF capture from running lessons
+│   ├── bin_to_header.py   # Convert binary files to C byte-array headers
+│   ├── equirect_to_cubemap.py # Equirectangular HDR to cube map faces
 │   ├── dump_fmesh.py      # .fmesh binary inspector
 │   ├── dump_fscene.py     # .fscene binary inspector
+│   ├── check_math_blocks.py # Validate math code blocks in lesson READMEs
+│   ├── add_msl_support.py # Add MSL (Metal) shader support to lessons
+│   ├── cloud-setup.sh     # Headless Linux environment setup (Lavapipe + Mesa)
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
 │       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_43.py)
 │       ├── math/          # Math lesson diagrams

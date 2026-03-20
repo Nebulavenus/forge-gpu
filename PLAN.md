@@ -10,8 +10,8 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Engine Lessons 01–13** — From Intro to C through Stretchy Containers
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Physics Lessons 01–07** — From Point Particles through Collision Shapes
-- **Audio Lessons 01–02** — Audio Basics and Sound Effects
+- **Physics Lessons 01–09** — From Point Particles through GJK Intersection
+- **Audio Lessons 01–06** — From Audio Basics through DSP Effects
 - **Asset Lessons 01–13** — From Pipeline Scaffold through Morph Targets
 
 ## GPU Lessons — Remaining
