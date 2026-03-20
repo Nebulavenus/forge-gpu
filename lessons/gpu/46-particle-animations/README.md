@@ -12,6 +12,8 @@
 
 ![Lesson 46 screenshot](assets/screenshot.png)
 
+![Lesson 46 animation](assets/animation.gif)
+
 A fire particle effect emits from the grid floor. Particles spawn upward with
 turbulence, transition through a yellow-orange-red color ramp, and fade out
 over their lifetime. Each particle is a camera-facing billboard quad with
