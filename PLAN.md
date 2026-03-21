@@ -33,7 +33,7 @@ C tools in `tools/` do the heavy lifting (meshoptimizer, MikkTSpace, basisu).
 
 ### What would outgrow these libraries
 
-- Open worlds (no streaming, LOD, occlusion culling, spatial partitioning)
+- Open worlds (no streaming, spatial partitioning)
 - Large-scale physics (deep stacking, broad contact graphs)
 - Networking
 - Runtime asset streaming, virtual texturing
@@ -58,16 +58,16 @@ The following foundations, tooling, and lesson ranges are complete:
 ## GPU Lessons — Remaining
 
 Lessons 48–49 and 51–57 have no cross-track blockers. The **Terrain &
-Vegetation** arc (Lessons 47, 50) depends on Asset Lessons 14–15 (procedural
+Vegetation** arc (Lessons 47, 50) depends on Asset Lessons 18–19 (procedural
 textures). The **Particle Effects** arc (Lessons 58–59) is blocked by Asset
 Lesson 20 (particle effect definitions).
 
 ### Terrain & Vegetation
 
-- [ ] **Lesson 47 — Height Map Terrain** — GPU terrain from pipeline-generated noise heightmaps (Asset Lesson 14); vertex displacement from R16 heightmap in the vertex shader; normal computation from height samples via central differences; texture splatting with slope- and height-based blend maps (rock, dirt, grass); chunked terrain mesh with distance-based LOD (geo-clipmaps or quadtree); scattered tree placement using density maps derived from terrain slope and height; tree and grass rendering as instanced alpha-tested billboards using pipeline-generated vegetation textures (Asset Lesson 15), full grass animation in Lesson 50 (depends on GPU Lessons 13, 25 and Asset Lessons 14–15)
+- [ ] **Lesson 47 — Height Map Terrain** — GPU terrain from pipeline-generated noise heightmaps (Asset Lesson 18); vertex displacement from R16 heightmap in the vertex shader; normal computation from height samples via central differences; texture splatting with slope- and height-based blend maps (rock, dirt, grass); chunked terrain mesh with distance-based LOD (geo-clipmaps or quadtree); scattered tree placement using density maps derived from terrain slope and height; tree and grass rendering as instanced alpha-tested billboards using pipeline-generated vegetation textures (Asset Lesson 19), full grass animation in Lesson 50 (depends on GPU Lessons 13, 25 and Asset Lessons 18–19)
 - [ ] **Lesson 48 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles) to an offscreen render target; selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 - [ ] **Lesson 49 — Level of Detail** — Distance-based LOD system for mesh rendering; discrete LOD with multiple mesh detail levels and screen-size switching thresholds; continuous LOD with cross-fade (alpha dithering) to hide pop-in; compute-based LOD selection using camera distance and bounding sphere screen coverage; integrating imposters from Lesson 48 as the lowest LOD tier; LOD bias and hysteresis to prevent rapid switching; application to the terrain scene — full tree meshes up close, simplified meshes at mid range, imposters at distance (depends on Lessons 13, 38, 47, 48)
-- [ ] **Lesson 50 — Grass Rendering** — Dense grass on the height map terrain from Lesson 47; begins with instanced alpha-tested billboard quads using pipeline-generated grass blade atlas textures (Asset Lesson 15); then adds compute-generated geometry blades with per-vertex deformation — base anchored, tip displaced by layered noise wind; per-blade normals for correct lighting; LOD transition from geometry blades (near) to billboard quads (mid) to culled (far) using the LOD system from Lesson 49; density controlled by terrain slope and height maps; frustum and distance culling via compute shader (depends on GPU Lessons 13, 16, 25, 47, 49 and Asset Lesson 15)
+- [ ] **Lesson 50 — Grass Rendering** — Dense grass on the height map terrain from Lesson 47; begins with instanced alpha-tested billboard quads using pipeline-generated grass blade atlas textures (Asset Lesson 19); then adds compute-generated geometry blades with per-vertex deformation — base anchored, tip displaced by layered noise wind; per-blade normals for correct lighting; LOD transition from geometry blades (near) to billboard quads (mid) to culled (far) using the LOD system from Lesson 49; density controlled by terrain slope and height maps; frustum and distance culling via compute shader (depends on GPU Lessons 13, 16, 25, 47, 49 and Asset Lesson 19)
 
 ### PBR Introduction
 
@@ -89,6 +89,11 @@ Lesson 20 (particle effect definitions).
 
 - [ ] **Lesson 58 — Data-Driven Particle Effects** — Emitter pool with shared GPU particle buffer; loading .fpart effect definitions at runtime; parameter-driven compute simulation (one shader, many effects); multi-effect rendering batched by blend mode; spawning effects from gameplay events
 - [ ] **Lesson 59 — Particle Ribbons & Trails** — Generating ribbon geometry from particle position history; catmull-rom smoothing; UV scrolling along trail length; application to sword swings, missile trails, magic effects
+
+### Visibility & Culling
+
+- [ ] **Lesson 60 — Occlusion Culling** — GPU-driven occlusion culling using hierarchical z-buffer (Hi-Z); downsampled depth pyramid from the previous frame; compute shader tests object bounding boxes against the Hi-Z pyramid to discard fully occluded objects before drawing; two-phase rendering (occluder pass with large objects, then Hi-Z test for the rest); integration with indirect drawing from Lesson 38; comparison of draw call counts and frame time with and without occlusion culling; application to dense scenes with many hidden objects (depends on Lessons 13, 25, 38)
+- [ ] **Lesson 61 — Portal-Based Visibility** — Visibility determination for indoor environments using portals; defining portal polygons between rooms/sectors; frustum narrowing through portal sequences; recursive portal traversal with shrinking clip regions; sector-based scene organization; rendering only visible sectors and their contents; anti-portal support for large occluders; debug visualization of portal frustums and sector visibility; application to a multi-room interior scene (depends on Lessons 13, 38)
 
 ## Physics Lessons — New Track
 
@@ -155,10 +160,10 @@ C library (`common/shapes/forge_shapes.h`).
 Some later lessons across tracks depend on authored asset formats that need the
 web editor. The order is:
 
-1. **Procedural Textures** (Asset Lessons 14–15) — noise heightmaps and
-   vegetation textures for the terrain/vegetation GPU arc
-2. **Web Frontend** (Asset Lessons 16–19) — editor for authoring effect
+1. **Web Frontend** (Asset Lessons 14–17) — editor for authoring effect
    definitions, import settings, scene composition, and navmesh editing
+2. **Procedural Textures** (Asset Lessons 18–19) — noise heightmaps and
+   vegetation textures for the terrain/vegetation GPU arc
 3. **Effect & Asset Authoring** (Asset Lessons 20–22) — particle effect
    definitions, animation event data, material definitions — all need the
    editor
@@ -180,17 +185,17 @@ full plan. Summary:
 - [ ] Update skills (dev-gpu-lesson, dev-physics-lesson, dev-final-pass, dev-create-pr) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 
-### Procedural Textures
-
-- [ ] **Asset Lesson 14 — Noise Texture Generation** — Pipeline plugin for generating procedural noise textures (Perlin, fBm, ridged multi-fractal, Worley); configurable resolution, octaves, frequency, persistence, and seed via `pipeline.toml`; outputs 16-bit heightmaps (R16 PNG or raw) and 8-bit RGBA noise maps; normal map derivation from heightmap gradients; BC5-compressed normal map output and BC4-compressed heightmap output; tiling support for seamless textures; integration with GPU Lesson 47 (Height Map Terrain) as the heightmap source; Python noise generation with NumPy; preview thumbnails in the pipeline cache (depends on Asset Lessons 01–02)
-- [ ] **Asset Lesson 15 — Vegetation Texture Generation** — Pipeline plugin for generating procedural tree and grass textures in Python; tree bark textures via layered fBm with vertical grain bias and color variation; tree canopy/leaf cluster textures with randomized leaf shapes, vein detail, and seasonal color palettes; grass blade atlas with multiple blade shapes, width variation, and tip taper; alpha masks for alpha-tested rendering; all textures tileable where appropriate; color and shape parameters exposed in `pipeline.toml` for rapid iteration; BC7-compressed RGBA output with pre-multiplied alpha; generates texture atlases ready for instanced billboard rendering in GPU Lessons 47 and 50 (depends on Asset Lesson 14)
-
 ### Web Frontend (blocks Effect & Asset Authoring)
 
-- [ ] **Asset Lesson 16 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
-- [ ] **Asset Lesson 17 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
-- [ ] **Asset Lesson 18 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
-- [ ] **Asset Lesson 19 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+- [ ] **Asset Lesson 14 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
+- [ ] **Asset Lesson 15 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
+- [ ] **Asset Lesson 16 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
+- [ ] **Asset Lesson 17 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+
+### Procedural Textures
+
+- [ ] **Asset Lesson 18 — Noise Texture Generation** — Pipeline plugin for generating procedural noise textures (Perlin, fBm, ridged multi-fractal, Worley); configurable resolution, octaves, frequency, persistence, and seed via `pipeline.toml`; outputs 16-bit heightmaps (R16 PNG or raw) and 8-bit RGBA noise maps; normal map derivation from heightmap gradients; BC5-compressed normal map output and BC4-compressed heightmap output; tiling support for seamless textures; integration with GPU Lesson 47 (Height Map Terrain) as the heightmap source; Python noise generation with NumPy; preview thumbnails in the pipeline cache (depends on Asset Lessons 01–02)
+- [ ] **Asset Lesson 19 — Vegetation Texture Generation** — Pipeline plugin for generating procedural tree and grass textures in Python; tree bark textures via layered fBm with vertical grain bias and color variation; tree canopy/leaf cluster textures with randomized leaf shapes, vein detail, and seasonal color palettes; grass blade atlas with multiple blade shapes, width variation, and tip taper; alpha masks for alpha-tested rendering; all textures tileable where appropriate; color and shape parameters exposed in `pipeline.toml` for rapid iteration; BC7-compressed RGBA output with pre-multiplied alpha; generates texture atlases ready for instanced billboard rendering in GPU Lessons 47 and 50 (depends on Asset Lesson 18)
 
 ### Effect & Asset Authoring (blocks GPU Lessons 58–59)
 
