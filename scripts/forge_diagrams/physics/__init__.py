@@ -40,6 +40,10 @@ __all__ = [
     "diagram_sap_algorithm",
     "diagram_axis_selection",
     "diagram_temporal_coherence",
+    "diagram_clipping_pipeline",
+    "diagram_reference_incident_faces",
+    "diagram_contact_reduction",
+    "diagram_manifold_cache",
 ]
 
 from .lesson_01 import (
@@ -94,4 +98,10 @@ from .lesson_08 import (
     diagram_axis_selection,
     diagram_sap_algorithm,
     diagram_temporal_coherence,
+)
+from .lesson_11 import (
+    diagram_clipping_pipeline,
+    diagram_contact_reduction,
+    diagram_manifold_cache,
+    diagram_reference_incident_faces,
 )

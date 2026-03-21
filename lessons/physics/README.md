@@ -49,6 +49,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="08-sweep-and-prune/assets/screenshot.png" width="480" alt="Sweep-and-Prune Broadphase"/>](08-sweep-and-prune/) | [**08 — Sweep-and-Prune Broadphase**](08-sweep-and-prune/) | Sort-and-sweep broadphase, endpoint sorting, axis selection by variance, SAP pair detection, brute-force comparison |
 | [<img src="09-gjk-intersection/assets/screenshot.png" width="480" alt="GJK Intersection Testing"/>](09-gjk-intersection/) | [**09 — GJK Intersection Testing**](09-gjk-intersection/) | Gilbert-Johnson-Keerthi narrowphase, Minkowski difference, simplex evolution, support functions, SAP+GJK pipeline |
 | [<img src="10-epa-penetration-depth/assets/screenshot.png" width="480" alt="EPA Penetration Depth"/>](10-epa-penetration-depth/) | [**10 — EPA Penetration Depth**](10-epa-penetration-depth/) | Expanding Polytope Algorithm, penetration depth and contact normal from GJK simplex, barycentric contact reconstruction, SAP+GJK+EPA pipeline |
+| [<img src="11-contact-manifold/assets/screenshot.png" width="480" alt="Contact Manifold"/>](11-contact-manifold/) | [**11 — Contact Manifold**](11-contact-manifold/) | Sutherland-Hodgman clipping, multi-point contact generation from GJK/EPA, contact point reduction, manifold cache with persistent IDs, warm-starting |
 
 ## Shared library
 

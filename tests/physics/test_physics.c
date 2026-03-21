@@ -5923,6 +5923,9 @@ int main(int argc, char *argv[])
     /* ── EPA Penetration Depth (test_physics_epa.c) ─────────────────── */
     run_epa_tests();
 
+    /* ── Contact Manifold (test_physics_manifold.c) ───────────────────── */
+    run_manifold_tests();
+
     /* ── Production Hardening (test_physics_production.c) ─────────────── */
     run_production_tests();
 

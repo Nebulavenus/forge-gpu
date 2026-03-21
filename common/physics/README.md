@@ -178,11 +178,34 @@ Constants: `FORGE_PHYSICS_EPA_MAX_ITERATIONS` (64),
 `FORGE_PHYSICS_EPA_MAX_VERTICES` (128), `FORGE_PHYSICS_EPA_MAX_FACES` (256),
 `FORGE_PHYSICS_EPA_EPSILON` (1e-6).
 
+### Lesson 11 — Contact Manifold
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_manifold_pair_key()` | Pack a body pair into a canonical uint64 cache key |
+| `forge_physics_manifold_contact_id()` | Compute persistent contact ID from geometric features |
+| `forge_physics_manifold_world_to_local()` | Transform world-space point to body-local space |
+| `forge_physics_manifold_local_to_world()` | Transform body-local point to world space |
+| `forge_physics_clip_polygon()` | Sutherland-Hodgman: clip polygon against one half-plane |
+| `forge_physics_manifold_box_face()` | Get 4 world-space vertices and normal of a box face |
+| `forge_physics_manifold_ref_face_box()` | Find box face most aligned with a direction |
+| `forge_physics_manifold_incident_face_box()` | Find box face most anti-aligned with a direction |
+| `forge_physics_manifold_reduce()` | Reduce >4 contacts to 4 maximizing contact area |
+| `forge_physics_manifold_generate()` | Generate 1–4 contact manifold from EPA result via clipping |
+| `forge_physics_manifold_cache_update()` | Insert/merge manifold into cache with warm-starting |
+| `forge_physics_manifold_cache_prune()` | Remove stale manifolds not in this frame's broadphase |
+| `forge_physics_manifold_cache_free()` | Free all manifold cache memory |
+| `forge_physics_manifold_to_rb_contacts()` | Convert manifold to ForgePhysicsRBContact array |
+| `forge_physics_gjk_epa_manifold()` | Full GJK+EPA+manifold pipeline in one call |
+
+Types: `ForgePhysicsManifoldContact`, `ForgePhysicsManifold`,
+`ForgePhysicsManifoldCacheEntry`
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 11–14 | *TBD* | Contact manifolds, constraints, solver |
+| 12–15 | *TBD* | Impulse resolution, constraints, solver |
 
 ## Design
 
@@ -217,3 +240,4 @@ Constants: `FORGE_PHYSICS_EPA_MAX_ITERATIONS` (64),
 | [Physics L08](../../lessons/physics/08-sweep-and-prune/) | `ForgePhysicsSAPWorld`, `forge_physics_sap_init()`, `forge_physics_sap_destroy()`, `forge_physics_sap_update()`, `forge_physics_sap_select_axis()`, `forge_physics_sap_pair_count()`, `forge_physics_sap_get_pairs()` |
 | [Physics L09](../../lessons/physics/09-gjk-intersection/) | `ForgePhysicsGJKResult`, `forge_physics_gjk_support()`, `forge_physics_gjk_intersect()`, `forge_physics_gjk_test_bodies()` |
 | [Physics L10](../../lessons/physics/10-epa-penetration-depth/) | `ForgePhysicsEPAResult`, `forge_physics_epa()`, `forge_physics_epa_bodies()`, `forge_physics_gjk_epa_contact()` |
+| [Physics L11](../../lessons/physics/11-contact-manifold/) | `ForgePhysicsManifold`, `forge_physics_gjk_epa_manifold()`, `forge_physics_manifold_cache_update()`, `forge_physics_manifold_cache_prune()`, `forge_physics_manifold_to_rb_contacts()` |

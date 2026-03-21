@@ -174,6 +174,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/physics/08-sweep-and-prune)
     add_subdirectory(lessons/physics/09-gjk-intersection)
     add_subdirectory(lessons/physics/10-epa-penetration-depth)
+    add_subdirectory(lessons/physics/11-contact-manifold)
 endif()
 
 # ── Audio Lessons ─────────────────────────────────────────────────────────

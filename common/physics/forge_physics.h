@@ -5570,4 +5570,1066 @@ static inline bool forge_physics_gjk_epa_contact(
     return true;
 }
 
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LESSON 11 — Contact Manifold
+ *
+ * A contact manifold stores up to 4 contact points between two rigid
+ * bodies. Multiple contacts give the constraint solver enough information
+ * to prevent rocking and produce stable resting contacts.
+ *
+ * The pipeline is: GJK → EPA → clipping → manifold → cache → solver.
+ *
+ * EPA gives one contact point. Sutherland-Hodgman polygon clipping
+ * generates multiple contacts by clipping the incident face of one
+ * shape against the reference face side planes of the other. The
+ * manifold caches contacts across frames using persistent IDs, which
+ * enables warm-starting the solver with accumulated impulses.
+ *
+ * Reference:
+ *   Erin Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005)
+ *   Dirk Gregorius, "The Separating Axis Test" (GDC 2013)
+ *   Christer Ericson, "Real-Time Collision Detection", Ch. 8
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Contact Manifold Constants ───────────────────────────────────────────── */
+
+/* Maximum contact points per manifold.
+ *
+ * 4 is the standard — clipping two convex faces produces at most 4
+ * points after reduction, and 4 points define a stable contact patch
+ * for any flat-on-flat configuration (prevents rocking).
+ */
+#define FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS  4
+
+/* Maximum polygon vertices during Sutherland-Hodgman clipping.
+ *
+ * A box face has 4 vertices. Clipping against 4 side planes can add
+ * at most 1 vertex per plane, giving 8 worst case.
+ */
+#define FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS 8
+
+/* Warm-start scaling factor.
+ *
+ * Accumulated impulses from the previous frame are scaled by this
+ * factor before being applied. Values < 1 dampen stale impulses
+ * when bodies have moved significantly between frames.
+ */
+#define FORGE_PHYSICS_MANIFOLD_WARM_SCALE    0.85f
+
+/* ── Contact Manifold Types ───────────────────────────────────────────────── */
+
+/* A single contact point within a manifold.
+ *
+ * Stores the contact position in both local and world space:
+ *   - local_a / local_b: body-space positions for persistence across
+ *     frames. When bodies move, these are re-projected to world space
+ *     to check if the contact is still valid.
+ *   - world_point: world-space contact position for the current frame.
+ *
+ * Accumulated impulses (normal_impulse, tangent_impulse_1/2) carry
+ * over from the previous frame via warm-starting. The constraint
+ * solver adds to these each iteration, and the clamping is done on
+ * the accumulated value (Catto's accumulated impulse method).
+ *
+ * The persistent id encodes which geometric features produced this
+ * contact, enabling frame-to-frame matching without positional
+ * proximity searches.
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence"
+ * (GDC 2005), Section 3.
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+typedef struct ForgePhysicsManifoldContact {
+    vec3     local_a;           /* contact on body A in A's local space    */
+    vec3     local_b;           /* contact on body B in B's local space    */
+    vec3     world_point;       /* world-space contact position            */
+    float    penetration;       /* overlap depth (m), >= 0                 */
+    float    normal_impulse;    /* accumulated normal impulse (warm-start) */
+    float    tangent_impulse_1; /* accumulated friction impulse, tangent 1 */
+    float    tangent_impulse_2; /* accumulated friction impulse, tangent 2 */
+    uint32_t id;                /* persistent contact ID (feature pair)    */
+} ForgePhysicsManifoldContact;
+
+/* A contact manifold for one body pair.
+ *
+ * Stores up to FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS (4) contact points
+ * sharing a common contact normal. The normal points from body B
+ * toward body A, matching the ForgePhysicsRBContact convention.
+ *
+ * The manifold is the unit of persistence: the manifold cache stores
+ * one manifold per active body pair, and contacts within it are matched
+ * across frames by their persistent IDs.
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Section 8.3.
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+typedef struct ForgePhysicsManifold {
+    int   body_a;             /* index of body A                           */
+    int   body_b;             /* index of body B                           */
+    vec3  normal;             /* unit normal from B toward A               */
+    float static_friction;    /* static friction coefficient, >= 0         */
+    float dynamic_friction;   /* dynamic friction coefficient, >= 0        */
+    int   count;              /* active contacts, 0..MAX_CONTACTS          */
+    ForgePhysicsManifoldContact contacts[FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS];
+} ForgePhysicsManifold;
+
+/* Manifold cache entry for the hash map.
+ *
+ * The key is a uint64_t packing both body indices: the smaller index
+ * in the upper 32 bits, the larger in the lower 32 bits. This ensures
+ * pair (3, 7) and pair (7, 3) hash to the same entry.
+ *
+ * Usage with forge_containers.h:
+ *   ForgePhysicsManifoldCacheEntry *cache = NULL;
+ *   forge_hm_put_struct(cache, entry);
+ *   ForgePhysicsManifoldCacheEntry e = forge_hm_get_struct(cache, key);
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+typedef struct ForgePhysicsManifoldCacheEntry {
+    uint64_t key;                    /* packed body pair (min << 32 | max) */
+    ForgePhysicsManifold manifold;
+} ForgePhysicsManifoldCacheEntry;
+
+/* ── Contact Manifold Utility Functions ────────────────────────────────────── */
+
+/* Pack a body pair into a uint64_t cache key.
+ *
+ * The smaller index occupies the upper 32 bits, the larger index the
+ * lower 32 bits. This guarantees pair (a, b) and pair (b, a) produce
+ * the same key.
+ *
+ * Parameters:
+ *   a — index of one body
+ *   b — index of the other body
+ *
+ * Returns: canonical key for the pair
+ *
+ * Usage:
+ *   uint64_t key = forge_physics_manifold_pair_key(3, 7);
+ *   // key == (3ULL << 32) | 7ULL
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline uint64_t forge_physics_manifold_pair_key(int a, int b)
+{
+    uint32_t lo = (uint32_t)(a < b ? a : b);
+    uint32_t hi = (uint32_t)(a < b ? b : a);
+    return ((uint64_t)lo << 32) | (uint64_t)hi;
+}
+
+/* Compute a persistent contact ID from geometric feature indices.
+ *
+ * Encodes which reference face, incident feature, and clip edge
+ * produced this contact point. As long as the same geometric features
+ * are in contact, the ID remains stable across frames — enabling
+ * warm-starting without positional proximity matching.
+ *
+ * Parameters:
+ *   ref_face    — index of the reference face (0-5 for box, 0 for sphere)
+ *   inc_feature — index of the incident feature (vertex/edge index)
+ *   clip_edge   — index of the clipping edge that produced this vertex
+ *
+ * Returns: packed 32-bit contact ID
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline uint32_t forge_physics_manifold_contact_id(
+    int ref_face, int inc_feature, int clip_edge)
+{
+    return ((uint32_t)(ref_face & 0xFF))       |
+           ((uint32_t)(inc_feature & 0xFF) << 8) |
+           ((uint32_t)(clip_edge   & 0xFF) << 16);
+}
+
+/* Transform a world-space point into a body's local space.
+ *
+ * Computes: local = conjugate(orient) * (world - position)
+ *
+ * Parameters:
+ *   world_pt — point in world space
+ *   pos      — body center-of-mass position
+ *   orient   — body orientation quaternion (must be unit length)
+ *
+ * Returns: point in body-local space
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline vec3 forge_physics_manifold_world_to_local(
+    vec3 world_pt, vec3 pos, quat orient)
+{
+    vec3 rel = vec3_sub(world_pt, pos);
+    quat inv = quat_conjugate(orient);
+    return quat_rotate_vec3(inv, rel);
+}
+
+/* Transform a body-local point to world space.
+ *
+ * Computes: world = position + orient * local
+ *
+ * Parameters:
+ *   local_pt — point in body-local space
+ *   pos      — body center-of-mass position
+ *   orient   — body orientation quaternion (must be unit length)
+ *
+ * Returns: point in world space
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline vec3 forge_physics_manifold_local_to_world(
+    vec3 local_pt, vec3 pos, quat orient)
+{
+    return vec3_add(pos, quat_rotate_vec3(orient, local_pt));
+}
+
+/* ── Sutherland-Hodgman Polygon Clipping ──────────────────────────────────── */
+
+/* Clip a convex polygon against a single half-plane.
+ *
+ * The half-plane is defined by: dot(point, plane_normal) <= plane_dist.
+ * Points on the inside (dot <= dist) are kept. Points on the outside
+ * are clipped, with intersection points inserted at plane crossings.
+ *
+ * This is the inner step of Sutherland-Hodgman clipping. The full
+ * face-face pipeline calls this once per edge of the reference face.
+ *
+ * Algorithm (Sutherland-Hodgman, 1974):
+ *   For each edge (v[i], v[next]):
+ *     d_i    = dot(v[i],    plane_normal) - plane_dist
+ *     d_next = dot(v[next], plane_normal) - plane_dist
+ *     If d_i    <= 0: v[i] is inside — emit it
+ *     If sign(d_i) != sign(d_next): edge crosses plane — emit intersection
+ *
+ * Parameters:
+ *   in       — input polygon vertices (caller-owned)
+ *   in_count — number of input vertices (>= 0)
+ *   out      — output polygon vertices (caller-allocated, capacity >= in_count + 1)
+ *   plane_n  — clip plane normal (unit length)
+ *   plane_d  — clip plane distance from origin
+ *
+ * Returns: number of output vertices (0 if fully clipped)
+ *
+ * Reference: Sutherland & Hodgman, "Reentrant Polygon Clipping",
+ *            Communications of the ACM, 1974.
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline int forge_physics_clip_polygon(
+    const vec3 *in, int in_count,
+    vec3 *out,
+    vec3 plane_n, float plane_d)
+{
+    if (!in || !out || in_count <= 0) return 0;
+
+    int out_count = 0;
+
+    for (int i = 0; i < in_count; i++) {
+        int next = (i + 1) % in_count;
+        float d_i    = vec3_dot(in[i],    plane_n) - plane_d;
+        float d_next = vec3_dot(in[next], plane_n) - plane_d;
+
+        /* Current vertex is inside (or on) the plane */
+        if (d_i <= 0.0f) {
+            out[out_count++] = in[i];
+        }
+
+        /* Edge crosses the plane — emit intersection */
+        if ((d_i > 0.0f) != (d_next > 0.0f)) {
+            float denom = d_i - d_next;
+            if (SDL_fabsf(denom) > FORGE_PHYSICS_EPSILON) {
+                float t = d_i / denom;
+                out[out_count++] = vec3_lerp(in[i], in[next], t);
+            }
+        }
+    }
+
+    return out_count;
+}
+
+/* ── Box Face Geometry ────────────────────────────────────────────────────── */
+
+/* Get the 4 world-space vertices of a box face.
+ *
+ * Box faces are indexed 0-5:
+ *   0: +X face,  1: -X face
+ *   2: +Y face,  3: -Y face
+ *   4: +Z face,  5: -Z face
+ *
+ * Vertices are wound clockwise when viewed from outside the box.
+ * The side-plane clipping code relies on that ordering.
+ *
+ * Parameters:
+ *   half_ext — box half-extents
+ *   pos      — body center position in world space
+ *   orient   — body orientation quaternion (must be unit length)
+ *   face_idx — face index 0-5
+ *   verts    — receives 4 world-space vertices (caller-allocated)
+ *   normal   — receives the outward face normal in world space
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline void forge_physics_manifold_box_face(
+    vec3 half_ext, vec3 pos, quat orient,
+    int face_idx, vec3 verts[4], vec3 *normal)
+{
+    if (!verts || !normal) return;
+
+    /* Local-space face vertices (CW from outside) */
+    float hx = half_ext.x, hy = half_ext.y, hz = half_ext.z;
+    vec3 lv[4];
+    vec3 ln;
+
+    switch (face_idx) {
+    case 0: /* +X */
+        ln = vec3_create( 1, 0, 0);
+        lv[0] = vec3_create( hx, -hy, -hz);
+        lv[1] = vec3_create( hx, -hy,  hz);
+        lv[2] = vec3_create( hx,  hy,  hz);
+        lv[3] = vec3_create( hx,  hy, -hz);
+        break;
+    case 1: /* -X */
+        ln = vec3_create(-1, 0, 0);
+        lv[0] = vec3_create(-hx, -hy,  hz);
+        lv[1] = vec3_create(-hx, -hy, -hz);
+        lv[2] = vec3_create(-hx,  hy, -hz);
+        lv[3] = vec3_create(-hx,  hy,  hz);
+        break;
+    case 2: /* +Y */
+        ln = vec3_create( 0, 1, 0);
+        lv[0] = vec3_create(-hx,  hy, -hz);
+        lv[1] = vec3_create( hx,  hy, -hz);
+        lv[2] = vec3_create( hx,  hy,  hz);
+        lv[3] = vec3_create(-hx,  hy,  hz);
+        break;
+    case 3: /* -Y */
+        ln = vec3_create( 0,-1, 0);
+        lv[0] = vec3_create(-hx, -hy,  hz);
+        lv[1] = vec3_create( hx, -hy,  hz);
+        lv[2] = vec3_create( hx, -hy, -hz);
+        lv[3] = vec3_create(-hx, -hy, -hz);
+        break;
+    case 4: /* +Z */
+        ln = vec3_create( 0, 0, 1);
+        lv[0] = vec3_create( hx, -hy,  hz);
+        lv[1] = vec3_create(-hx, -hy,  hz);
+        lv[2] = vec3_create(-hx,  hy,  hz);
+        lv[3] = vec3_create( hx,  hy,  hz);
+        break;
+    default: /* -Z (face 5) */
+        ln = vec3_create( 0, 0,-1);
+        lv[0] = vec3_create(-hx, -hy, -hz);
+        lv[1] = vec3_create( hx, -hy, -hz);
+        lv[2] = vec3_create( hx,  hy, -hz);
+        lv[3] = vec3_create(-hx,  hy, -hz);
+        break;
+    }
+
+    /* Transform to world space */
+    for (int i = 0; i < 4; i++) {
+        verts[i] = vec3_add(pos, quat_rotate_vec3(orient, lv[i]));
+    }
+    *normal = quat_rotate_vec3(orient, ln);
+}
+
+/* Find the reference face of a box — the face most aligned with a direction.
+ *
+ * Returns the face index (0-5) whose outward normal has the largest
+ * dot product with the given direction. Used to select the reference
+ * face in the Sutherland-Hodgman clipping pipeline.
+ *
+ * Parameters:
+ *   orient    — body orientation (must be unit quaternion)
+ *   direction — the direction to align with (typically EPA normal)
+ *
+ * Returns: face index 0-5
+ *
+ * Reference: Gregorius, "The Separating Axis Test" (GDC 2013).
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline int forge_physics_manifold_ref_face_box(
+    quat orient, vec3 direction)
+{
+    /* Transform direction into local space */
+    quat inv = quat_conjugate(orient);
+    vec3 local_dir = quat_rotate_vec3(inv, direction);
+
+    /* Find the axis with the largest component */
+    float ax = SDL_fabsf(local_dir.x);
+    float ay = SDL_fabsf(local_dir.y);
+    float az = SDL_fabsf(local_dir.z);
+
+    if (ax >= ay && ax >= az) {
+        return (local_dir.x > 0.0f) ? 0 : 1;  /* +X or -X */
+    } else if (ay >= az) {
+        return (local_dir.y > 0.0f) ? 2 : 3;  /* +Y or -Y */
+    } else {
+        return (local_dir.z > 0.0f) ? 4 : 5;  /* +Z or -Z */
+    }
+}
+
+/* Find the incident face — the face most anti-aligned with a direction.
+ *
+ * The incident face is the face on the incident shape whose normal
+ * has the most negative dot product with the reference face normal.
+ * Its vertices will be clipped against the reference face side planes.
+ *
+ * Parameters:
+ *   orient    — body orientation (must be unit quaternion)
+ *   direction — the reference face normal (world space)
+ *
+ * Returns: face index 0-5
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline int forge_physics_manifold_incident_face_box(
+    quat orient, vec3 direction)
+{
+    /* Incident = most anti-aligned = reference face of negated direction */
+    vec3 neg = vec3_negate(direction);
+    return forge_physics_manifold_ref_face_box(orient, neg);
+}
+
+/* ── Contact Point Reduction ───────────────────────────────────────────────── */
+
+/* Reduce a set of contact points to at most 4, maximizing contact area.
+ *
+ * When clipping produces more than 4 contacts, this function selects the
+ * subset of 4 that maximizes the area of the contact patch. A large
+ * contact patch gives the constraint solver the best leverage to prevent
+ * rocking and rotation.
+ *
+ * Algorithm:
+ *   1. Keep the deepest contact (it contributes most to stability)
+ *   2. Find the contact farthest from the deepest (maximizes span)
+ *   3. Find the contact that maximizes triangle area with the first two
+ *   4. Find the contact that maximizes quadrilateral area with the first three
+ *
+ * Parameters:
+ *   points       — array of candidate contact world-space positions
+ *   depths       — penetration depth for each candidate
+ *   count        — number of candidates (must be > 4)
+ *   out_indices  — receives 4 selected indices (caller-allocated, size >= 4)
+ *
+ * Returns: always 4 (the number of selected contacts)
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Section 5.3 —
+ *            contact point reduction.
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline int forge_physics_manifold_reduce(
+    const vec3 *points, const float *depths,
+    int count, int out_indices[4])
+{
+    if (!points || !depths || !out_indices || count <= 0) return 0;
+    if (count <= 4) {
+        for (int i = 0; i < count; i++) out_indices[i] = i;
+        return count;
+    }
+
+    /* Step 1: deepest contact */
+    int i0 = 0;
+    float max_depth = depths[0];
+    for (int i = 1; i < count; i++) {
+        if (depths[i] > max_depth) {
+            max_depth = depths[i];
+            i0 = i;
+        }
+    }
+    out_indices[0] = i0;
+
+    /* Step 2: farthest from deepest.
+     * Initialize i1 to the first index that is not i0, so the fallback
+     * for degenerate (all-coincident) points is still a distinct index. */
+    int i1 = (i0 == 0) ? 1 : 0;
+    float max_dist_sq = 0.0f;
+    for (int i = 0; i < count; i++) {
+        if (i == i0) continue;
+        float dsq = vec3_length_squared(vec3_sub(points[i], points[i0]));
+        if (dsq > max_dist_sq) {
+            max_dist_sq = dsq;
+            i1 = i;
+        }
+    }
+    out_indices[1] = i1;
+
+    /* Step 3: maximizes triangle area with i0, i1.
+     * Initialize i2 to the first index not already selected. */
+    int i2 = 0;
+    while (i2 == i0 || i2 == i1) i2++;
+    float max_area = 0.0f;
+    vec3 edge01 = vec3_sub(points[i1], points[i0]);
+    for (int i = 0; i < count; i++) {
+        if (i == i0 || i == i1) continue;
+        vec3 edge0i = vec3_sub(points[i], points[i0]);
+        vec3 cross = vec3_cross(edge01, edge0i);
+        float area = vec3_length_squared(cross);
+        if (area > max_area) {
+            max_area = area;
+            i2 = i;
+        }
+    }
+    out_indices[2] = i2;
+
+    /* Step 4: maximizes quadrilateral area with i0, i1, i2.
+     * Initialize i3 to the first index not already selected. */
+    int i3 = 0;
+    while (i3 == i0 || i3 == i1 || i3 == i2) i3++;
+    float max_quad_area = 0.0f;
+    for (int i = 0; i < count; i++) {
+        if (i == i0 || i == i1 || i == i2) continue;
+        /* Area contribution: sum of triangles from the new point to each
+         * edge of the existing triangle */
+        vec3 e0 = vec3_sub(points[i], points[i0]);
+        vec3 e1 = vec3_sub(points[i], points[i1]);
+        vec3 e2 = vec3_sub(points[i], points[i2]);
+        float a = vec3_length_squared(vec3_cross(e0, e1)) +
+                  vec3_length_squared(vec3_cross(e1, e2)) +
+                  vec3_length_squared(vec3_cross(e2, e0));
+        if (a > max_quad_area) {
+            max_quad_area = a;
+            i3 = i;
+        }
+    }
+    out_indices[3] = i3;
+
+    return 4;
+}
+
+/* ── Manifold Generation ──────────────────────────────────────────────────── */
+
+/* Generate a contact manifold from GJK/EPA results using face clipping.
+ *
+ * This is the main entry point for contact manifold generation. Given
+ * two colliding shapes and their EPA result, it determines the reference
+ * and incident faces, clips the incident polygon against the reference
+ * face side planes, projects surviving points onto the reference plane,
+ * and reduces to 4 contacts if necessary.
+ *
+ * Shape-pair dispatch:
+ *   sphere-sphere:   1 contact from EPA directly (no clipping)
+ *   sphere-box:      1 contact from EPA directly
+ *   sphere-capsule:  1 contact from EPA directly
+ *   box-box:         up to 4 contacts via face clipping
+ *   box-capsule:     1-2 contacts (capsule edge vs box face)
+ *   capsule-capsule: 1 contact from EPA directly
+ *
+ * Parameters:
+ *   epa      — valid EPA result (normal, depth, contact points)
+ *   shape_a  — collision shape of body A
+ *   pos_a    — world position of body A
+ *   orient_a — world orientation of body A
+ *   shape_b  — collision shape of body B
+ *   pos_b    — world position of body B
+ *   orient_b — world orientation of body B
+ *   idx_a    — body index A
+ *   idx_b    — body index B
+ *   mu_s     — static friction coefficient (>= 0)
+ *   mu_d     — dynamic friction coefficient (>= 0)
+ *
+ * Returns: ForgePhysicsManifold with 0..4 contacts.
+ *          count == 0 means generation failed (invalid input).
+ *
+ * Reference: Gregorius, "The Separating Axis Test" (GDC 2013).
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline ForgePhysicsManifold forge_physics_manifold_generate(
+    const ForgePhysicsEPAResult *epa,
+    const ForgePhysicsCollisionShape *shape_a, vec3 pos_a, quat orient_a,
+    const ForgePhysicsCollisionShape *shape_b, vec3 pos_b, quat orient_b,
+    int idx_a, int idx_b,
+    float mu_s, float mu_d)
+{
+    ForgePhysicsManifold m;
+    SDL_memset(&m, 0, sizeof(m));
+    m.body_a = idx_a;
+    m.body_b = idx_b;
+    m.static_friction  = (forge_isfinite(mu_s) && mu_s > 0.0f) ? mu_s : 0.0f;
+    m.dynamic_friction = (forge_isfinite(mu_d) && mu_d > 0.0f) ? mu_d : 0.0f;
+
+    if (!epa || !epa->valid || !shape_a || !shape_b) return m;
+
+    m.normal = epa->normal;
+
+    /* Non-box shapes: single contact from EPA */
+    bool a_is_box = (shape_a->type == FORGE_PHYSICS_SHAPE_BOX);
+    bool b_is_box = (shape_b->type == FORGE_PHYSICS_SHAPE_BOX);
+
+    if (!a_is_box && !b_is_box) {
+        /* sphere-sphere, sphere-capsule, capsule-capsule: 1 contact */
+        m.count = 1;
+        m.contacts[0].world_point  = epa->point;
+        m.contacts[0].penetration  = epa->depth;
+        m.contacts[0].local_a = forge_physics_manifold_world_to_local(
+            epa->point_a, pos_a, orient_a);
+        m.contacts[0].local_b = forge_physics_manifold_world_to_local(
+            epa->point_b, pos_b, orient_b);
+        m.contacts[0].id = forge_physics_manifold_contact_id(0, 0, 0);
+        return m;
+    }
+
+    if (!a_is_box || !b_is_box) {
+        /* sphere-box or capsule-box: 1 contact from EPA */
+        m.count = 1;
+        m.contacts[0].world_point  = epa->point;
+        m.contacts[0].penetration  = epa->depth;
+        m.contacts[0].local_a = forge_physics_manifold_world_to_local(
+            epa->point_a, pos_a, orient_a);
+        m.contacts[0].local_b = forge_physics_manifold_world_to_local(
+            epa->point_b, pos_b, orient_b);
+        m.contacts[0].id = forge_physics_manifold_contact_id(0, 0, 0);
+        return m;
+    }
+
+    /* ── Box-box: Sutherland-Hodgman face clipping ───────────── */
+
+    /* Determine reference and incident shapes.
+     * The reference shape is the one whose face is more aligned with
+     * the EPA normal. Its side planes do the clipping. */
+    vec3 inc_he, inc_pos;
+    quat inc_orient;
+
+    /* EPA normal points B→A. Each body's touching face points toward the
+     * other body, so A's touching face is anti-aligned with B→A (faces
+     * toward B) and B's touching face is aligned with B→A (faces toward A).
+     * We find each touching face by searching in the negated direction
+     * for A and the raw direction for B. */
+    int face_a = forge_physics_manifold_ref_face_box(
+        orient_a, vec3_negate(epa->normal));
+    int face_b = forge_physics_manifold_ref_face_box(orient_b, epa->normal);
+
+    /* Compute dot products to decide which shape is the reference */
+    vec3 face_a_verts[4], face_b_verts[4];
+    vec3 face_a_normal, face_b_normal;
+    forge_physics_manifold_box_face(shape_a->data.box.half_extents,
+        pos_a, orient_a, face_a, face_a_verts, &face_a_normal);
+    forge_physics_manifold_box_face(shape_b->data.box.half_extents,
+        pos_b, orient_b, face_b, face_b_verts, &face_b_normal);
+
+    float dot_a = SDL_fabsf(vec3_dot(face_a_normal, epa->normal));
+    float dot_b = SDL_fabsf(vec3_dot(face_b_normal, epa->normal));
+
+    vec3 ref_face_verts[4], inc_face_verts[4];
+    vec3 ref_face_normal;
+    int ref_face_idx, inc_face_idx;
+
+    if (dot_a >= dot_b) {
+        /* A is the reference shape, B is the incident shape */
+        inc_he = shape_b->data.box.half_extents;
+        inc_pos = pos_b;
+        inc_orient = orient_b;
+        ref_face_idx = face_a;
+        inc_face_idx = forge_physics_manifold_incident_face_box(
+            inc_orient, face_a_normal);
+        SDL_memcpy(ref_face_verts, face_a_verts, sizeof(face_a_verts));
+        ref_face_normal = face_a_normal;
+        forge_physics_manifold_box_face(inc_he, inc_pos, inc_orient,
+            inc_face_idx, inc_face_verts, &(vec3){0,0,0});
+    } else {
+        /* B is the reference shape, A is the incident shape */
+        inc_he = shape_a->data.box.half_extents;
+        inc_pos = pos_a;
+        inc_orient = orient_a;
+        ref_face_idx = face_b;
+        inc_face_idx = forge_physics_manifold_incident_face_box(
+            inc_orient, face_b_normal);
+        SDL_memcpy(ref_face_verts, face_b_verts, sizeof(face_b_verts));
+        ref_face_normal = face_b_normal;
+        forge_physics_manifold_box_face(inc_he, inc_pos, inc_orient,
+            inc_face_idx, inc_face_verts, &(vec3){0,0,0});
+    }
+
+    /* Build side planes from the reference face edges.
+     * Each side plane is perpendicular to the reference face and passes
+     * through one edge. With clip test dot(p, n) <= d, these normals
+     * point outward from the reference face polygon. */
+    vec3 clip_verts[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS];
+    /* +1 absorbs a potential extra vertex from floating-point edge cases
+     * in Sutherland-Hodgman clipping (vertex on the plane boundary). The
+     * clip_count clamp after each pass keeps the working set at MAX. */
+    vec3 temp_verts[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS + 1];
+    SDL_memcpy(clip_verts, inc_face_verts, 4 * sizeof(vec3));
+    int clip_count = 4;
+
+    for (int edge = 0; edge < 4; edge++) {
+        int next_edge = (edge + 1) % 4;
+        vec3 edge_dir = vec3_sub(ref_face_verts[next_edge], ref_face_verts[edge]);
+        /* Side plane normal for clip test dot(p, n) <= d.
+         * With the clockwise face winding emitted by
+         * forge_physics_manifold_box_face(), face_normal x edge_dir gives
+         * the outward polygon half-space normal. */
+        vec3 side_n = vec3_cross(ref_face_normal, edge_dir);
+        float side_len = vec3_length(side_n);
+        if (side_len < FORGE_PHYSICS_EPSILON) continue;
+        side_n = vec3_scale(side_n, 1.0f / side_len);
+        float side_d = vec3_dot(side_n, ref_face_verts[edge]);
+
+        int new_count = forge_physics_clip_polygon(
+            clip_verts, clip_count, temp_verts, side_n, side_d);
+
+        if (new_count <= 0) {
+            /* Fully clipped — fall back to single EPA contact */
+            m.count = 1;
+            m.contacts[0].world_point = epa->point;
+            m.contacts[0].penetration = epa->depth;
+            m.contacts[0].local_a = forge_physics_manifold_world_to_local(
+                epa->point_a, pos_a, orient_a);
+            m.contacts[0].local_b = forge_physics_manifold_world_to_local(
+                epa->point_b, pos_b, orient_b);
+            m.contacts[0].id = forge_physics_manifold_contact_id(0, 0, 0);
+            return m;
+        }
+
+        /* Clamp to buffer capacity. Floating-point edge cases (vertex
+         * exactly on the clip plane) can produce one extra vertex per
+         * pass beyond the theoretical Sutherland-Hodgman maximum. */
+        clip_count = new_count;
+        if (clip_count > FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS)
+            clip_count = FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS;
+        SDL_memcpy(clip_verts, temp_verts,
+                   (size_t)clip_count * sizeof(vec3));
+    }
+
+    /* Project clipped points onto the reference face plane.
+     * Keep only points that are behind the reference plane (penetrating). */
+    float ref_d = vec3_dot(ref_face_normal, ref_face_verts[0]);
+
+    vec3  kept_points[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS];     /* midpoint (world_point) */
+    vec3  kept_ref_points[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS]; /* on reference face */
+    vec3  kept_inc_points[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS]; /* on incident surface */
+    float kept_depths[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS];
+    uint32_t kept_ids[FORGE_PHYSICS_MANIFOLD_MAX_CLIP_VERTS];
+    int kept_count = 0;
+
+    for (int i = 0; i < clip_count; i++) {
+        float sep = vec3_dot(clip_verts[i], ref_face_normal) - ref_d;
+        if (sep <= 0.0f) {
+            /* Project onto reference plane */
+            vec3 projected = vec3_sub(clip_verts[i],
+                vec3_scale(ref_face_normal, sep));
+            /* Store midpoint for world_point (symmetric torque arms,
+             * consistent with the EPA path which uses epa->point).
+             * Keep reference and incident points for per-body local anchors. */
+            kept_points[kept_count] = vec3_scale(
+                vec3_add(projected, clip_verts[i]), 0.5f);
+            kept_ref_points[kept_count] = projected;
+            kept_inc_points[kept_count] = clip_verts[i];
+            kept_depths[kept_count] = -sep; /* penetration = positive */
+            kept_ids[kept_count] = forge_physics_manifold_contact_id(
+                ref_face_idx, inc_face_idx, i);
+            kept_count++;
+        }
+    }
+
+    if (kept_count == 0) {
+        /* No penetrating points — fall back to EPA */
+        m.count = 1;
+        m.contacts[0].world_point = epa->point;
+        m.contacts[0].penetration = epa->depth;
+        m.contacts[0].local_a = forge_physics_manifold_world_to_local(
+            epa->point_a, pos_a, orient_a);
+        m.contacts[0].local_b = forge_physics_manifold_world_to_local(
+            epa->point_b, pos_b, orient_b);
+        m.contacts[0].id = forge_physics_manifold_contact_id(0, 0, 0);
+        return m;
+    }
+
+    /* Reduce to 4 contacts if necessary */
+    int final_indices[4];
+    int final_count;
+    if (kept_count <= FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS) {
+        final_count = kept_count;
+        for (int i = 0; i < kept_count; i++) final_indices[i] = i;
+    } else {
+        final_count = forge_physics_manifold_reduce(
+            kept_points, kept_depths, kept_count, final_indices);
+    }
+
+    /* Build the manifold */
+    m.count = final_count;
+    for (int i = 0; i < final_count; i++) {
+        int si = final_indices[i];
+        ForgePhysicsManifoldContact *c = &m.contacts[i];
+        c->world_point  = kept_points[si];
+        c->penetration  = kept_depths[si];
+        c->id           = kept_ids[si];
+
+        /* Transform per-body anchor points into each body's local space.
+         * The reference body's anchor is the projected point on the reference
+         * face; the incident body's anchor is the original clipped point on
+         * the incident surface. Which body is reference depends on dot_a vs
+         * dot_b (the same comparison that selected the reference face). */
+        if (dot_a >= dot_b) {
+            /* A is reference → ref projection on A, incident point on B */
+            c->local_a = forge_physics_manifold_world_to_local(
+                kept_ref_points[si], pos_a, orient_a);
+            c->local_b = forge_physics_manifold_world_to_local(
+                kept_inc_points[si], pos_b, orient_b);
+        } else {
+            /* B is reference → incident point on A, ref projection on B */
+            c->local_a = forge_physics_manifold_world_to_local(
+                kept_inc_points[si], pos_a, orient_a);
+            c->local_b = forge_physics_manifold_world_to_local(
+                kept_ref_points[si], pos_b, orient_b);
+        }
+    }
+
+    return m;
+}
+
+/* ── Manifold Cache Operations ─────────────────────────────────────────────── */
+
+/* Update the manifold cache with a newly generated manifold.
+ *
+ * If a manifold for this body pair already exists in the cache, the
+ * function merges the new manifold with the cached one:
+ *   1. Match new contacts to old contacts by persistent ID
+ *   2. Carry over accumulated impulses from matched old contacts
+ *      (warm-starting), scaled by FORGE_PHYSICS_MANIFOLD_WARM_SCALE
+ *   3. Unmatched new contacts start with zero impulses
+ *
+ * If no cached manifold exists, the new manifold is inserted with
+ * zero accumulated impulses.
+ *
+ * Parameters:
+ *   cache        — pointer to the hash map (ForgePhysicsManifoldCacheEntry *)
+ *   new_manifold — the freshly generated manifold to store
+ *
+ * Usage:
+ *   ForgePhysicsManifoldCacheEntry *cache = NULL;
+ *   ForgePhysicsManifold m = forge_physics_manifold_generate(...);
+ *   forge_physics_manifold_cache_update(&cache, &m);
+ *   // Later: forge_hm_free(cache);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence"
+ * (GDC 2005), Section 3 — warm-starting.
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline void forge_physics_manifold_cache_update(
+    ForgePhysicsManifoldCacheEntry **cache,
+    const ForgePhysicsManifold *new_manifold)
+{
+    if (!cache || !new_manifold || new_manifold->count <= 0 ||
+        new_manifold->count > FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS) return;
+
+    uint64_t key = forge_physics_manifold_pair_key(
+        new_manifold->body_a, new_manifold->body_b);
+
+    /* Look up existing entry */
+    ForgePhysicsManifoldCacheEntry *existing =
+        forge_hm_get_ptr_or_null(*cache, key);
+
+    ForgePhysicsManifoldCacheEntry entry;
+    entry.key = key;
+    entry.manifold = *new_manifold;
+
+    if (existing && existing->key == key &&
+        existing->manifold.count > 0) {
+        /* Merge: carry over impulses from matched contacts */
+        const ForgePhysicsManifold *old = &existing->manifold;
+        for (int i = 0; i < entry.manifold.count; i++) {
+            ForgePhysicsManifoldContact *nc = &entry.manifold.contacts[i];
+            /* Search old contacts for matching ID */
+            for (int j = 0; j < old->count; j++) {
+                if (old->contacts[j].id == nc->id) {
+                    nc->normal_impulse    = old->contacts[j].normal_impulse
+                                            * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
+                    nc->tangent_impulse_1 = old->contacts[j].tangent_impulse_1
+                                            * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
+                    nc->tangent_impulse_2 = old->contacts[j].tangent_impulse_2
+                                            * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
+                    break;
+                }
+            }
+        }
+    }
+
+    forge_hm_put_struct(*cache, entry);
+}
+
+/* Remove stale manifolds not present in this frame's active manifold set.
+ *
+ * After all manifolds for the current frame have been updated via
+ * forge_physics_manifold_cache_update(), this function removes entries
+ * whose body pairs did not produce a manifold this frame. This prevents
+ * the cache from growing indefinitely and keeps warm-start data limited
+ * to active contacts.
+ *
+ * The caller should pass the set of pair keys that actually produced
+ * manifolds (manifold.count > 0) after forge_physics_manifold_cache_update(),
+ * not the raw broadphase overlap list.
+ *
+ * Implementation: marks entries for removal by collecting keys, then
+ * removes them after iteration (cannot remove during forge_hm_iter).
+ *
+ * Parameters:
+ *   cache        — pointer to the hash map
+ *   active_keys  — array of pair keys that produced manifolds this frame
+ *   active_count — number of active keys
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline void forge_physics_manifold_cache_prune(
+    ForgePhysicsManifoldCacheEntry **cache,
+    const uint64_t *active_keys, int active_count)
+{
+    if (!cache || !*cache || active_count < 0) return;
+    if (active_count > 0 && !active_keys) return;
+
+    ptrdiff_t cache_len = forge_hm_length(*cache);
+    if (cache_len <= 0) return;
+
+    /* Collect keys to remove.
+     * forge_hm_iter yields 0-based indices; actual entries are at [i+1]
+     * because index 0 is the default entry in forge_containers. */
+    uint64_t *to_remove = NULL;
+    ptrdiff_t i;
+    forge_hm_iter(*cache, i) {
+        uint64_t k = (*cache)[i + 1].key;
+        bool found = false;
+        for (int j = 0; j < active_count; j++) {
+            if (active_keys[j] == k) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            forge_arr_append(to_remove, k);
+        }
+    }
+
+    /* Remove stale entries */
+    ptrdiff_t remove_count = forge_arr_length(to_remove);
+    for (ptrdiff_t r = 0; r < remove_count; r++) {
+        forge_hm_remove(*cache, to_remove[r]);
+    }
+    forge_arr_free(to_remove);
+}
+
+/* Free all manifold cache memory.
+ *
+ * Parameters:
+ *   cache — pointer to the hash map
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline void forge_physics_manifold_cache_free(
+    ForgePhysicsManifoldCacheEntry **cache)
+{
+    if (!cache) return;
+    forge_hm_free(*cache);
+}
+
+/* ── Manifold-to-RBContact Conversion ─────────────────────────────────────── */
+
+/* Extract ForgePhysicsRBContact array from a manifold.
+ *
+ * Converts manifold contacts into the ForgePhysicsRBContact format used
+ * by the existing sequential impulse solver (forge_physics_rb_resolve_contacts).
+ * This allows using the manifold generation pipeline with the Lesson 06
+ * solver until a manifold-aware solver is available.
+ *
+ * Parameters:
+ *   manifold    — the manifold to extract from
+ *   out         — receives contacts (caller-allocated, capacity >= manifold->count)
+ *   max_out     — maximum contacts to write
+ *
+ * Returns: number of contacts written
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline int forge_physics_manifold_to_rb_contacts(
+    const ForgePhysicsManifold *manifold,
+    ForgePhysicsRBContact *out, int max_out)
+{
+    if (!manifold || !out || max_out <= 0) return 0;
+
+    int n = manifold->count;
+    if (n > FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS) n = FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS;
+    if (n > max_out) n = max_out;
+
+    for (int i = 0; i < n; i++) {
+        const ForgePhysicsManifoldContact *mc = &manifold->contacts[i];
+        out[i].point       = mc->world_point;
+        out[i].normal      = manifold->normal;
+        out[i].penetration = mc->penetration;
+        out[i].body_a      = manifold->body_a;
+        out[i].body_b      = manifold->body_b;
+        out[i].static_friction  = manifold->static_friction;
+        out[i].dynamic_friction = manifold->dynamic_friction;
+    }
+
+    return n;
+}
+
+/* ── Full Narrowphase with Manifold ───────────────────────────────────────── */
+
+/* Run GJK + EPA + manifold generation in one call.
+ *
+ * Combines the full narrowphase pipeline: GJK intersection test, EPA
+ * penetration depth, and Sutherland-Hodgman contact manifold generation.
+ * Returns a manifold with 1-4 contact points.
+ *
+ * This is the manifold equivalent of forge_physics_gjk_epa_contact().
+ *
+ * Parameters:
+ *   body_a, shape_a — first body and its collision shape
+ *   body_b, shape_b — second body and its collision shape
+ *   idx_a, idx_b    — body indices (for the manifold body_a/body_b fields)
+ *   mu_s, mu_d      — friction coefficients
+ *   out             — receives the contact manifold
+ *
+ * Returns: true if a manifold was generated, false if shapes are separated
+ *
+ * Usage:
+ *   ForgePhysicsManifold manifold;
+ *   if (forge_physics_gjk_epa_manifold(
+ *           &bodies[i], &shapes[i],
+ *           &bodies[j], &shapes[j],
+ *           i, j, 0.6f, 0.4f, &manifold)) {
+ *       forge_physics_manifold_cache_update(&cache, &manifold);
+ *   }
+ *
+ * See: Physics Lesson 11 — Contact Manifold
+ */
+static inline bool forge_physics_gjk_epa_manifold(
+    const ForgePhysicsRigidBody *body_a,
+    const ForgePhysicsCollisionShape *shape_a,
+    const ForgePhysicsRigidBody *body_b,
+    const ForgePhysicsCollisionShape *shape_b,
+    int idx_a, int idx_b,
+    float mu_s, float mu_d,
+    ForgePhysicsManifold *out)
+{
+    if (!body_a || !body_b || !shape_a || !shape_b || !out) return false;
+
+    /* Step 1: GJK intersection test */
+    ForgePhysicsGJKResult gjk = forge_physics_gjk_test_bodies(
+        body_a, shape_a, body_b, shape_b);
+    if (!gjk.intersecting) return false;
+
+    /* Step 2: EPA penetration depth */
+    ForgePhysicsEPAResult epa = forge_physics_epa_bodies(
+        &gjk, body_a, shape_a, body_b, shape_b);
+    if (!epa.valid) return false;
+
+    /* Step 3: Generate contact manifold */
+    *out = forge_physics_manifold_generate(
+        &epa, shape_a, body_a->position, body_a->orientation,
+        shape_b, body_b->position, body_b->orientation,
+        idx_a, idx_b, mu_s, mu_d);
+
+    return (out->count > 0);
+}
+
+
 #endif /* FORGE_PHYSICS_H */
