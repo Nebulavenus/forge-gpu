@@ -95,7 +95,7 @@
 /* UI layout */
 #define PANEL_X              10.0f            /* panel left edge */
 #define PANEL_Y              10.0f            /* panel top edge */
-#define PANEL_W             310.0f            /* panel width */
+#define PANEL_W             440.0f            /* panel width */
 #define PANEL_H             600.0f            /* panel height */
 #define LABEL_HEIGHT          18.0f           /* text label height in UI panel */
 #define LABEL_SPACER          4.0f            /* vertical spacing between labels */
