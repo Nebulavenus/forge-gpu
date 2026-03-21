@@ -51,6 +51,7 @@
   // Files/directories to ignore
   "ignores": [
     "node_modules",
+    "**/node_modules/**",
     "build",
     "**/build/**",
     "third_party"

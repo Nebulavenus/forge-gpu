@@ -90,3 +90,9 @@ lessons/**/audio.conf
 
 # Asset pipeline cache (generated at runtime)
 .forge-cache/
+
+# Frontend build artifacts and dependencies
+node_modules/
+pipeline/web/dist/
+pipeline/web/src/routeTree.gen.ts
+*.tsbuildinfo

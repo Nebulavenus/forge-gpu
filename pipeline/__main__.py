@@ -122,6 +122,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to the .forgepak bundle file",
     )
 
+    serve_cmd = subparsers.add_parser(
+        "serve",
+        help="Start the web UI server",
+    )
+    serve_cmd.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)",
+    )
+    serve_cmd.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to listen on (default: 8000)",
+    )
+
     return parser
 
 
@@ -301,6 +318,25 @@ def _cmd_info(args) -> int:
     return 0
 
 
+def _cmd_serve(args, config) -> int:
+    """Handle the ``serve`` subcommand."""
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        log.error("uvicorn is required for the web UI: pip install uvicorn")
+        return 1
+
+    from pipeline.server import create_app
+
+    app = create_app(config)
+    url = f"http://{args.host}:{args.port}"
+    print(f"\nForge pipeline web UI: {url}")
+    print(f"  API docs:  {url}/api/docs")
+    print("  Press Ctrl+C to stop.\n")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point.  Returns 0 on success, 1 on error."""
     args = build_parser().parse_args(argv)
@@ -339,6 +375,10 @@ def main(argv: list[str] | None = None) -> int:
     # -- Handle bundle subcommand (config needed, plugins not needed) -------
     if args.command == "bundle":
         return _cmd_bundle(args, config)
+
+    # -- Handle serve subcommand (config needed, plugins not needed) -------
+    if args.command == "serve":
+        return _cmd_serve(args, config)
 
     # -- Plugin discovery ---------------------------------------------------
     plugins_dir = args.plugins_dir
