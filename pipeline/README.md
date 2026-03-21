@@ -61,6 +61,7 @@ The pipeline has four components:
 | Scanner | `pipeline.scanner` | Walk directories, SHA-256 fingerprint, classify NEW/CHANGED/UNCHANGED |
 | Bundler | `pipeline.bundler` | Pack processed assets into compressed bundles with random-access TOC |
 | CLI | `pipeline.__main__` | `argparse` entry point tying everything together |
+| Web server | `pipeline.server` | FastAPI app for browsing assets, REST API, WebSocket status |
 
 ```text
 pipeline.toml --> CLI (__main__.py)
@@ -120,6 +121,38 @@ The plugin is discovered automatically — no core code changes needed.
 The texture plugin was built in Lesson 02.  Mesh optimization with
 meshoptimizer and MikkTSpace is added in Lesson 03.  The animation plugin
 was added in Lesson 08.
+
+## Web UI
+
+Browse assets in the browser:
+
+```bash
+python -m pipeline serve
+```
+
+Opens at `http://localhost:8000`. API docs at `http://localhost:8000/api/docs`.
+
+Options:
+
+```bash
+python -m pipeline serve --port 3000          # custom port
+python -m pipeline serve --host 0.0.0.0       # listen on all interfaces
+```
+
+For frontend development with hot reload:
+
+```bash
+# Terminal 1 — backend
+python -m pipeline serve
+
+# Terminal 2 — frontend (proxies API calls to backend)
+cd pipeline/web
+npm install   # first time only
+npm run dev   # opens at http://localhost:5173
+```
+
+The frontend is built with Vite + React + TypeScript. Run `npm run build`
+in `pipeline/web/` to produce static files that FastAPI serves in production.
 
 ## Why content hashes?
 
@@ -201,6 +234,7 @@ The pipeline is built incrementally across the
 | [11 — Animation Manifest](../lessons/assets/11-animation-manifest/) | Animation metadata, clip registry, manifest generation |
 | [12 — Skinned Animations](../lessons/assets/12-skinned-animations/) | Joint hierarchies, inverse bind matrices, `.fskin` format |
 | [13 — Morph Targets](../lessons/assets/13-morph-targets/) | Morph target deltas, weight channels, blend shape pipeline |
+| [14 — Web UI Scaffold](../lessons/assets/14-web-ui-scaffold/) | FastAPI backend, Vite + React frontend, asset browser, WebSocket status |
 
 ## License
 

@@ -91,6 +91,9 @@ lessons/**/audio.conf
 # Asset pipeline cache (generated at runtime)
 .forge-cache/
 
+# Playwright MCP artifacts
+.playwright-mcp/
+
 # Frontend build artifacts and dependencies
 node_modules/
 pipeline/web/dist/

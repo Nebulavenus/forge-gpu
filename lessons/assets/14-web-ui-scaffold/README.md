@@ -10,6 +10,8 @@
 
 ## Result
 
+![Asset browser showing 8 assets with type badges and status](assets/screenshot.png)
+
 Running `python -m pipeline serve` starts a local web server. Open
 `http://localhost:8000` to browse all assets the pipeline knows about —
 filtered by type, searchable by name, with real-time build status via
