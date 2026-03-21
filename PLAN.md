@@ -187,10 +187,16 @@ full plan. Summary:
 
 ### Web Frontend (blocks Effect & Asset Authoring)
 
-- [ ] **Asset Lesson 14 — Web UI Scaffold** — Embedded web server (Flask/FastAPI); static frontend with asset browser; listing processed assets with thumbnails; real-time build status via WebSocket
-- [ ] **Asset Lesson 15 — Asset Preview** — 3D mesh preview with three.js or WebGPU; texture preview with zoom and channel isolation; material preview with lighting; side-by-side source vs. processed comparison
-- [ ] **Asset Lesson 16 — Import Settings Editor** — Per-asset import configuration in the browser; texture compression quality, mesh LOD thresholds, atlas packing options; save settings and trigger re-import
-- [ ] **Asset Lesson 17 — Scene Editor** — Visual scene composition: place, move, rotate, scale objects; save scene graph as JSON/glTF; integration with the C runtime for live preview; undo/redo with command pattern
+**Stack:** FastAPI backend (Python) serving a Vite + React + TypeScript SPA.
+TanStack Router and Query for routing and data fetching. shadcn/ui + Tailwind
+for UI components. Authored content (scenes, materials, effects) persisted as
+JSON/TOML files — no database. react-three-fiber for 3D preview (Lesson 15),
+reactflow for node-graph editing (Lessons 20+).
+
+- [ ] **Asset Lesson 14 — Web UI Scaffold** — FastAPI backend with REST endpoints and WebSocket for build status; Vite + React + TypeScript frontend scaffolded with shadcn/ui and Tailwind; TanStack Router for navigation, TanStack Query for data fetching; asset browser listing processed assets with thumbnails and filtering by type/status; real-time pipeline build status via WebSocket; OpenAPI schema generation from FastAPI with TypeScript type codegen
+- [ ] **Asset Lesson 15 — Asset Preview** — react-three-fiber 3D mesh preview with orbit controls and Blinn-Phong lighting; texture preview with zoom, pan, and channel isolation (R/G/B/A/RGB); material preview showing all texture maps applied; side-by-side source vs. processed comparison
+- [ ] **Asset Lesson 16 — Import Settings Editor** — Per-asset import configuration stored as TOML sidecar files; texture compression quality, mesh LOD thresholds, atlas packing options; form UI with shadcn/ui controls; save settings and trigger pipeline re-processing; TanStack Query cache invalidation on rebuild
+- [ ] **Asset Lesson 17 — Scene Editor** — Visual scene composition with react-three-fiber viewport; place, move, rotate, scale objects with transform gizmos; scene hierarchy panel; scene saved as JSON files; undo/redo with command pattern using React state
 
 ### Procedural Textures
 
@@ -199,9 +205,9 @@ full plan. Summary:
 
 ### Effect & Asset Authoring (blocks GPU Lessons 58–59)
 
-- [ ] **Asset Lesson 20 — Particle Effect Definitions** — Data-driven particle effect format (.fpart); emission shape, spawn rate, forces, color/size curves, atlas region, blend mode; editor UI for authoring effects; pipeline plugin to validate and compile effect files; runtime loader in `common/pipeline/`
+- [ ] **Asset Lesson 20 — Particle Effect Definitions** — Data-driven particle effect format (.fpart); emission shape, spawn rate, forces, color/size curves, atlas region, blend mode; reactflow node-graph editor for authoring effects; pipeline plugin to validate and compile effect files; runtime loader in `common/pipeline/`
 - [ ] **Asset Lesson 21 — Animation Event Data** — Authored event tracks (.faevt) attached to animation clips; frame-triggered events (sounds, particles, hitboxes); editor timeline UI for placing events; pipeline processing and runtime loading (connects to Anim Lesson 09)
-- [ ] **Asset Lesson 22 — Material Definitions** — Data-driven material format (.fmat2) beyond per-mesh materials; texture references, shader parameters, render state; material editor in the web UI; pipeline validation and compilation
+- [ ] **Asset Lesson 22 — Material Definitions** — Data-driven material format (.fmat2) beyond per-mesh materials; texture references, shader parameters, render state; reactflow node-graph material editor with live preview; pipeline validation and compilation
 
 ### Navigation Mesh Tooling (blocks AI Lessons 05–06)
 
