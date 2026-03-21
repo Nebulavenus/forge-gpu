@@ -13,7 +13,8 @@
  *   - Deferred draw ordering (back-to-front by z_order)
  *   - Input routing (hovered_window_id, z-aware hit testing)
  *   - Collapsed window hover rect (title-bar only)
- *   - Edge cases: NaN/Inf rect, INT_MAX z_order, NULL atlas
+ *   - Edge cases: NaN/Inf rect, INT_MAX z_order, NULL atlas,
+ *     zero-initialized struct (#361)
  *   - wctx_free while redirected (use-after-free prevention)
  *   - layout_push failure cleanup
  *   - window_end without window_begin
@@ -2052,6 +2053,30 @@ static void test_window_begin_return_checked(void)
     forge_ui_ctx_free(&ctx);
 }
 
+static void test_window_begin_zero_initialized_struct(void)
+{
+    TEST("window_begin: zero-initialized ForgeUiWindowState returns false");
+    if (!setup_atlas()) return;
+
+    ForgeUiContext ctx;
+    ASSERT_TRUE(forge_ui_ctx_init(&ctx, &test_atlas));
+    ForgeUiWindowContext wctx;
+    ASSERT_TRUE(forge_ui_wctx_init(&wctx, &ctx));
+
+    /* Simulate SDL_calloc / SDL_memset zeroing the struct — the common
+     * mistake described in issue #361. */
+    ForgeUiWindowState ws;
+    SDL_memset(&ws, 0, sizeof(ws));
+
+    forge_ui_ctx_begin(&ctx, 0, 0, false);
+    forge_ui_wctx_begin(&wctx);
+    ASSERT_TRUE(!forge_ui_wctx_window_begin(&wctx, "Zero", &ws));
+    forge_ui_wctx_end(&wctx);
+    forge_ui_ctx_end(&ctx);
+    forge_ui_wctx_free(&wctx);
+    forge_ui_ctx_free(&ctx);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  MAIN
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -2089,6 +2114,7 @@ int main(int argc, char *argv[])
     test_window_begin_null_state();
     test_window_begin_empty_title();
     test_window_begin_zero_width();
+    test_window_begin_zero_initialized_struct();
     test_window_begin_nan_x();
     test_window_begin_inf_y();
     test_window_begin_nan_width();

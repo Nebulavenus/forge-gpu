@@ -608,13 +608,24 @@ static inline bool forge_ui_wctx_window_begin(ForgeUiWindowContext *wctx,
 
     /* ── Validate rect origin and dimensions ──────────────────────────── */
     if (!forge_isfinite(state->rect.x) || !forge_isfinite(state->rect.y)) {
-        SDL_Log("forge_ui_wctx_window_begin: rect origin must be finite");
+        SDL_Log("forge_ui_wctx_window_begin(\"%s\"): rect origin must be "
+                "finite", title);
         return false;
     }
     if (!(state->rect.w > 0.0f) || !forge_isfinite(state->rect.w) ||
         !(state->rect.h > 0.0f) || !forge_isfinite(state->rect.h)) {
-        SDL_Log("forge_ui_wctx_window_begin: rect dimensions must be "
-                "positive and finite");
+        /* Detect the common zero-initialized-struct mistake and give an
+         * actionable message instead of a cryptic "positive and finite". */
+        if (state->rect.x == 0.0f && state->rect.y == 0.0f &&
+            state->rect.w == 0.0f && state->rect.h == 0.0f) {
+            SDL_Log("forge_ui_wctx_window_begin(\"%s\"): window rect is "
+                    "{0,0,0,0} — did you forget to call "
+                    "forge_ui_window_state_default()?", title);
+        } else {
+            SDL_Log("forge_ui_wctx_window_begin(\"%s\"): rect dimensions "
+                    "must be positive and finite (w=%.1f, h=%.1f)",
+                    title, (double)state->rect.w, (double)state->rect.h);
+        }
         return false;
     }
 
