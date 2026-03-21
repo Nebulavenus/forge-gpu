@@ -4069,6 +4069,161 @@ static inline const ForgePhysicsSAPPair *forge_physics_sap_get_pairs(
     return world->pairs;
 }
 
+/* ── SAP-Accelerated Particle Collision ─────────────────────────────────── */
+
+/* Stack-buffer threshold for particle AABB arrays.  Below this count,
+ * AABBs are allocated on the stack to avoid heap overhead. */
+#define FORGE_PHYSICS_SAP_PARTICLE_STACK_MAX  256
+
+/* Detect particle collisions using SAP broadphase + sphere-sphere narrow phase.
+ *
+ * Replaces the O(n²) brute-force approach in forge_physics_collide_particles_all()
+ * with a broadphase-accelerated path. Computes an AABB for each particle from
+ * position ± radius, feeds them to the SAP broadphase, then runs sphere-sphere
+ * narrow phase only on overlapping pairs.
+ *
+ * The caller owns the ForgePhysicsSAPWorld — initialize once, reuse each frame.
+ * SAP exploits temporal coherence (particles move slightly between frames) to
+ * keep the internal insertion sort near-linear.
+ *
+ * Parameters:
+ *   particles     (const ForgePhysicsParticle*) — particle array (must not be NULL)
+ *   num_particles (int)                         — particle count (must be > 1)
+ *   sap           (ForgePhysicsSAPWorld*)        — SAP world (caller-owned, reused each frame)
+ *   out_contacts  (ForgePhysicsContact**)        — dynamic array for results
+ *   out_sap_pair_count (int*)                    — if non-NULL, receives the SAP pair count
+ *
+ * Returns:
+ *   The total number of contacts in the dynamic array after detection.
+ *
+ * Usage:
+ *   ForgePhysicsSAPWorld sap;
+ *   forge_physics_sap_init(&sap);
+ *   ForgePhysicsContact *contacts = NULL;
+ *   int n = forge_physics_collide_particles_sap(
+ *       particles, num_particles, &sap, &contacts, NULL);
+ *   // ... use contacts[0..n-1] ...
+ *   forge_arr_free(contacts);
+ *   forge_physics_sap_destroy(&sap);
+ *
+ * Reference: Ericson, "Real-Time Collision Detection", Ch. 7.2.4 —
+ * sort-and-sweep broadphase for sphere sets.
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline int forge_physics_collide_particles_sap(
+    const ForgePhysicsParticle *particles, int num_particles,
+    ForgePhysicsSAPWorld *sap,
+    ForgePhysicsContact **out_contacts,
+    int *out_sap_pair_count)
+{
+    if (out_sap_pair_count) *out_sap_pair_count = 0;
+    if (!particles || num_particles <= 1 || !sap || !out_contacts) {
+        return 0;
+    }
+
+    /* Clamp to SAP's uint16_t index limit up front so we don't build
+     * AABBs or select an axis over particles that SAP will ignore. */
+    if (num_particles > UINT16_MAX) {
+        SDL_Log("WARNING: forge_physics_collide_particles_sap: "
+                "count %d exceeds UINT16_MAX, clamped to %d",
+                num_particles, (int)UINT16_MAX);
+        num_particles = UINT16_MAX;
+    }
+
+    /* Step 1: Build AABBs from particle positions and radii.
+     * Use a stack buffer for small counts, heap for large. */
+    ForgePhysicsAABB stack_aabbs[FORGE_PHYSICS_SAP_PARTICLE_STACK_MAX];
+    ForgePhysicsAABB *aabbs = stack_aabbs;
+    bool heap_aabbs = false;
+
+    if (num_particles > FORGE_PHYSICS_SAP_PARTICLE_STACK_MAX) {
+        aabbs = (ForgePhysicsAABB *)SDL_malloc(
+            (size_t)num_particles * sizeof(ForgePhysicsAABB));
+        if (!aabbs) {
+            SDL_Log("forge_physics_collide_particles_sap: "
+                    "AABB allocation failed for %d particles", num_particles);
+            return 0;
+        }
+        heap_aabbs = true;
+    }
+
+    for (int i = 0; i < num_particles; i++) {
+        float r = particles[i].radius;
+        vec3 rv = vec3_create(r, r, r);
+        aabbs[i].min = vec3_sub(particles[i].position, rv);
+        aabbs[i].max = vec3_add(particles[i].position, rv);
+    }
+
+    /* Step 2: Select sweep axis and run SAP broadphase. */
+    sap->sweep_axis = forge_physics_sap_select_axis(aabbs, num_particles);
+    forge_physics_sap_update(sap, aabbs, num_particles);
+
+    if (heap_aabbs) {
+        SDL_free(aabbs);
+    }
+
+    /* Step 3: Narrow phase — sphere-sphere on SAP pairs only. */
+    int pair_count = forge_physics_sap_pair_count(sap);
+    if (out_sap_pair_count) *out_sap_pair_count = pair_count;
+
+    const ForgePhysicsSAPPair *pairs = forge_physics_sap_get_pairs(sap);
+    for (int p = 0; p < pair_count; p++) {
+        int i = pairs[p].a;
+        int j = pairs[p].b;
+        ForgePhysicsContact c;
+        if (forge_physics_collide_sphere_sphere(
+                &particles[i], &particles[j], i, j, &c)) {
+            forge_arr_append(*out_contacts, c);
+        }
+    }
+
+    return (int)forge_arr_length(*out_contacts);
+}
+
+/* Detect and resolve particle collisions using SAP broadphase.
+ *
+ * SAP-accelerated version of forge_physics_collide_particles_step().
+ * Clears the contact array, runs SAP broadphase + sphere-sphere narrow
+ * phase, then resolves all contacts with impulse response and positional
+ * correction.
+ *
+ * Parameters:
+ *   particles     (ForgePhysicsParticle*) — particle array (modified in place)
+ *   num_particles (int)                   — particle count
+ *   sap           (ForgePhysicsSAPWorld*) — SAP world (caller-owned, reused each frame)
+ *   out_contacts  (ForgePhysicsContact**) — dynamic array, cleared and repopulated
+ *   out_sap_pair_count (int*)             — if non-NULL, receives the SAP pair count
+ *
+ * Returns:
+ *   The number of contacts detected and resolved.
+ *
+ * See: Physics Lesson 03 — Particle Collisions
+ */
+static inline int forge_physics_collide_particles_sap_step(
+    ForgePhysicsParticle *particles, int num_particles,
+    ForgePhysicsSAPWorld *sap,
+    ForgePhysicsContact **out_contacts,
+    int *out_sap_pair_count)
+{
+    if (!out_contacts) {
+        if (out_sap_pair_count) *out_sap_pair_count = 0;
+        return 0;
+    }
+
+    forge_arr_set_length(*out_contacts, 0);
+
+    int num_contacts = forge_physics_collide_particles_sap(
+        particles, num_particles, sap, out_contacts, out_sap_pair_count);
+
+    if (num_contacts > 0) {
+        forge_physics_resolve_contacts(
+            *out_contacts, num_contacts, particles, num_particles);
+    }
+
+    return num_contacts;
+}
+
 /* =========================================================================
  * GJK Intersection Testing
  *

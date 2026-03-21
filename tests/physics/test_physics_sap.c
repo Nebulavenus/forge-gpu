@@ -616,6 +616,196 @@ static void test_sap_inf_aabb_no_crash(void)
     END_TEST();
 }
 
+/* ── SAP Particle Collision Tests ──────────────────────────────────────── */
+
+static ForgePhysicsParticle make_particle(float x, float y, float z,
+                                          float radius)
+{
+    ForgePhysicsParticle p;
+    SDL_memset(&p, 0, sizeof(p));
+    p.position = vec3_create(x, y, z);
+    p.prev_position = p.position;
+    p.mass = 1.0f;
+    p.inv_mass = 1.0f;
+    p.radius = radius;
+    p.restitution = 0.5f;
+    return p;
+}
+
+static void test_sap_particles_two_overlapping(void)
+{
+    TEST("SAP_particles — 2 overlapping particles detect 1 contact");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    ForgePhysicsParticle parts[2];
+    parts[0] = make_particle(0.0f, 0.0f, 0.0f, 1.0f);
+    parts[1] = make_particle(1.5f, 0.0f, 0.0f, 1.0f);
+
+    ForgePhysicsContact *contacts = NULL;
+    int sap_pairs = 0;
+    int n = forge_physics_collide_particles_sap(
+        parts, 2, &w, &contacts, &sap_pairs);
+
+    ASSERT_TRUE(n == 1);
+    ASSERT_TRUE(sap_pairs >= 1);
+
+    forge_arr_free(contacts);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_particles_two_separated(void)
+{
+    TEST("SAP_particles — 2 separated particles detect 0 contacts");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    ForgePhysicsParticle parts[2];
+    parts[0] = make_particle(0.0f, 0.0f, 0.0f, 0.5f);
+    parts[1] = make_particle(10.0f, 0.0f, 0.0f, 0.5f);
+
+    ForgePhysicsContact *contacts = NULL;
+    int n = forge_physics_collide_particles_sap(
+        parts, 2, &w, &contacts, NULL);
+
+    ASSERT_TRUE(n == 0);
+
+    forge_arr_free(contacts);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_particles_matches_brute_force(void)
+{
+    TEST("SAP_particles — results match brute-force for 8 particles");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    /* Place 8 particles in a line with varying spacing — some overlap */
+    ForgePhysicsParticle parts[8];
+    for (int i = 0; i < 8; i++) {
+        parts[i] = make_particle((float)i * 1.5f, 0.0f, 0.0f, 1.0f);
+    }
+
+    /* Brute force */
+    ForgePhysicsContact *bf_contacts = NULL;
+    int bf_n = forge_physics_collide_particles_all(parts, 8, &bf_contacts);
+
+    /* SAP */
+    ForgePhysicsContact *sap_contacts = NULL;
+    int sap_n = forge_physics_collide_particles_sap(
+        parts, 8, &w, &sap_contacts, NULL);
+
+    ASSERT_TRUE(sap_n == bf_n);
+
+    forge_arr_free(bf_contacts);
+    forge_arr_free(sap_contacts);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_particles_null_args(void)
+{
+    TEST("SAP_particles — NULL arguments return 0");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+    ForgePhysicsContact *contacts = NULL;
+    ForgePhysicsParticle p = make_particle(0.0f, 0.0f, 0.0f, 1.0f);
+
+    ASSERT_TRUE(forge_physics_collide_particles_sap(NULL, 2, &w, &contacts, NULL) == 0);
+    ASSERT_TRUE(forge_physics_collide_particles_sap(&p, 2, NULL, &contacts, NULL) == 0);
+    ASSERT_TRUE(forge_physics_collide_particles_sap(&p, 2, &w, NULL, NULL) == 0);
+    ASSERT_TRUE(forge_physics_collide_particles_sap(&p, 0, &w, &contacts, NULL) == 0);
+
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_particles_step_null_args(void)
+{
+    TEST("SAP_particles_step — NULL arguments return 0");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+    ForgePhysicsContact *contacts = NULL;
+    ForgePhysicsParticle p = make_particle(0.0f, 0.0f, 0.0f, 1.0f);
+    int pair_count = 99;
+
+    /* NULL out_contacts also zeroes pair count */
+    ASSERT_TRUE(forge_physics_collide_particles_sap_step(&p, 2, &w, NULL, &pair_count) == 0);
+    ASSERT_TRUE(pair_count == 0);
+
+    /* NULL particles zeroes pair count via inner _sap call */
+    pair_count = 99;
+    ASSERT_TRUE(forge_physics_collide_particles_sap_step(NULL, 2, &w, &contacts, &pair_count) == 0);
+    ASSERT_TRUE(pair_count == 0);
+
+    /* NULL sap zeroes pair count via inner _sap call */
+    pair_count = 99;
+    ASSERT_TRUE(forge_physics_collide_particles_sap_step(&p, 2, NULL, &contacts, &pair_count) == 0);
+    ASSERT_TRUE(pair_count == 0);
+
+    forge_arr_free(contacts);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_particles_step(void)
+{
+    TEST("SAP_particles_step — detects and resolves collisions");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    ForgePhysicsParticle parts[2];
+    parts[0] = make_particle(0.0f, 0.0f, 0.0f, 1.0f);
+    parts[0].velocity = vec3_create(1.0f, 0.0f, 0.0f);
+    parts[1] = make_particle(1.5f, 0.0f, 0.0f, 1.0f);
+    parts[1].velocity = vec3_create(-1.0f, 0.0f, 0.0f);
+
+    ForgePhysicsContact *contacts = NULL;
+    int n = forge_physics_collide_particles_sap_step(
+        parts, 2, &w, &contacts, NULL);
+
+    ASSERT_TRUE(n == 1);
+    /* Velocities should have changed after resolution */
+    ASSERT_TRUE(parts[0].velocity.x < 1.0f);
+    ASSERT_TRUE(parts[1].velocity.x > -1.0f);
+
+    forge_arr_free(contacts);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
+static void test_sap_particles_temporal_coherence(void)
+{
+    TEST("SAP_particles — temporal coherence reduces sort ops");
+    ForgePhysicsSAPWorld w;
+    forge_physics_sap_init(&w);
+
+    ForgePhysicsParticle parts[20];
+    for (int i = 0; i < 20; i++) {
+        parts[i] = make_particle((float)i * 2.0f, 0.0f, 0.0f, 0.8f);
+    }
+
+    /* First call builds from scratch */
+    ForgePhysicsContact *contacts = NULL;
+    forge_physics_collide_particles_sap(parts, 20, &w, &contacts, NULL);
+    forge_arr_set_length(contacts, 0);
+
+    /* Move particles slightly */
+    for (int i = 0; i < 20; i++) {
+        parts[i].position.x += 0.01f;
+    }
+
+    /* Second call should benefit from temporal coherence */
+    forge_physics_collide_particles_sap(parts, 20, &w, &contacts, NULL);
+    ASSERT_TRUE(w.sort_ops <= 5);  /* near-sorted → few swaps */
+
+    forge_arr_free(contacts);
+    forge_physics_sap_destroy(&w);
+    END_TEST();
+}
+
 /* ── Runner ────────────────────────────────────────────────────────────── */
 
 void run_sap_tests(void)
@@ -652,4 +842,14 @@ void run_sap_tests(void)
     test_sap_pair_count_null();
     test_sap_nan_aabb_no_pairs();
     test_sap_inf_aabb_no_crash();
+
+    /* SAP particle collision */
+    SDL_Log("--- SAP particle collision ---");
+    test_sap_particles_two_overlapping();
+    test_sap_particles_two_separated();
+    test_sap_particles_matches_brute_force();
+    test_sap_particles_null_args();
+    test_sap_particles_step_null_args();
+    test_sap_particles_step();
+    test_sap_particles_temporal_coherence();
 }
