@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "forge-pipeline"
 version = "0.1.0"
@@ -18,6 +22,9 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",
+    "pyright>=1.1",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
     "httpx>=0.27.0",
 ]
 

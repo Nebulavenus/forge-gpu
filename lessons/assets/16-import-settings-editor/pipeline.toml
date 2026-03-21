@@ -1,0 +1,21 @@
+# Example pipeline configuration for Lesson 16.
+#
+# Per-asset overrides in .import.toml sidecar files take precedence over
+# these global settings.
+
+[pipeline]
+source_dir = "assets/raw"
+output_dir = "assets/processed"
+cache_dir = ".forge-cache"
+
+[texture]
+max_size = 2048
+generate_mipmaps = true
+output_format = "png"
+compression = "none"
+
+[mesh]
+deduplicate = true
+optimize = true
+generate_tangents = true
+lod_levels = [1.0]

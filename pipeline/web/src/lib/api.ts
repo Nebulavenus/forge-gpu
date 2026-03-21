@@ -24,10 +24,20 @@ export interface PipelineStatus {
   output_dir: string
 }
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    statusText: string,
+  ) {
+    super(`API error: ${status} ${statusText}`)
+    this.name = "ApiError"
+  }
+}
+
 async function apiFetch<T>(url: string): Promise<T> {
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`)
+    throw new ApiError(response.status, response.statusText)
   }
   return response.json() as Promise<T>
 }
@@ -45,9 +55,83 @@ export function fetchAssets(params?: {
 }
 
 export function fetchAsset(id: string): Promise<AssetInfo> {
-  return apiFetch<AssetInfo>(`/api/assets/${id}`)
+  return apiFetch<AssetInfo>(`/api/assets/${encodeURIComponent(id)}`)
 }
 
 export function fetchStatus(): Promise<PipelineStatus> {
   return apiFetch<PipelineStatus>("/api/status")
+}
+
+// ── Import settings ────────────────────────────────────────────────
+
+export interface SettingsSchemaField {
+  type: string
+  label: string
+  description: string
+  default: unknown
+  min?: number
+  max?: number
+  options?: string[]
+  group?: string
+}
+
+export interface ImportSettingsResponse {
+  effective: Record<string, unknown>
+  per_asset: Record<string, unknown>
+  global_settings: Record<string, unknown>
+  schema_fields: Record<string, SettingsSchemaField>
+  has_overrides: boolean
+}
+
+export interface ProcessResponse {
+  message: string
+}
+
+export function fetchImportSettings(
+  assetId: string,
+): Promise<ImportSettingsResponse> {
+  return apiFetch<ImportSettingsResponse>(`/api/assets/${encodeURIComponent(assetId)}/settings`)
+}
+
+async function apiWrite<T>(
+  url: string,
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, response.statusText)
+  }
+  return response.json() as Promise<T>
+}
+
+export function saveImportSettings(
+  assetId: string,
+  overrides: Record<string, unknown>,
+): Promise<ImportSettingsResponse> {
+  return apiWrite<ImportSettingsResponse>(
+    `/api/assets/${encodeURIComponent(assetId)}/settings`,
+    "PUT",
+    overrides,
+  )
+}
+
+export function deleteImportSettings(
+  assetId: string,
+): Promise<ImportSettingsResponse> {
+  return apiWrite<ImportSettingsResponse>(
+    `/api/assets/${encodeURIComponent(assetId)}/settings`,
+    "DELETE",
+  )
+}
+
+export function processAsset(assetId: string): Promise<ProcessResponse> {
+  return apiWrite<ProcessResponse>(
+    `/api/assets/${encodeURIComponent(assetId)}/process`,
+    "POST",
+  )
 }

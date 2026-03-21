@@ -389,6 +389,14 @@ Never disable lint rules, remove CI workflows, add ignore comments, or relax
 thresholds to make errors pass. Always fix the underlying issue. If a rule
 seems problematic, ask the user — don't bypass it yourself.
 
+### CRITICAL: Fix every issue. No excuses about scope.
+
+**Never dismiss a bug, lint failure, or review comment because it is
+"pre-existing" or "not introduced by this PR."** If you see a problem, fix
+it. Do not tell the user "this was pre-existing," "not introduced by this
+PR," "out of scope," or any variation. Those are excuses, not solutions.
+The codebase should be better after every PR, not just different.
+
 ## Large file writes (MANDATORY — Task agent token limit)
 
 Task agents hit a **32K output token limit** on Write calls. A single Write
@@ -414,12 +422,33 @@ See [`.claude/large-file-strategy.md`](.claude/large-file-strategy.md) for the
 full strategy, agent decomposition template, contract-sharing rules, and
 recovery steps.
 
+## Python environment
+
+This project uses [uv](https://docs.astral.sh/uv/) for Python dependency
+management. `uv.lock` pins every dependency (direct and transitive) to exact
+versions, so all environments — local, CI, remote agents — get identical
+packages.
+
+```bash
+uv sync --extra dev    # install all dependencies from the lockfile
+uv run pytest ...      # run commands through the locked environment
+uv run ruff check      # linting
+uv run pyright         # type checking
+```
+
+**Never use `pip install` for repository dependency management in dev or
+CI.** Use `uv sync`. The lockfile is the source of truth — `pip install`
+bypasses it and can install different versions.
+
+When adding or updating a dependency, edit `pyproject.toml` then run
+`uv lock` to regenerate the lockfile. Commit both files together.
+
 ## Dependencies
 
 - SDL3 (with GPU API)
 - CMake 3.24+
 - A Vulkan/Metal/D3D12-capable GPU
-- Python packages for diagram generation: `pip install numpy matplotlib`
+- [uv](https://docs.astral.sh/uv/) for Python dependency management
 
 For full build instructions, platform-specific setup (especially macOS/Metal),
 and common troubleshooting, see [docs/building.md](docs/building.md).

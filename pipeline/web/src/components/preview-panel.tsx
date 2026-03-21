@@ -34,8 +34,20 @@ export function PreviewPanel({ asset }: PreviewPanelProps) {
       }
       return <TexturePreview url={fileUrl(asset.id)} />
 
-    case "mesh":
-      return <MeshPreview url={fileUrl(asset.id)} assetId={asset.id} />
+    case "mesh": {
+      const name = asset.name.toLowerCase()
+      const isGltf = name.endsWith(".gltf") || name.endsWith(".glb")
+      if (isGltf) {
+        return <MeshPreview url={fileUrl(asset.id)} assetId={asset.id} />
+      }
+      const dot = asset.name.lastIndexOf(".")
+      const ext = dot >= 0 ? asset.name.slice(dot) : asset.name
+      return (
+        <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          Mesh preview supports glTF/GLB format. Unsupported extension: {ext}
+        </div>
+      )
+    }
 
     case "animation":
     case "scene":

@@ -54,6 +54,8 @@
     "**/node_modules/**",
     "build",
     "**/build/**",
-    "third_party"
+    "third_party",
+    ".venv",
+    "**/.venv/**"
   ]
 }

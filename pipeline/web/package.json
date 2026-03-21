@@ -30,6 +30,10 @@
     "@tailwindcss/vite": "^4.0.0",
     "tailwindcss": "^4.0.0",
     "@types/three": "^0.172.0",
-    "@tanstack/router-plugin": "^1.120.0"
+    "@tanstack/router-plugin": "^1.120.0",
+    "vitest": "^3.2.0",
+    "jsdom": "^27.0.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/jest-dom": "^6.6.0"
   }
 }
