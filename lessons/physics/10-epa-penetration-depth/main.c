@@ -130,7 +130,7 @@
 /* UI panel layout */
 #define PANEL_X             10.0f
 #define PANEL_Y             10.0f
-#define PANEL_W            300.0f
+#define PANEL_W            360.0f
 #define PANEL_H            560.0f
 #define LABEL_HEIGHT        24.0f
 #define LABEL_SPACER        (LABEL_HEIGHT * 0.5f)
