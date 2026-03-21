@@ -11,8 +11,10 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -240,6 +242,26 @@ def create_app(config: PipelineConfig) -> FastAPI:
     app = FastAPI(title="Forge Asset Pipeline", docs_url="/api/docs")
     manager = ConnectionManager()
 
+    # -- Cached asset index ------------------------------------------------
+    # Avoid re-scanning the entire source tree on every single-asset lookup.
+    # The cache is populated on the first call and refreshed by list/status
+    # endpoints (which are the natural "show me everything" operations).
+
+    _asset_cache: dict[str, AssetInfo] = {}
+
+    def _refresh_cache() -> list[AssetInfo]:
+        """Re-scan assets and update the id->AssetInfo cache."""
+        nonlocal _asset_cache
+        assets = scan_assets(config)
+        _asset_cache = {a.id: a for a in assets}
+        return assets
+
+    def _get_cached_asset(asset_id: str) -> AssetInfo | None:
+        """Look up a single asset by ID, scanning once if the cache is empty."""
+        if not _asset_cache:
+            _refresh_cache()
+        return _asset_cache.get(asset_id)
+
     # -- REST endpoints ----------------------------------------------------
 
     @app.get("/api/assets", response_model=AssetListResponse)
@@ -248,7 +270,7 @@ def create_app(config: PipelineConfig) -> FastAPI:
         search: str | None = Query(None, description="Search by filename"),
     ) -> AssetListResponse:
         """Return all assets, optionally filtered by type or name."""
-        assets = scan_assets(config)
+        assets = list(_refresh_cache())
 
         if type is not None:
             assets = [a for a in assets if a.asset_type == type]
@@ -262,16 +284,15 @@ def create_app(config: PipelineConfig) -> FastAPI:
     @app.get("/api/assets/{asset_id}", response_model=AssetResponse)
     async def get_asset(asset_id: str) -> AssetResponse:
         """Return a single asset by its ID."""
-        assets = scan_assets(config)
-        for a in assets:
-            if a.id == asset_id:
-                return AssetResponse(**a.__dict__)
-        raise HTTPException(status_code=404, detail="Asset not found")
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return AssetResponse(**asset.__dict__)
 
     @app.get("/api/status", response_model=StatusResponse)
     async def get_status() -> StatusResponse:
         """Return a summary of the pipeline state."""
-        assets = scan_assets(config)
+        assets = _refresh_cache()
 
         by_type: dict[str, int] = {}
         by_status: dict[str, int] = {}
@@ -285,6 +306,114 @@ def create_app(config: PipelineConfig) -> FastAPI:
             by_status=by_status,
             source_dir=str(config.source_dir),
             output_dir=str(config.output_dir),
+        )
+
+    # -- File serving ------------------------------------------------------
+
+    _MEDIA_TYPES: dict[str, str] = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".bmp": "image/bmp",
+        ".tga": "image/x-tga",
+        ".hdr": "image/vnd.radiance",
+        ".exr": "image/x-exr",
+        ".gltf": "model/gltf+json",
+        ".glb": "model/gltf-binary",
+        ".obj": "text/plain",
+        ".bin": "application/octet-stream",
+    }
+
+    def _media_type_for(path: Path) -> str:
+        """Return the media type for a file based on its extension."""
+        return _MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
+
+    @app.get("/api/assets/{asset_id}/file")
+    async def get_asset_file(
+        asset_id: str,
+        variant: Literal["source", "processed"] = Query(
+            "source", description="'source' or 'processed'"
+        ),
+    ) -> FileResponse:
+        """Serve the raw source or processed file for an asset.
+
+        Used by the frontend to load textures for preview and glTF files
+        for 3D rendering.
+        """
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        if variant == "processed":
+            if asset.output_path is None:
+                raise HTTPException(
+                    status_code=404, detail="No processed output for this asset"
+                )
+            file_path = Path(asset.output_path).resolve()
+            root_dir = config.output_dir.resolve()
+        else:
+            file_path = Path(asset.source_path).resolve()
+            root_dir = config.source_dir.resolve()
+
+        if not file_path.is_relative_to(root_dir):
+            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+
+        return FileResponse(
+            path=str(file_path),
+            media_type=_media_type_for(file_path),
+            filename=file_path.name,
+        )
+
+    @app.get("/api/assets/{asset_id}/companions")
+    async def get_asset_companion(
+        asset_id: str,
+        path: str = Query(
+            ..., description="Relative filename within the asset directory"
+        ),
+        variant: Literal["source", "processed"] = Query(
+            "source", description="'source' or 'processed'"
+        ),
+    ) -> FileResponse:
+        """Serve a companion file from the same directory as the asset.
+
+        For glTF models the browser needs to load companion files (.bin,
+        textures) relative to the .gltf file.  The *path* parameter is
+        resolved relative to the asset's directory and must stay within
+        the configured source (or output) directory tree.
+        """
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        if variant == "processed":
+            if asset.output_path is None:
+                raise HTTPException(
+                    status_code=404, detail="No processed output for this asset"
+                )
+            base_dir = Path(asset.output_path).parent
+            root_dir = config.output_dir.resolve()
+        else:
+            base_dir = Path(asset.source_path).parent
+            root_dir = config.source_dir.resolve()
+
+        resolved = (base_dir / path).resolve()
+
+        # Security: ensure the resolved path stays within the root directory.
+        # Use is_relative_to() instead of string prefix to prevent sibling
+        # directory bypass (e.g. /source_evil matching /source).
+        if not resolved.is_relative_to(root_dir):
+            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+        if not resolved.is_file():
+            raise HTTPException(status_code=404, detail="Companion file not found")
+
+        return FileResponse(
+            path=str(resolved),
+            media_type=_media_type_for(resolved),
+            filename=resolved.name,
         )
 
     # -- WebSocket ---------------------------------------------------------

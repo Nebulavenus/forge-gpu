@@ -31,6 +31,7 @@ jobs:
               'ruff',
               'pyright',
               'test',
+              'frontend-build',
             ]);
 
             // Poll until all CI checks have completed (max 15 minutes).

@@ -66,6 +66,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 12 | [Skinned Animations](12-skinned-animations/) | C + Python | `.fskin` binary format, skinned vertices in `.fmesh` v3, scene/mesh tool extensions |
 | 13 | [Morph Targets](13-morph-targets/) | C + Python | Morph target (blend shape) pipeline: glTF morph parsing, `.fmesh` morph deltas, weight animation channels, runtime loader |
 | 14 | [Web UI Scaffold](14-web-ui-scaffold/) | Python + TypeScript | FastAPI backend, Vite + React + TypeScript frontend, asset browser with type filtering and search, WebSocket build status |
+| 15 | [Asset Preview](15-asset-preview/) | Python + TypeScript | react-three-fiber 3D mesh preview, texture viewer with channel isolation, file serving endpoints, source vs. processed comparison |
 
 ## Building
 

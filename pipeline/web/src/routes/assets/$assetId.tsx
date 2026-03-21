@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { PreviewPanel } from "@/components/preview-panel"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
 import { fetchAsset } from "@/lib/api"
@@ -44,7 +45,7 @@ function AssetDetail() {
   if (!asset) return null
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <Button
         variant="ghost"
         size="sm"
@@ -118,9 +119,7 @@ function AssetDetail() {
         </TableBody>
       </Table>
 
-      <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-        Asset preview will be available in Lesson 15.
-      </div>
+      <PreviewPanel asset={asset} />
     </div>
   )
 }

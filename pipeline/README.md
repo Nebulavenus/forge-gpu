@@ -235,6 +235,7 @@ The pipeline is built incrementally across the
 | [12 — Skinned Animations](../lessons/assets/12-skinned-animations/) | Joint hierarchies, inverse bind matrices, `.fskin` format |
 | [13 — Morph Targets](../lessons/assets/13-morph-targets/) | Morph target deltas, weight channels, blend shape pipeline |
 | [14 — Web UI Scaffold](../lessons/assets/14-web-ui-scaffold/) | FastAPI backend, Vite + React frontend, asset browser, WebSocket status |
+| [15 — Asset Preview](../lessons/assets/15-asset-preview/) | react-three-fiber 3D mesh preview, texture channel isolation, file serving |
 
 ## License
 

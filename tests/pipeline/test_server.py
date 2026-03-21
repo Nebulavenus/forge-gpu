@@ -240,3 +240,134 @@ def test_websocket_connect(tmp_path: Path) -> None:
         data = ws.receive_json()
         assert data["type"] == "heartbeat"
         assert "timestamp" in data
+
+
+# ---------------------------------------------------------------------------
+# File-serving endpoint tests
+# ---------------------------------------------------------------------------
+
+
+def test_file_source(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/file returns the source file by default."""
+    png_data = b"\x89PNG\r\n\x1a\n fake png content"
+    client, _ = _setup(tmp_path, source_files={"brick.png": png_data})
+
+    resp = client.get("/api/assets/brick/file")
+    assert resp.status_code == 200
+    assert resp.content == png_data
+    assert resp.headers["content-type"] == "image/png"
+
+
+def test_file_processed(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/file?variant=processed returns the output file."""
+    source_data = b"source png"
+    processed_data = b"processed png"
+    client, _ = _setup(
+        tmp_path,
+        source_files={"wall.png": source_data},
+        output_files={"wall.png": processed_data},
+    )
+
+    resp = client.get("/api/assets/wall/file", params={"variant": "processed"})
+    assert resp.status_code == 200
+    assert resp.content == processed_data
+
+
+def test_file_not_found(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/file returns 404 for a nonexistent asset."""
+    client, _ = _setup(tmp_path)
+
+    resp = client.get("/api/assets/nonexistent/file")
+    assert resp.status_code == 404
+
+
+def test_file_no_processed(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/file?variant=processed returns 404 when no output exists."""
+    client, _ = _setup(tmp_path, source_files={"sky.png": b"sky data"})
+
+    resp = client.get("/api/assets/sky/file", params={"variant": "processed"})
+    assert resp.status_code == 404
+
+
+def test_file_gltf_content_type(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/file for a .gltf file returns model/gltf+json."""
+    gltf_data = b'{"asset":{"version":"2.0"}}'
+    client, _ = _setup(tmp_path, source_files={"scene.gltf": gltf_data})
+
+    resp = client.get("/api/assets/scene/file")
+    assert resp.status_code == 200
+    assert resp.content == gltf_data
+    assert resp.headers["content-type"] == "model/gltf+json"
+
+
+def test_companions_bin(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/companions?path=model.bin serves the companion file."""
+    gltf_data = b'{"asset":{"version":"2.0"}}'
+    bin_data = b"\x00\x01\x02\x03 binary mesh data"
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "models/scene.gltf": gltf_data,
+            "models/model.bin": bin_data,
+        },
+    )
+
+    resp = client.get(
+        "/api/assets/models--scene/companions",
+        params={"path": "model.bin"},
+    )
+    assert resp.status_code == 200
+    assert resp.content == bin_data
+
+
+def test_companions_traversal_blocked(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/companions rejects path traversal attempts."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={"models/scene.gltf": b'{"asset":{}}'},
+    )
+
+    resp = client.get(
+        "/api/assets/models--scene/companions",
+        params={"path": "../../etc/passwd"},
+    )
+    assert resp.status_code == 403
+
+
+def test_companions_sibling_dir_blocked(tmp_path: Path) -> None:
+    """Sibling directory whose name starts with source_dir must be rejected."""
+    source_dir = tmp_path / "source"
+    sibling_dir = tmp_path / "source_evil"
+    source_dir.mkdir()
+    sibling_dir.mkdir()
+    (source_dir / "scene.gltf").write_bytes(b'{"asset":{}}')
+    (sibling_dir / "secret.txt").write_bytes(b"sensitive data")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    resp = client.get(
+        "/api/assets/scene/companions",
+        params={"path": "../source_evil/secret.txt"},
+    )
+    assert resp.status_code == 403
+
+
+def test_companions_not_found(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/companions returns 404 for a missing companion."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={"models/scene.gltf": b'{"asset":{}}'},
+    )
+
+    resp = client.get(
+        "/api/assets/models--scene/companions",
+        params={"path": "missing.bin"},
+    )
+    assert resp.status_code == 404

@@ -1,0 +1,31 @@
+name: Frontend Build
+
+on:
+  pull_request:
+    paths:
+      - 'pipeline/web/**'
+      - '.github/workflows/frontend-build.yml'
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: pipeline/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: pipeline/web
+        run: npm ci
+
+      - name: Build
+        working-directory: pipeline/web
+        run: npm run build
+
+      - name: Type check
+        working-directory: pipeline/web
+        run: npx tsc -b --noEmit
