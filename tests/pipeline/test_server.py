@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from pipeline.config import PipelineConfig
+from pipeline.import_settings import MESH_SETTINGS_SCHEMA, TEXTURE_SETTINGS_SCHEMA
+from pipeline.plugin import AssetResult
 from pipeline.scanner import fingerprint_file
 from pipeline.server import create_app
 
@@ -371,3 +374,524 @@ def test_companions_not_found(tmp_path: Path) -> None:
         params={"path": "missing.bin"},
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Import settings endpoint tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_settings_texture(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings returns schema, global, and effective settings."""
+    client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
+    resp = client.get("/api/assets/brick/settings")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert "schema_fields" in body
+    assert "effective" in body
+    assert "per_asset" in body
+    assert "global_settings" in body
+    assert body["has_overrides"] is False
+    assert body["per_asset"] == {}
+    # Schema should match the texture schema keys
+    assert set(body["schema_fields"].keys()) == set(TEXTURE_SETTINGS_SCHEMA.keys())
+    # Effective should have all schema defaults
+    assert body["effective"]["max_size"] == 2048
+    assert body["effective"]["generate_mipmaps"] is True
+
+
+def test_get_settings_mesh(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings works for mesh assets."""
+    client, _ = _setup(tmp_path, source_files={"hero.gltf": b'{"asset":{}}'})
+    resp = client.get("/api/assets/hero/settings")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert set(body["schema_fields"].keys()) == set(MESH_SETTINGS_SCHEMA.keys())
+    assert body["effective"]["deduplicate"] is True
+    assert body["effective"]["optimize"] is True
+
+
+def test_get_settings_not_found(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings returns 404 for a nonexistent asset."""
+    client, _ = _setup(tmp_path)
+    resp = client.get("/api/assets/nonexistent/settings")
+    assert resp.status_code == 404
+
+
+def test_get_settings_no_schema(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings returns 400 for types without a schema."""
+    client, _ = _setup(tmp_path, source_files={"walk.fanim": b"FANIM data"})
+    resp = client.get("/api/assets/walk/settings")
+    assert resp.status_code == 400
+    assert "No settings schema" in resp.json()["detail"]
+
+
+def test_get_settings_with_existing_sidecar(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings reads an existing .import.toml sidecar."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "wall.png").write_bytes(b"PNG data")
+    sidecar = source_dir / "wall.png.import.toml"
+    sidecar.write_text("normal_map = true\nmax_size = 512\n", encoding="utf-8")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    resp = client.get("/api/assets/wall/settings")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["has_overrides"] is True
+    assert body["per_asset"]["normal_map"] is True
+    assert body["per_asset"]["max_size"] == 512
+    # Effective should merge: per-asset overrides schema defaults
+    assert body["effective"]["normal_map"] is True
+    assert body["effective"]["max_size"] == 512
+    # Other defaults still present
+    assert body["effective"]["generate_mipmaps"] is True
+
+
+def test_get_settings_malformed_sidecar(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings returns 400 for a malformed .import.toml."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "wall.png").write_bytes(b"PNG data")
+    sidecar = source_dir / "wall.png.import.toml"
+    sidecar.write_text("this is not valid toml {{{{", encoding="utf-8")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    resp = client.get("/api/assets/wall/settings")
+    assert resp.status_code == 400
+    assert "Malformed" in resp.json()["detail"]
+
+
+def test_get_settings_with_global_config(tmp_path: Path) -> None:
+    """GET /api/assets/{id}/settings reflects global plugin_settings."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "sky.png").write_bytes(b"PNG data")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+        plugin_settings={"texture": {"max_size": 1024, "output_format": "jpg"}},
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    resp = client.get("/api/assets/sky/settings")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["global_settings"] == {"max_size": 1024, "output_format": "jpg"}
+    # Effective: schema defaults overridden by global
+    assert body["effective"]["max_size"] == 1024
+    assert body["effective"]["output_format"] == "jpg"
+    # Schema defaults still fill in the rest
+    assert body["effective"]["generate_mipmaps"] is True
+
+
+def test_put_settings(tmp_path: Path) -> None:
+    """PUT /api/assets/{id}/settings creates a sidecar and returns updated settings."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "brick.png").write_bytes(b"PNG data")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    overrides = {"normal_map": True, "max_size": 256}
+    resp = client.put("/api/assets/brick/settings", json=overrides)
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["has_overrides"] is True
+    assert body["per_asset"]["normal_map"] is True
+    assert body["per_asset"]["max_size"] == 256
+    assert body["effective"]["normal_map"] is True
+    assert body["effective"]["max_size"] == 256
+
+    # Sidecar file should exist on disk
+    sidecar = source_dir / "brick.png.import.toml"
+    assert sidecar.is_file()
+
+
+def test_put_settings_not_found(tmp_path: Path) -> None:
+    """PUT /api/assets/{id}/settings returns 404 for a nonexistent asset."""
+    client, _ = _setup(tmp_path)
+    resp = client.put("/api/assets/nonexistent/settings", json={"max_size": 512})
+    assert resp.status_code == 404
+
+
+def test_put_settings_no_schema(tmp_path: Path) -> None:
+    """PUT /api/assets/{id}/settings returns 400 for types without a schema."""
+    client, _ = _setup(tmp_path, source_files={"walk.fanim": b"FANIM data"})
+    resp = client.put("/api/assets/walk/settings", json={"key": "value"})
+    assert resp.status_code == 400
+
+
+def test_put_settings_non_dict_body(tmp_path: Path) -> None:
+    """PUT /api/assets/{id}/settings rejects a non-object JSON body."""
+    client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
+    resp = client.put("/api/assets/brick/settings", json=["not", "a", "dict"])
+    assert resp.status_code == 400
+    assert "JSON object" in resp.json()["detail"]
+
+
+def test_put_settings_unknown_keys(tmp_path: Path) -> None:
+    """PUT /api/assets/{id}/settings rejects keys not in the schema."""
+    client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
+    resp = client.put(
+        "/api/assets/brick/settings",
+        json={"max_size": 512, "totally_fake_key": True},
+    )
+    assert resp.status_code == 400
+    assert "totally_fake_key" in resp.json()["detail"]
+
+
+def test_delete_settings(tmp_path: Path) -> None:
+    """DELETE /api/assets/{id}/settings removes the sidecar."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "brick.png").write_bytes(b"PNG data")
+    sidecar = source_dir / "brick.png.import.toml"
+    sidecar.write_text("normal_map = true\n", encoding="utf-8")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    # Confirm sidecar exists first
+    assert sidecar.is_file()
+
+    resp = client.delete("/api/assets/brick/settings")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["has_overrides"] is False
+    assert body["per_asset"] == {}
+    # Effective reverts to schema defaults
+    assert body["effective"]["normal_map"] is False
+
+    # Sidecar should be gone
+    assert not sidecar.is_file()
+
+
+def test_delete_settings_not_found(tmp_path: Path) -> None:
+    """DELETE /api/assets/{id}/settings returns 404 for a nonexistent asset."""
+    client, _ = _setup(tmp_path)
+    resp = client.delete("/api/assets/nonexistent/settings")
+    assert resp.status_code == 404
+
+
+def test_delete_settings_no_schema(tmp_path: Path) -> None:
+    """DELETE /api/assets/{id}/settings returns 400 for types without a schema."""
+    client, _ = _setup(tmp_path, source_files={"walk.fanim": b"FANIM data"})
+    resp = client.delete("/api/assets/walk/settings")
+    assert resp.status_code == 400
+    assert "No settings schema" in resp.json()["detail"]
+
+
+def test_delete_settings_no_sidecar(tmp_path: Path) -> None:
+    """DELETE /api/assets/{id}/settings succeeds even when no sidecar exists."""
+    client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
+    resp = client.delete("/api/assets/brick/settings")
+    assert resp.status_code == 200
+    assert resp.json()["has_overrides"] is False
+
+
+def test_settings_roundtrip(tmp_path: Path) -> None:
+    """PUT then GET returns the same per-asset overrides."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "wall.png").write_bytes(b"PNG data")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    overrides = {"normal_map": True, "max_size": 512, "output_format": "jpg"}
+    client.put("/api/assets/wall/settings", json=overrides)
+
+    resp = client.get("/api/assets/wall/settings")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["per_asset"]["normal_map"] is True
+    assert body["per_asset"]["max_size"] == 512
+    assert body["per_asset"]["output_format"] == "jpg"
+
+
+def test_put_then_delete_settings(tmp_path: Path) -> None:
+    """PUT overrides, then DELETE reverts to defaults."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "wall.png").write_bytes(b"PNG data")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=tmp_path / "output",
+        cache_dir=tmp_path / "cache",
+    )
+    (tmp_path / "output").mkdir()
+    (tmp_path / "cache").mkdir()
+    client = TestClient(create_app(config))
+
+    # Set overrides
+    client.put("/api/assets/wall/settings", json={"normal_map": True})
+    # Delete them
+    client.delete("/api/assets/wall/settings")
+
+    resp = client.get("/api/assets/wall/settings")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["has_overrides"] is False
+    assert body["effective"]["normal_map"] is False
+
+
+# ---------------------------------------------------------------------------
+# Process endpoint tests
+# ---------------------------------------------------------------------------
+
+
+def _setup_process(
+    tmp_path: Path,
+    *,
+    source_files: dict[str, bytes] | None = None,
+    plugin_settings: dict[str, dict] | None = None,
+    mock_plugin: MagicMock | None = None,
+) -> tuple[TestClient, PipelineConfig, MagicMock]:
+    """Create a test client with a mocked plugin registry for process tests.
+
+    The registry is patched *before* ``create_app`` so the closure captures
+    the mock instance rather than a real registry.  After ``create_app``
+    returns, the patch context can exit safely because the server module's
+    ``_registry`` variable holds a reference to the mock instance, which
+    persists and responds to ``get_by_extension()`` calls during test requests.
+    """
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    cache_dir.mkdir()
+
+    if source_files:
+        for rel, data in source_files.items():
+            p = source_dir / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+
+    if mock_plugin is None:
+        mock_plugin = MagicMock()
+        mock_plugin.name = "texture"
+        mock_plugin.extensions = [".png"]
+        # Default: return a successful AssetResult
+        mock_plugin.process.return_value = AssetResult(
+            source=Path("dummy"), output=Path("dummy"), metadata={}
+        )
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=output_dir,
+        cache_dir=cache_dir,
+        plugin_settings=plugin_settings or {},
+    )
+
+    # Patch PluginRegistry before create_app so the closure captures the mock
+    with patch("pipeline.server.PluginRegistry") as MockRegistry:
+        instance = MockRegistry.return_value
+        instance.discover.return_value = 1
+        instance.get_by_extension.return_value = [mock_plugin]
+        client = TestClient(create_app(config))
+
+    return client, config, mock_plugin
+
+
+def test_process_asset(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process invokes the plugin and updates the cache."""
+    client, config, mock_plugin = _setup_process(
+        tmp_path, source_files={"brick.png": b"PNG data"}
+    )
+
+    resp = client.post("/api/assets/brick/process")
+
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Processed brick.png"
+    mock_plugin.process.assert_called_once()
+
+    # The call args: (source_path, output_subdir, effective_settings)
+    call_args = mock_plugin.process.call_args
+    assert call_args[0][0] == config.source_dir / "brick.png"
+    assert call_args[0][1] == config.output_dir
+
+    # Fingerprint cache should be updated
+    fp_path = config.cache_dir / "fingerprints.json"
+    assert fp_path.is_file()
+    cache_data = json.loads(fp_path.read_text(encoding="utf-8"))
+    assert "brick.png" in cache_data
+
+
+def test_process_asset_with_settings(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process passes effective settings to the plugin."""
+    source_files = {"wall.png": b"PNG data"}
+    client, config, mock_plugin = _setup_process(
+        tmp_path,
+        source_files=source_files,
+        plugin_settings={"texture": {"output_format": "jpg"}},
+    )
+
+    # Write a sidecar with overrides
+    sidecar = config.source_dir / "wall.png.import.toml"
+    sidecar.write_text("normal_map = true\nmax_size = 256\n", encoding="utf-8")
+
+    resp = client.post("/api/assets/wall/process")
+
+    assert resp.status_code == 200
+
+    # Check effective settings passed to plugin: schema + global + per-asset
+    effective = mock_plugin.process.call_args[0][2]
+    assert effective["normal_map"] is True  # per-asset override
+    assert effective["max_size"] == 256  # per-asset override
+    assert effective["output_format"] == "jpg"  # global override
+    assert effective["generate_mipmaps"] is True  # schema default
+
+
+def test_process_asset_not_found(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process returns 404 for a nonexistent asset."""
+    client, _, _ = _setup_process(tmp_path)
+    resp = client.post("/api/assets/nonexistent/process")
+    assert resp.status_code == 404
+
+
+def test_process_asset_no_plugin(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process returns 400 when no plugin handles the extension."""
+    mock_plugin = MagicMock()
+    mock_plugin.name = "texture"
+    mock_plugin.extensions = [".png"]
+
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    cache_dir.mkdir()
+    (source_dir / "data.xyz").write_bytes(b"unknown format")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=output_dir,
+        cache_dir=cache_dir,
+    )
+
+    # Registry returns no plugins for .xyz
+    with patch("pipeline.server.PluginRegistry") as MockRegistry:
+        instance = MockRegistry.return_value
+        instance.discover.return_value = 0
+        instance.get_by_extension.return_value = []
+        client = TestClient(create_app(config))
+
+    resp = client.post("/api/assets/data/process")
+
+    assert resp.status_code == 400
+    assert "No plugin found" in resp.json()["detail"]
+
+
+def test_process_creates_output_subdir(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process creates output subdirectories as needed."""
+    client, config, mock_plugin = _setup_process(
+        tmp_path, source_files={"textures/brick.png": b"PNG data"}
+    )
+
+    resp = client.post("/api/assets/textures--brick/process")
+
+    assert resp.status_code == 200
+    # Output subdirectory should have been created
+    assert (config.output_dir / "textures").is_dir()
+    # Plugin should receive the subdirectory as output_dir
+    call_args = mock_plugin.process.call_args
+    assert call_args[0][1] == config.output_dir / "textures"
+
+
+def test_process_asset_plugin_error(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process returns 500 when the plugin raises."""
+    mock_plugin = MagicMock()
+    mock_plugin.name = "texture"
+    mock_plugin.extensions = [".png"]
+    mock_plugin.process.side_effect = RuntimeError("encoder crashed")
+
+    client, config, _ = _setup_process(
+        tmp_path,
+        source_files={"brick.png": b"PNG data"},
+        mock_plugin=mock_plugin,
+    )
+
+    resp = client.post("/api/assets/brick/process")
+
+    assert resp.status_code == 500
+    assert "encoder crashed" in resp.json()["detail"]
+
+    # Fingerprint cache should NOT be updated on failure
+    fp_path = config.cache_dir / "fingerprints.json"
+    assert not fp_path.is_file()
+
+
+def test_process_asset_skipped(tmp_path: Path) -> None:
+    """POST /api/assets/{id}/process does not update cache when plugin skips."""
+    mock_plugin = MagicMock()
+    mock_plugin.name = "texture"
+    mock_plugin.extensions = [".png"]
+    mock_plugin.process.return_value = AssetResult(
+        source=Path("brick.png"),
+        output=Path("brick.png"),
+        metadata={"processed": False, "reason": "tool_not_found"},
+    )
+
+    client, config, _ = _setup_process(
+        tmp_path,
+        source_files={"brick.png": b"PNG data"},
+        mock_plugin=mock_plugin,
+    )
+
+    resp = client.post("/api/assets/brick/process")
+
+    assert resp.status_code == 200
+    assert "Skipped" in resp.json()["message"]
+    assert "tool_not_found" in resp.json()["message"]
+
+    # Fingerprint cache should NOT be updated on skip
+    fp_path = config.cache_dir / "fingerprints.json"
+    assert not fp_path.is_file()

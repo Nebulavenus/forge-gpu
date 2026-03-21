@@ -1,6 +1,7 @@
 import type { AssetInfo } from "@/lib/api"
 import { TexturePreview } from "@/components/texture-preview"
 import { MeshPreview } from "@/components/mesh-preview"
+import { MaterialPreview } from "@/components/material-preview"
 
 interface PreviewPanelProps {
   asset: AssetInfo
@@ -38,7 +39,27 @@ export function PreviewPanel({ asset }: PreviewPanelProps) {
       const name = asset.name.toLowerCase()
       const isGltf = name.endsWith(".gltf") || name.endsWith(".glb")
       if (isGltf) {
-        return <MeshPreview url={fileUrl(asset.id)} assetId={asset.id} />
+        return (
+          <div className="space-y-4">
+            {asset.output_path && (asset.output_path.endsWith(".gltf") || asset.output_path.endsWith(".glb")) ? (
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Source</p>
+                  <MeshPreview url={fileUrl(asset.id)} assetId={asset.id} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Processed</p>
+                  <MeshPreview url={fileUrl(asset.id, "processed")} assetId={asset.id} />
+                </div>
+              </div>
+            ) : (
+              <MeshPreview url={fileUrl(asset.id)} assetId={asset.id} />
+            )}
+            {/* Material textures from the source glTF — processed outputs use
+                binary formats (.fmesh) that don't carry embedded textures. */}
+            <MaterialPreview url={fileUrl(asset.id)} assetId={asset.id} />
+          </div>
+        )
       }
       const dot = asset.name.lastIndexOf(".")
       const ext = dot >= 0 ? asset.name.slice(dot) : asset.name

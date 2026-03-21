@@ -11,14 +11,29 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from pipeline.config import PipelineConfig
+from pipeline.import_settings import (
+    delete_sidecar,
+    get_effective_settings,
+    get_schema,
+    load_sidecar,
+    save_sidecar,
+)
+from pipeline.plugin import PluginRegistry
 from pipeline.scanner import FingerprintCache, fingerprint_file
 
 log = logging.getLogger(__name__)
@@ -112,6 +127,22 @@ class StatusResponse(BaseModel):
     by_status: dict[str, int]
     source_dir: str
     output_dir: str
+
+
+class ImportSettingsResponse(BaseModel):
+    """JSON shape for import settings endpoints."""
+
+    effective: dict[str, Any]
+    per_asset: dict[str, Any]
+    global_settings: dict[str, Any]
+    schema_fields: dict[str, dict[str, Any]]
+    has_overrides: bool
+
+
+class ProcessResponse(BaseModel):
+    """JSON shape for the process endpoint."""
+
+    message: str
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +272,11 @@ def create_app(config: PipelineConfig) -> FastAPI:
     """
     app = FastAPI(title="Forge Asset Pipeline", docs_url="/api/docs")
     manager = ConnectionManager()
+
+    # -- Plugin registry (created once, reused across requests) ------------
+    _registry = PluginRegistry()
+    plugins_dir = Path(__file__).resolve().parent / "plugins"
+    _registry.discover(plugins_dir)
 
     # -- Cached asset index ------------------------------------------------
     # Avoid re-scanning the entire source tree on every single-asset lookup.
@@ -415,6 +451,212 @@ def create_app(config: PipelineConfig) -> FastAPI:
             media_type=_media_type_for(resolved),
             filename=resolved.name,
         )
+
+    # -- Import settings ---------------------------------------------------
+
+    def _build_settings_response(
+        asset: AssetInfo, schema_fields: dict[str, dict], per_asset: dict
+    ) -> ImportSettingsResponse:
+        """Build the standard import-settings response shape."""
+        global_settings = config.plugin_settings.get(asset.asset_type, {})
+        effective = get_effective_settings(asset.asset_type, global_settings, per_asset)
+        return ImportSettingsResponse(
+            schema_fields=schema_fields,
+            global_settings=global_settings,
+            per_asset=per_asset,
+            effective=effective,
+            has_overrides=bool(per_asset),
+        )
+
+    def _validate_source_path(source: Path) -> None:
+        """Raise 403 if *source* is outside the configured source directory."""
+        if not source.resolve().is_relative_to(config.source_dir.resolve()):
+            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+    def _load_sidecar_or_400(source: Path) -> dict[str, Any]:
+        """Load the sidecar, returning 400 on malformed TOML instead of 500."""
+        try:
+            return load_sidecar(source)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get(
+        "/api/assets/{asset_id}/settings",
+        response_model=ImportSettingsResponse,
+    )
+    async def get_asset_settings(asset_id: str) -> ImportSettingsResponse:
+        """Return import settings (schema, global, per-asset, effective)."""
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        source = Path(asset.source_path)
+        _validate_source_path(source)
+
+        schema_fields = get_schema(asset.asset_type)
+        if schema_fields is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No settings schema for asset type '{asset.asset_type}'",
+            )
+
+        per_asset = _load_sidecar_or_400(source)
+        return _build_settings_response(asset, schema_fields, per_asset)
+
+    @app.put(
+        "/api/assets/{asset_id}/settings",
+        response_model=ImportSettingsResponse,
+    )
+    async def put_asset_settings(
+        asset_id: str, request: Request
+    ) -> ImportSettingsResponse:
+        """Save per-asset import setting overrides.
+
+        The frontend sends the overrides dict directly as the JSON body.
+        Only keys present in the plugin's settings schema are accepted;
+        unknown keys are rejected with 400.
+        """
+        overrides = await request.json()
+
+        if not isinstance(overrides, dict):
+            raise HTTPException(
+                status_code=400, detail="Request body must be a JSON object"
+            )
+
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        source = Path(asset.source_path)
+        _validate_source_path(source)
+
+        schema_fields = get_schema(asset.asset_type)
+        if schema_fields is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No settings schema for asset type '{asset.asset_type}'",
+            )
+
+        # Reject keys not in the schema
+        unknown = set(overrides.keys()) - set(schema_fields.keys())
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown setting(s): {', '.join(sorted(unknown))}",
+            )
+
+        try:
+            save_sidecar(source, overrides)
+        except TypeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        per_asset = _load_sidecar_or_400(source)
+        return _build_settings_response(asset, schema_fields, per_asset)
+
+    @app.delete(
+        "/api/assets/{asset_id}/settings",
+        response_model=ImportSettingsResponse,
+    )
+    async def delete_asset_settings(asset_id: str) -> ImportSettingsResponse:
+        """Delete per-asset overrides, reverting to global defaults."""
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        source = Path(asset.source_path)
+        _validate_source_path(source)
+
+        # Validate schema support before any side effects
+        schema_fields = get_schema(asset.asset_type)
+        if schema_fields is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No settings schema for asset type '{asset.asset_type}'",
+            )
+
+        delete_sidecar(source)
+
+        return _build_settings_response(asset, schema_fields, {})
+
+    @app.post(
+        "/api/assets/{asset_id}/process",
+        response_model=ProcessResponse,
+    )
+    async def process_asset(asset_id: str) -> ProcessResponse:
+        """Process a single asset with its effective import settings."""
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        source = Path(asset.source_path)
+        _validate_source_path(source)
+
+        # Compute effective settings
+        global_settings = config.plugin_settings.get(asset.asset_type, {})
+        per_asset = _load_sidecar_or_400(source)
+        effective = get_effective_settings(asset.asset_type, global_settings, per_asset)
+
+        # Find the plugin that matches both the file extension and the
+        # asset type. Extensions like .gltf can have multiple plugins
+        # (mesh, animation, scene), so we match by plugin name.
+        ext = source.suffix.lower()
+        candidates = _registry.get_by_extension(ext)
+        plugin = None
+        for p in candidates:
+            if p.name == asset.asset_type:
+                plugin = p
+                break
+        if plugin is None and candidates:
+            log.debug(
+                "No %r plugin for '%s'; falling back to %r",
+                asset.asset_type,
+                ext,
+                candidates[0].name,
+            )
+            plugin = candidates[0]
+        if plugin is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No plugin found for extension '{ext}'",
+            )
+
+        # Build the output directory, mirroring the source tree structure
+        relative = Path(asset.relative_path)
+        output_subdir = config.output_dir / relative.parent
+        output_subdir.mkdir(parents=True, exist_ok=True)
+
+        # Run plugin off the event loop to avoid blocking async handlers
+        try:
+            result = await asyncio.to_thread(
+                plugin.process, source, output_subdir, effective
+            )
+        except Exception as exc:
+            log.exception("Plugin %r failed processing %s", plugin.name, source.name)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Processing failed: {exc}",
+            ) from exc
+
+        # If the plugin reports the asset was not actually processed (e.g.
+        # the required tool binary is not installed), do not update the
+        # fingerprint cache — the asset is not in a processed state.
+        if result.metadata.get("processed") is False:
+            reason = result.metadata.get("reason", "unknown")
+            return ProcessResponse(message=f"Skipped {asset.name}: {reason}")
+
+        # Update fingerprint cache and refresh the in-memory asset index.
+        # Run off the event loop — fingerprinting hashes file contents and
+        # _refresh_cache re-scans the entire source tree.
+        def _update_cache() -> None:
+            cache_path = config.cache_dir / "fingerprints.json"
+            fp_cache = FingerprintCache(cache_path)
+            fp_cache.set(relative, fingerprint_file(source))
+            fp_cache.save()
+            _refresh_cache()
+
+        await asyncio.to_thread(_update_cache)
+
+        return ProcessResponse(message=f"Processed {asset.name}")
 
     # -- WebSocket ---------------------------------------------------------
 

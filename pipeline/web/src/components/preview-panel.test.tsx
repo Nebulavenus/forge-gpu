@@ -18,6 +18,12 @@ vi.mock("@/components/mesh-preview", () => ({
   ),
 }))
 
+vi.mock("@/components/material-preview", () => ({
+  MaterialPreview: ({ url, assetId }: { url: string; assetId: string }) => (
+    <div data-testid="material-preview" data-url={url} data-asset-id={assetId} />
+  ),
+}))
+
 function makeAsset(overrides: Partial<AssetInfo> = {}): AssetInfo {
   return {
     id: "test-asset",
@@ -72,6 +78,58 @@ describe("PreviewPanel", () => {
       />,
     )
     expect(screen.getByTestId("mesh-preview")).toBeInTheDocument()
+  })
+
+  it("renders side-by-side mesh previews when processed output is glTF", () => {
+    render(
+      <PreviewPanel
+        asset={makeAsset({
+          asset_type: "mesh",
+          name: "hero.gltf",
+          id: "hero",
+          output_path: "/output/hero.gltf",
+        })}
+      />,
+    )
+    const previews = screen.getAllByTestId("mesh-preview")
+    expect(previews).toHaveLength(2)
+    expect(previews[0]).toHaveAttribute(
+      "data-url",
+      "/api/assets/hero/file",
+    )
+    expect(previews[1]).toHaveAttribute(
+      "data-url",
+      "/api/assets/hero/file?variant=processed",
+    )
+    expect(screen.getByText("Source")).toBeInTheDocument()
+    expect(screen.getByText("Processed")).toBeInTheDocument()
+  })
+
+  it("renders single preview when processed output is non-glTF (.fmesh)", () => {
+    render(
+      <PreviewPanel
+        asset={makeAsset({
+          asset_type: "mesh",
+          name: "hero.gltf",
+          id: "hero",
+          output_path: "/output/hero.fmesh",
+        })}
+      />,
+    )
+    const previews = screen.getAllByTestId("mesh-preview")
+    expect(previews).toHaveLength(1)
+  })
+
+  it("renders MaterialPreview alongside mesh preview", () => {
+    render(
+      <PreviewPanel
+        asset={makeAsset({ asset_type: "mesh", name: "hero.gltf", id: "hero" })}
+      />,
+    )
+    const material = screen.getByTestId("material-preview")
+    expect(material).toBeInTheDocument()
+    expect(material).toHaveAttribute("data-url", "/api/assets/hero/file")
+    expect(material).toHaveAttribute("data-asset-id", "hero")
   })
 
   it("does NOT render MeshPreview for .obj files", () => {
