@@ -116,7 +116,7 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 ### Rigid Body Dynamics
 
-- [ ] **Physics Lesson 12 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses; sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
+- [x] **Physics Lesson 12 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses; sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
 - [ ] **Physics Lesson 13 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
 - [ ] **Physics Lesson 14 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
 - [ ] **Physics Lesson 15 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance

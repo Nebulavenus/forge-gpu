@@ -265,6 +265,7 @@ from .math import (
     diagram_white_noise_comparison,
 )
 from .physics import (  # pyright: ignore[reportUnusedImport]
+    diagram_accumulated_vs_per_iteration,
     diagram_angular_velocity,
     diagram_axis_selection,
     diagram_box_plane_contacts,
@@ -281,6 +282,7 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_force_accumulator_lifecycle,
     diagram_force_accumulator_pattern,
     diagram_force_at_point,
+    diagram_friction_cone,
     diagram_friction_decomposition,
     diagram_gauss_seidel_convergence,
     diagram_gyroscopic_stability,
@@ -300,6 +302,7 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_restitution_comparison,
     diagram_rigid_body_state,
     diagram_sap_algorithm,
+    diagram_solver_pipeline,
     diagram_sphere_plane_collision,
     diagram_sphere_sphere_collision,
     diagram_spring_damping_components,
@@ -616,6 +619,11 @@ DIAGRAMS = {
         ("contact_reduction.png", diagram_contact_reduction),
         ("manifold_cache.png", diagram_manifold_cache),
     ],
+    "physics/12": [
+        ("accumulated_vs_per_iteration.png", diagram_accumulated_vs_per_iteration),
+        ("friction_cone.png", diagram_friction_cone),
+        ("solver_pipeline.png", diagram_solver_pipeline),
+    ],
     "gpu/03": [
         ("unit_circle.png", diagram_unit_circle),
         ("aspect_ratio.png", diagram_aspect_ratio),
@@ -929,6 +937,7 @@ LESSON_NAMES = {
     "physics/06": "physics/06-resting-contacts-and-friction",
     "physics/08": "physics/08-sweep-and-prune",
     "physics/11": "physics/11-contact-manifold",
+    "physics/12": "physics/12-impulse-based-resolution",
     "gpu/03": "gpu/03-uniforms-and-motion",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",

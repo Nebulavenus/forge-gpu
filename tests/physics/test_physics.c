@@ -5926,6 +5926,9 @@ int main(int argc, char *argv[])
     /* ── Contact Manifold (test_physics_manifold.c) ───────────────────── */
     run_manifold_tests();
 
+    /* ── Sequential Impulse Solver (test_physics_si.c) ─────────────── */
+    run_si_tests();
+
     /* ── Production Hardening (test_physics_production.c) ─────────────── */
     run_production_tests();
 

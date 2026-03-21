@@ -44,6 +44,9 @@ __all__ = [
     "diagram_reference_incident_faces",
     "diagram_contact_reduction",
     "diagram_manifold_cache",
+    "diagram_accumulated_vs_per_iteration",
+    "diagram_friction_cone",
+    "diagram_solver_pipeline",
 ]
 
 from .lesson_01 import (
@@ -104,4 +107,9 @@ from .lesson_11 import (
     diagram_contact_reduction,
     diagram_manifold_cache,
     diagram_reference_incident_faces,
+)
+from .lesson_12 import (
+    diagram_accumulated_vs_per_iteration,
+    diagram_friction_cone,
+    diagram_solver_pipeline,
 )

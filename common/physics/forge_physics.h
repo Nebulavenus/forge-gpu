@@ -1961,6 +1961,151 @@ static inline void forge_physics_rigid_body_integrate(
     rb->torque_accum = vec3_create(0.0f, 0.0f, 0.0f);
 }
 
+/* Integrate velocities only (no position update).
+ *
+ * Performs the velocity half of the integration step: applies forces
+ * to linear velocity, applies torques (with gyroscopic correction) to
+ * angular velocity, applies damping, and clamps velocities. Clears
+ * force/torque accumulators. Does NOT update position or orientation.
+ *
+ * Use this with forge_physics_rigid_body_integrate_positions() when the
+ * physics step needs to solve velocity constraints between the velocity
+ * and position updates (e.g., sequential impulse solver):
+ *
+ *   integrate_velocities()   // v += a*dt, damping, clamping
+ *   detect_collisions()      // at current positions
+ *   solve_constraints()      // correct velocities
+ *   integrate_positions()    // x += v*dt (with corrected v)
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_rigid_body_integrate_velocities(
+    ForgePhysicsRigidBody *rb, float dt)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    /* NaN safety — restore last-good transform and zero dynamics,
+     * matching the combined integrate. Without this, a corrupted
+     * position/orientation would persist into collision detection. */
+    if (!forge_isfinite(vec3_length_squared(rb->velocity)) ||
+        !forge_isfinite(vec3_length_squared(rb->angular_velocity)) ||
+        !forge_isfinite(vec3_length_squared(rb->position)) ||
+        !forge_isfinite(vec3_length_squared(rb->force_accum)) ||
+        !forge_isfinite(vec3_length_squared(rb->torque_accum)) ||
+        !forge_isfinite(quat_length_sq(rb->orientation))) {
+        rb->position         = rb->prev_position;
+        rb->orientation      = rb->prev_orientation;
+        rb->velocity         = vec3_create(0, 0, 0);
+        rb->angular_velocity = vec3_create(0, 0, 0);
+        rb->force_accum      = vec3_create(0, 0, 0);
+        rb->torque_accum     = vec3_create(0, 0, 0);
+        return;
+    }
+
+    /* Linear acceleration: a = F / m */
+    vec3 linear_acc = vec3_scale(rb->force_accum, rb->inv_mass);
+
+    /* Angular acceleration: Euler's equation */
+    vec3 Iw = mat3_multiply_vec3(rb->inertia_world, rb->angular_velocity);
+    vec3 gyro = vec3_cross(rb->angular_velocity, Iw);
+    vec3 angular_acc = mat3_multiply_vec3(rb->inv_inertia_world,
+        vec3_sub(rb->torque_accum, gyro));
+
+    /* Update velocities */
+    rb->velocity = vec3_add(rb->velocity, vec3_scale(linear_acc, dt));
+    rb->angular_velocity = vec3_add(rb->angular_velocity,
+                                     vec3_scale(angular_acc, dt));
+
+    /* Exponential damping */
+    float damp     = rb->damping;
+    float ang_damp = rb->angular_damping;
+    if (damp < 0.0f)     damp = 0.0f;
+    if (damp > 1.0f)     damp = 1.0f;
+    if (ang_damp < 0.0f) ang_damp = 0.0f;
+    if (ang_damp > 1.0f) ang_damp = 1.0f;
+
+    rb->velocity = vec3_scale(rb->velocity, SDL_powf(damp, dt));
+    rb->angular_velocity = vec3_scale(rb->angular_velocity,
+                                       SDL_powf(ang_damp, dt));
+
+    /* Clamp velocities */
+    float v_len = vec3_length(rb->velocity);
+    if (v_len > FORGE_PHYSICS_MAX_VELOCITY) {
+        rb->velocity = vec3_scale(
+            vec3_normalize(rb->velocity), FORGE_PHYSICS_MAX_VELOCITY);
+    }
+    float w_len = vec3_length(rb->angular_velocity);
+    if (w_len > FORGE_PHYSICS_MAX_ANGULAR_VELOCITY) {
+        rb->angular_velocity = vec3_scale(
+            vec3_normalize(rb->angular_velocity),
+            FORGE_PHYSICS_MAX_ANGULAR_VELOCITY);
+    }
+
+    /* Clear accumulators */
+    rb->force_accum  = vec3_create(0, 0, 0);
+    rb->torque_accum = vec3_create(0, 0, 0);
+}
+
+/* Integrate positions only (no velocity update).
+ *
+ * Performs the position half of the integration step: updates position
+ * from linear velocity, updates orientation from angular velocity,
+ * and recomputes derived state (world-space inertia tensor).
+ *
+ * Call this AFTER velocity constraints have been solved so that
+ * positions are updated with the corrected velocities.
+ *
+ * Does NOT save prev_position/prev_orientation. When using split-step
+ * integration with position correction, save prev state before the
+ * correction pass for correct render interpolation.
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_rigid_body_integrate_positions(
+    ForgePhysicsRigidBody *rb, float dt)
+{
+    if (!rb || rb->inv_mass == 0.0f) return;
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    /* Note: does NOT save prev_position/prev_orientation. When using
+     * split-step integration with position correction, the caller
+     * should save prev state before the correction pass so that
+     * render interpolation spans the full step. */
+
+    /* NaN guard — don't propagate corrupt velocity into position */
+    if (!forge_isfinite(vec3_length_squared(rb->velocity)) ||
+        !forge_isfinite(vec3_length_squared(rb->angular_velocity))) {
+        return;
+    }
+
+    /* Update position: x += v * dt */
+    rb->position = vec3_add(rb->position, vec3_scale(rb->velocity, dt));
+
+    /* Update orientation: q += 0.5 * dt * (ω_quat * q) */
+    float w_len = vec3_length(rb->angular_velocity);
+    if (w_len > FORGE_PHYSICS_EPSILON) {
+        quat omega_quat = quat_create(
+            0.0f, rb->angular_velocity.x,
+            rb->angular_velocity.y, rb->angular_velocity.z);
+        quat dq = quat_multiply(omega_quat, rb->orientation);
+
+        float half_dt = FORGE_PHYSICS_QUAT_DERIV_COEFF * dt;
+        rb->orientation.w += half_dt * dq.w;
+        rb->orientation.x += half_dt * dq.x;
+        rb->orientation.y += half_dt * dq.y;
+        rb->orientation.z += half_dt * dq.z;
+
+        float q_len_sq = quat_length_sq(rb->orientation);
+        if (SDL_fabsf(q_len_sq - 1.0f) > FORGE_PHYSICS_QUAT_RENORM_THRESHOLD) {
+            rb->orientation = quat_normalize(rb->orientation);
+        }
+    }
+
+    /* Update derived data (world-space inertia tensor) */
+    forge_physics_rigid_body_update_derived(rb);
+}
+
 /* ── Lesson 05 — Force Generators ─────────────────────────────────────── */
 
 /* Apply gravitational acceleration to a rigid body.
@@ -6629,6 +6774,983 @@ static inline bool forge_physics_gjk_epa_manifold(
         idx_a, idx_b, mu_s, mu_d);
 
     return (out->count > 0);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LESSON 12 — Impulse-Based Resolution (Sequential Impulse Solver)
+ *
+ * A manifold-aware sequential impulse solver implementing Erin Catto's
+ * accumulated impulse method. Operates directly on ForgePhysicsManifold
+ * arrays, using warm-starting from cached impulses and accumulated
+ * impulse clamping for stable convergence.
+ *
+ * The key difference from the Lesson 06 solver
+ * (forge_physics_rb_resolve_contact) is how impulse clamping works:
+ *
+ *   Lesson 06 (per-iteration clamping):
+ *     delta_j = compute_impulse(v_rel)
+ *     j = max(delta_j, 0)        <-- clamp the delta each iteration
+ *     apply(j)
+ *
+ *   Lesson 12 (accumulated clamping, Catto's method):
+ *     delta_j = compute_impulse(v_rel)
+ *     old_j = accumulated_j
+ *     accumulated_j = max(accumulated_j + delta_j, 0)  <-- clamp the total
+ *     apply(accumulated_j - old_j)                      <-- apply the change
+ *
+ * Accumulated clamping converges to the correct global solution because
+ * it tracks the total impulse applied, not just the latest delta. When
+ * one contact's impulse changes due to a neighbor, the accumulated value
+ * lets the solver back off (reduce a previously applied impulse) rather
+ * than only adding more. This is critical for stacking stability.
+ *
+ * Pipeline: manifold cache → prepare → warm-start → N iterations → store
+ *
+ * Reference:
+ *   Erin Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005)
+ *   Erin Catto, "Modeling and Solving Constraints" (GDC 2009)
+ *   Dirk Gregorius, "Robust Contact Creation for Physics Simulations"
+ *     (GDC 2013)
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── SI Solver Constants ──────────────────────────────────────────────────── */
+
+/* Default velocity iteration count for the SI solver.
+ *
+ * Each iteration resolves all contacts once. 10 iterations is a good
+ * balance between convergence quality and CPU cost for stacks of 5-8
+ * bodies.
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+#define FORGE_PHYSICS_SI_DEFAULT_ITERATIONS  10
+
+/* Minimum dot product between a contact normal and the manifold's shared
+ * normal for the contact to be accepted. 0.9 ≈ 26° deviation tolerance. */
+#define FORGE_PHYSICS_SI_NORMAL_ALIGN_MIN    0.9f
+
+/* Spatial hash quantization scale (units per meter).
+ * 1000 = 1 mm grid — contacts within 1 mm map to the same hash cell. */
+#define FORGE_PHYSICS_SI_HASH_QUANT_SCALE    1000.0f
+
+/* Teschner spatial hash primes — large co-prime values for XYZ mixing. */
+#define FORGE_PHYSICS_SI_HASH_PRIME_X        73856093u
+#define FORGE_PHYSICS_SI_HASH_PRIME_Y        19349663u
+#define FORGE_PHYSICS_SI_HASH_PRIME_Z        83492791u
+
+/* ── SI Solver Types ─────────────────────────────────────────────────────── */
+
+/* Precomputed constraint data for a single contact point.
+ *
+ * Created during the prepare step and reused across all solver iterations.
+ * Stores the tangent basis, effective masses, velocity biases, and
+ * accumulated impulses for normal and friction directions.
+ *
+ * The effective mass (1/K) is precomputed once because the body mass
+ * properties and contact geometry do not change during velocity solving.
+ * Only velocities change — and the effective mass depends only on mass,
+ * inertia, and contact geometry.
+ *
+ * Fields:
+ *   r_a, r_b       — lever arms from body COM to contact point (m)
+ *   t1, t2         — orthonormal tangent basis for friction
+ *   eff_mass_n     — effective mass along normal (kg)
+ *   eff_mass_t1    — effective mass along tangent 1 (kg)
+ *   eff_mass_t2    — effective mass along tangent 2 (kg)
+ *   velocity_bias  — Baumgarte penetration correction bias (m/s)
+ *   restitution_bias — bounce velocity from restitution (m/s)
+ *   j_n            — accumulated normal impulse (N·s), >= 0
+ *   j_t1           — accumulated friction impulse along t1 (N·s)
+ *   j_t2           — accumulated friction impulse along t2 (N·s)
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+typedef struct ForgePhysicsSIConstraint {
+    vec3  r_a;              /* world-space offset: contact point - body_a COM */
+    vec3  r_b;              /* world-space offset: contact point - body_b COM */
+    vec3  t1;               /* tangent basis vector 1 (unit length)           */
+    vec3  t2;               /* tangent basis vector 2 (unit length)           */
+    float eff_mass_n;       /* 1 / K_n — effective mass along normal          */
+    float eff_mass_t1;      /* 1 / K_t1 — effective mass along tangent 1      */
+    float eff_mass_t2;      /* 1 / K_t2 — effective mass along tangent 2      */
+    float velocity_bias;    /* Baumgarte penetration correction bias (m/s)    */
+    float restitution_bias; /* bounce velocity from restitution (m/s)         */
+    float j_n;              /* accumulated normal impulse (N·s)               */
+    float j_t1;             /* accumulated friction impulse, tangent 1 (N·s)  */
+    float j_t2;             /* accumulated friction impulse, tangent 2 (N·s)  */
+} ForgePhysicsSIConstraint;
+
+/* Constraint data for one manifold (body pair).
+ *
+ * Groups up to FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS (4) SI constraints
+ * that share a common normal and friction coefficients. Mirrors the
+ * structure of ForgePhysicsManifold but with precomputed solver data.
+ *
+ * Fields:
+ *   body_a, body_b     — body indices (body_b == -1 for ground/static)
+ *   normal             — shared contact normal, B toward A (unit length)
+ *   static_friction    — stored but not used by the per-axis friction model
+ *   dynamic_friction   — per-axis friction limit coefficient, >= 0
+ *   count              — active constraints, 0..4
+ *   constraints        — per-contact constraint data
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+typedef struct ForgePhysicsSIManifold {
+    int   body_a;           /* index of body A in the body array              */
+    int   body_b;           /* index of body B, or -1 for ground              */
+    vec3  normal;           /* shared contact normal (B toward A)             */
+    float static_friction;  /* static friction coefficient, >= 0              */
+    float dynamic_friction; /* dynamic friction coefficient, >= 0             */
+    int   count;            /* number of active constraints, 0..4             */
+    ForgePhysicsSIConstraint constraints[FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS];
+} ForgePhysicsSIManifold;
+
+/* ── SI Solver Functions ─────────────────────────────────────────────────── */
+
+/* Build a stable orthonormal tangent basis from a contact normal.
+ *
+ * Constructs two tangent vectors t1 and t2 perpendicular to the normal
+ * and to each other, forming a right-handed orthonormal frame {n, t1, t2}.
+ * The tangent basis is used for decomposing friction into two independent
+ * directions.
+ *
+ * Algorithm (least-aligned axis method):
+ *   1. Find which world axis (X, Y, Z) is least aligned with n
+ *      (smallest |dot| with n)
+ *   2. Cross n with that axis to get t1
+ *   3. Normalize t1
+ *   4. t2 = cross(n, t1) — already unit length
+ *
+ * This method is stable for all normal directions and avoids the
+ * singularity that occurs when crossing with an aligned axis.
+ *
+ * Parameters:
+ *   n      — contact normal (must be unit length)
+ *   out_t1 — receives first tangent vector (must not be NULL)
+ *   out_t2 — receives second tangent vector (must not be NULL)
+ *
+ * Usage:
+ *   vec3 t1, t2;
+ *   forge_physics_si_tangent_basis(contact_normal, &t1, &t2);
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_tangent_basis(
+    vec3 n, vec3 *out_t1, vec3 *out_t2)
+{
+    if (!out_t1 || !out_t2) return;
+
+    /* Guard against zero or degenerate normal */
+    float n_len_sq = vec3_length_squared(n);
+    if (!(n_len_sq > FORGE_PHYSICS_EPSILON)) {
+        *out_t1 = vec3_create(1.0f, 0.0f, 0.0f);
+        *out_t2 = vec3_create(0.0f, 0.0f, 1.0f);
+        return;
+    }
+
+    /* Find the world axis least aligned with n */
+    float ax = SDL_fabsf(n.x);
+    float ay = SDL_fabsf(n.y);
+    float az = SDL_fabsf(n.z);
+
+    vec3 axis;
+    if (ax <= ay && ax <= az) {
+        axis = vec3_create(1.0f, 0.0f, 0.0f);
+    } else if (ay <= az) {
+        axis = vec3_create(0.0f, 1.0f, 0.0f);
+    } else {
+        axis = vec3_create(0.0f, 0.0f, 1.0f);
+    }
+
+    /* t1 = normalize(cross(n, axis)) */
+    vec3 t1 = vec3_cross(n, axis);
+    float len = vec3_length(t1);
+    if (len > FORGE_PHYSICS_EPSILON) {
+        t1 = vec3_scale(t1, 1.0f / len);
+    } else {
+        /* Degenerate — try the next axis. This should never happen with
+         * the least-aligned selection above, but guard against it. */
+        vec3 fallback = vec3_create(0.0f, 0.0f, 1.0f);
+        t1 = vec3_cross(n, fallback);
+        len = vec3_length(t1);
+        if (len > FORGE_PHYSICS_EPSILON) {
+            t1 = vec3_scale(t1, 1.0f / len);
+        } else {
+            t1 = vec3_cross(n, vec3_create(1.0f, 0.0f, 0.0f));
+            t1 = vec3_normalize(t1);
+        }
+    }
+
+    /* t2 = cross(n, t1) — orthogonal to both n and t1 */
+    *out_t2 = vec3_cross(n, t1);
+    *out_t1 = t1;
+}
+
+/* Compute the effective mass inverse along a direction at a contact point.
+ *
+ * K = 1/m_a + 1/m_b + dot(dir, (I_a_inv * (r_a x dir)) x r_a)
+ *                    + dot(dir, (I_b_inv * (r_b x dir)) x r_b)
+ *
+ * This helper is used internally by forge_physics_si_prepare() to compute
+ * effective masses for the normal and both tangent directions.
+ *
+ * Parameters:
+ *   dir        — unit direction to compute effective mass along
+ *   r_a, r_b   — lever arms from body COMs to contact point
+ *   inv_mass_a — inverse mass of body A (0 for static)
+ *   inv_mass_b — inverse mass of body B (0 for static)
+ *   I_inv_a    — inverse world-space inertia of body A
+ *   I_inv_b    — inverse world-space inertia of body B
+ *   dynamic_a  — true if body A is dynamic (inv_mass > 0)
+ *   dynamic_b  — true if body B is dynamic (inv_mass > 0)
+ *
+ * Returns: effective mass (1/K), or 0 if K < epsilon
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline float forge_physics_si_effective_mass_(
+    vec3 dir, vec3 r_a, vec3 r_b,
+    float inv_mass_a, float inv_mass_b,
+    mat3 I_inv_a, mat3 I_inv_b,
+    bool dynamic_a, bool dynamic_b)
+{
+    float K = inv_mass_a + inv_mass_b;
+
+    if (dynamic_a) {
+        vec3 rn_a = vec3_cross(r_a, dir);
+        K += vec3_dot(vec3_cross(mat3_multiply_vec3(I_inv_a, rn_a), r_a), dir);
+    }
+
+    if (dynamic_b) {
+        vec3 rn_b = vec3_cross(r_b, dir);
+        K += vec3_dot(vec3_cross(mat3_multiply_vec3(I_inv_b, rn_b), r_b), dir);
+    }
+
+    return (K > FORGE_PHYSICS_EPSILON) ? (1.0f / K) : 0.0f;
+}
+
+/* Precompute constraint data for all manifolds (the "pre-step").
+ *
+ * For each manifold and each contact within it, computes:
+ *   - Lever arms (r_a, r_b) from body COMs to contact point
+ *   - Tangent basis (t1, t2) from the contact normal
+ *   - Effective mass along normal, tangent 1, and tangent 2
+ *   - Baumgarte velocity bias for penetration correction
+ *   - Restitution bounce bias (computed from pre-warmstart velocity)
+ *   - Accumulated impulses initialized from manifold warm-start data
+ *
+ * The restitution bias must be computed here, before warm-starting
+ * changes the velocities. Computing it during solve_velocities() would
+ * use post-warmstart velocities, giving incorrect bounce magnitudes.
+ *
+ * Parameters:
+ *   manifolds       — input manifold array
+ *   manifold_count  — number of manifolds
+ *   bodies          — rigid body array
+ *   num_bodies      — number of bodies
+ *   dt              — physics timestep (s), must be > 0
+ *   warm_start      — if true, initialize accumulated impulses from
+ *                      manifold contact data; if false, start from zero
+ *   out             — output SI manifold array (caller-allocated,
+ *                      capacity >= manifold_count)
+ *
+ * Usage:
+ *   ForgePhysicsSIManifold workspace[MAX_MANIFOLDS];
+ *   forge_physics_si_prepare(manifolds, count, bodies, n, dt, true,
+ *                            workspace);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005),
+ *            Section 2 — constraint pre-processing.
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_prepare(
+    const ForgePhysicsManifold *manifolds, int manifold_count,
+    const ForgePhysicsRigidBody *bodies, int num_bodies,
+    float dt, bool warm_start,
+    ForgePhysicsSIManifold *out)
+{
+    if (!manifolds || !bodies || !out || manifold_count <= 0 ||
+        num_bodies <= 0) return;
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    for (int mi = 0; mi < manifold_count; mi++) {
+        const ForgePhysicsManifold *m = &manifolds[mi];
+        ForgePhysicsSIManifold *si = &out[mi];
+
+        si->body_a = m->body_a;
+        si->body_b = m->body_b;
+
+        /* Sanitize friction coefficients — clamp to >= 0 */
+        si->static_friction  = (m->static_friction >= 0.0f)
+                                ? m->static_friction : 0.0f;
+        si->dynamic_friction = (m->dynamic_friction >= 0.0f)
+                                ? m->dynamic_friction : 0.0f;
+
+        /* Clamp count to array capacity */
+        si->count = m->count;
+        if (si->count > FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS)
+            si->count = FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS;
+        if (si->count < 0) si->count = 0;
+
+        int ia = m->body_a;
+        int ib = m->body_b;
+
+        if (ia < 0 || ia >= num_bodies) { si->count = 0; continue; }
+        if (ib != -1 && (ib < 0 || ib >= num_bodies)) {
+            si->count = 0; continue;
+        }
+
+        const ForgePhysicsRigidBody *a = &bodies[ia];
+        const ForgePhysicsRigidBody *b = (ib >= 0) ? &bodies[ib] : NULL;
+
+        float inv_mass_a = a->inv_mass;
+        float inv_mass_b = b ? b->inv_mass : 0.0f;
+        bool dynamic_a = inv_mass_a > 0.0f;
+        bool dynamic_b = b && inv_mass_b > 0.0f;
+
+        if (!dynamic_a && !dynamic_b) { si->count = 0; continue; }
+
+        mat3 I_inv_a = a->inv_inertia_world;
+        mat3 I_inv_b;
+        if (b) {
+            I_inv_b = b->inv_inertia_world;
+        } else {
+            SDL_memset(&I_inv_b, 0, sizeof(I_inv_b));
+        }
+
+        vec3 n = m->normal;
+
+        /* Validate normal — reject degenerate manifolds */
+        float n_len_sq = vec3_length_squared(n);
+        if (!(n_len_sq > FORGE_PHYSICS_EPSILON) ||
+            !forge_isfinite(n_len_sq)) {
+            si->count = 0; continue;
+        }
+        n = vec3_scale(n, 1.0f / SDL_sqrtf(n_len_sq));
+        si->normal = n;
+
+        /* Build tangent basis (shared across all contacts in this manifold) */
+        vec3 t1, t2;
+        forge_physics_si_tangent_basis(n, &t1, &t2);
+
+        for (int ci = 0; ci < si->count; ci++) {
+            const ForgePhysicsManifoldContact *mc = &m->contacts[ci];
+            ForgePhysicsSIConstraint *sc = &si->constraints[ci];
+
+            /* Lever arms */
+            sc->r_a = vec3_sub(mc->world_point, a->position);
+            sc->r_b = b ? vec3_sub(mc->world_point, b->position)
+                        : vec3_create(0, 0, 0);
+
+            sc->t1 = t1;
+            sc->t2 = t2;
+
+            /* Effective masses */
+            sc->eff_mass_n = forge_physics_si_effective_mass_(
+                n, sc->r_a, sc->r_b, inv_mass_a, inv_mass_b,
+                I_inv_a, I_inv_b, dynamic_a, dynamic_b);
+
+            sc->eff_mass_t1 = forge_physics_si_effective_mass_(
+                t1, sc->r_a, sc->r_b, inv_mass_a, inv_mass_b,
+                I_inv_a, I_inv_b, dynamic_a, dynamic_b);
+
+            sc->eff_mass_t2 = forge_physics_si_effective_mass_(
+                t2, sc->r_a, sc->r_b, inv_mass_a, inv_mass_b,
+                I_inv_a, I_inv_b, dynamic_a, dynamic_b);
+
+            /* Baumgarte velocity bias for penetration correction */
+            sc->velocity_bias = 0.0f;
+            float pen_excess = mc->penetration - FORGE_PHYSICS_PENETRATION_SLOP;
+            if (pen_excess > 0.0f) {
+                sc->velocity_bias =
+                    (FORGE_PHYSICS_BAUMGARTE_FACTOR / dt) * pen_excess;
+            }
+
+            /* Restitution bias — computed from pre-warmstart velocity.
+             * Use min(e_a, e_b). Kill restitution for resting contacts
+             * (closing velocity below threshold) to prevent micro-bouncing. */
+            float e = a->restitution;
+            if (b) e = forge_fminf(e, b->restitution);
+
+            vec3 v_a = vec3_add(a->velocity,
+                                vec3_cross(a->angular_velocity, sc->r_a));
+            vec3 v_b = b ? vec3_add(b->velocity,
+                                    vec3_cross(b->angular_velocity, sc->r_b))
+                         : vec3_create(0, 0, 0);
+            float v_n = vec3_dot(vec3_sub(v_a, v_b), n);
+
+            if (v_n < -FORGE_PHYSICS_RB_RESTING_THRESHOLD) {
+                sc->restitution_bias = -e * v_n;
+            } else {
+                sc->restitution_bias = 0.0f;
+            }
+
+            /* Initialize accumulated impulses from warm-start data */
+            if (warm_start) {
+                sc->j_n  = mc->normal_impulse;
+                sc->j_t1 = mc->tangent_impulse_1;
+                sc->j_t2 = mc->tangent_impulse_2;
+            } else {
+                sc->j_n  = 0.0f;
+                sc->j_t1 = 0.0f;
+                sc->j_t2 = 0.0f;
+            }
+        }
+    }
+}
+
+/* Apply cached impulses to body velocities (warm-starting).
+ *
+ * Before the solver begins iterating, this function applies the impulses
+ * accumulated in previous frames. This gives the solver a head start —
+ * instead of converging from zero, it starts from a state close to the
+ * solution. For stacking scenarios, warm-starting reduces the number of
+ * iterations needed for stability by 3-5x.
+ *
+ * For each constraint, computes:
+ *   impulse = n * j_n + t1 * j_t1 + t2 * j_t2
+ * and applies it to both bodies (A gets pushed, B gets pushed in reverse).
+ *
+ * Parameters:
+ *   si_manifolds — SI manifold array (from forge_physics_si_prepare)
+ *   count        — number of SI manifolds
+ *   bodies       — rigid body array (velocities modified in place)
+ *   num_bodies   — number of bodies
+ *
+ * Usage:
+ *   forge_physics_si_warm_start(workspace, manifold_count, bodies, n);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005),
+ *            Section 3 — warm-starting.
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_warm_start(
+    const ForgePhysicsSIManifold *si_manifolds, int count,
+    ForgePhysicsRigidBody *bodies, int num_bodies)
+{
+    if (!si_manifolds || !bodies || count <= 0 || num_bodies <= 0) return;
+
+    for (int mi = 0; mi < count; mi++) {
+        const ForgePhysicsSIManifold *si = &si_manifolds[mi];
+        int ia = si->body_a;
+        int ib = si->body_b;
+
+        if (ia < 0 || ia >= num_bodies) continue;
+        if (ib != -1 && (ib < 0 || ib >= num_bodies)) continue;
+
+        ForgePhysicsRigidBody *a = &bodies[ia];
+        ForgePhysicsRigidBody *b = (ib >= 0) ? &bodies[ib] : NULL;
+
+        for (int ci = 0; ci < si->count; ci++) {
+            const ForgePhysicsSIConstraint *sc = &si->constraints[ci];
+
+            /* Composite impulse vector */
+            vec3 impulse = vec3_add(
+                vec3_scale(si->normal, sc->j_n),
+                vec3_add(vec3_scale(sc->t1, sc->j_t1),
+                         vec3_scale(sc->t2, sc->j_t2)));
+
+            /* Apply to body A */
+            if (a->inv_mass > 0.0f) {
+                a->velocity = vec3_add(a->velocity,
+                    vec3_scale(impulse, a->inv_mass));
+                a->angular_velocity = vec3_add(a->angular_velocity,
+                    mat3_multiply_vec3(a->inv_inertia_world,
+                                       vec3_cross(sc->r_a, impulse)));
+            }
+
+            /* Apply to body B (opposite direction) */
+            if (b && b->inv_mass > 0.0f) {
+                b->velocity = vec3_sub(b->velocity,
+                    vec3_scale(impulse, b->inv_mass));
+                b->angular_velocity = vec3_sub(b->angular_velocity,
+                    mat3_multiply_vec3(b->inv_inertia_world,
+                                       vec3_cross(sc->r_b, impulse)));
+            }
+        }
+    }
+}
+
+/* Perform one velocity-solving iteration over all constraints.
+ *
+ * This is the core of Catto's sequential impulse method. For each
+ * contact, it computes the velocity error, converts it to an impulse
+ * delta via the precomputed effective mass, then applies accumulated
+ * impulse clamping:
+ *
+ *   Normal (non-penetration):
+ *     delta = eff_mass_n * (-(v_n - velocity_bias - restitution_bias))
+ *     old   = j_n
+ *     j_n   = max(j_n + delta, 0)    <-- total impulse >= 0
+ *     apply (j_n - old) * normal
+ *
+ *   Friction (tangent 1 and 2):
+ *     delta = eff_mass_t * (-v_t)
+ *     old   = j_t
+ *     j_t   = clamp(j_t + delta, -mu_d * j_n, mu_d * j_n)
+ *     apply (j_t - old) * tangent
+ *
+ * The normal constraint uses velocity_bias (Baumgarte penetration
+ * correction) and restitution_bias (bounce). The friction constraints
+ * use per-axis Coulomb clamping: |j_t| <= mu * j_normal.
+ *
+ * Parameters:
+ *   si_manifolds — SI manifold array (accumulated impulses updated)
+ *   count        — number of SI manifolds
+ *   bodies       — rigid body array (velocities modified in place)
+ *   num_bodies   — number of bodies
+ *
+ * Usage:
+ *   for (int iter = 0; iter < iterations; iter++)
+ *       forge_physics_si_solve_velocities(workspace, count, bodies, n);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005),
+ *            Section 2 — sequential impulse with accumulated clamping.
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_solve_velocities(
+    ForgePhysicsSIManifold *si_manifolds, int count,
+    ForgePhysicsRigidBody *bodies, int num_bodies)
+{
+    if (!si_manifolds || !bodies || count <= 0 || num_bodies <= 0) return;
+
+    for (int mi = 0; mi < count; mi++) {
+        ForgePhysicsSIManifold *si = &si_manifolds[mi];
+        int ia = si->body_a;
+        int ib = si->body_b;
+
+        if (ia < 0 || ia >= num_bodies) continue;
+        if (ib != -1 && (ib < 0 || ib >= num_bodies)) continue;
+
+        ForgePhysicsRigidBody *a = &bodies[ia];
+        ForgePhysicsRigidBody *b = (ib >= 0) ? &bodies[ib] : NULL;
+
+        vec3 n = si->normal;
+
+        for (int ci = 0; ci < si->count; ci++) {
+            ForgePhysicsSIConstraint *sc = &si->constraints[ci];
+
+            /* ── Compute relative velocity at contact point ───────────── */
+            vec3 v_a = vec3_add(a->velocity,
+                                vec3_cross(a->angular_velocity, sc->r_a));
+            vec3 v_b = b ? vec3_add(b->velocity,
+                                    vec3_cross(b->angular_velocity, sc->r_b))
+                         : vec3_create(0, 0, 0);
+            vec3 v_rel = vec3_sub(v_a, v_b);
+
+            /* ── Normal constraint ────────────────────────────────────── */
+            float v_n = vec3_dot(v_rel, n);
+            float delta_jn = sc->eff_mass_n
+                           * (-(v_n - sc->velocity_bias - sc->restitution_bias));
+
+            /* Accumulated clamp: total normal impulse >= 0 */
+            float old_jn = sc->j_n;
+            sc->j_n = forge_fmaxf(sc->j_n + delta_jn, 0.0f);
+            float applied_jn = sc->j_n - old_jn;
+
+            /* Apply normal impulse */
+            vec3 impulse_n = vec3_scale(n, applied_jn);
+
+            if (a->inv_mass > 0.0f) {
+                a->velocity = vec3_add(a->velocity,
+                    vec3_scale(impulse_n, a->inv_mass));
+                a->angular_velocity = vec3_add(a->angular_velocity,
+                    mat3_multiply_vec3(a->inv_inertia_world,
+                                       vec3_cross(sc->r_a, impulse_n)));
+            }
+            if (b && b->inv_mass > 0.0f) {
+                b->velocity = vec3_sub(b->velocity,
+                    vec3_scale(impulse_n, b->inv_mass));
+                b->angular_velocity = vec3_sub(b->angular_velocity,
+                    mat3_multiply_vec3(b->inv_inertia_world,
+                                       vec3_cross(sc->r_b, impulse_n)));
+            }
+
+            /* ── Friction constraint — tangent 1 ─────────────────────── */
+
+            /* Recompute v_rel after normal impulse changed velocities */
+            v_a = vec3_add(a->velocity,
+                           vec3_cross(a->angular_velocity, sc->r_a));
+            v_b = b ? vec3_add(b->velocity,
+                               vec3_cross(b->angular_velocity, sc->r_b))
+                     : vec3_create(0, 0, 0);
+            v_rel = vec3_sub(v_a, v_b);
+
+            float friction_limit = si->dynamic_friction * sc->j_n;
+
+            float v_t1 = vec3_dot(v_rel, sc->t1);
+            float delta_jt1 = sc->eff_mass_t1 * (-v_t1);
+
+            float old_jt1 = sc->j_t1;
+            sc->j_t1 = forge_clampf(sc->j_t1 + delta_jt1,
+                                      -friction_limit, friction_limit);
+            float applied_jt1 = sc->j_t1 - old_jt1;
+
+            vec3 impulse_t1 = vec3_scale(sc->t1, applied_jt1);
+
+            if (a->inv_mass > 0.0f) {
+                a->velocity = vec3_add(a->velocity,
+                    vec3_scale(impulse_t1, a->inv_mass));
+                a->angular_velocity = vec3_add(a->angular_velocity,
+                    mat3_multiply_vec3(a->inv_inertia_world,
+                                       vec3_cross(sc->r_a, impulse_t1)));
+            }
+            if (b && b->inv_mass > 0.0f) {
+                b->velocity = vec3_sub(b->velocity,
+                    vec3_scale(impulse_t1, b->inv_mass));
+                b->angular_velocity = vec3_sub(b->angular_velocity,
+                    mat3_multiply_vec3(b->inv_inertia_world,
+                                       vec3_cross(sc->r_b, impulse_t1)));
+            }
+
+            /* ── Friction constraint — tangent 2 ─────────────────────── */
+
+            /* Recompute v_rel after tangent 1 impulse */
+            v_a = vec3_add(a->velocity,
+                           vec3_cross(a->angular_velocity, sc->r_a));
+            v_b = b ? vec3_add(b->velocity,
+                               vec3_cross(b->angular_velocity, sc->r_b))
+                     : vec3_create(0, 0, 0);
+            v_rel = vec3_sub(v_a, v_b);
+
+            float v_t2 = vec3_dot(v_rel, sc->t2);
+            float delta_jt2 = sc->eff_mass_t2 * (-v_t2);
+
+            float old_jt2 = sc->j_t2;
+            sc->j_t2 = forge_clampf(sc->j_t2 + delta_jt2,
+                                      -friction_limit, friction_limit);
+            float applied_jt2 = sc->j_t2 - old_jt2;
+
+            vec3 impulse_t2 = vec3_scale(sc->t2, applied_jt2);
+
+            if (a->inv_mass > 0.0f) {
+                a->velocity = vec3_add(a->velocity,
+                    vec3_scale(impulse_t2, a->inv_mass));
+                a->angular_velocity = vec3_add(a->angular_velocity,
+                    mat3_multiply_vec3(a->inv_inertia_world,
+                                       vec3_cross(sc->r_a, impulse_t2)));
+            }
+            if (b && b->inv_mass > 0.0f) {
+                b->velocity = vec3_sub(b->velocity,
+                    vec3_scale(impulse_t2, b->inv_mass));
+                b->angular_velocity = vec3_sub(b->angular_velocity,
+                    mat3_multiply_vec3(b->inv_inertia_world,
+                                       vec3_cross(sc->r_b, impulse_t2)));
+            }
+        }
+    }
+}
+
+/* Write accumulated impulses back to manifold contacts for caching.
+ *
+ * After the solver finishes iterating, this function copies the final
+ * accumulated impulse values (j_n, j_t1, j_t2) from each SI constraint
+ * back to the corresponding ForgePhysicsManifoldContact. When the
+ * manifold cache persists these contacts to the next frame, the impulses
+ * become the warm-start values for forge_physics_si_prepare().
+ *
+ * Parameters:
+ *   si_manifolds    — SI manifold array (source of accumulated impulses)
+ *   si_count        — number of SI manifolds
+ *   manifolds       — manifold array (destination, contacts updated)
+ *
+ * Usage:
+ *   forge_physics_si_store_impulses(workspace, count, manifolds);
+ *   // Now update the manifold cache:
+ *   forge_physics_manifold_cache_update(&cache, &manifolds[i]);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005),
+ *            Section 3 — warm-starting requires storing converged impulses.
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_store_impulses(
+    const ForgePhysicsSIManifold *si_manifolds, int si_count,
+    ForgePhysicsManifold *manifolds)
+{
+    if (!si_manifolds || !manifolds || si_count <= 0) return;
+
+    for (int mi = 0; mi < si_count; mi++) {
+        const ForgePhysicsSIManifold *si = &si_manifolds[mi];
+        ForgePhysicsManifold *m = &manifolds[mi];
+
+        int n = si->count;
+        if (n > m->count) n = m->count;
+        if (n > FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS)
+            n = FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS;
+
+        for (int ci = 0; ci < n; ci++) {
+            m->contacts[ci].normal_impulse    = si->constraints[ci].j_n;
+            m->contacts[ci].tangent_impulse_1 = si->constraints[ci].j_t1;
+            m->contacts[ci].tangent_impulse_2 = si->constraints[ci].j_t2;
+        }
+    }
+}
+
+/* Resolve penetrations by directly correcting body positions.
+ *
+ * After the velocity solver has converged, bodies may still overlap
+ * because the velocity-level Baumgarte bias only gradually reduces
+ * penetration over multiple frames. This function applies immediate
+ * position corrections along the contact normal, weighted by inverse
+ * mass so lighter bodies move more.
+ *
+ * The correction uses a slop tolerance (contacts shallower than the
+ * slop are ignored) and a fraction parameter to avoid over-correction
+ * and jitter. A fraction of 0.2-0.4 is typical.
+ *
+ * Parameters:
+ *   manifolds      — manifold array (contact positions and normals)
+ *   manifold_count — number of manifolds
+ *   bodies         — rigid body array (positions modified in place)
+ *   num_bodies     — number of bodies
+ *   fraction       — correction fraction per step (0.2-0.4 typical)
+ *   slop           — penetration tolerance below which no correction
+ *                     is applied (matches FORGE_PHYSICS_PENETRATION_SLOP)
+ *
+ * Reference: Catto, "Modeling and Solving Constraints" (GDC 2009) —
+ *            pseudo-velocity / position projection methods.
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_correct_positions(
+    const ForgePhysicsManifold *manifolds, int manifold_count,
+    ForgePhysicsRigidBody *bodies, int num_bodies,
+    float fraction, float slop)
+{
+    if (!manifolds || !bodies || manifold_count <= 0 || num_bodies <= 0)
+        return;
+    if (!forge_isfinite(fraction) || fraction <= 0.0f) return;
+    if (fraction > 1.0f) fraction = 1.0f;
+    if (!forge_isfinite(slop) || slop < 0.0f) slop = 0.0f;
+
+    for (int mi = 0; mi < manifold_count; mi++) {
+        const ForgePhysicsManifold *m = &manifolds[mi];
+        int ia = m->body_a;
+        int ib = m->body_b;
+
+        if (ia < 0 || ia >= num_bodies) continue;
+        if (ib != -1 && (ib < 0 || ib >= num_bodies)) continue;
+
+        ForgePhysicsRigidBody *a = &bodies[ia];
+        ForgePhysicsRigidBody *b = (ib >= 0) ? &bodies[ib] : NULL;
+
+        float inv_mass_a = a->inv_mass;
+        float inv_mass_b = b ? b->inv_mass : 0.0f;
+        float inv_mass_sum = inv_mass_a + inv_mass_b;
+        if (inv_mass_sum <= 0.0f) continue;
+
+        /* Validate normal */
+        vec3 n = m->normal;
+        float n_len_sq = vec3_length_squared(n);
+        if (!(n_len_sq > FORGE_PHYSICS_EPSILON)) continue;
+        n = vec3_scale(n, 1.0f / SDL_sqrtf(n_len_sq));
+
+        /* Use the deepest penetration across all contacts */
+        float max_pen = 0.0f;
+        for (int ci = 0; ci < m->count &&
+             ci < FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS; ci++) {
+            if (m->contacts[ci].penetration > max_pen)
+                max_pen = m->contacts[ci].penetration;
+        }
+
+        /* Correction magnitude: fraction * max(penetration - slop, 0) */
+        float correction = fraction *
+            forge_fmaxf(max_pen - slop, 0.0f) / inv_mass_sum;
+
+        if (correction <= 0.0f) continue;
+
+        /* Push bodies apart proportional to inverse mass */
+        if (inv_mass_a > 0.0f) {
+            a->position = vec3_add(a->position,
+                vec3_scale(n, correction * inv_mass_a));
+        }
+        if (b && inv_mass_b > 0.0f) {
+            b->position = vec3_sub(b->position,
+                vec3_scale(n, correction * inv_mass_b));
+        }
+    }
+}
+
+/* Complete sequential impulse solver: prepare + warm-start + iterate + store.
+ *
+ * This is the high-level entry point for the SI solver. It combines all
+ * solver phases into a single call:
+ *
+ *   1. Prepare: precompute effective masses, bias terms, init warm-start
+ *   2. Warm-start: apply cached impulses to velocities (if enabled)
+ *   3. Iterate: run N velocity-solving passes with accumulated clamping
+ *   4. Store: write final accumulated impulses back to manifolds
+ *
+ * The caller must provide a workspace array of ForgePhysicsSIManifold
+ * with at least manifold_count entries. This avoids heap allocation.
+ *
+ * Parameters:
+ *   manifolds       — manifold array (contacts updated with impulses)
+ *   manifold_count  — number of manifolds
+ *   bodies          — rigid body array (velocities modified in place)
+ *   num_bodies      — number of bodies
+ *   iterations      — number of velocity iterations (clamped to
+ *                      [SOLVER_MIN_ITERATIONS, SOLVER_MAX_ITERATIONS])
+ *   dt              — physics timestep (s), must be > 0
+ *   warm_start      — if true, apply cached impulses before iterating
+ *   workspace       — caller-allocated SI manifold array
+ *                      (capacity >= manifold_count)
+ *
+ * Usage:
+ *   ForgePhysicsSIManifold workspace[MAX_MANIFOLDS];
+ *   forge_physics_si_solve(manifolds, count, bodies, num_bodies,
+ *                          10, PHYSICS_DT, true, workspace);
+ *   // Manifold contacts now contain updated accumulated impulses.
+ *   // Update the manifold cache for next-frame warm-starting:
+ *   for (int i = 0; i < count; i++)
+ *       forge_physics_manifold_cache_update(&cache, &manifolds[i]);
+ *
+ * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline void forge_physics_si_solve(
+    ForgePhysicsManifold *manifolds, int manifold_count,
+    ForgePhysicsRigidBody *bodies, int num_bodies,
+    int iterations, float dt, bool warm_start,
+    ForgePhysicsSIManifold *workspace)
+{
+    if (!manifolds || !bodies || !workspace) return;
+    if (manifold_count <= 0 || num_bodies <= 0) return;
+    if (!(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    /* Clamp iterations */
+    if (iterations < FORGE_PHYSICS_SOLVER_MIN_ITERATIONS)
+        iterations = FORGE_PHYSICS_SOLVER_MIN_ITERATIONS;
+    if (iterations > FORGE_PHYSICS_SOLVER_MAX_ITERATIONS)
+        iterations = FORGE_PHYSICS_SOLVER_MAX_ITERATIONS;
+
+    /* Phase 1: Prepare constraint data */
+    forge_physics_si_prepare(manifolds, manifold_count, bodies, num_bodies,
+                             dt, warm_start, workspace);
+
+    /* Phase 2: Warm-start (apply cached impulses) */
+    if (warm_start) {
+        forge_physics_si_warm_start(workspace, manifold_count,
+                                     bodies, num_bodies);
+    }
+
+    /* Phase 3: Velocity iterations */
+    for (int iter = 0; iter < iterations; iter++) {
+        forge_physics_si_solve_velocities(workspace, manifold_count,
+                                           bodies, num_bodies);
+    }
+
+    /* Phase 4: Store accumulated impulses back to manifolds */
+    forge_physics_si_store_impulses(workspace, manifold_count, manifolds);
+}
+
+/* Convert a ForgePhysicsRBContact (ground contact) into a ForgePhysicsManifold.
+ *
+ * The Lesson 06 ground collision functions (forge_physics_rb_collide_sphere_plane,
+ * forge_physics_rb_collide_box_plane) produce ForgePhysicsRBContact arrays.
+ * This helper wraps one or more ground contacts for the same body into a
+ * single ForgePhysicsManifold with body_b == -1, so the SI solver can
+ * process ground and body-body contacts uniformly.
+ *
+ * All contacts must share the same body_a index and normal direction.
+ * The function takes up to FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS (4)
+ * contacts; excess contacts are silently dropped. Contact IDs are
+ * generated by spatially hashing each contact point (1 mm quantization),
+ * so the same physical corner produces a stable ID across frames
+ * regardless of detection order.
+ *
+ * Parameters:
+ *   contacts   — RBContact array (from ground collision detection)
+ *   count      — number of contacts (clamped to 4)
+ *   mu_s       — static friction coefficient
+ *   mu_d       — dynamic friction coefficient
+ *   out        — receives the manifold (must not be NULL)
+ *
+ * Returns: true if at least one contact was converted.
+ *
+ * Usage:
+ *   ForgePhysicsRBContact ground_contacts[8];
+ *   int n = forge_physics_rb_collide_box_plane(..., ground_contacts, 8);
+ *   ForgePhysicsManifold gm;
+ *   if (forge_physics_si_rb_contacts_to_manifold(
+ *           ground_contacts, n, 0.6f, 0.4f, &gm)) {
+ *       // gm is ready for the SI solver
+ *   }
+ *
+ * See: Physics Lesson 12 — Impulse-Based Resolution
+ */
+static inline bool forge_physics_si_rb_contacts_to_manifold(
+    const ForgePhysicsRBContact *contacts, int count,
+    float mu_s, float mu_d,
+    ForgePhysicsManifold *out)
+{
+    if (!contacts || !out || count <= 0) return false;
+
+    SDL_memset(out, 0, sizeof(*out));
+
+    /* Validate the FULL batch before truncating to MAX_CONTACTS.
+     * All contacts must share the same body pair and normal direction.
+     * Without this, contacts[4..count-1] could hide mixed grouping. */
+    for (int i = 1; i < count; i++) {
+        if (contacts[i].body_a != contacts[0].body_a ||
+            contacts[i].body_b != contacts[0].body_b) {
+            return false;
+        }
+        float ndot = vec3_dot(contacts[i].normal, contacts[0].normal);
+        if (!forge_isfinite(ndot) ||
+            ndot < FORGE_PHYSICS_SI_NORMAL_ALIGN_MIN) {
+            return false;
+        }
+    }
+
+    int n = count;
+    if (n > FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS)
+        n = FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS;
+
+    out->body_a = contacts[0].body_a;
+    out->body_b = contacts[0].body_b;
+    out->normal = contacts[0].normal;
+    out->static_friction  = (forge_isfinite(mu_s) && mu_s >= 0.0f) ? mu_s : 0.0f;
+    out->dynamic_friction = (forge_isfinite(mu_d) && mu_d >= 0.0f) ? mu_d : 0.0f;
+    out->count = n;
+
+    for (int i = 0; i < n; i++) {
+        ForgePhysicsManifoldContact *mc = &out->contacts[i];
+        mc->world_point  = contacts[i].point;
+        mc->penetration  = contacts[i].penetration;
+        mc->local_a      = vec3_create(0, 0, 0);
+        mc->local_b      = vec3_create(0, 0, 0);
+        mc->normal_impulse    = 0.0f;
+        mc->tangent_impulse_1 = 0.0f;
+        mc->tangent_impulse_2 = 0.0f;
+
+        /* Generate a spatially stable contact ID by quantizing the contact
+         * point to a 1 mm grid and hashing. This ensures the same physical
+         * corner produces the same ID regardless of detection order, enabling
+         * correct warm-start matching in the manifold cache. */
+        int qx = (int)SDL_floorf(contacts[i].point.x * FORGE_PHYSICS_SI_HASH_QUANT_SCALE);
+        int qy = (int)SDL_floorf(contacts[i].point.y * FORGE_PHYSICS_SI_HASH_QUANT_SCALE);
+        int qz = (int)SDL_floorf(contacts[i].point.z * FORGE_PHYSICS_SI_HASH_QUANT_SCALE);
+        mc->id = (uint32_t)(
+            (qx * FORGE_PHYSICS_SI_HASH_PRIME_X) ^
+            (qy * FORGE_PHYSICS_SI_HASH_PRIME_Y) ^
+            (qz * FORGE_PHYSICS_SI_HASH_PRIME_Z));
+    }
+
+    return true;
 }
 
 

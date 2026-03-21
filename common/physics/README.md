@@ -201,11 +201,31 @@ Constants: `FORGE_PHYSICS_EPA_MAX_ITERATIONS` (64),
 Types: `ForgePhysicsManifoldContact`, `ForgePhysicsManifold`,
 `ForgePhysicsManifoldCacheEntry`
 
+### Lesson 12 — Impulse-Based Resolution
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_si_tangent_basis()` | Build stable orthonormal tangent frame from contact normal |
+| `forge_physics_si_prepare()` | Precompute effective masses, bias terms, initialize from warm-start |
+| `forge_physics_si_warm_start()` | Apply cached impulses to body velocities before iteration |
+| `forge_physics_si_solve_velocities()` | One velocity iteration with accumulated impulse clamping |
+| `forge_physics_si_store_impulses()` | Write accumulated impulses back to manifolds for next-frame cache |
+| `forge_physics_si_solve()` | Complete solver: prepare + warm-start + N iterations + store |
+| `forge_physics_si_correct_positions()` | Push penetrating bodies apart along contact normal |
+| `forge_physics_si_rb_contacts_to_manifold()` | Convert RBContact array to manifold for SI solver input |
+| `forge_physics_rigid_body_integrate_velocities()` | Velocity-only integration (for split-step solvers) |
+| `forge_physics_rigid_body_integrate_positions()` | Position-only integration (for split-step solvers) |
+
+Types: `ForgePhysicsSIConstraint` (precomputed per-contact data),
+`ForgePhysicsSIManifold` (constraint data for one manifold pair).
+
+Constants: `FORGE_PHYSICS_SI_DEFAULT_ITERATIONS` (10).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 12–15 | *TBD* | Impulse resolution, constraints, solver |
+| 13–15 | *TBD* | Constraints, joints, stacking stability |
 
 ## Design
 
