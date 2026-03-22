@@ -629,20 +629,18 @@ non-blocking feedback but did not approve. This typically happens when:
    request re-review (`@coderabbitai review`). Exit and wait for the next
    review round.
 
-4. **If the user wants to skip:** Request that CodeRabbit resolve the
-   conversation:
+4. **If the user wants to skip:** Run `/dev-resolve-feedback` to ask
+   CodeRabbit to verify each thread individually and resolve if fixed.
 
-   ```bash
-   gh pr comment <pr-number> --body "@coderabbitai resolve"
-   ```
-
-   This tells CodeRabbit the feedback was acknowledged and intentionally
-   skipped. CodeRabbit responds with an `APPROVED` review.
+   **NEVER post `@coderabbitai resolve` as a general PR comment.** That
+   force-resolves all threads — including ones with genuinely unaddressed
+   feedback. Instead, `/dev-resolve-feedback` replies to each thread
+   individually, letting CodeRabbit decide per-thread whether to resolve.
 
 5. **CRITICAL: No commits after resolve.** Any new commit on the branch
    — your own code, a merge from main, a rebase — dismisses the approval
-   that `@coderabbitai resolve` grants. This forces you to start the
-   cycle over.
+   that CodeRabbit grants when it resolves threads. This forces you to
+   start the cycle over.
 
    Also do NOT request another review (`@coderabbitai review`) — that
    triggers a new feedback round.
@@ -674,13 +672,12 @@ non-blocking feedback but did not approve. This typically happens when:
       auto-pause prevents the main merge from triggering new review
       feedback.
 
-   d. Once the branch is up to date and checks pass, request resolve:
+   d. Once the branch is up to date and checks pass, run
+      `/dev-resolve-feedback` to ask CodeRabbit to verify and resolve
+      each thread individually.
 
-      ```bash
-      gh pr comment <pr-number> --body "@coderabbitai resolve"
-      ```
-
-   e. After CodeRabbit posts the `APPROVED` review, merge immediately:
+   e. After CodeRabbit resolves the threads and posts an `APPROVED`
+      review, merge immediately:
 
       ```bash
       gh pr merge <pr-number> --squash --delete-branch
@@ -725,17 +722,21 @@ comments" signal from step 1.7a), prepare the branch for merge:
    Wait for all checks to pass on the updated branch. CodeRabbit's
    auto-pause prevents the main merge from triggering new review feedback.
 
-3. **Once the branch is up to date and checks pass, request resolve:**
+3. **Once the branch is up to date and checks pass, run
+   `/dev-resolve-feedback`** to ask CodeRabbit to verify each unresolved
+   thread individually and resolve if the issue is fixed.
 
-   ```bash
-   gh pr comment <pr-number> --body "@coderabbitai resolve"
-   ```
+   **NEVER post `@coderabbitai resolve` as a general PR comment.** That
+   force-resolves all threads — including ones with genuinely unaddressed
+   feedback. The per-thread approach lets CodeRabbit decide independently
+   whether each issue was actually fixed.
 
-4. **After CodeRabbit posts the `APPROVED` review, proceed to step 7.**
+4. **After CodeRabbit resolves the threads and posts an `APPROVED`
+   review, proceed to step 7.**
 
-**Why this order matters:** Any commit after `@coderabbitai resolve`
+**Why this order matters:** Any commit after CodeRabbit resolves threads
 (including a merge from main) dismisses the approval. By merging main
-*before* resolve, the approval sticks and you can merge the PR normally
+*before* resolving, the approval sticks and you can merge the PR normally
 without `--admin`.
 
 ### 7. Merge the PR
@@ -852,10 +853,15 @@ single line.** Treat it that way.
   The review state stays `COMMENTED` or `CHANGES_REQUESTED` from the
   previous round — do not wait for an `APPROVED` review that will never
   come. Detect this comment (step 1.7a) and proceed to step 6b.
-- **Merge main before resolve, not after.** Any commit after
-  `@coderabbitai resolve` dismisses the approval. Always update the branch
-  with main *before* requesting resolve (step 6b). This avoids the catch-22
-  of needing `--admin` to merge.
+- **NEVER post `@coderabbitai resolve` as a general PR comment.** This
+  force-resolves all threads, including ones with genuinely unaddressed
+  feedback. Always use `/dev-resolve-feedback` instead, which replies to
+  each thread individually and lets CodeRabbit decide per-thread whether
+  the issue was actually fixed.
+- **Merge main before resolve, not after.** Any commit after CodeRabbit
+  resolves threads dismisses the approval. Always update the branch with
+  main *before* running `/dev-resolve-feedback` (step 6b). This avoids
+  the catch-22 of needing `--admin` to merge.
 
 ## Error handling
 
