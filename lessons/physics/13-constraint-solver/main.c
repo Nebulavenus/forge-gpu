@@ -79,7 +79,7 @@ static const vec3 GRAVITY = { 0.0f, -9.81f, 0.0f };
 /* UI layout */
 #define PANEL_X              10.0f            /* window initial X position */
 #define PANEL_Y              10.0f            /* window initial Y position */
-#define PANEL_W             380.0f            /* window width */
+#define PANEL_W             450.0f            /* window width */
 #define PANEL_H             550.0f            /* window height */
 #define LABEL_HEIGHT          18.0f
 #define LABEL_SPACER          4.0f
