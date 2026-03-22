@@ -84,12 +84,12 @@ This is a 3D vector constraint (three scalar equations), so the
 effective mass is a 3x3 matrix:
 
 $$
-K = \left(\frac{1}{m_a} + \frac{1}{m_b}\right) I_{3 \times 3}
-  + [r_a]_\times \, I_a^{-1} \, [r_a]_\times^T
-  + [r_b]_\times \, I_b^{-1} \, [r_b]_\times^T
+K = \left(\frac{1}{m_a} + \frac{1}{m_b}\right) I_{3 \times 3} +
+  [r_a]_{\times} \, I_a^{-1} \, [r_a]_{\times}^T +
+  [r_b]_{\times} \, I_b^{-1} \, [r_b]_{\times}^T
 $$
 
-where $[r]_\times$ is the skew-symmetric (cross-product) matrix of
+where $[r]_{\times}$ is the skew-symmetric (cross-product) matrix of
 $r$. The impulse per iteration is:
 
 $$
