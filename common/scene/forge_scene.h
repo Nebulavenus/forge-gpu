@@ -101,6 +101,15 @@
 /* Textured pipeline sampler count: shadow map + material texture */
 #define FORGE_SCENE_TEXTURED_FRAG_SAMPLER_COUNT 2
 
+/* Debug line initial vertex capacity (vertices, not lines — 2 verts per line) */
+#define FORGE_SCENE_DEBUG_VB_INITIAL_CAPACITY 4096
+
+/* Minimum segments for debug circle/sphere arcs */
+#define FORGE_SCENE_DEBUG_MIN_SEGMENTS 3
+
+/* Axis-parallel cutoff for building orthonormal basis in debug circle */
+#define FORGE_SCENE_DEBUG_AXIS_PARALLEL_COS 0.99f
+
 /* UI atlas parameters */
 #define FORGE_SCENE_ATLAS_PIXEL_HEIGHT 24.0f
 #define FORGE_SCENE_ATLAS_PADDING      2
@@ -168,6 +177,13 @@ typedef struct ForgeSceneModelVertex {
 } ForgeSceneModelVertex;
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 
+/* Debug line vertex: world-space position + RGBA color (28 bytes).
+ * Used by forge_scene_debug_line() and shape helpers. */
+typedef struct ForgeSceneDebugVertex {
+    float position[3]; /* world-space position */
+    float color[4];    /* RGBA color           */
+} ForgeSceneDebugVertex;
+
 /* ── Uniform structures ─────────────────────────────────────────────────── */
 
 /* Scene vertex uniforms: 3 matrices (192 bytes).
@@ -234,6 +250,31 @@ typedef struct ForgeSceneGridFragUniforms {
 typedef struct ForgeSceneShadowVertUniforms {
     mat4 light_vp;  /* light VP * model */
 } ForgeSceneShadowVertUniforms;
+
+/* Instanced vertex uniforms: VP + light VP + node world (192 bytes).
+ * Used by scene_instanced.vert.hlsl and scene_model_instanced.vert.hlsl.
+ * The per-draw model matrix comes from the per-instance vertex buffer.
+ * node_world applies the glTF node hierarchy transform before the instance
+ * matrix — identity for simple meshes, non-identity for multi-node models. */
+typedef struct ForgeSceneInstancedVertUniforms {
+    mat4 vp;         /* camera view-projection                        */
+    mat4 light_vp;   /* light view-projection                         */
+    mat4 node_world; /* per-node local-to-model transform (often I)   */
+} ForgeSceneInstancedVertUniforms;
+
+/* Instanced shadow vertex uniforms: light VP + node world (128 bytes).
+ * Used by scene_instanced_shadow.vert.hlsl and
+ * scene_model_instanced_shadow.vert.hlsl. */
+typedef struct ForgeSceneInstancedShadowVertUniforms {
+    mat4 light_vp;   /* light view-projection               */
+    mat4 node_world; /* per-node local-to-model transform    */
+} ForgeSceneInstancedShadowVertUniforms;
+
+/* Debug line vertex uniforms: VP only (64 bytes).
+ * Must match debug.vert.hlsl cbuffer DebugUniforms. */
+typedef struct ForgeSceneDebugVertUniforms {
+    mat4 vp;  /* camera view-projection */
+} ForgeSceneDebugVertUniforms;
 
 /* UI vertex uniforms: orthographic projection (64 bytes). */
 typedef struct ForgeSceneUiUniforms {
@@ -541,6 +582,24 @@ typedef struct ForgeScene {
     SDL_GPUTextureFormat  depth_fmt;
     SDL_GPUTextureFormat  shadow_fmt;
 
+    /* ── Instanced mesh pipelines (lazy-initialized on first use) ──── */
+    SDL_GPUGraphicsPipeline *instanced_pipeline;         /* Blinn-Phong, back cull */
+    SDL_GPUGraphicsPipeline *instanced_shadow_pipeline;  /* depth-only, no cull    */
+    bool                     instanced_pipelines_ready;
+
+    /* ── Debug line resources (lazy-initialized on first use) ─────── */
+    SDL_GPUGraphicsPipeline *debug_world_pipeline;    /* depth test ON        */
+    SDL_GPUGraphicsPipeline *debug_overlay_pipeline;  /* depth test OFF       */
+    SDL_GPUBuffer           *debug_vb;                /* GPU vertex buffer    */
+    ForgeSceneDebugVertex   *debug_world_vertices;    /* CPU accumulation     */
+    ForgeSceneDebugVertex   *debug_overlay_vertices;  /* CPU accumulation     */
+    Uint32                   debug_world_count;       /* current world verts  */
+    Uint32                   debug_overlay_count;     /* current overlay verts*/
+    Uint32                   debug_world_capacity;    /* allocated world cap  */
+    Uint32                   debug_overlay_capacity;  /* allocated overlay cap*/
+    Uint32                   debug_vb_capacity;       /* GPU buffer capacity  */
+    bool                     debug_ready;             /* lazy init flag       */
+
 #ifdef FORGE_CAPTURE
     ForgeCapture capture;
 #endif
@@ -577,6 +636,15 @@ typedef struct ForgeScene {
     SDL_GPUGraphicsPipeline *morph_pipeline_blend_double;  /* alpha blend + cull none         */
     SDL_GPUGraphicsPipeline *morph_shadow_pipeline;        /* depth-only, 48-byte + storage   */
     bool                     morph_pipelines_ready;        /* lazy init flag                  */
+
+    /* Instanced model pipelines (lazy-initialized on first instanced draw) */
+    SDL_GPUGraphicsPipeline *model_instanced_pipeline;              /* cull back         */
+    SDL_GPUGraphicsPipeline *model_instanced_pipeline_blend;        /* alpha blend       */
+    SDL_GPUGraphicsPipeline *model_instanced_pipeline_double;       /* cull none         */
+    SDL_GPUGraphicsPipeline *model_instanced_pipeline_blend_double; /* blend + cull none */
+    SDL_GPUGraphicsPipeline *model_instanced_shadow_pipeline;       /* depth-only        */
+    SDL_GPUGraphicsPipeline *model_instanced_shadow_mask_pipeline;  /* depth + alpha     */
+    bool                     model_instanced_pipelines_ready;       /* lazy init flag    */
 #endif /* FORGE_SCENE_MODEL_SUPPORT */
 } ForgeScene;
 
@@ -721,6 +789,59 @@ static void forge_scene_draw_textured_mesh_no_bind(ForgeScene *scene,
                                                      mat4 model,
                                                      const float uv_transform[4]);
 
+/* ── Instanced mesh drawing ─────────────────────────────────── */
+
+/* Draw multiple instances of a mesh with Blinn-Phong shading.
+ * instance_buffer contains mat4 transforms (64 bytes each, 4 vec4 columns).
+ * Pipelines are lazy-initialized on first call. */
+static void forge_scene_draw_mesh_instanced(ForgeScene *scene,
+                                             SDL_GPUBuffer *vb,
+                                             SDL_GPUBuffer *ib,
+                                             Uint32 index_count,
+                                             SDL_GPUBuffer *instance_buffer,
+                                             Uint32 instance_count,
+                                             const float base_color[4]);
+
+/* Draw instanced mesh into the shadow map (depth-only). */
+static void forge_scene_draw_shadow_mesh_instanced(ForgeScene *scene,
+                                                    SDL_GPUBuffer *vb,
+                                                    SDL_GPUBuffer *ib,
+                                                    Uint32 index_count,
+                                                    SDL_GPUBuffer *instance_buffer,
+                                                    Uint32 instance_count);
+
+/* ── Debug lines ────────────────────────────────────────────── */
+
+/* Accumulate a debug line segment.  Call anytime before draw_debug_lines.
+ * overlay=false: depth-tested (hidden behind geometry).
+ * overlay=true:  always visible (drawn on top of everything). */
+static void forge_scene_debug_line(ForgeScene *scene,
+                                    vec3 a, vec3 b, vec4 color, bool overlay);
+
+/* Wireframe box centered at center with given half-extents. */
+static void forge_scene_debug_box(ForgeScene *scene,
+                                   vec3 center, vec3 half_extents,
+                                   vec4 color, bool overlay);
+
+/* Circle in the plane perpendicular to axis. */
+static void forge_scene_debug_circle(ForgeScene *scene,
+                                      vec3 center, float radius, vec3 axis,
+                                      vec4 color, int segments, bool overlay);
+
+/* RGB axes (X=red, Y=green, Z=blue) at origin. */
+static void forge_scene_debug_axes(ForgeScene *scene,
+                                    vec3 origin, float length, bool overlay);
+
+/* Wireframe sphere approximation (3 perpendicular circles). */
+static void forge_scene_debug_sphere(ForgeScene *scene,
+                                      vec3 center, float radius,
+                                      vec4 color, int rings, bool overlay);
+
+/* Upload accumulated debug vertices and draw them.  Call during the main
+ * pass after scene geometry and before the grid.  Interrupts the render
+ * pass internally for the upload, then resumes it.  Resets vertex counts. */
+static void forge_scene_draw_debug_lines(ForgeScene *scene);
+
 /* Draw the procedural grid floor. */
 static void forge_scene_draw_grid(ForgeScene *scene);
 
@@ -790,6 +911,21 @@ static void forge_scene_draw_model(ForgeScene *scene,
 static void forge_scene_draw_model_shadows(ForgeScene *scene,
                                             ForgeSceneModel *model,
                                             mat4 placement);
+
+/* Draw multiple instances of a loaded model in the main pass.
+ * instance_buffer contains mat4 transforms (64 bytes each).
+ * Each submesh is drawn instance_count times per draw call.
+ * Note: BLEND submeshes are not individually depth-sorted per instance. */
+static void forge_scene_draw_model_instanced(ForgeScene *scene,
+                                              ForgeSceneModel *model,
+                                              SDL_GPUBuffer *instance_buffer,
+                                              Uint32 instance_count);
+
+/* Draw instanced model into the shadow map (depth-only). */
+static void forge_scene_draw_model_shadows_instanced(ForgeScene *scene,
+                                                      ForgeSceneModel *model,
+                                                      SDL_GPUBuffer *instance_buffer,
+                                                      Uint32 instance_count);
 
 /* Release all GPU and CPU resources for a model. */
 static void forge_scene_free_model(ForgeScene *scene,
@@ -954,6 +1090,20 @@ static void forge_scene_compute_centroids(
 #include "scene/shaders/compiled/ui_frag_dxil.h"
 #include "scene/shaders/compiled/ui_frag_msl.h"
 
+#include "scene/shaders/compiled/scene_instanced_vert_spirv.h"
+#include "scene/shaders/compiled/scene_instanced_vert_dxil.h"
+#include "scene/shaders/compiled/scene_instanced_vert_msl.h"
+#include "scene/shaders/compiled/scene_instanced_shadow_vert_spirv.h"
+#include "scene/shaders/compiled/scene_instanced_shadow_vert_dxil.h"
+#include "scene/shaders/compiled/scene_instanced_shadow_vert_msl.h"
+
+#include "scene/shaders/compiled/debug_vert_spirv.h"
+#include "scene/shaders/compiled/debug_vert_dxil.h"
+#include "scene/shaders/compiled/debug_vert_msl.h"
+#include "scene/shaders/compiled/debug_frag_spirv.h"
+#include "scene/shaders/compiled/debug_frag_dxil.h"
+#include "scene/shaders/compiled/debug_frag_msl.h"
+
 #ifdef FORGE_SCENE_MODEL_SUPPORT
 #include "scene/shaders/compiled/scene_model_vert_spirv.h"
 #include "scene/shaders/compiled/scene_model_vert_dxil.h"
@@ -982,6 +1132,12 @@ static void forge_scene_compute_centroids(
 #include "scene/shaders/compiled/shadow_mask_skinned_vert_spirv.h"
 #include "scene/shaders/compiled/shadow_mask_skinned_vert_dxil.h"
 #include "scene/shaders/compiled/shadow_mask_skinned_vert_msl.h"
+#include "scene/shaders/compiled/scene_model_instanced_vert_spirv.h"
+#include "scene/shaders/compiled/scene_model_instanced_vert_dxil.h"
+#include "scene/shaders/compiled/scene_model_instanced_vert_msl.h"
+#include "scene/shaders/compiled/scene_model_instanced_shadow_vert_spirv.h"
+#include "scene/shaders/compiled/scene_model_instanced_shadow_vert_dxil.h"
+#include "scene/shaders/compiled/scene_model_instanced_shadow_vert_msl.h"
 #endif
 
 /* ── D3D12 texture alignment constants ─────────────────────────────────── */
@@ -2763,6 +2919,47 @@ static void forge_scene_draw_shadow_textured_mesh(ForgeScene *scene,
     SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, 1, 0, 0, 0);
 }
 
+/* ── Instanced shadow mesh ─────────────────────────────────────────────── */
+
+static void forge_scene__init_instanced_pipelines(ForgeScene *scene);
+
+static void forge_scene_draw_shadow_mesh_instanced(ForgeScene *scene,
+                                                    SDL_GPUBuffer *vb,
+                                                    SDL_GPUBuffer *ib,
+                                                    Uint32 index_count,
+                                                    SDL_GPUBuffer *instance_buffer,
+                                                    Uint32 instance_count)
+{
+    if (!scene->pass || !vb || !ib || !instance_buffer ||
+        index_count == 0 || instance_count == 0) return;
+
+    if (!scene->instanced_pipelines_ready)
+        forge_scene__init_instanced_pipelines(scene);
+    if (!scene->instanced_shadow_pipeline) return;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->instanced_shadow_pipeline);
+
+    /* Slot 0: mesh vertices (only position at offset 0, 24-byte stride) */
+    SDL_GPUBufferBinding vb_bind = { vb, 0 };
+    /* Slot 1: instance transforms (mat4 = 64 bytes each) */
+    SDL_GPUBufferBinding ib_inst = { instance_buffer, 0 };
+    SDL_GPUBufferBinding vb_binds[2] = { vb_bind, ib_inst };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+
+    SDL_GPUBufferBinding idx_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &idx_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    /* Push light_vp + node_world (identity for simple meshes). */
+    ForgeSceneInstancedShadowVertUniforms su;
+    su.light_vp   = scene->light_vp;
+    su.node_world = mat4_identity();
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, instance_count,
+                                  0, 0, 0);
+}
+
 static void forge_scene_end_shadow_pass(ForgeScene *scene)
 {
     if (scene->pass) {
@@ -3038,6 +3235,668 @@ static SDL_GPUGraphicsPipeline *forge_scene_create_pipeline(
                 "failed: %s", SDL_GetError());
     }
     return pipeline;
+}
+
+/* ── Instanced mesh pipelines + draw ───────────────────────────────────── */
+
+static void forge_scene__init_instanced_pipelines(ForgeScene *scene)
+{
+    if (scene->instanced_pipelines_ready) return;
+
+    /* Create instanced vertex shader */
+    SDL_GPUShader *inst_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_instanced_vert_spirv, scene_instanced_vert_spirv_size,
+        scene_instanced_vert_dxil,  scene_instanced_vert_dxil_size,
+        scene_instanced_vert_msl,   scene_instanced_vert_msl_size,
+        0, 0, 0, 1);
+
+    /* Create instanced shadow vertex shader */
+    SDL_GPUShader *inst_shadow_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_instanced_shadow_vert_spirv, scene_instanced_shadow_vert_spirv_size,
+        scene_instanced_shadow_vert_dxil,  scene_instanced_shadow_vert_dxil_size,
+        scene_instanced_shadow_vert_msl,   scene_instanced_shadow_vert_msl_size,
+        0, 0, 0, 1);
+
+    /* Shadow fragment shader — SDL3 requires a non-NULL fragment shader even
+     * for depth-only pipelines (num_color_targets == 0). */
+    SDL_GPUShader *shadow_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        shadow_frag_spirv, sizeof(shadow_frag_spirv),
+        shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl,   shadow_frag_msl_size,
+        0, 0, 0, 0);
+
+    if (!inst_vs || !inst_shadow_vs || !shadow_fs) {
+        SDL_Log("forge_scene: instanced shader creation failed");
+        if (inst_vs)        SDL_ReleaseGPUShader(scene->device, inst_vs);
+        if (inst_shadow_vs) SDL_ReleaseGPUShader(scene->device, inst_shadow_vs);
+        if (shadow_fs)      SDL_ReleaseGPUShader(scene->device, shadow_fs);
+        return;
+    }
+
+    /* Vertex layout: slot 0 = per-vertex (24-byte), slot 1 = per-instance (64-byte) */
+    SDL_GPUVertexBufferDescription vb_descs[2];
+    SDL_zero(vb_descs);
+    vb_descs[0].slot       = 0;
+    vb_descs[0].pitch      = sizeof(ForgeSceneVertex);
+    vb_descs[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    vb_descs[1].slot       = 1;
+    vb_descs[1].pitch      = sizeof(mat4);
+    vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+    vb_descs[1].instance_step_rate = 1;
+
+    SDL_GPUVertexAttribute attrs[6];
+    SDL_zero(attrs);
+    /* Slot 0: position (float3) */
+    attrs[0].location    = 0;
+    attrs[0].buffer_slot = 0;
+    attrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    attrs[0].offset      = 0;
+    /* Slot 0: normal (float3) */
+    attrs[1].location    = 1;
+    attrs[1].buffer_slot = 0;
+    attrs[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    attrs[1].offset      = sizeof(float) * 3;
+    /* Slot 1: model_c0..c3 (4 × float4) */
+    for (int i = 0; i < 4; i++) {
+        attrs[2 + i].location    = (Uint32)(2 + i);
+        attrs[2 + i].buffer_slot = 1;
+        attrs[2 + i].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        attrs[2 + i].offset      = (Uint32)(sizeof(float) * 4 * i);
+    }
+
+    SDL_GPUVertexInputState vi;
+    SDL_zero(vi);
+    vi.vertex_buffer_descriptions = vb_descs;
+    vi.num_vertex_buffers         = 2;
+    vi.vertex_attributes          = attrs;
+    vi.num_vertex_attributes      = 6;
+
+    /* Main instanced pipeline: Blinn-Phong with shadow, back-face cull.
+     * Reuses scene.frag.hlsl (same fragment shader as non-instanced). */
+    scene->instanced_pipeline = forge_scene__create_scene_pipeline(
+        scene, inst_vs, scene->scene_fs, vi,
+        SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
+    if (!scene->instanced_pipeline)
+        SDL_Log("forge_scene: instanced pipeline creation failed: %s",
+                SDL_GetError());
+
+    /* Instanced shadow pipeline: depth-only, no cull, depth bias.
+     * Shadow layout uses only position + instance matrix (5 attrs). */
+    SDL_GPUVertexAttribute shadow_attrs[5];
+    SDL_zero(shadow_attrs);
+    shadow_attrs[0].location    = 0;
+    shadow_attrs[0].buffer_slot = 0;
+    shadow_attrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    shadow_attrs[0].offset      = 0;
+    for (int i = 0; i < 4; i++) {
+        shadow_attrs[1 + i].location    = (Uint32)(1 + i);
+        shadow_attrs[1 + i].buffer_slot = 1;
+        shadow_attrs[1 + i].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        shadow_attrs[1 + i].offset      = (Uint32)(sizeof(float) * 4 * i);
+    }
+
+    SDL_GPUVertexInputState shadow_vi;
+    SDL_zero(shadow_vi);
+    shadow_vi.vertex_buffer_descriptions = vb_descs;
+    shadow_vi.num_vertex_buffers         = 2;
+    shadow_vi.vertex_attributes          = shadow_attrs;
+    shadow_vi.num_vertex_attributes      = 5;
+
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader   = inst_shadow_vs;
+        pi.fragment_shader = shadow_fs;
+        pi.vertex_input_state = shadow_vi;
+        pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.enable_depth_bias = true;
+        pi.rasterizer_state.depth_bias_constant_factor =
+            FORGE_SCENE_SHADOW_BIAS_CONST;
+        pi.rasterizer_state.depth_bias_slope_factor =
+            FORGE_SCENE_SHADOW_BIAS_SLOPE;
+        pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.depth_stencil_state.enable_stencil_test = false;
+        pi.target_info.num_color_targets         = 0;
+        pi.target_info.depth_stencil_format      = scene->shadow_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->instanced_shadow_pipeline =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->instanced_shadow_pipeline)
+            SDL_Log("forge_scene: instanced shadow pipeline failed: %s",
+                    SDL_GetError());
+    }
+
+    /* Release shaders — pipelines hold internal references */
+    SDL_ReleaseGPUShader(scene->device, inst_vs);
+    SDL_ReleaseGPUShader(scene->device, inst_shadow_vs);
+    SDL_ReleaseGPUShader(scene->device, shadow_fs);
+
+    /* Only mark ready if both pipelines succeeded.  On partial failure,
+     * release the one that was created so the next call can retry cleanly. */
+    if (scene->instanced_pipeline && scene->instanced_shadow_pipeline) {
+        scene->instanced_pipelines_ready = true;
+    } else {
+        if (scene->instanced_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                                            scene->instanced_pipeline);
+            scene->instanced_pipeline = NULL;
+        }
+        if (scene->instanced_shadow_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                                            scene->instanced_shadow_pipeline);
+            scene->instanced_shadow_pipeline = NULL;
+        }
+    }
+}
+
+static void forge_scene_draw_mesh_instanced(ForgeScene *scene,
+                                             SDL_GPUBuffer *vb,
+                                             SDL_GPUBuffer *ib,
+                                             Uint32 index_count,
+                                             SDL_GPUBuffer *instance_buffer,
+                                             Uint32 instance_count,
+                                             const float base_color[4])
+{
+    if (!scene->pass || !vb || !ib || !instance_buffer ||
+        index_count == 0 || instance_count == 0) return;
+
+    if (!scene->instanced_pipelines_ready)
+        forge_scene__init_instanced_pipelines(scene);
+    if (!scene->instanced_pipeline) return;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->instanced_pipeline);
+
+    /* Shadow map at fragment sampler slot 0 */
+    SDL_GPUTextureSamplerBinding shadow_bind = {
+        scene->shadow_map, scene->shadow_sampler
+    };
+    SDL_BindGPUFragmentSamplers(scene->pass, 0, &shadow_bind, 1);
+
+    /* Slot 0: mesh vertices, Slot 1: instance transforms */
+    SDL_GPUBufferBinding vb_binds[2] = {
+        { vb, 0 }, { instance_buffer, 0 }
+    };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+
+    SDL_GPUBufferBinding idx_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &idx_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    /* Vertex uniforms: VP + light_vp + node_world (192 bytes).
+     * Simple meshes have no node hierarchy, so node_world = identity. */
+    ForgeSceneInstancedVertUniforms vu;
+    vu.vp         = scene->cam_vp;
+    vu.light_vp   = scene->light_vp;
+    vu.node_world = mat4_identity();
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+    /* Fragment uniforms: same Blinn-Phong as non-instanced */
+    ForgeSceneFragUniforms fu;
+    SDL_memset(&fu, 0, sizeof(fu));
+    fu.base_color[0]   = base_color[0];
+    fu.base_color[1]   = base_color[1];
+    fu.base_color[2]   = base_color[2];
+    fu.base_color[3]   = base_color[3];
+    fu.eye_pos[0]      = scene->cam_position.x;
+    fu.eye_pos[1]      = scene->cam_position.y;
+    fu.eye_pos[2]      = scene->cam_position.z;
+    fu.ambient         = scene->config.ambient;
+    fu.light_dir[0]    = scene->light_dir.x;
+    fu.light_dir[1]    = scene->light_dir.y;
+    fu.light_dir[2]    = scene->light_dir.z;
+    fu.light_dir[3]    = 0.0f;
+    fu.light_color[0]  = scene->config.light_color[0];
+    fu.light_color[1]  = scene->config.light_color[1];
+    fu.light_color[2]  = scene->config.light_color[2];
+    fu.light_intensity = scene->config.light_intensity;
+    fu.shininess       = scene->config.shininess;
+    fu.specular_str    = scene->config.specular_str;
+    SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, instance_count,
+                                  0, 0, 0);
+}
+
+/* ── Debug lines ───────────────────────────────────────────────────────── */
+
+/* Internal: ensure debug CPU array has room for count more vertices.
+ * Returns true on success, false if allocation failed. */
+static bool forge_scene__debug_ensure_capacity(
+    ForgeSceneDebugVertex **array, Uint32 *capacity, Uint32 current, Uint32 count)
+{
+    Uint32 needed = current + count;
+    if (needed < current) return false; /* overflow */
+    if (needed <= *capacity) return true;
+
+    Uint32 new_cap = *capacity ? *capacity : FORGE_SCENE_DEBUG_VB_INITIAL_CAPACITY;
+    while (new_cap < needed) {
+        Uint32 next = new_cap * 2;
+        if (next <= new_cap) return false; /* overflow */
+        new_cap = next;
+    }
+
+    ForgeSceneDebugVertex *new_arr = (ForgeSceneDebugVertex *)SDL_realloc(
+        *array, new_cap * sizeof(ForgeSceneDebugVertex));
+    if (!new_arr) {
+        SDL_Log("forge_scene: debug vertex realloc failed (%u vertices)", new_cap);
+        return false;
+    }
+    *array    = new_arr;
+    *capacity = new_cap;
+    return true;
+}
+
+static void forge_scene_debug_line(ForgeScene *scene,
+                                    vec3 a, vec3 b, vec4 color, bool overlay)
+{
+    if (!scene) return;
+
+    ForgeSceneDebugVertex *arr;
+    Uint32 *count;
+    if (overlay) {
+        if (!forge_scene__debug_ensure_capacity(
+                &scene->debug_overlay_vertices, &scene->debug_overlay_capacity,
+                scene->debug_overlay_count, 2))
+            return;
+        arr   = scene->debug_overlay_vertices;
+        count = &scene->debug_overlay_count;
+    } else {
+        if (!forge_scene__debug_ensure_capacity(
+                &scene->debug_world_vertices, &scene->debug_world_capacity,
+                scene->debug_world_count, 2))
+            return;
+        arr   = scene->debug_world_vertices;
+        count = &scene->debug_world_count;
+    }
+
+    ForgeSceneDebugVertex va;
+    va.position[0] = a.x; va.position[1] = a.y; va.position[2] = a.z;
+    va.color[0] = color.x; va.color[1] = color.y; va.color[2] = color.z; va.color[3] = color.w;
+    ForgeSceneDebugVertex vb_vert;
+    vb_vert.position[0] = b.x; vb_vert.position[1] = b.y; vb_vert.position[2] = b.z;
+    vb_vert.color[0] = color.x; vb_vert.color[1] = color.y; vb_vert.color[2] = color.z; vb_vert.color[3] = color.w;
+    arr[*count]     = va;
+    arr[*count + 1] = vb_vert;
+    *count += 2;
+}
+
+static void forge_scene_debug_box(ForgeScene *scene,
+                                   vec3 center, vec3 half_extents,
+                                   vec4 color, bool overlay)
+{
+    float hx = half_extents.x, hy = half_extents.y, hz = half_extents.z;
+    /* 8 corners */
+    vec3 c[8];
+    c[0] = vec3_create(center.x - hx, center.y - hy, center.z - hz);
+    c[1] = vec3_create(center.x + hx, center.y - hy, center.z - hz);
+    c[2] = vec3_create(center.x + hx, center.y + hy, center.z - hz);
+    c[3] = vec3_create(center.x - hx, center.y + hy, center.z - hz);
+    c[4] = vec3_create(center.x - hx, center.y - hy, center.z + hz);
+    c[5] = vec3_create(center.x + hx, center.y - hy, center.z + hz);
+    c[6] = vec3_create(center.x + hx, center.y + hy, center.z + hz);
+    c[7] = vec3_create(center.x - hx, center.y + hy, center.z + hz);
+    /* 12 edges */
+    int edges[][2] = {
+        {0,1},{1,2},{2,3},{3,0},  /* near face (z - hz)  */
+        {4,5},{5,6},{6,7},{7,4},  /* far face  (z + hz)  */
+        {0,4},{1,5},{2,6},{3,7},  /* connecting edges    */
+    };
+    for (int i = 0; i < 12; i++)
+        forge_scene_debug_line(scene, c[edges[i][0]], c[edges[i][1]],
+                               color, overlay);
+}
+
+static void forge_scene_debug_circle(ForgeScene *scene,
+                                      vec3 center, float radius, vec3 axis,
+                                      vec4 color, int segments, bool overlay)
+{
+    if (segments < FORGE_SCENE_DEBUG_MIN_SEGMENTS)
+        segments = FORGE_SCENE_DEBUG_MIN_SEGMENTS;
+
+    /* Build an orthonormal basis from axis.
+     * Guard against zero-length axis to avoid degenerate normalize. */
+    if (vec3_length(axis) < FORGE_SCENE_LIGHT_DIR_EPSILON)
+        axis = vec3_create(0.0f, 1.0f, 0.0f);
+    vec3 n = vec3_normalize(axis);
+    vec3 up = (SDL_fabsf(n.y) < FORGE_SCENE_DEBUG_AXIS_PARALLEL_COS)
+        ? vec3_create(0.0f, 1.0f, 0.0f)
+        : vec3_create(1.0f, 0.0f, 0.0f);
+    vec3 u = vec3_normalize(vec3_cross(up, n));
+    vec3 v = vec3_cross(n, u);
+
+    float step = 2.0f * FORGE_PI / (float)segments;
+    vec3 prev;
+    for (int i = 0; i <= segments; i++) {
+        float angle = step * (float)i;
+        float cs = SDL_cosf(angle) * radius;
+        float sn = SDL_sinf(angle) * radius;
+        vec3 p = vec3_add(center,
+            vec3_add(vec3_scale(u, cs), vec3_scale(v, sn)));
+        if (i > 0)
+            forge_scene_debug_line(scene, prev, p, color, overlay);
+        prev = p;
+    }
+}
+
+static void forge_scene_debug_axes(ForgeScene *scene,
+                                    vec3 origin, float length, bool overlay)
+{
+    vec4 red   = vec4_create(1.0f, 0.2f, 0.2f, 1.0f);
+    vec4 green = vec4_create(0.2f, 1.0f, 0.2f, 1.0f);
+    vec4 blue  = vec4_create(0.3f, 0.3f, 1.0f, 1.0f);
+    forge_scene_debug_line(scene, origin,
+        vec3_add(origin, vec3_create(length, 0, 0)), red, overlay);
+    forge_scene_debug_line(scene, origin,
+        vec3_add(origin, vec3_create(0, length, 0)), green, overlay);
+    forge_scene_debug_line(scene, origin,
+        vec3_add(origin, vec3_create(0, 0, length)), blue, overlay);
+}
+
+static void forge_scene_debug_sphere(ForgeScene *scene,
+                                      vec3 center, float radius,
+                                      vec4 color, int rings, bool overlay)
+{
+    if (rings < FORGE_SCENE_DEBUG_MIN_SEGMENTS)
+        rings = FORGE_SCENE_DEBUG_MIN_SEGMENTS;
+    /* Three perpendicular great circles */
+    vec3 x_axis = vec3_create(1.0f, 0.0f, 0.0f);
+    vec3 y_axis = vec3_create(0.0f, 1.0f, 0.0f);
+    vec3 z_axis = vec3_create(0.0f, 0.0f, 1.0f);
+    forge_scene_debug_circle(scene, center, radius, x_axis, color, rings, overlay);
+    forge_scene_debug_circle(scene, center, radius, y_axis, color, rings, overlay);
+    forge_scene_debug_circle(scene, center, radius, z_axis, color, rings, overlay);
+}
+
+/* Internal: lazy-init debug line pipelines and GPU buffer */
+static void forge_scene__init_debug_pipelines(ForgeScene *scene)
+{
+    if (scene->debug_ready) return;
+
+    SDL_GPUShader *debug_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        debug_vert_spirv, debug_vert_spirv_size,
+        debug_vert_dxil,  debug_vert_dxil_size,
+        debug_vert_msl,   debug_vert_msl_size,
+        0, 0, 0, 1);
+
+    SDL_GPUShader *debug_fs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_FRAGMENT,
+        debug_frag_spirv, debug_frag_spirv_size,
+        debug_frag_dxil,  debug_frag_dxil_size,
+        debug_frag_msl,   debug_frag_msl_size,
+        0, 0, 0, 0);
+
+    if (!debug_vs || !debug_fs) {
+        SDL_Log("forge_scene: debug shader creation failed");
+        if (debug_vs) SDL_ReleaseGPUShader(scene->device, debug_vs);
+        if (debug_fs) SDL_ReleaseGPUShader(scene->device, debug_fs);
+        return;
+    }
+
+    /* Vertex layout: position (float3) + color (float4) = 28 bytes */
+    SDL_GPUVertexBufferDescription vb_desc;
+    SDL_zero(vb_desc);
+    vb_desc.slot       = 0;
+    vb_desc.pitch      = sizeof(ForgeSceneDebugVertex);
+    vb_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+    SDL_GPUVertexAttribute debug_attrs[2];
+    SDL_zero(debug_attrs);
+    debug_attrs[0].location    = 0;
+    debug_attrs[0].buffer_slot = 0;
+    debug_attrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    debug_attrs[0].offset      = 0;
+    debug_attrs[1].location    = 1;
+    debug_attrs[1].buffer_slot = 0;
+    debug_attrs[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+    debug_attrs[1].offset      = sizeof(float) * 3;
+
+    SDL_GPUVertexInputState vi;
+    SDL_zero(vi);
+    vi.vertex_buffer_descriptions = &vb_desc;
+    vi.num_vertex_buffers         = 1;
+    vi.vertex_attributes          = debug_attrs;
+    vi.num_vertex_attributes      = 2;
+
+    SDL_GPUColorTargetDescription ctd;
+    SDL_zero(ctd);
+    ctd.format = scene->swapchain_fmt;
+
+    /* World pipeline: depth test ON, depth write ON */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader   = debug_vs;
+        pi.fragment_shader = debug_fs;
+        pi.vertex_input_state = vi;
+        pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_LINELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.depth_stencil_state.enable_stencil_test = false;
+        pi.target_info.color_target_descriptions  = &ctd;
+        pi.target_info.num_color_targets          = 1;
+        pi.target_info.depth_stencil_format       = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target   = true;
+        scene->debug_world_pipeline =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->debug_world_pipeline)
+            SDL_Log("forge_scene: debug world pipeline failed: %s",
+                    SDL_GetError());
+    }
+
+    /* Overlay pipeline: depth test OFF, depth write OFF */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader   = debug_vs;
+        pi.fragment_shader = debug_fs;
+        pi.vertex_input_state = vi;
+        pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_LINELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_ALWAYS;
+        pi.depth_stencil_state.enable_depth_test  = false;
+        pi.depth_stencil_state.enable_depth_write = false;
+        pi.depth_stencil_state.enable_stencil_test = false;
+        pi.target_info.color_target_descriptions  = &ctd;
+        pi.target_info.num_color_targets          = 1;
+        pi.target_info.depth_stencil_format       = scene->depth_fmt;
+        pi.target_info.has_depth_stencil_target   = true;
+        scene->debug_overlay_pipeline =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->debug_overlay_pipeline)
+            SDL_Log("forge_scene: debug overlay pipeline failed: %s",
+                    SDL_GetError());
+    }
+
+    SDL_ReleaseGPUShader(scene->device, debug_vs);
+    SDL_ReleaseGPUShader(scene->device, debug_fs);
+
+    /* Only mark ready if both pipelines succeeded.  On partial failure,
+     * release the one that was created so the next call can retry. */
+    if (scene->debug_world_pipeline && scene->debug_overlay_pipeline) {
+        scene->debug_ready = true;
+    } else {
+        if (scene->debug_world_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                                            scene->debug_world_pipeline);
+            scene->debug_world_pipeline = NULL;
+        }
+        if (scene->debug_overlay_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                                            scene->debug_overlay_pipeline);
+            scene->debug_overlay_pipeline = NULL;
+        }
+    }
+}
+
+static void forge_scene_draw_debug_lines(ForgeScene *scene)
+{
+    if (!scene || !scene->cmd || !scene->pass) return;
+
+    Uint32 world_count   = scene->debug_world_count;
+    Uint32 overlay_count = scene->debug_overlay_count;
+    Uint32 total_count   = world_count + overlay_count;
+    if (total_count == 0) return;
+    if (total_count < world_count) goto reset; /* overflow */
+
+    if (!scene->debug_ready)
+        forge_scene__init_debug_pipelines(scene);
+    if (!scene->debug_world_pipeline && !scene->debug_overlay_pipeline) goto reset;
+
+    /* Grow GPU buffer if needed */
+    if (total_count > UINT32_MAX / (Uint32)sizeof(ForgeSceneDebugVertex))
+        goto reset; /* overflow */
+    Uint32 needed_bytes = total_count * (Uint32)sizeof(ForgeSceneDebugVertex);
+    if (needed_bytes > scene->debug_vb_capacity) {
+        /* Allocate-then-swap: create the new buffer before releasing the old
+         * one, so scene->debug_vb never points at freed memory on failure. */
+        SDL_GPUBufferCreateInfo bci;
+        SDL_zero(bci);
+        bci.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+        bci.size  = needed_bytes;
+        SDL_GPUBuffer *new_vb = SDL_CreateGPUBuffer(scene->device, &bci);
+        if (!new_vb) {
+            SDL_Log("forge_scene: debug VB creation failed: %s", SDL_GetError());
+            goto reset;
+        }
+        if (scene->debug_vb)
+            SDL_ReleaseGPUBuffer(scene->device, scene->debug_vb);
+        scene->debug_vb = new_vb;
+        scene->debug_vb_capacity = needed_bytes;
+    }
+
+    /* End current render pass to do the upload */
+    if (scene->pass) {
+        SDL_EndGPURenderPass(scene->pass);
+        scene->pass = NULL;
+    }
+
+    /* Upload via transfer buffer */
+    bool upload_ok = false;
+    {
+        SDL_GPUTransferBufferCreateInfo tbci;
+        SDL_zero(tbci);
+        tbci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tbci.size  = needed_bytes;
+        SDL_GPUTransferBuffer *tb =
+            SDL_CreateGPUTransferBuffer(scene->device, &tbci);
+        if (!tb) {
+            SDL_Log("forge_scene: debug transfer buffer failed: %s",
+                    SDL_GetError());
+            goto reopen;
+        }
+
+        void *mapped = SDL_MapGPUTransferBuffer(scene->device, tb, false);
+        if (!mapped) {
+            SDL_Log("forge_scene: debug transfer map failed: %s",
+                    SDL_GetError());
+            SDL_ReleaseGPUTransferBuffer(scene->device, tb);
+            goto reopen;
+        }
+
+        /* Copy world vertices first, then overlay */
+        if (world_count > 0)
+            SDL_memcpy(mapped, scene->debug_world_vertices,
+                       world_count * sizeof(ForgeSceneDebugVertex));
+        if (overlay_count > 0)
+            SDL_memcpy((Uint8 *)mapped + world_count * sizeof(ForgeSceneDebugVertex),
+                       scene->debug_overlay_vertices,
+                       overlay_count * sizeof(ForgeSceneDebugVertex));
+
+        SDL_UnmapGPUTransferBuffer(scene->device, tb);
+
+        SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(scene->cmd);
+        if (copy) {
+            SDL_GPUTransferBufferLocation src = { tb, 0 };
+            SDL_GPUBufferRegion dst = { scene->debug_vb, 0, needed_bytes };
+            SDL_UploadToGPUBuffer(copy, &src, &dst, false);
+            SDL_EndGPUCopyPass(copy);
+            upload_ok = true;
+        } else {
+            SDL_Log("forge_scene: debug copy pass failed: %s",
+                    SDL_GetError());
+            SDL_ReleaseGPUTransferBuffer(scene->device, tb);
+            goto reopen;
+        }
+        SDL_ReleaseGPUTransferBuffer(scene->device, tb);
+    }
+
+reopen:
+    /* Re-open the main render pass with LOAD (preserve color + depth) */
+    {
+        SDL_GPUColorTargetInfo color_target;
+        SDL_zero(color_target);
+        color_target.texture  = scene->swapchain;
+        color_target.load_op  = SDL_GPU_LOADOP_LOAD;
+        color_target.store_op = SDL_GPU_STOREOP_STORE;
+
+        SDL_GPUDepthStencilTargetInfo depth_target;
+        SDL_zero(depth_target);
+        depth_target.texture     = scene->depth_texture;
+        depth_target.load_op     = SDL_GPU_LOADOP_LOAD;
+        depth_target.store_op    = SDL_GPU_STOREOP_STORE;
+        depth_target.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
+        depth_target.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+        scene->pass = SDL_BeginGPURenderPass(
+            scene->cmd, &color_target, 1, &depth_target);
+        if (!scene->pass) {
+            SDL_Log("forge_scene: debug pass reopen failed: %s",
+                    SDL_GetError());
+            goto reset;
+        }
+
+        SDL_GPUViewport vp = {
+            0, 0, (float)scene->sw, (float)scene->sh, 0.0f, 1.0f
+        };
+        SDL_SetGPUViewport(scene->pass, &vp);
+        SDL_SetGPUScissor(scene->pass,
+            &(SDL_Rect){ 0, 0, (int)scene->sw, (int)scene->sh });
+    }
+
+    /* Draw world lines (depth-tested) — only if upload succeeded */
+    if (upload_ok && world_count > 0 && scene->debug_world_pipeline) {
+        SDL_BindGPUGraphicsPipeline(scene->pass, scene->debug_world_pipeline);
+        SDL_GPUBufferBinding vb_bind = { scene->debug_vb, 0 };
+        SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+
+        ForgeSceneDebugVertUniforms du;
+        du.vp = scene->cam_vp;
+        SDL_PushGPUVertexUniformData(scene->cmd, 0, &du, sizeof(du));
+
+        SDL_DrawGPUPrimitives(scene->pass, world_count, 1, 0, 0);
+    }
+
+    /* Draw overlay lines (always on top) — only if upload succeeded */
+    if (upload_ok && overlay_count > 0 && scene->debug_overlay_pipeline) {
+        SDL_BindGPUGraphicsPipeline(scene->pass, scene->debug_overlay_pipeline);
+        SDL_GPUBufferBinding vb_bind = { scene->debug_vb, 0 };
+        SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+
+        ForgeSceneDebugVertUniforms du;
+        du.vp = scene->cam_vp;
+        SDL_PushGPUVertexUniformData(scene->cmd, 0, &du, sizeof(du));
+
+        SDL_DrawGPUPrimitives(scene->pass, overlay_count, 1, world_count, 0);
+    }
+
+reset:
+    scene->debug_world_count   = 0;
+    scene->debug_overlay_count = 0;
 }
 
 /* ── Grid floor ────────────────────────────────────────────────────────── */
@@ -3457,6 +4316,22 @@ static void forge_scene_destroy(ForgeScene *scene)
     if (scene->textured_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->textured_pipeline);
 
+    /* Instanced mesh pipelines */
+    if (scene->instanced_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->instanced_pipeline);
+    if (scene->instanced_shadow_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->instanced_shadow_pipeline);
+
+    /* Debug line resources */
+    if (scene->debug_world_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->debug_world_pipeline);
+    if (scene->debug_overlay_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->debug_overlay_pipeline);
+    if (scene->debug_vb)
+        SDL_ReleaseGPUBuffer(scene->device, scene->debug_vb);
+    SDL_free(scene->debug_world_vertices);
+    SDL_free(scene->debug_overlay_vertices);
+
     /* Scene shaders (kept alive for forge_scene_create_pipeline) */
     if (scene->scene_vs)
         SDL_ReleaseGPUShader(scene->device, scene->scene_vs);
@@ -3512,6 +4387,20 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->morph_shadow_pipeline);
     if (scene->skinned_shadow_mask_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->skinned_shadow_mask_pipeline);
+
+    /* Instanced model pipelines */
+    if (scene->model_instanced_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_instanced_pipeline);
+    if (scene->model_instanced_pipeline_blend)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_instanced_pipeline_blend);
+    if (scene->model_instanced_pipeline_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_instanced_pipeline_double);
+    if (scene->model_instanced_pipeline_blend_double)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_instanced_pipeline_blend_double);
+    if (scene->model_instanced_shadow_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_instanced_shadow_pipeline);
+    if (scene->model_instanced_shadow_mask_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->model_instanced_shadow_mask_pipeline);
 #endif
 
     /* Window — release claim first, then destroy.
@@ -5025,6 +5914,529 @@ static void forge_scene_draw_model_shadows(ForgeScene *scene,
                 (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
             SDL_DrawGPUIndexedPrimitives(scene->pass,
                 sub->index_count, 1, first_index, 0, 0);
+        }
+    }
+}
+
+/* ── Instanced model pipelines + draw ───────────────────────────────────── */
+
+static void forge_scene__init_model_instanced_pipelines(ForgeScene *scene)
+{
+    if (scene->model_instanced_pipelines_ready) return;
+
+    /* Ensure base model resources (samplers, fallback textures) are ready.
+     * Do not set the ready flag — allows retry on next call. */
+    if (!scene->model_pipelines_ready) return;
+
+    /* Create instanced model vertex shader */
+    SDL_GPUShader *inst_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_model_instanced_vert_spirv, scene_model_instanced_vert_spirv_size,
+        scene_model_instanced_vert_dxil,  scene_model_instanced_vert_dxil_size,
+        scene_model_instanced_vert_msl,   scene_model_instanced_vert_msl_size,
+        0, 0, 0, 1);
+
+    /* Create instanced model shadow vertex shader */
+    SDL_GPUShader *inst_shadow_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_model_instanced_shadow_vert_spirv,
+        scene_model_instanced_shadow_vert_spirv_size,
+        scene_model_instanced_shadow_vert_dxil,
+        scene_model_instanced_shadow_vert_dxil_size,
+        scene_model_instanced_shadow_vert_msl,
+        scene_model_instanced_shadow_vert_msl_size,
+        0, 0, 0, 1);
+
+    /* Shadow fragment shader — SDL3 requires non-NULL even for depth-only. */
+    SDL_GPUShader *shadow_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        shadow_frag_spirv, sizeof(shadow_frag_spirv),
+        shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl,   shadow_frag_msl_size,
+        0, 0, 0, 0);
+
+    if (!inst_vs || !inst_shadow_vs || !shadow_fs) {
+        SDL_Log("forge_scene: instanced model shader creation failed");
+        if (inst_vs)        SDL_ReleaseGPUShader(scene->device, inst_vs);
+        if (inst_shadow_vs) SDL_ReleaseGPUShader(scene->device, inst_shadow_vs);
+        if (shadow_fs)      SDL_ReleaseGPUShader(scene->device, shadow_fs);
+        return;
+    }
+
+    /* Reuse the model fragment shader from the regular model pipelines.
+     * We need a reference to it — create a fresh one for pipeline creation. */
+    SDL_GPUShader *model_fs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_FRAGMENT,
+        scene_model_frag_spirv, scene_model_frag_spirv_size,
+        scene_model_frag_dxil,  scene_model_frag_dxil_size,
+        scene_model_frag_msl,   scene_model_frag_msl_size,
+        6, 0, 0, 1);  /* 6 samplers: shadow_cmp + base + normal + mr + occ + emissive */
+
+    if (!model_fs) {
+        SDL_Log("forge_scene: instanced model fragment shader failed");
+        SDL_ReleaseGPUShader(scene->device, inst_vs);
+        SDL_ReleaseGPUShader(scene->device, inst_shadow_vs);
+        SDL_ReleaseGPUShader(scene->device, shadow_fs);
+        return;
+    }
+
+    /* Vertex layout: slot 0 = model vertex (48-byte), slot 1 = instance (64-byte) */
+    SDL_GPUVertexBufferDescription vb_descs[2];
+    SDL_zero(vb_descs);
+    vb_descs[0].slot       = 0;
+    vb_descs[0].pitch      = sizeof(ForgeSceneModelVertex);
+    vb_descs[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    vb_descs[1].slot       = 1;
+    vb_descs[1].pitch      = sizeof(mat4);
+    vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+    vb_descs[1].instance_step_rate = 1;
+
+    SDL_GPUVertexAttribute attrs[8];
+    SDL_zero(attrs);
+    /* Slot 0: position (float3) */
+    attrs[0].location = 0; attrs[0].buffer_slot = 0;
+    attrs[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    attrs[0].offset = 0;
+    /* Slot 0: normal (float3) */
+    attrs[1].location = 1; attrs[1].buffer_slot = 0;
+    attrs[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    attrs[1].offset = sizeof(float) * 3;
+    /* Slot 0: uv (float2) */
+    attrs[2].location = 2; attrs[2].buffer_slot = 0;
+    attrs[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    attrs[2].offset = sizeof(float) * 6;
+    /* Slot 0: tangent (float4) */
+    attrs[3].location = 3; attrs[3].buffer_slot = 0;
+    attrs[3].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+    attrs[3].offset = sizeof(float) * 8;
+    /* Slot 1: instance model_c0..c3 (4 × float4) */
+    for (int i = 0; i < 4; i++) {
+        attrs[4 + i].location    = (Uint32)(4 + i);
+        attrs[4 + i].buffer_slot = 1;
+        attrs[4 + i].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        attrs[4 + i].offset      = (Uint32)(sizeof(float) * 4 * i);
+    }
+
+    SDL_GPUVertexInputState vi;
+    SDL_zero(vi);
+    vi.vertex_buffer_descriptions = vb_descs;
+    vi.num_vertex_buffers         = 2;
+    vi.vertex_attributes          = attrs;
+    vi.num_vertex_attributes      = 8;
+
+    /* Helper: create a model instanced pipeline with given blend/cull state */
+    #define FORGE__CREATE_MODEL_INST_PIPELINE(out, cull, has_blend, write_depth) do { \
+        SDL_GPUColorTargetDescription ctd;                                           \
+        SDL_zero(ctd);                                                               \
+        ctd.format = scene->swapchain_fmt;                                           \
+        if (has_blend) {                                                             \
+            ctd.blend_state.enable_blend = true;                                     \
+            ctd.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;   \
+            ctd.blend_state.dst_color_blendfactor =                                  \
+                SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;                             \
+            ctd.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;                    \
+            ctd.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;         \
+            ctd.blend_state.dst_alpha_blendfactor =                                  \
+                SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;                             \
+            ctd.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;                    \
+        }                                                                            \
+        SDL_GPUGraphicsPipelineCreateInfo pi;                                        \
+        SDL_zero(pi);                                                                \
+        pi.vertex_shader   = inst_vs;                                                \
+        pi.fragment_shader = model_fs;                                               \
+        pi.vertex_input_state = vi;                                                  \
+        pi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;                      \
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;                      \
+        pi.rasterizer_state.cull_mode  = (cull);                                     \
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;        \
+        pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;          \
+        pi.depth_stencil_state.enable_depth_test  = true;                            \
+        pi.depth_stencil_state.enable_depth_write = (write_depth);                   \
+        pi.depth_stencil_state.enable_stencil_test = false;                          \
+        pi.target_info.color_target_descriptions  = &ctd;                            \
+        pi.target_info.num_color_targets          = 1;                               \
+        pi.target_info.depth_stencil_format       = scene->depth_fmt;                \
+        pi.target_info.has_depth_stencil_target   = true;                            \
+        (out) = SDL_CreateGPUGraphicsPipeline(scene->device, &pi);                   \
+        if (!(out)) SDL_Log("forge_scene: model instanced pipeline failed: %s",      \
+                            SDL_GetError());                                          \
+    } while (0)
+
+    FORGE__CREATE_MODEL_INST_PIPELINE(scene->model_instanced_pipeline,
+        SDL_GPU_CULLMODE_BACK, false, true);
+    FORGE__CREATE_MODEL_INST_PIPELINE(scene->model_instanced_pipeline_blend,
+        SDL_GPU_CULLMODE_BACK, true, false);
+    FORGE__CREATE_MODEL_INST_PIPELINE(scene->model_instanced_pipeline_double,
+        SDL_GPU_CULLMODE_NONE, false, true);
+    FORGE__CREATE_MODEL_INST_PIPELINE(scene->model_instanced_pipeline_blend_double,
+        SDL_GPU_CULLMODE_NONE, true, false);
+
+    #undef FORGE__CREATE_MODEL_INST_PIPELINE
+
+    /* Shadow pipelines for instanced models */
+    /* Shadow vertex layout: position + uv + instance matrix (6 attrs) */
+    SDL_GPUVertexAttribute shadow_attrs[6];
+    SDL_zero(shadow_attrs);
+    shadow_attrs[0].location = 0; shadow_attrs[0].buffer_slot = 0;
+    shadow_attrs[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    shadow_attrs[0].offset = 0;
+    shadow_attrs[1].location = 1; shadow_attrs[1].buffer_slot = 0;
+    shadow_attrs[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    shadow_attrs[1].offset = sizeof(float) * 6;  /* uv at offset 24 */
+    for (int i = 0; i < 4; i++) {
+        shadow_attrs[2 + i].location    = (Uint32)(2 + i);
+        shadow_attrs[2 + i].buffer_slot = 1;
+        shadow_attrs[2 + i].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        shadow_attrs[2 + i].offset      = (Uint32)(sizeof(float) * 4 * i);
+    }
+
+    SDL_GPUVertexInputState shadow_vi;
+    SDL_zero(shadow_vi);
+    shadow_vi.vertex_buffer_descriptions = vb_descs;
+    shadow_vi.num_vertex_buffers         = 2;
+    shadow_vi.vertex_attributes          = shadow_attrs;
+    shadow_vi.num_vertex_attributes      = 6;
+
+    /* Opaque shadow pipeline */
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader   = inst_shadow_vs;
+        pi.fragment_shader = shadow_fs;
+        pi.vertex_input_state = shadow_vi;
+        pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.enable_depth_bias = true;
+        pi.rasterizer_state.depth_bias_constant_factor =
+            FORGE_SCENE_SHADOW_BIAS_CONST;
+        pi.rasterizer_state.depth_bias_slope_factor =
+            FORGE_SCENE_SHADOW_BIAS_SLOPE;
+        pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.depth_stencil_state.enable_stencil_test = false;
+        pi.target_info.num_color_targets         = 0;
+        pi.target_info.depth_stencil_format      = scene->shadow_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->model_instanced_shadow_pipeline =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->model_instanced_shadow_pipeline)
+            SDL_Log("forge_scene: model instanced shadow pipeline failed: %s",
+                    SDL_GetError());
+    }
+
+    /* MASK shadow pipeline — reuse shadow_mask.frag.hlsl.
+     * The instanced shadow VS outputs UV for alpha test. */
+    {
+        /* Get the shadow mask fragment shader (same as non-instanced) */
+        SDL_GPUShader *mask_fs = forge_scene_create_shader(
+            scene, SDL_GPU_SHADERSTAGE_FRAGMENT,
+            shadow_mask_frag_spirv, shadow_mask_frag_spirv_size,
+            shadow_mask_frag_dxil,  shadow_mask_frag_dxil_size,
+            shadow_mask_frag_msl,   shadow_mask_frag_msl_size,
+            1, 0, 0, 1);
+
+        if (mask_fs) {
+            SDL_GPUGraphicsPipelineCreateInfo pi;
+            SDL_zero(pi);
+            pi.vertex_shader   = inst_shadow_vs;
+            pi.fragment_shader = mask_fs;
+            pi.vertex_input_state = shadow_vi;
+            pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+            pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+            pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+            pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+            pi.rasterizer_state.enable_depth_bias = true;
+            pi.rasterizer_state.depth_bias_constant_factor =
+                FORGE_SCENE_SHADOW_BIAS_CONST;
+            pi.rasterizer_state.depth_bias_slope_factor =
+                FORGE_SCENE_SHADOW_BIAS_SLOPE;
+            pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
+            pi.depth_stencil_state.enable_depth_test  = true;
+            pi.depth_stencil_state.enable_depth_write = true;
+            pi.depth_stencil_state.enable_stencil_test = false;
+            pi.target_info.num_color_targets         = 0;
+            pi.target_info.depth_stencil_format      = scene->shadow_fmt;
+            pi.target_info.has_depth_stencil_target  = true;
+            scene->model_instanced_shadow_mask_pipeline =
+                SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+            if (!scene->model_instanced_shadow_mask_pipeline)
+                SDL_Log("forge_scene: model instanced shadow mask pipeline "
+                        "failed: %s", SDL_GetError());
+            SDL_ReleaseGPUShader(scene->device, mask_fs);
+        }
+    }
+
+    SDL_ReleaseGPUShader(scene->device, inst_vs);
+    SDL_ReleaseGPUShader(scene->device, inst_shadow_vs);
+    SDL_ReleaseGPUShader(scene->device, model_fs);
+    SDL_ReleaseGPUShader(scene->device, shadow_fs);
+
+    /* Only mark ready if all required pipelines succeeded.  On failure,
+     * release any partial pipelines so the next call can retry. */
+    if (scene->model_instanced_pipeline &&
+        scene->model_instanced_pipeline_blend &&
+        scene->model_instanced_pipeline_double &&
+        scene->model_instanced_pipeline_blend_double &&
+        scene->model_instanced_shadow_pipeline) {
+        scene->model_instanced_pipelines_ready = true;
+    } else {
+        /* Release any variant that did get created */
+        if (scene->model_instanced_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                scene->model_instanced_pipeline);
+            scene->model_instanced_pipeline = NULL;
+        }
+        if (scene->model_instanced_pipeline_blend) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                scene->model_instanced_pipeline_blend);
+            scene->model_instanced_pipeline_blend = NULL;
+        }
+        if (scene->model_instanced_pipeline_double) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                scene->model_instanced_pipeline_double);
+            scene->model_instanced_pipeline_double = NULL;
+        }
+        if (scene->model_instanced_pipeline_blend_double) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                scene->model_instanced_pipeline_blend_double);
+            scene->model_instanced_pipeline_blend_double = NULL;
+        }
+        if (scene->model_instanced_shadow_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                scene->model_instanced_shadow_pipeline);
+            scene->model_instanced_shadow_pipeline = NULL;
+        }
+        if (scene->model_instanced_shadow_mask_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                scene->model_instanced_shadow_mask_pipeline);
+            scene->model_instanced_shadow_mask_pipeline = NULL;
+        }
+    }
+}
+
+static void forge_scene_draw_model_instanced(ForgeScene *scene,
+                                              ForgeSceneModel *model,
+                                              SDL_GPUBuffer *instance_buffer,
+                                              Uint32 instance_count)
+{
+    if (!scene || !model || !scene->pass || !instance_buffer) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0 || instance_count == 0) return;
+
+    if (!scene->model_instanced_pipelines_ready)
+        forge_scene__init_model_instanced_pipelines(scene);
+    if (!scene->model_instanced_pipeline) return;
+
+    model->draw_calls = 0;
+    model->transparent_draw_calls = 0;
+
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    /* Bind slot 0: model vertices, slot 1: instance transforms */
+    SDL_GPUBufferBinding vb_binds[2] = {
+        { model->vertex_buffer, 0 }, { instance_buffer, 0 }
+    };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    SDL_GPUGraphicsPipeline *last_pipeline = NULL;
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;
+
+        /* Extract node's world transform from the hierarchy */
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count &&
+                (uint32_t)sub->material_index < model->mat_texture_count) {
+                mat = &model->materials.materials[sub->material_index];
+                textures = &model->mat_textures[sub->material_index];
+            }
+
+            /* Select pipeline variant */
+            SDL_GPUGraphicsPipeline *pipeline;
+            if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND &&
+                mat->double_sided)
+                pipeline = scene->model_instanced_pipeline_blend_double;
+            else if (mat && mat->alpha_mode == FORGE_PIPELINE_ALPHA_BLEND)
+                pipeline = scene->model_instanced_pipeline_blend;
+            else if (mat && mat->double_sided)
+                pipeline = scene->model_instanced_pipeline_double;
+            else
+                pipeline = scene->model_instanced_pipeline;
+
+            if (pipeline != last_pipeline) {
+                SDL_BindGPUGraphicsPipeline(scene->pass, pipeline);
+                last_pipeline = pipeline;
+                /* Re-bind vertex buffers after pipeline switch */
+                SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+                SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                                       SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            }
+
+            forge_scene__bind_model_textures(scene, textures);
+
+            /* Vertex uniforms: VP + light_vp + node_world (192 bytes).
+             * node_world applies the glTF node hierarchy transform per submesh.
+             * The per-instance model matrix is applied in the shader. */
+            ForgeSceneInstancedVertUniforms vu;
+            vu.vp         = scene->cam_vp;
+            vu.light_vp   = scene->light_vp;
+            vu.node_world = node_world;
+            SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+            ForgeSceneModelFragUniforms fu;
+            forge_scene__fill_model_frag_uniforms(scene, mat, &fu);
+            SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, instance_count, first_index, 0, 0);
+            model->draw_calls++;
+        }
+    }
+}
+
+static void forge_scene_draw_model_shadows_instanced(ForgeScene *scene,
+                                                      ForgeSceneModel *model,
+                                                      SDL_GPUBuffer *instance_buffer,
+                                                      Uint32 instance_count)
+{
+    if (!scene || !model || !scene->pass || !instance_buffer) return;
+    if (!model->vertex_buffer || !model->index_buffer) return;
+    if (model->mesh.lod_count == 0 || instance_count == 0) return;
+
+    if (!scene->model_instanced_pipelines_ready)
+        forge_scene__init_model_instanced_pipelines(scene);
+    if (!scene->model_instanced_shadow_pipeline) return;
+
+    uint32_t lod0_base_offset = model->mesh.lods[0].index_offset;
+
+    /* Bind slot 0: model vertices, slot 1: instance transforms */
+    SDL_GPUBufferBinding vb_binds[2] = {
+        { model->vertex_buffer, 0 }, { instance_buffer, 0 }
+    };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+
+    SDL_GPUBufferBinding ib_bind = { model->index_buffer, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    SDL_GPUGraphicsPipeline *last_shadow_pipe = NULL;
+
+    for (uint32_t n = 0; n < model->scene_data.node_count; n++) {
+        const ForgePipelineSceneNode *node = &model->scene_data.nodes[n];
+        if (node->mesh_index < 0) continue;
+
+        mat4 node_world;
+        SDL_memcpy(&node_world, node->world_transform, sizeof(mat4));
+
+        const ForgePipelineSceneMesh *smesh =
+            forge_pipeline_scene_get_mesh(&model->scene_data,
+                                          (uint32_t)node->mesh_index);
+        if (!smesh) continue;
+
+        for (uint32_t si = 0; si < smesh->submesh_count; si++) {
+            uint32_t submesh_idx = smesh->first_submesh + si;
+            const ForgePipelineSubmesh *sub =
+                forge_pipeline_lod_submesh(&model->mesh, 0, submesh_idx);
+            if (!sub || sub->index_count == 0) continue;
+
+            int amode = FORGE_PIPELINE_ALPHA_OPAQUE;
+            const ForgePipelineMaterial *mat = NULL;
+            const ForgeSceneModelTextures *textures = NULL;
+            if (sub->material_index >= 0 &&
+                (uint32_t)sub->material_index < model->materials.material_count) {
+                mat = &model->materials.materials[sub->material_index];
+                amode = mat->alpha_mode;
+                if ((uint32_t)sub->material_index < model->mat_texture_count)
+                    textures = &model->mat_textures[sub->material_index];
+            }
+
+            /* Skip BLEND — transparent materials should not cast shadows */
+            if (amode == FORGE_PIPELINE_ALPHA_BLEND)
+                continue;
+
+            /* Push light_vp + node_world per submesh */
+            ForgeSceneInstancedShadowVertUniforms su;
+            su.light_vp   = scene->light_vp;
+            su.node_world = node_world;
+
+            if (amode == FORGE_PIPELINE_ALPHA_MASK &&
+                scene->model_instanced_shadow_mask_pipeline) {
+                if (last_shadow_pipe !=
+                    scene->model_instanced_shadow_mask_pipeline) {
+                    SDL_BindGPUGraphicsPipeline(scene->pass,
+                        scene->model_instanced_shadow_mask_pipeline);
+                    last_shadow_pipe =
+                        scene->model_instanced_shadow_mask_pipeline;
+                    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+                    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+                }
+                SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+                SDL_GPUTextureSamplerBinding mask_tex;
+                mask_tex.texture = (textures && textures->base_color)
+                    ? textures->base_color : scene->model_white_texture;
+                mask_tex.sampler = scene->model_tex_sampler;
+                SDL_BindGPUFragmentSamplers(scene->pass, 0, &mask_tex, 1);
+
+                ForgeSceneShadowMaskFragUniforms mfu;
+                SDL_zero(mfu);
+                if (mat) {
+                    SDL_memcpy(mfu.base_color_factor,
+                               mat->base_color_factor, 4 * sizeof(float));
+                    mfu.alpha_cutoff = mat->alpha_cutoff;
+                } else {
+                    mfu.base_color_factor[0] = 1.0f;
+                    mfu.base_color_factor[1] = 1.0f;
+                    mfu.base_color_factor[2] = 1.0f;
+                    mfu.base_color_factor[3] = 1.0f;
+                    mfu.alpha_cutoff = FORGE_SCENE_DEFAULT_ALPHA_CUTOFF;
+                }
+                SDL_PushGPUFragmentUniformData(scene->cmd, 0,
+                                               &mfu, sizeof(mfu));
+            } else {
+                if (last_shadow_pipe !=
+                    scene->model_instanced_shadow_pipeline) {
+                    SDL_BindGPUGraphicsPipeline(scene->pass,
+                        scene->model_instanced_shadow_pipeline);
+                    last_shadow_pipe = scene->model_instanced_shadow_pipeline;
+                    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+                    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+                }
+                SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+            }
+
+            uint32_t first_index =
+                (sub->index_offset - lod0_base_offset) / sizeof(uint32_t);
+            SDL_DrawGPUIndexedPrimitives(scene->pass,
+                sub->index_count, instance_count, first_index, 0, 0);
         }
     }
 }
