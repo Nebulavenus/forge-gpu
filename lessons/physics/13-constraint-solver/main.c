@@ -212,18 +212,19 @@ static void setup_scene_pendulum(app_state *state)
     state->num_bodies = 0;
     state->num_joints = 0;
 
-    float link_size = 0.4f;
-    float top_y = 8.0f;
-    /* Gap = 2 * link_size so adjacent anchors (bottom of body i at
-     * -link_size, top of body i+1 at +link_size) meet exactly. */
-    float link_gap = 2.0f * link_size;
+    float link_size = 0.25f;
+    float top_y = 5.0f;
+    /* Arm length between link centers — longer than 2*link_size so the
+     * chain hangs with visible gaps between the spheres. */
+    float link_gap = 1.2f;
+    float half_arm = link_gap * 0.5f;
 
     const float *link_colors[] = { COLOR_RED, COLOR_BLUE, COLOR_YELLOW, COLOR_GREEN };
 
     /* Create chain links — positions aligned so joint anchors coincide.
-     * Body 0 center sits one link_size below the world anchor (top_y). */
+     * Body 0 center sits one half-arm below the world anchor (top_y). */
     for (int i = 0; i < 4; i++) {
-        float y = top_y - link_size - (float)i * link_gap;
+        float y = top_y - half_arm - (float)i * link_gap;
         add_body(state, vec3_create(0, y, 0), DEFAULT_MASS,
                  SHAPE_SPHERE, link_size, link_size, link_size,
                  link_colors[i]);
@@ -234,7 +235,7 @@ static void setup_scene_pendulum(app_state *state)
     /* Joint 0: world anchor to body 0 */
     state->joints[0] = forge_physics_joint_ball_socket(
         0, -1,
-        vec3_create(0, link_size, 0),            /* top of body 0 */
+        vec3_create(0, half_arm, 0),             /* top anchor on body 0 */
         vec3_create(0, top_y, 0));               /* world anchor */
     state->num_joints = 1;
 
@@ -242,8 +243,8 @@ static void setup_scene_pendulum(app_state *state)
     for (int i = 0; i < 3; i++) {
         state->joints[state->num_joints] = forge_physics_joint_ball_socket(
             i, i + 1,
-            vec3_create(0, -link_size, 0),       /* bottom of body i */
-            vec3_create(0,  link_size, 0));       /* top of body i+1 */
+            vec3_create(0, -half_arm, 0),        /* bottom anchor on body i */
+            vec3_create(0,  half_arm, 0));        /* top anchor on body i+1 */
         state->num_joints++;
     }
 }
@@ -290,8 +291,9 @@ static void setup_scene_hinge(app_state *state)
 
     state->bodies[turn].angular_velocity = vec3_create(0, 3.0f, 0);
 
-    /* Second hinge: pendulum with X-axis rotation */
-    float pend_r = 0.35f;
+    /* Second hinge: pendulum with Z-axis rotation */
+    float pend_r = 0.2f;
+    float pend_arm = 0.6f;      /* distance from sphere center to hinge point */
     int pend = add_body(state,
         vec3_create(-4, 3, 0),
         1.5f, SHAPE_SPHERE, pend_r, pend_r, pend_r,
@@ -299,7 +301,7 @@ static void setup_scene_hinge(app_state *state)
 
     state->joints[2] = forge_physics_joint_hinge(
         pend, -1,
-        vec3_create(0, pend_r, 0),
+        vec3_create(0, pend_arm, 0),
         vec3_create(-4, 5, 0),
         vec3_create(0, 0, 1));                    /* Z-axis rotation */
     state->num_joints = 3;
@@ -367,26 +369,27 @@ static void setup_scene_combined(app_state *state)
     state->num_joints = 0;
 
     /* Ball-socket pendulum (2 links) on the left */
-    float link_r = 0.3f;
+    float link_r = 0.2f;
+    float arm_len = 1.0f;       /* distance between link centers */
+    float half_arm = arm_len * 0.5f;
     float world_anchor_y = 5.0f;
-    /* Place p0 so its top anchor (+link_r) coincides with the world anchor */
+    /* Place p0 one half-arm below the world anchor */
     int p0 = add_body(state,
-        vec3_create(-4, world_anchor_y - link_r, 0), 2.0f,
+        vec3_create(-4, world_anchor_y - half_arm, 0), 2.0f,
         SHAPE_SPHERE, link_r, link_r, link_r, COLOR_RED);
-    /* Position p1 so its top anchor (+link_r) meets p0's bottom anchor (-link_r):
-     * p1_y = p0_y - 2 * link_r */
+    /* Position p1 one arm-length below p0 */
     int p1 = add_body(state,
-        vec3_create(-4, world_anchor_y - link_r - 2.0f * link_r, 0), 2.0f,
+        vec3_create(-4, world_anchor_y - half_arm - arm_len, 0), 2.0f,
         SHAPE_SPHERE, link_r, link_r, link_r, COLOR_ORANGE);
 
     state->joints[0] = forge_physics_joint_ball_socket(
         p0, -1,
-        vec3_create(0, link_r, 0),
-        vec3_create(-4, 5, 0));
+        vec3_create(0, half_arm, 0),
+        vec3_create(-4, world_anchor_y, 0));
     state->joints[1] = forge_physics_joint_ball_socket(
         p0, p1,
-        vec3_create(0, -link_r, 0),
-        vec3_create(0, link_r, 0));
+        vec3_create(0, -half_arm, 0),
+        vec3_create(0, half_arm, 0));
     state->num_joints = 2;
 
     /* Give pendulum a sideways push */

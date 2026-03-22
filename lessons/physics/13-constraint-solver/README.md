@@ -17,6 +17,8 @@ Generalized velocity-level joint constraints solved with sequential impulses.
 
 ![Lesson 13 result](assets/screenshot.png)
 
+![Lesson 13 animation](assets/animation.gif)
+
 Four interactive scenes demonstrate each joint type. Bodies are connected
 by constraints that restrict their relative motion — a pendulum chain
 swings freely at ball-socket joints, a door rotates on a hinge axis, and
