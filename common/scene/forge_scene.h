@@ -184,6 +184,24 @@ typedef struct ForgeSceneDebugVertex {
     float color[4];    /* RGBA color           */
 } ForgeSceneDebugVertex;
 
+/* Per-instance data for colored instanced drawing (80 bytes).
+ * Contains the world transform and an RGBA color per instance.
+ * Upload an array of these as the instance buffer for
+ * forge_scene_draw_mesh_instanced_colored(). */
+typedef struct ForgeSceneColoredInstance {
+    mat4  transform; /* 64 bytes — world transform  */
+    float color[4];  /* 16 bytes — RGBA color       */
+} ForgeSceneColoredInstance;
+
+/* Colored instance vertex layout constants — single source of truth for
+ * pipeline creation, shader attribute locations, and ABI tests. */
+#define FORGE_SCENE_COLORED_INST_ATTR_COUNT        7  /* pos+nrm + 4 mat4 cols + color */
+#define FORGE_SCENE_COLORED_INST_SHADOW_ATTR_COUNT 5  /* pos + 4 mat4 cols             */
+#define FORGE_SCENE_COLORED_INST_COLOR_LOCATION    6  /* TEXCOORD6 in shader           */
+#define FORGE_SCENE_COLORED_INST_SIZE             80  /* sizeof(ForgeSceneColoredInstance) */
+#define FORGE_SCENE_COLORED_INST_TRANSFORM_OFFSET  0  /* offsetof(…, transform)        */
+#define FORGE_SCENE_COLORED_INST_COLOR_OFFSET     64  /* offsetof(…, color)            */
+
 /* ── Uniform structures ─────────────────────────────────────────────────── */
 
 /* Scene vertex uniforms: 3 matrices (192 bytes).
@@ -587,6 +605,11 @@ typedef struct ForgeScene {
     SDL_GPUGraphicsPipeline *instanced_shadow_pipeline;  /* depth-only, no cull    */
     bool                     instanced_pipelines_ready;
 
+    /* ── Colored instanced mesh pipelines (per-instance color) ─────── */
+    SDL_GPUGraphicsPipeline *instanced_colored_pipeline;        /* Blinn-Phong      */
+    SDL_GPUGraphicsPipeline *instanced_colored_shadow_pipeline; /* depth-only 80B   */
+    bool                     instanced_colored_pipelines_ready;
+
     /* ── Debug line resources (lazy-initialized on first use) ─────── */
     SDL_GPUGraphicsPipeline *debug_world_pipeline;    /* depth test ON        */
     SDL_GPUGraphicsPipeline *debug_overlay_pipeline;  /* depth test OFF       */
@@ -809,6 +832,25 @@ static void forge_scene_draw_shadow_mesh_instanced(ForgeScene *scene,
                                                     Uint32 index_count,
                                                     SDL_GPUBuffer *instance_buffer,
                                                     Uint32 instance_count);
+
+/* ── Colored instanced mesh drawing ─────────────────────────── */
+
+/* Draw multiple instances with per-instance color.  instance_buffer contains
+ * ForgeSceneColoredInstance data (80 bytes each: mat4 transform + float4 RGBA).
+ * base_color is multiplied with each instance's color — pass an all-ones RGBA
+ * color for pure per-instance color, or a tint to modulate all instances
+ * uniformly. */
+static void forge_scene_draw_mesh_instanced_colored(
+    ForgeScene *scene,
+    SDL_GPUBuffer *vb, SDL_GPUBuffer *ib, Uint32 index_count,
+    SDL_GPUBuffer *instance_buffer, Uint32 instance_count,
+    const float base_color[4]);
+
+/* Draw colored-instanced mesh into the shadow map (depth-only, 80-byte stride). */
+static void forge_scene_draw_shadow_mesh_instanced_colored(
+    ForgeScene *scene,
+    SDL_GPUBuffer *vb, SDL_GPUBuffer *ib, Uint32 index_count,
+    SDL_GPUBuffer *instance_buffer, Uint32 instance_count);
 
 /* ── Debug lines ────────────────────────────────────────────── */
 
@@ -1096,6 +1138,13 @@ static void forge_scene_compute_centroids(
 #include "scene/shaders/compiled/scene_instanced_shadow_vert_spirv.h"
 #include "scene/shaders/compiled/scene_instanced_shadow_vert_dxil.h"
 #include "scene/shaders/compiled/scene_instanced_shadow_vert_msl.h"
+
+#include "scene/shaders/compiled/scene_instanced_colored_vert_spirv.h"
+#include "scene/shaders/compiled/scene_instanced_colored_vert_dxil.h"
+#include "scene/shaders/compiled/scene_instanced_colored_vert_msl.h"
+#include "scene/shaders/compiled/scene_instanced_colored_frag_spirv.h"
+#include "scene/shaders/compiled/scene_instanced_colored_frag_dxil.h"
+#include "scene/shaders/compiled/scene_instanced_colored_frag_msl.h"
 
 #include "scene/shaders/compiled/debug_vert_spirv.h"
 #include "scene/shaders/compiled/debug_vert_dxil.h"
@@ -3465,6 +3514,274 @@ static void forge_scene_draw_mesh_instanced(ForgeScene *scene,
                                   0, 0, 0);
 }
 
+/* ── Colored instanced mesh pipelines + draw ───────────────────────────── */
+
+static void forge_scene__init_instanced_colored_pipelines(ForgeScene *scene)
+{
+    if (scene->instanced_colored_pipelines_ready) return;
+
+    /* Colored vertex shader (per-instance color attribute) */
+    SDL_GPUShader *inst_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_instanced_colored_vert_spirv,
+        scene_instanced_colored_vert_spirv_size,
+        scene_instanced_colored_vert_dxil,
+        scene_instanced_colored_vert_dxil_size,
+        scene_instanced_colored_vert_msl,
+        scene_instanced_colored_vert_msl_size,
+        0, 0, 0, 1);
+
+    /* Colored fragment shader (reads inst_color interpolant) */
+    SDL_GPUShader *inst_fs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_FRAGMENT,
+        scene_instanced_colored_frag_spirv,
+        scene_instanced_colored_frag_spirv_size,
+        scene_instanced_colored_frag_dxil,
+        scene_instanced_colored_frag_dxil_size,
+        scene_instanced_colored_frag_msl,
+        scene_instanced_colored_frag_msl_size,
+        1, 0, 0, 1);  /* 1 sampler: shadow map */
+
+    /* Shadow vertex shader (depth-only, same as non-colored) */
+    SDL_GPUShader *shadow_vs = forge_scene_create_shader(
+        scene, SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_instanced_shadow_vert_spirv, scene_instanced_shadow_vert_spirv_size,
+        scene_instanced_shadow_vert_dxil,  scene_instanced_shadow_vert_dxil_size,
+        scene_instanced_shadow_vert_msl,   scene_instanced_shadow_vert_msl_size,
+        0, 0, 0, 1);
+
+    SDL_GPUShader *shadow_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        shadow_frag_spirv, sizeof(shadow_frag_spirv),
+        shadow_frag_dxil,  sizeof(shadow_frag_dxil),
+        shadow_frag_msl,   shadow_frag_msl_size,
+        0, 0, 0, 0);
+
+    if (!inst_vs || !inst_fs || !shadow_vs || !shadow_fs) {
+        SDL_Log("forge_scene: colored instanced shader creation failed");
+        if (inst_vs)   SDL_ReleaseGPUShader(scene->device, inst_vs);
+        if (inst_fs)   SDL_ReleaseGPUShader(scene->device, inst_fs);
+        if (shadow_vs) SDL_ReleaseGPUShader(scene->device, shadow_vs);
+        if (shadow_fs) SDL_ReleaseGPUShader(scene->device, shadow_fs);
+        return;
+    }
+
+    /* Vertex layout: slot 0 = per-vertex (24B), slot 1 = per-instance (80B) */
+    SDL_GPUVertexBufferDescription vb_descs[2];
+    SDL_zero(vb_descs);
+    vb_descs[0].slot       = 0;
+    vb_descs[0].pitch      = sizeof(ForgeSceneVertex);
+    vb_descs[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    vb_descs[1].slot       = 1;
+    vb_descs[1].pitch      = sizeof(ForgeSceneColoredInstance);
+    vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+    vb_descs[1].instance_step_rate = 1;
+
+    /* Attributes: pos + normal + 4 mat4 columns + color */
+    SDL_GPUVertexAttribute attrs[FORGE_SCENE_COLORED_INST_ATTR_COUNT];
+    SDL_zero(attrs);
+    attrs[0].location = 0; attrs[0].buffer_slot = 0;
+    attrs[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; attrs[0].offset = 0;
+    attrs[1].location = 1; attrs[1].buffer_slot = 0;
+    attrs[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    attrs[1].offset = sizeof(float) * 3;
+    for (int i = 0; i < 4; i++) {
+        attrs[2 + i].location    = (Uint32)(2 + i);
+        attrs[2 + i].buffer_slot = 1;
+        attrs[2 + i].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        attrs[2 + i].offset      = (Uint32)(sizeof(float) * 4 * i);
+    }
+    attrs[FORGE_SCENE_COLORED_INST_COLOR_LOCATION].location    =
+        FORGE_SCENE_COLORED_INST_COLOR_LOCATION;
+    attrs[FORGE_SCENE_COLORED_INST_COLOR_LOCATION].buffer_slot = 1;
+    attrs[FORGE_SCENE_COLORED_INST_COLOR_LOCATION].format      =
+        SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+    attrs[FORGE_SCENE_COLORED_INST_COLOR_LOCATION].offset      =
+        (Uint32)offsetof(ForgeSceneColoredInstance, color);
+
+    SDL_GPUVertexInputState vi;
+    SDL_zero(vi);
+    vi.vertex_buffer_descriptions = vb_descs;
+    vi.num_vertex_buffers         = 2;
+    vi.vertex_attributes          = attrs;
+    vi.num_vertex_attributes      = FORGE_SCENE_COLORED_INST_ATTR_COUNT;
+
+    /* Main pipeline: Blinn-Phong with per-instance color */
+    scene->instanced_colored_pipeline = forge_scene__create_scene_pipeline(
+        scene, inst_vs, inst_fs, vi,
+        SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
+    if (!scene->instanced_colored_pipeline)
+        SDL_Log("forge_scene: colored instanced pipeline failed: %s",
+                SDL_GetError());
+
+    /* Shadow pipeline: 80-byte instance stride, reads only pos + mat4 columns.
+     * Same shadow shader as non-colored, but different slot 1 pitch. */
+    SDL_GPUVertexAttribute shadow_attrs[FORGE_SCENE_COLORED_INST_SHADOW_ATTR_COUNT];
+    SDL_zero(shadow_attrs);
+    shadow_attrs[0].location = 0; shadow_attrs[0].buffer_slot = 0;
+    shadow_attrs[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    shadow_attrs[0].offset = 0;
+    for (int i = 0; i < 4; i++) {
+        shadow_attrs[1 + i].location    = (Uint32)(1 + i);
+        shadow_attrs[1 + i].buffer_slot = 1;
+        shadow_attrs[1 + i].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        shadow_attrs[1 + i].offset      = (Uint32)(sizeof(float) * 4 * i);
+    }
+
+    SDL_GPUVertexInputState shadow_vi;
+    SDL_zero(shadow_vi);
+    shadow_vi.vertex_buffer_descriptions = vb_descs; /* same descs, 80B stride */
+    shadow_vi.num_vertex_buffers         = 2;
+    shadow_vi.vertex_attributes          = shadow_attrs;
+    shadow_vi.num_vertex_attributes      = FORGE_SCENE_COLORED_INST_SHADOW_ATTR_COUNT;
+
+    {
+        SDL_GPUGraphicsPipelineCreateInfo pi;
+        SDL_zero(pi);
+        pi.vertex_shader   = shadow_vs;
+        pi.fragment_shader = shadow_fs;
+        pi.vertex_input_state = shadow_vi;
+        pi.primitive_type  = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pi.rasterizer_state.fill_mode  = SDL_GPU_FILLMODE_FILL;
+        pi.rasterizer_state.cull_mode  = SDL_GPU_CULLMODE_NONE;
+        pi.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pi.rasterizer_state.enable_depth_bias = true;
+        pi.rasterizer_state.depth_bias_constant_factor =
+            FORGE_SCENE_SHADOW_BIAS_CONST;
+        pi.rasterizer_state.depth_bias_slope_factor =
+            FORGE_SCENE_SHADOW_BIAS_SLOPE;
+        pi.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS;
+        pi.depth_stencil_state.enable_depth_test  = true;
+        pi.depth_stencil_state.enable_depth_write = true;
+        pi.depth_stencil_state.enable_stencil_test = false;
+        pi.target_info.num_color_targets         = 0;
+        pi.target_info.depth_stencil_format      = scene->shadow_fmt;
+        pi.target_info.has_depth_stencil_target  = true;
+        scene->instanced_colored_shadow_pipeline =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->instanced_colored_shadow_pipeline)
+            SDL_Log("forge_scene: colored instanced shadow pipeline failed: %s",
+                    SDL_GetError());
+    }
+
+    SDL_ReleaseGPUShader(scene->device, inst_vs);
+    SDL_ReleaseGPUShader(scene->device, inst_fs);
+    SDL_ReleaseGPUShader(scene->device, shadow_vs);
+    SDL_ReleaseGPUShader(scene->device, shadow_fs);
+
+    if (scene->instanced_colored_pipeline &&
+        scene->instanced_colored_shadow_pipeline) {
+        scene->instanced_colored_pipelines_ready = true;
+    } else {
+        if (scene->instanced_colored_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                                            scene->instanced_colored_pipeline);
+            scene->instanced_colored_pipeline = NULL;
+        }
+        if (scene->instanced_colored_shadow_pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(scene->device,
+                                            scene->instanced_colored_shadow_pipeline);
+            scene->instanced_colored_shadow_pipeline = NULL;
+        }
+    }
+}
+
+static void forge_scene_draw_mesh_instanced_colored(
+    ForgeScene *scene,
+    SDL_GPUBuffer *vb, SDL_GPUBuffer *ib, Uint32 index_count,
+    SDL_GPUBuffer *instance_buffer, Uint32 instance_count,
+    const float base_color[4])
+{
+    if (!scene || !base_color) return;
+    if (!scene->pass || !vb || !ib || !instance_buffer ||
+        index_count == 0 || instance_count == 0) return;
+
+    if (!scene->instanced_colored_pipelines_ready)
+        forge_scene__init_instanced_colored_pipelines(scene);
+    if (!scene->instanced_colored_pipeline) return;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->instanced_colored_pipeline);
+
+    SDL_GPUTextureSamplerBinding shadow_bind = {
+        scene->shadow_map, scene->shadow_sampler
+    };
+    SDL_BindGPUFragmentSamplers(scene->pass, 0, &shadow_bind, 1);
+
+    SDL_GPUBufferBinding vb_binds[2] = {
+        { vb, 0 }, { instance_buffer, 0 }
+    };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+
+    SDL_GPUBufferBinding idx_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &idx_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    ForgeSceneInstancedVertUniforms vu;
+    vu.vp         = scene->cam_vp;
+    vu.light_vp   = scene->light_vp;
+    vu.node_world = mat4_identity();
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+    ForgeSceneFragUniforms fu;
+    SDL_memset(&fu, 0, sizeof(fu));
+    fu.base_color[0]   = base_color[0];
+    fu.base_color[1]   = base_color[1];
+    fu.base_color[2]   = base_color[2];
+    fu.base_color[3]   = base_color[3];
+    fu.eye_pos[0]      = scene->cam_position.x;
+    fu.eye_pos[1]      = scene->cam_position.y;
+    fu.eye_pos[2]      = scene->cam_position.z;
+    fu.ambient         = scene->config.ambient;
+    fu.light_dir[0]    = scene->light_dir.x;
+    fu.light_dir[1]    = scene->light_dir.y;
+    fu.light_dir[2]    = scene->light_dir.z;
+    fu.light_dir[3]    = 0.0f;
+    fu.light_color[0]  = scene->config.light_color[0];
+    fu.light_color[1]  = scene->config.light_color[1];
+    fu.light_color[2]  = scene->config.light_color[2];
+    fu.light_intensity = scene->config.light_intensity;
+    fu.shininess       = scene->config.shininess;
+    fu.specular_str    = scene->config.specular_str;
+    SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, instance_count,
+                                  0, 0, 0);
+}
+
+static void forge_scene_draw_shadow_mesh_instanced_colored(
+    ForgeScene *scene,
+    SDL_GPUBuffer *vb, SDL_GPUBuffer *ib, Uint32 index_count,
+    SDL_GPUBuffer *instance_buffer, Uint32 instance_count)
+{
+    if (!scene) return;
+    if (!scene->pass || !vb || !ib || !instance_buffer ||
+        index_count == 0 || instance_count == 0) return;
+
+    if (!scene->instanced_colored_pipelines_ready)
+        forge_scene__init_instanced_colored_pipelines(scene);
+    if (!scene->instanced_colored_shadow_pipeline) return;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass,
+                                 scene->instanced_colored_shadow_pipeline);
+
+    SDL_GPUBufferBinding vb_binds[2] = {
+        { vb, 0 }, { instance_buffer, 0 }
+    };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, vb_binds, 2);
+
+    SDL_GPUBufferBinding idx_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &idx_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    ForgeSceneInstancedShadowVertUniforms su;
+    su.light_vp   = scene->light_vp;
+    su.node_world = mat4_identity();
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, instance_count,
+                                  0, 0, 0);
+}
+
 /* ── Debug lines ───────────────────────────────────────────────────────── */
 
 /* Internal: ensure debug CPU array has room for count more vertices.
@@ -4321,6 +4638,12 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->instanced_pipeline);
     if (scene->instanced_shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->instanced_shadow_pipeline);
+
+    /* Colored instanced mesh pipelines */
+    if (scene->instanced_colored_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->instanced_colored_pipeline);
+    if (scene->instanced_colored_shadow_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->instanced_colored_shadow_pipeline);
 
     /* Debug line resources */
     if (scene->debug_world_pipeline)

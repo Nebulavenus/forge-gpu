@@ -557,6 +557,177 @@ static void test_struct_vertex_offsets(void)
     END_TEST();
 }
 
+/* ── Instanced pipeline struct sizes ─────────────────────────────────────── */
+
+/* Named constants for instanced / debug ABI sizes — mirrors the contract
+ * between the C structs and their HLSL cbuffer / vertex layout counterparts. */
+#define INSTANCED_VERT_UNIFORMS_SIZE         192  /* 3 × mat4 (vp + light_vp + node_world) */
+#define INSTANCED_SHADOW_VERT_UNIFORMS_SIZE  128  /* 2 × mat4 (light_vp + node_world)      */
+#define DEBUG_VERTEX_SIZE                     28  /* float3 pos + float4 color              */
+#define DEBUG_VERT_UNIFORMS_SIZE              64  /* 1 × mat4 (vp)                          */
+
+static void test_struct_instanced_vert_uniforms_size(void)
+{
+    TEST("struct — ForgeSceneInstancedVertUniforms is 192 bytes (3 x mat4)");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneInstancedVertUniforms),
+                  INSTANCED_VERT_UNIFORMS_SIZE);
+    END_TEST();
+}
+
+static void test_struct_instanced_shadow_vert_uniforms_size(void)
+{
+    TEST("struct — ForgeSceneInstancedShadowVertUniforms is 128 bytes (2 x mat4)");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneInstancedShadowVertUniforms),
+                  INSTANCED_SHADOW_VERT_UNIFORMS_SIZE);
+    END_TEST();
+}
+
+static void test_struct_debug_vertex_size(void)
+{
+    TEST("struct — ForgeSceneDebugVertex is 28 bytes (float3 + float4)");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneDebugVertex), DEBUG_VERTEX_SIZE);
+    END_TEST();
+}
+
+static void test_struct_debug_vert_uniforms_size(void)
+{
+    TEST("struct — ForgeSceneDebugVertUniforms is 64 bytes (1 x mat4)");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneDebugVertUniforms), DEBUG_VERT_UNIFORMS_SIZE);
+    END_TEST();
+}
+
+static void test_struct_colored_instance_size(void)
+{
+    TEST("struct — ForgeSceneColoredInstance matches FORGE_SCENE_COLORED_INST_SIZE");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneColoredInstance),
+                  FORGE_SCENE_COLORED_INST_SIZE);
+    END_TEST();
+}
+
+static void test_struct_colored_instance_offsets(void)
+{
+    TEST("struct — ForgeSceneColoredInstance offsets match constants");
+    ASSERT_INT_EQ((int)offsetof(ForgeSceneColoredInstance, transform),
+                  FORGE_SCENE_COLORED_INST_TRANSFORM_OFFSET);
+    ASSERT_INT_EQ((int)offsetof(ForgeSceneColoredInstance, color),
+                  FORGE_SCENE_COLORED_INST_COLOR_OFFSET);
+    END_TEST();
+}
+
+/* ── Instanced draw robustness ──────────────────────────────────────────── */
+
+static void test_draw_mesh_instanced_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_mesh_instanced with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    forge_scene_draw_mesh_instanced(&scene, NULL, NULL, 0, NULL, 0, color);
+    END_TEST();
+}
+
+static void test_draw_mesh_instanced_zero_count_is_safe(void)
+{
+    TEST("robustness — draw_mesh_instanced with zero instance_count does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    forge_scene_draw_mesh_instanced(&scene, (SDL_GPUBuffer *)1,
+                                     (SDL_GPUBuffer *)1, 36,
+                                     (SDL_GPUBuffer *)1, 0, color);
+    END_TEST();
+}
+
+static void test_draw_mesh_instanced_colored_null_scene_is_safe(void)
+{
+    TEST("robustness — draw_mesh_instanced_colored with NULL scene does not crash");
+    float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    forge_scene_draw_mesh_instanced_colored(NULL, (SDL_GPUBuffer *)1,
+                                             (SDL_GPUBuffer *)1, 36,
+                                             (SDL_GPUBuffer *)1, 10, color);
+    END_TEST();
+}
+
+static void test_draw_mesh_instanced_colored_null_base_color_is_safe(void)
+{
+    TEST("robustness — draw_mesh_instanced_colored with NULL base_color does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    forge_scene_draw_mesh_instanced_colored(&scene, (SDL_GPUBuffer *)1,
+                                             (SDL_GPUBuffer *)1, 36,
+                                             (SDL_GPUBuffer *)1, 10, NULL);
+    END_TEST();
+}
+
+static void test_draw_mesh_instanced_colored_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_mesh_instanced_colored with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    forge_scene_draw_mesh_instanced_colored(&scene, NULL, NULL, 0, NULL, 0, color);
+    END_TEST();
+}
+
+static void test_draw_mesh_instanced_colored_zero_count_is_safe(void)
+{
+    TEST("robustness — draw_mesh_instanced_colored with zero counts does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    forge_scene_draw_mesh_instanced_colored(&scene, (SDL_GPUBuffer *)1,
+                                             (SDL_GPUBuffer *)1, 0,
+                                             (SDL_GPUBuffer *)1, 10, color);
+    END_TEST();
+}
+
+static void test_draw_shadow_mesh_instanced_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_shadow_mesh_instanced with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    forge_scene_draw_shadow_mesh_instanced(&scene, NULL, NULL, 0, NULL, 0);
+    END_TEST();
+}
+
+static void test_draw_shadow_mesh_instanced_colored_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_shadow_mesh_instanced_colored with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    forge_scene_draw_shadow_mesh_instanced_colored(&scene, NULL, NULL, 0, NULL, 0);
+    END_TEST();
+}
+
+static void test_debug_line_null_scene_is_safe(void)
+{
+    TEST("robustness — debug_line with NULL scene does not crash");
+    forge_scene_debug_line(NULL, vec3_create(0,0,0), vec3_create(1,1,1),
+                           vec4_create(1,0,0,1), false);
+    END_TEST();
+}
+
+static void test_draw_debug_lines_null_pass_is_safe(void)
+{
+    TEST("robustness — draw_debug_lines with NULL pass does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    /* Accumulate a line, then try to draw with no pass — early return */
+    forge_scene_debug_line(&scene, vec3_create(0,0,0), vec3_create(1,1,1),
+                           vec4_create(1,0,0,1), false);
+    forge_scene_draw_debug_lines(&scene);
+    /* Clean up CPU allocations from debug_line */
+    SDL_free(scene.debug_world_vertices);
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * 9. GPU Integration Tests (require a Vulkan device)
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -1550,6 +1721,12 @@ int main(int argc, char **argv)
     test_struct_shadow_uniforms_size();
     test_struct_ui_uniforms_size();
     test_struct_vertex_offsets();
+    test_struct_instanced_vert_uniforms_size();
+    test_struct_instanced_shadow_vert_uniforms_size();
+    test_struct_debug_vertex_size();
+    test_struct_debug_vert_uniforms_size();
+    test_struct_colored_instance_size();
+    test_struct_colored_instance_offsets();
 
     /* ── Group 6: Robustness — NULL cmd guards (no GPU needed) ── */
     SDL_Log("--- 6. Robustness Tests ---");
@@ -1576,6 +1753,16 @@ int main(int argc, char **argv)
     test_draw_textured_mesh_no_bind_null_uv_is_safe();
     test_draw_mesh_null_buffers_is_safe();
     test_draw_mesh_zero_index_count_is_safe();
+    test_draw_mesh_instanced_null_buffers_is_safe();
+    test_draw_mesh_instanced_zero_count_is_safe();
+    test_draw_mesh_instanced_colored_null_scene_is_safe();
+    test_draw_mesh_instanced_colored_null_base_color_is_safe();
+    test_draw_mesh_instanced_colored_null_buffers_is_safe();
+    test_draw_mesh_instanced_colored_zero_count_is_safe();
+    test_draw_shadow_mesh_instanced_null_buffers_is_safe();
+    test_draw_shadow_mesh_instanced_colored_null_buffers_is_safe();
+    test_debug_line_null_scene_is_safe();
+    test_draw_debug_lines_null_pass_is_safe();
     test_destroy_null_scene_is_safe();
     test_destroy_uninitialized_zeroed_scene();
 
