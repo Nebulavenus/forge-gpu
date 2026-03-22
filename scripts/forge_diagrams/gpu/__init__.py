@@ -125,6 +125,7 @@ __all__ = [
     "diagram_billboard_expansion",
     "diagram_gpu_data_flow",
     "diagram_particle_lifecycle",
+    "diagram_atlas_uv_remap",
 ]
 
 from .lesson_03 import diagram_aspect_ratio, diagram_unit_circle
@@ -283,3 +284,4 @@ from .lesson_46 import (
     diagram_gpu_data_flow,
     diagram_particle_lifecycle,
 )
+from .lesson_47 import diagram_atlas_uv_remap

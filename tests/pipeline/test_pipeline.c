@@ -6478,6 +6478,406 @@ static void test_joint_matrices_max_cap(void)
  * Main
  * ══════════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Atlas metadata loading tests
+ *
+ * Tests for forge_pipeline_load_atlas() and forge_pipeline_free_atlas().
+ * Writes temporary atlas.json files and verifies correct parsing.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Helper: write a JSON string to a temp file */
+static bool write_atlas_json(const char *filename, const char *json)
+{
+    char path[512];
+    temp_path(path, sizeof(path), filename);
+    if (!SDL_SaveFile(path, json, SDL_strlen(json))) {
+        SDL_Log("write_atlas_json: SDL_SaveFile failed for '%s': %s",
+                path, SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+static void test_load_atlas_valid(void)
+{
+    TEST("load atlas — valid 2-entry file");
+    const char *json =
+        "{\n"
+        "  \"version\": 1,\n"
+        "  \"width\": 2048,\n"
+        "  \"height\": 2048,\n"
+        "  \"padding\": 4,\n"
+        "  \"utilization\": 0.499,\n"
+        "  \"entries\": {\n"
+        "    \"bark\": {\n"
+        "      \"x\": 4, \"y\": 4, \"width\": 256, \"height\": 256,\n"
+        "      \"u_offset\": 0.002, \"v_offset\": 0.002,\n"
+        "      \"u_scale\": 0.125, \"v_scale\": 0.125\n"
+        "    },\n"
+        "    \"marble\": {\n"
+        "      \"x\": 268, \"y\": 4, \"width\": 256, \"height\": 256,\n"
+        "      \"u_offset\": 0.1309, \"v_offset\": 0.002,\n"
+        "      \"u_scale\": 0.125, \"v_scale\": 0.125\n"
+        "    }\n"
+        "  }\n"
+        "}";
+    ASSERT_TRUE(write_atlas_json("atlas_valid.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_valid.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(forge_pipeline_load_atlas(path, &atlas));
+    ASSERT_INT_EQ(atlas.width, 2048);
+    ASSERT_INT_EQ(atlas.height, 2048);
+    ASSERT_INT_EQ(atlas.padding, 4);
+    ASSERT_FLOAT_EQ(atlas.utilization, 0.499f);
+    ASSERT_INT_EQ(atlas.entry_count, 2);
+    ASSERT_NOT_NULL(atlas.entries);
+
+    /* Verify entry data (cJSON iterates in insertion order) */
+    ASSERT_TRUE(SDL_strcmp(atlas.entries[0].name, "bark") == 0);
+    ASSERT_INT_EQ(atlas.entries[0].x, 4);
+    ASSERT_INT_EQ(atlas.entries[0].y, 4);
+    ASSERT_INT_EQ(atlas.entries[0].width, 256);
+    ASSERT_INT_EQ(atlas.entries[0].height, 256);
+    ASSERT_FLOAT_EQ(atlas.entries[0].u_offset, 0.002f);
+    ASSERT_FLOAT_EQ(atlas.entries[0].v_offset, 0.002f);
+    ASSERT_FLOAT_EQ(atlas.entries[0].u_scale, 0.125f);
+    ASSERT_FLOAT_EQ(atlas.entries[0].v_scale, 0.125f);
+
+    ASSERT_TRUE(SDL_strcmp(atlas.entries[1].name, "marble") == 0);
+    ASSERT_INT_EQ(atlas.entries[1].x, 268);
+    ASSERT_FLOAT_EQ(atlas.entries[1].u_offset, 0.1309f);
+
+    forge_pipeline_free_atlas(&atlas);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_null_path(void)
+{
+    TEST("load atlas — NULL path");
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(NULL, &atlas));
+    END_TEST();
+}
+
+static void test_load_atlas_null_atlas(void)
+{
+    TEST("load atlas — NULL atlas");
+    ASSERT_TRUE(!forge_pipeline_load_atlas("dummy.json", NULL));
+    END_TEST();
+}
+
+static void test_load_atlas_nonexistent(void)
+{
+    TEST("load atlas — nonexistent file");
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas("no_such_atlas.json", &atlas));
+    END_TEST();
+}
+
+static void test_load_atlas_invalid_json(void)
+{
+    TEST("load atlas — invalid JSON");
+    ASSERT_TRUE(write_atlas_json("atlas_bad.json", "{ not valid json !!!"));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_bad.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_missing_width(void)
+{
+    TEST("load atlas — missing width/height");
+    const char *json =
+        "{ \"version\": 1,"
+        "  \"entries\": { \"a\": { \"x\": 0, \"y\": 0 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_no_dim.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_no_dim.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_bad_version(void)
+{
+    TEST("load atlas — wrong version rejected");
+    const char *json =
+        "{ \"version\": 99, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 0, \"y\": 0, \"width\": 64,"
+        "    \"height\": 64, \"u_offset\": 0.0, \"v_offset\": 0.0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_bad_ver.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_bad_ver.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_missing_entries(void)
+{
+    TEST("load atlas — missing entries object");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512 }";
+    ASSERT_TRUE(write_atlas_json("atlas_no_entries.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_no_entries.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_empty_entries(void)
+{
+    TEST("load atlas — empty entries object");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512, \"entries\": {} }";
+    ASSERT_TRUE(write_atlas_json("atlas_empty.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_empty.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_optional_fields(void)
+{
+    TEST("load atlas — optional padding/utilization/UV defaults");
+    /* Omit padding, utilization, AND per-entry UV fields to exercise
+     * all default paths in the loader */
+    const char *json =
+        "{\n"
+        "  \"version\": 1,\n"
+        "  \"width\": 1024, \"height\": 1024,\n"
+        "  \"entries\": {\n"
+        "    \"stone\": { \"x\": 0, \"y\": 0, \"width\": 128, \"height\": 128 }\n"
+        "  }\n"
+        "}";
+    ASSERT_TRUE(write_atlas_json("atlas_defaults.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_defaults.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(forge_pipeline_load_atlas(path, &atlas));
+    /* padding and utilization should default to 0 when missing */
+    ASSERT_INT_EQ(atlas.padding, 0);
+    ASSERT_FLOAT_EQ(atlas.utilization, 0.0f);
+    ASSERT_INT_EQ(atlas.entry_count, 1);
+    /* Per-entry UV fields should default to identity transform */
+    ASSERT_FLOAT_EQ(atlas.entries[0].u_offset, 0.0f);
+    ASSERT_FLOAT_EQ(atlas.entries[0].v_offset, 0.0f);
+    ASSERT_FLOAT_EQ(atlas.entries[0].u_scale, 1.0f);
+    ASSERT_FLOAT_EQ(atlas.entries[0].v_scale, 1.0f);
+    forge_pipeline_free_atlas(&atlas);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_name_truncation(void)
+{
+    TEST("load atlas — long name truncated to buffer size");
+    /* Name longer than FORGE_PIPELINE_ATLAS_NAME_LEN (128) */
+    char long_name[256];
+    SDL_memset(long_name, 'A', sizeof(long_name) - 1);
+    long_name[sizeof(long_name) - 1] = '\0';
+
+    char json[1024];
+    SDL_snprintf(json, sizeof(json),
+        "{ \"version\": 1, \"width\": 512, \"height\": 512, \"entries\": {"
+        "\"%s\": { \"x\": 0, \"y\": 0, \"width\": 64, \"height\": 64,"
+        " \"u_offset\": 0, \"v_offset\": 0, \"u_scale\": 0.125,"
+        " \"v_scale\": 0.125 } } }", long_name);
+    ASSERT_TRUE(write_atlas_json("atlas_longname.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_longname.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(forge_pipeline_load_atlas(path, &atlas));
+    /* Name should be truncated, not overflow */
+    ASSERT_TRUE(SDL_strlen(atlas.entries[0].name) <
+                FORGE_PIPELINE_ATLAS_NAME_LEN);
+    forge_pipeline_free_atlas(&atlas);
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_entry_missing_fields(void)
+{
+    TEST("load atlas — entry missing x/y/width/height rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 0, \"y\": 0 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_entry_missing.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_entry_missing.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_entry_negative_coords(void)
+{
+    TEST("load atlas — entry with negative coordinates rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": -1, \"y\": 0, \"width\": 64,"
+        "    \"height\": 64, \"u_offset\": 0, \"v_offset\": 0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_neg_coords.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_neg_coords.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_entry_zero_size(void)
+{
+    TEST("load atlas — entry with zero width rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 0, \"y\": 0, \"width\": 0,"
+        "    \"height\": 64, \"u_offset\": 0, \"v_offset\": 0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_zero_size.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_zero_size.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_entry_oob(void)
+{
+    TEST("load atlas — entry exceeding atlas bounds rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 500, \"y\": 0, \"width\": 64,"
+        "    \"height\": 64, \"u_offset\": 0, \"v_offset\": 0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_oob.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_oob.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_entry_fractional_x(void)
+{
+    TEST("load atlas — entry with fractional x rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 0.5, \"y\": 0, \"width\": 64,"
+        "    \"height\": 64, \"u_offset\": 0, \"v_offset\": 0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_frac_x.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_frac_x.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_entry_fractional_y(void)
+{
+    TEST("load atlas — entry with fractional y rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 0, \"y\": 0.5, \"width\": 64,"
+        "    \"height\": 64, \"u_offset\": 0, \"v_offset\": 0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_frac_y.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_frac_y.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_load_atlas_fractional_dimensions(void)
+{
+    TEST("load atlas — fractional width/height rejected");
+    const char *json =
+        "{ \"version\": 1, \"width\": 512.5, \"height\": 512,"
+        "  \"entries\": { \"a\": { \"x\": 0, \"y\": 0, \"width\": 64,"
+        "    \"height\": 64, \"u_offset\": 0, \"v_offset\": 0,"
+        "    \"u_scale\": 0.125, \"v_scale\": 0.125 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_frac_dim.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_frac_dim.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(!forge_pipeline_load_atlas(path, &atlas));
+    cleanup_file(path);
+    END_TEST();
+}
+
+static void test_free_atlas_null(void)
+{
+    TEST("free atlas — NULL pointer");
+    forge_pipeline_free_atlas(NULL);  /* must not crash */
+    END_TEST();
+}
+
+static void test_free_atlas_zeroed(void)
+{
+    TEST("free atlas — zeroed struct");
+    ForgePipelineAtlas atlas;
+    SDL_memset(&atlas, 0, sizeof(atlas));
+    forge_pipeline_free_atlas(&atlas);  /* must not crash */
+    ASSERT_INT_EQ(atlas.entry_count, 0);
+    ASSERT_NULL(atlas.entries);
+    END_TEST();
+}
+
+static void test_free_atlas_double(void)
+{
+    TEST("free atlas — double free safety");
+    const char *json =
+        "{ \"version\": 1, \"width\": 256, \"height\": 256, \"entries\": {"
+        "\"test\": { \"x\": 0, \"y\": 0, \"width\": 64, \"height\": 64,"
+        " \"u_offset\": 0, \"v_offset\": 0, \"u_scale\": 0.25,"
+        " \"v_scale\": 0.25 } } }";
+    ASSERT_TRUE(write_atlas_json("atlas_dbl.json", json));
+    char path[512];
+    temp_path(path, sizeof(path), "atlas_dbl.json");
+
+    ForgePipelineAtlas atlas;
+    ASSERT_TRUE(forge_pipeline_load_atlas(path, &atlas));
+    forge_pipeline_free_atlas(&atlas);
+    forge_pipeline_free_atlas(&atlas);  /* must not crash */
+    ASSERT_NULL(atlas.entries);
+    cleanup_file(path);
+    END_TEST();
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -6813,6 +7213,36 @@ int main(int argc, char *argv[])
     test_joint_matrices_with_transform();
     test_joint_matrices_invalid_joint_index();
     test_joint_matrices_max_cap();
+
+    /* ── Atlas loading: valid files (3 tests) ── */
+    SDL_Log("\nAtlas loading — valid files:");
+    test_load_atlas_valid();
+    test_load_atlas_optional_fields();
+    test_load_atlas_name_truncation();
+
+    /* ── Atlas loading: error cases (15 tests) ── */
+    SDL_Log("\nAtlas loading — error cases:");
+    test_load_atlas_null_path();
+    test_load_atlas_null_atlas();
+    test_load_atlas_nonexistent();
+    test_load_atlas_invalid_json();
+    test_load_atlas_missing_width();
+    test_load_atlas_bad_version();
+    test_load_atlas_missing_entries();
+    test_load_atlas_empty_entries();
+    test_load_atlas_entry_missing_fields();
+    test_load_atlas_entry_negative_coords();
+    test_load_atlas_entry_zero_size();
+    test_load_atlas_entry_oob();
+    test_load_atlas_entry_fractional_x();
+    test_load_atlas_entry_fractional_y();
+    test_load_atlas_fractional_dimensions();
+
+    /* ── Atlas free safety (3 tests) ── */
+    SDL_Log("\nAtlas free:");
+    test_free_atlas_null();
+    test_free_atlas_zeroed();
+    test_free_atlas_double();
 
     /* ── Summary ── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

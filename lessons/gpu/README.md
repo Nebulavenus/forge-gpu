@@ -68,6 +68,7 @@ portable C interface.
 | [<img src="44-pipeline-morph-animations/assets/screenshot.png" width="480" alt="Pipeline Morph Animations"/>](44-pipeline-morph-animations/) | [**44 — Pipeline Morph Animations**](44-pipeline-morph-animations/) | Morph target (blend shape) animation with pipeline assets (.fmesh morph deltas, .fanim weight channels), CPU-blended deltas, GPU storage buffer displacement via SV_VertexID |
 | [<img src="45-scene-transparency-sorting/assets/screenshot.png" width="480" alt="Scene Transparency Sorting"/>](45-scene-transparency-sorting/) | [**45 — Scene Transparency Sorting**](45-scene-transparency-sorting/) | Two-pass draw splitting (opaque then sorted BLEND), centroid-based back-to-front sorting, alpha-masked shadow casting, runtime sorting toggle |
 | [<img src="46-particle-animations/assets/screenshot.png" width="480" alt="Particle Animations"/>](46-particle-animations/) | [**46 — Particle Animations**](46-particle-animations/) | GPU-driven particle system with compute shader simulation, billboard vertex pulling, texture atlas animation, atomic spawn recycling, additive and alpha blending |
+| [<img src="47-texture-atlas-rendering/assets/screenshot.png" width="480" alt="Texture Atlas Rendering"/>](47-texture-atlas-rendering/) | [**47 — Texture Atlas Rendering**](47-texture-atlas-rendering/) | Atlas-based texture rendering with UV remapping, 30 CC0 materials, atlas vs. individual bind comparison, pipeline atlas metadata loading |
 
 ## Prerequisites
 
@@ -245,6 +246,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-pipeline-skinned-animations`** — Pipeline-based skeletal animation with .fskin/.fanim assets and ForgeSceneSkinnedModel
 - **`/forge-pipeline-morph-animations`** — Pipeline-based morph target (blend shape) animation with .fmesh morph deltas and ForgeSceneMorphModel
 - **`/forge-particle-system`** — GPU-driven particle system with compute simulation, billboard rendering, texture atlas animation, and blending modes
+- **`/forge-atlas-rendering`** — Atlas-based texture rendering with UV remapping, batched draw API, pipeline metadata loading
 
 **How to use:**
 

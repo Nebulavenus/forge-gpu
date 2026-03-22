@@ -98,6 +98,9 @@
 #define FORGE_SCENE_LIGHT_DIR_EPSILON      1e-6f
 #define FORGE_SCENE_LIGHT_UP_PARALLEL_COS  0.999f
 
+/* Textured pipeline sampler count: shadow map + material texture */
+#define FORGE_SCENE_TEXTURED_FRAG_SAMPLER_COUNT 2
+
 /* UI atlas parameters */
 #define FORGE_SCENE_ATLAS_PIXEL_HEIGHT 24.0f
 #define FORGE_SCENE_ATLAS_PADDING      2
@@ -140,6 +143,14 @@ typedef struct ForgeSceneVertex {
     vec3 normal;    /* object-space vertex normal   */
 } ForgeSceneVertex;
 
+/* Interleaved vertex for textured scene geometry: position + normal + UV.
+ * Matches the scene_textured shader vertex input layout (32 bytes). */
+typedef struct ForgeSceneTexturedVertex {
+    vec3 position;  /* object-space vertex position */
+    vec3 normal;    /* object-space vertex normal   */
+    vec2 uv;        /* texture coordinates          */
+} ForgeSceneTexturedVertex;
+
 /* Position-only vertex for the grid floor quad. */
 typedef struct ForgeSceneGridVertex {
     float position[3]; /* world-space position (12 bytes) */
@@ -180,6 +191,21 @@ typedef struct ForgeSceneFragUniforms {
     float specular_str;      /* specular strength                    */
     float _pad[2];           /* 16-byte alignment                    */
 } ForgeSceneFragUniforms;
+
+/* Textured scene fragment uniforms — Blinn-Phong with texture + atlas UV.
+ * Must match scene_textured.frag.hlsl cbuffer SceneTexturedFragUniforms
+ * (80 bytes).  Replaces base_color with uv_transform for texture sampling. */
+typedef struct ForgeSceneTexturedFragUniforms {
+    float uv_transform[4];   /* xy = UV offset, zw = UV scale (atlas remap) */
+    float eye_pos[3];        /* camera position                      */
+    float ambient;           /* ambient intensity                    */
+    float light_dir[4];      /* directional light direction          */
+    float light_color[3];    /* light RGB                            */
+    float light_intensity;   /* light brightness                     */
+    float shininess;         /* specular exponent                    */
+    float specular_str;      /* specular strength                    */
+    float _pad[2];           /* 16-byte alignment                    */
+} ForgeSceneTexturedFragUniforms;
 
 /* Grid vertex uniforms: 2 matrices (128 bytes).
  * Must match grid.vert.hlsl cbuffer GridVertUniforms. */
@@ -449,7 +475,10 @@ typedef struct ForgeScene {
 
     /* ── Internal pipelines ─────────────────────────────────────────── */
     SDL_GPUGraphicsPipeline *scene_pipeline;   /* Blinn-Phong (pos+normal)   */
-    SDL_GPUGraphicsPipeline *shadow_pipeline;  /* depth-only shadow pass     */
+    SDL_GPUGraphicsPipeline *shadow_pipeline;      /* depth-only shadow (24B stride) */
+    SDL_GPUGraphicsPipeline *shadow_pipeline_pos;  /* depth-only shadow (12B stride) */
+    SDL_GPUGraphicsPipeline *shadow_pipeline_tex;  /* depth-only shadow (32B stride) */
+    SDL_GPUGraphicsPipeline *textured_pipeline;    /* Blinn-Phong + texture + atlas UV */
     SDL_GPUGraphicsPipeline *grid_pipeline;    /* procedural grid floor      */
     SDL_GPUGraphicsPipeline *sky_pipeline;     /* fullscreen sky gradient    */
     SDL_GPUGraphicsPipeline *ui_pipeline;      /* immediate-mode UI overlay  */
@@ -594,6 +623,25 @@ static void forge_scene_draw_shadow_mesh(ForgeScene *scene,
                                           Uint32 index_count,
                                           mat4 model);
 
+/* Draw a mesh into the shadow map using a position-only vertex buffer
+ * (12-byte stride, tightly-packed float3).  Use this with ForgeShape
+ * position buffers or any struct-of-arrays geometry.
+ * Index buffer must contain 32-bit indices. */
+static void forge_scene_draw_shadow_mesh_pos(ForgeScene *scene,
+                                              SDL_GPUBuffer *pos_vb,
+                                              SDL_GPUBuffer *ib,
+                                              Uint32 index_count,
+                                              mat4 model);
+
+/* Draw a mesh into the shadow map using a ForgeSceneTexturedVertex buffer
+ * (32-byte stride, position at offset 0).  Use this with textured meshes.
+ * Index buffer must contain 32-bit indices. */
+static void forge_scene_draw_shadow_textured_mesh(ForgeScene *scene,
+                                                    SDL_GPUBuffer *vb,
+                                                    SDL_GPUBuffer *ib,
+                                                    Uint32 index_count,
+                                                    mat4 model);
+
 /* End the shadow pass. */
 static void forge_scene_end_shadow_pass(ForgeScene *scene);
 
@@ -635,6 +683,43 @@ static void forge_scene_draw_mesh_ex(ForgeScene *scene,
  */
 static SDL_GPUGraphicsPipeline *forge_scene_create_pipeline(
     ForgeScene *scene, SDL_GPUCullMode cull_mode, SDL_GPUFillMode fill_mode);
+
+/* Draw a textured mesh with Blinn-Phong shading, shadow map, and atlas UV
+ * remapping.  vb must contain ForgeSceneTexturedVertex data (32-byte stride:
+ * position + normal + UV).  Index buffer must contain 32-bit indices.
+ * uv_transform is (u_offset, v_offset, u_scale, v_scale) — pass (0,0,1,1)
+ * for non-atlas textures.
+ *
+ * This convenience function re-binds the pipeline and samplers on every call.
+ * For atlas rendering where many meshes share one texture, use the pair
+ * forge_scene_bind_textured_resources() + forge_scene_draw_textured_mesh_no_bind()
+ * to bind once and draw many. */
+static void forge_scene_draw_textured_mesh(ForgeScene *scene,
+                                            SDL_GPUBuffer *vb,
+                                            SDL_GPUBuffer *ib,
+                                            Uint32 index_count,
+                                            mat4 model,
+                                            SDL_GPUTexture *texture,
+                                            SDL_GPUSampler *sampler,
+                                            const float uv_transform[4]);
+
+/* Bind the textured pipeline and fragment samplers (shadow map + material
+ * texture).  Call once before a batch of forge_scene_draw_textured_mesh_no_bind()
+ * calls that share the same texture and sampler. */
+static bool forge_scene_bind_textured_resources(ForgeScene *scene,
+                                                 SDL_GPUTexture *texture,
+                                                 SDL_GPUSampler *sampler);
+
+/* Draw a textured mesh WITHOUT re-binding pipeline or samplers — the caller
+ * must have called forge_scene_bind_textured_resources() first.
+ * vb must contain ForgeSceneTexturedVertex data (32-byte stride).
+ * Index buffer must contain 32-bit indices. */
+static void forge_scene_draw_textured_mesh_no_bind(ForgeScene *scene,
+                                                     SDL_GPUBuffer *vb,
+                                                     SDL_GPUBuffer *ib,
+                                                     Uint32 index_count,
+                                                     mat4 model,
+                                                     const float uv_transform[4]);
 
 /* Draw the procedural grid floor. */
 static void forge_scene_draw_grid(ForgeScene *scene);
@@ -833,6 +918,13 @@ static void forge_scene_compute_centroids(
 #include "scene/shaders/compiled/scene_frag_spirv.h"
 #include "scene/shaders/compiled/scene_frag_dxil.h"
 #include "scene/shaders/compiled/scene_frag_msl.h"
+
+#include "scene/shaders/compiled/scene_textured_vert_spirv.h"
+#include "scene/shaders/compiled/scene_textured_vert_dxil.h"
+#include "scene/shaders/compiled/scene_textured_vert_msl.h"
+#include "scene/shaders/compiled/scene_textured_frag_spirv.h"
+#include "scene/shaders/compiled/scene_textured_frag_dxil.h"
+#include "scene/shaders/compiled/scene_textured_frag_msl.h"
 
 #include "scene/shaders/compiled/grid_vert_spirv.h"
 #include "scene/shaders/compiled/grid_vert_dxil.h"
@@ -1680,6 +1772,20 @@ static bool forge_scene_init(ForgeScene *scene,
         shadow_frag_msl, shadow_frag_msl_size,
         0, 0, 0, 0);
 
+    SDL_GPUShader *textured_vs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_VERTEX,
+        scene_textured_vert_spirv, sizeof(scene_textured_vert_spirv),
+        scene_textured_vert_dxil,  sizeof(scene_textured_vert_dxil),
+        scene_textured_vert_msl, scene_textured_vert_msl_size,
+        0, 0, 0, 1);
+
+    SDL_GPUShader *textured_fs = forge_scene_create_shader(scene,
+        SDL_GPU_SHADERSTAGE_FRAGMENT,
+        scene_textured_frag_spirv, sizeof(scene_textured_frag_spirv),
+        scene_textured_frag_dxil,  sizeof(scene_textured_frag_dxil),
+        scene_textured_frag_msl, scene_textured_frag_msl_size,
+        FORGE_SCENE_TEXTURED_FRAG_SAMPLER_COUNT, 0, 0, 1);
+
     SDL_GPUShader *grid_vs = forge_scene_create_shader(scene,
         SDL_GPU_SHADERSTAGE_VERTEX,
         grid_vert_spirv, sizeof(grid_vert_spirv),
@@ -1709,6 +1815,7 @@ static bool forge_scene_init(ForgeScene *scene,
         0, 0, 0, 0);
 
     if (!scene->scene_vs || !scene->scene_fs || !shadow_vs || !shadow_fs ||
+        !textured_vs || !textured_fs ||
         !grid_vs || !grid_fs || !sky_vs || !sky_fs) {
         SDL_Log("forge_scene: one or more shaders failed");
         if (scene->scene_vs) {
@@ -1719,12 +1826,14 @@ static bool forge_scene_init(ForgeScene *scene,
             SDL_ReleaseGPUShader(scene->device, scene->scene_fs);
             scene->scene_fs = NULL;
         }
-        if (shadow_vs) SDL_ReleaseGPUShader(scene->device, shadow_vs);
-        if (shadow_fs) SDL_ReleaseGPUShader(scene->device, shadow_fs);
-        if (grid_vs)   SDL_ReleaseGPUShader(scene->device, grid_vs);
-        if (grid_fs)   SDL_ReleaseGPUShader(scene->device, grid_fs);
-        if (sky_vs)    SDL_ReleaseGPUShader(scene->device, sky_vs);
-        if (sky_fs)    SDL_ReleaseGPUShader(scene->device, sky_fs);
+        if (shadow_vs)   SDL_ReleaseGPUShader(scene->device, shadow_vs);
+        if (shadow_fs)   SDL_ReleaseGPUShader(scene->device, shadow_fs);
+        if (textured_vs) SDL_ReleaseGPUShader(scene->device, textured_vs);
+        if (textured_fs) SDL_ReleaseGPUShader(scene->device, textured_fs);
+        if (grid_vs)     SDL_ReleaseGPUShader(scene->device, grid_vs);
+        if (grid_fs)     SDL_ReleaseGPUShader(scene->device, grid_fs);
+        if (sky_vs)      SDL_ReleaseGPUShader(scene->device, sky_vs);
+        if (sky_fs)      SDL_ReleaseGPUShader(scene->device, sky_fs);
         return false;
     }
 
@@ -1823,6 +1932,56 @@ static bool forge_scene_init(ForgeScene *scene,
         pi.target_info.has_depth_stencil_target  = true;
         scene->shadow_pipeline =
             SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->shadow_pipeline) {
+            SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                    "(shadow_pipeline) failed: %s", SDL_GetError());
+        }
+
+        /* Position-only variant: 12-byte stride for struct-of-arrays buffers
+         * (ForgeShape positions, or any tightly-packed float3 array). */
+        SDL_GPUVertexBufferDescription vb_pos_only;
+        SDL_zero(vb_pos_only);
+        vb_pos_only.slot       = 0;
+        vb_pos_only.pitch      = sizeof(float) * 3;  /* 12 bytes */
+        vb_pos_only.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+        SDL_GPUVertexInputState pos_only_input;
+        SDL_zero(pos_only_input);
+        pos_only_input.vertex_buffer_descriptions = &vb_pos_only;
+        pos_only_input.num_vertex_buffers         = 1;
+        pos_only_input.vertex_attributes          = &pos_attr;
+        pos_only_input.num_vertex_attributes      = 1;
+
+        pi.vertex_input_state = pos_only_input;
+        scene->shadow_pipeline_pos =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->shadow_pipeline_pos) {
+            SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                    "(shadow_pipeline_pos) failed: %s", SDL_GetError());
+        }
+
+        /* Textured vertex variant: 32-byte stride for ForgeSceneTexturedVertex
+         * (position at offset 0, followed by normal + UV — only position read). */
+        SDL_GPUVertexBufferDescription vb_tex_shadow;
+        SDL_zero(vb_tex_shadow);
+        vb_tex_shadow.slot       = 0;
+        vb_tex_shadow.pitch      = sizeof(ForgeSceneTexturedVertex);
+        vb_tex_shadow.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+        SDL_GPUVertexInputState tex_shadow_input;
+        SDL_zero(tex_shadow_input);
+        tex_shadow_input.vertex_buffer_descriptions = &vb_tex_shadow;
+        tex_shadow_input.num_vertex_buffers         = 1;
+        tex_shadow_input.vertex_attributes          = &pos_attr;
+        tex_shadow_input.num_vertex_attributes      = 1;
+
+        pi.vertex_input_state = tex_shadow_input;
+        scene->shadow_pipeline_tex =
+            SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->shadow_pipeline_tex) {
+            SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                    "(shadow_pipeline_tex) failed: %s", SDL_GetError());
+        }
     }
 
     /* Default scene pipeline: Blinn-Phong with shadow map, back-face culling.
@@ -1835,6 +1994,47 @@ static bool forge_scene_init(ForgeScene *scene,
     scene->scene_pipeline = forge_scene__create_scene_pipeline(
         scene, scene->scene_vs, scene->scene_fs, full_input,
         SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
+
+    /* Textured scene pipeline: Blinn-Phong with texture sampling and
+     * atlas UV remapping.  ForgeSceneTexturedVertex = 32 bytes
+     * (position + normal + UV).  Uses 2 fragment samplers: shadow + material. */
+    {
+        SDL_GPUVertexBufferDescription vb_tex;
+        SDL_zero(vb_tex);
+        vb_tex.slot       = 0;
+        vb_tex.pitch      = sizeof(ForgeSceneTexturedVertex);
+        vb_tex.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+
+        SDL_GPUVertexAttribute tex_attrs[3];
+        SDL_zero(tex_attrs);
+        tex_attrs[0].location    = 0;
+        tex_attrs[0].buffer_slot = 0;
+        tex_attrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        tex_attrs[0].offset      = offsetof(ForgeSceneTexturedVertex, position);
+        tex_attrs[1].location    = 1;
+        tex_attrs[1].buffer_slot = 0;
+        tex_attrs[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        tex_attrs[1].offset      = offsetof(ForgeSceneTexturedVertex, normal);
+        tex_attrs[2].location    = 2;
+        tex_attrs[2].buffer_slot = 0;
+        tex_attrs[2].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+        tex_attrs[2].offset      = offsetof(ForgeSceneTexturedVertex, uv);
+
+        SDL_GPUVertexInputState tex_input;
+        SDL_zero(tex_input);
+        tex_input.vertex_buffer_descriptions = &vb_tex;
+        tex_input.num_vertex_buffers         = 1;
+        tex_input.vertex_attributes          = tex_attrs;
+        tex_input.num_vertex_attributes      = 3;
+
+        scene->textured_pipeline = forge_scene__create_scene_pipeline(
+            scene, textured_vs, textured_fs, tex_input,
+            SDL_GPU_CULLMODE_BACK, SDL_GPU_FILLMODE_FILL);
+        if (!scene->textured_pipeline) {
+            SDL_Log("forge_scene: textured_pipeline creation failed: %s",
+                    SDL_GetError());
+        }
+    }
 
     /* Grid pipeline: procedural grid with alpha blending for distance fade.
      * LESS_OR_EQUAL prevents z-fighting at Y=0. */
@@ -1873,6 +2073,10 @@ static bool forge_scene_init(ForgeScene *scene,
         pi.target_info.has_depth_stencil_target  = true;
         scene->grid_pipeline =
             SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->grid_pipeline) {
+            SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                    "(grid_pipeline) failed: %s", SDL_GetError());
+        }
     }
 
     /* Sky pipeline: fullscreen triangle, no depth test (draws at z=0.9999),
@@ -1902,6 +2106,10 @@ static bool forge_scene_init(ForgeScene *scene,
         pi.target_info.has_depth_stencil_target  = true;
         scene->sky_pipeline =
             SDL_CreateGPUGraphicsPipeline(scene->device, &pi);
+        if (!scene->sky_pipeline) {
+            SDL_Log("forge_scene: SDL_CreateGPUGraphicsPipeline "
+                    "(sky_pipeline) failed: %s", SDL_GetError());
+        }
     }
 
     /* Release non-scene shaders (pipelines keep internal copies).
@@ -1909,15 +2117,18 @@ static bool forge_scene_init(ForgeScene *scene,
      * so forge_scene_create_pipeline() can create new pipelines later. */
     SDL_ReleaseGPUShader(scene->device, shadow_vs);
     SDL_ReleaseGPUShader(scene->device, shadow_fs);
+    SDL_ReleaseGPUShader(scene->device, textured_vs);
+    SDL_ReleaseGPUShader(scene->device, textured_fs);
     SDL_ReleaseGPUShader(scene->device, grid_vs);
     SDL_ReleaseGPUShader(scene->device, grid_fs);
     SDL_ReleaseGPUShader(scene->device, sky_vs);
     SDL_ReleaseGPUShader(scene->device, sky_fs);
 
-    if (!scene->shadow_pipeline || !scene->scene_pipeline ||
+    if (!scene->shadow_pipeline || !scene->shadow_pipeline_pos ||
+        !scene->shadow_pipeline_tex ||
+        !scene->textured_pipeline || !scene->scene_pipeline ||
         !scene->grid_pipeline || !scene->sky_pipeline) {
-        SDL_Log("forge_scene: one or more pipelines failed: %s",
-                SDL_GetError());
+        SDL_Log("forge_scene: pipeline creation failed (see above)");
         return false;
     }
 
@@ -2481,7 +2692,63 @@ static void forge_scene_draw_shadow_mesh(ForgeScene *scene,
                                           Uint32 index_count,
                                           mat4 model)
 {
-    if (!scene->pass || !vb || !ib || index_count == 0) return;
+    if (!scene->pass || !scene->shadow_pipeline || !vb || !ib ||
+        index_count == 0) return;
+
+    /* Bind the default shadow pipeline — other shadow draw paths switch to
+     * their own pipelines (pos-only, skinned) and do not restore this one,
+     * so we must explicitly bind here to ensure the correct vertex stride. */
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->shadow_pipeline);
+
+    SDL_GPUBufferBinding vb_bind = { vb, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    ForgeSceneShadowVertUniforms su;
+    su.light_vp = mat4_multiply(scene->light_vp, model);
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, 1, 0, 0, 0);
+}
+
+static void forge_scene_draw_shadow_mesh_pos(ForgeScene *scene,
+                                              SDL_GPUBuffer *pos_vb,
+                                              SDL_GPUBuffer *ib,
+                                              Uint32 index_count,
+                                              mat4 model)
+{
+    if (!scene->pass || !scene->shadow_pipeline_pos ||
+        !pos_vb || !ib || index_count == 0) return;
+
+    /* Switch to the 12-byte-stride pipeline for position-only buffers */
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->shadow_pipeline_pos);
+
+    SDL_GPUBufferBinding vb_bind = { pos_vb, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    ForgeSceneShadowVertUniforms su;
+    su.light_vp = mat4_multiply(scene->light_vp, model);
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &su, sizeof(su));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, 1, 0, 0, 0);
+}
+
+static void forge_scene_draw_shadow_textured_mesh(ForgeScene *scene,
+                                                    SDL_GPUBuffer *vb,
+                                                    SDL_GPUBuffer *ib,
+                                                    Uint32 index_count,
+                                                    mat4 model)
+{
+    if (!scene->pass || !scene->shadow_pipeline_tex ||
+        !vb || !ib || index_count == 0) return;
+
+    /* Switch to the 32-byte-stride pipeline for textured vertex buffers */
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->shadow_pipeline_tex);
 
     SDL_GPUBufferBinding vb_bind = { vb, 0 };
     SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
@@ -2650,6 +2917,100 @@ static void forge_scene_draw_mesh_ex(ForgeScene *scene,
     }
     forge_scene__draw_mesh_internal(scene, pipeline,
                                     vb, ib, index_count, model, base_color);
+}
+
+/* ── Textured mesh drawing ────────────────────────────────────────────── */
+
+/* NOTE: This function re-binds the pipeline and both fragment samplers on
+ * every call for simplicity.  For atlas rendering where many meshes share
+ * one texture, use forge_scene_bind_textured_resources() once followed by
+ * forge_scene_draw_textured_mesh_no_bind() per mesh to avoid redundant binds. */
+static void forge_scene_draw_textured_mesh(ForgeScene *scene,
+                                            SDL_GPUBuffer *vb,
+                                            SDL_GPUBuffer *ib,
+                                            Uint32 index_count,
+                                            mat4 model,
+                                            SDL_GPUTexture *texture,
+                                            SDL_GPUSampler *sampler,
+                                            const float uv_transform[4])
+{
+    if (!vb || !ib || index_count == 0 || !uv_transform) return;
+    if (!forge_scene_bind_textured_resources(scene, texture, sampler)) return;
+    forge_scene_draw_textured_mesh_no_bind(scene, vb, ib, index_count,
+                                           model, uv_transform);
+}
+
+/* ── Batched textured mesh drawing (bind once, draw many) ────────────── */
+
+static bool forge_scene_bind_textured_resources(ForgeScene *scene,
+                                                 SDL_GPUTexture *texture,
+                                                 SDL_GPUSampler *sampler)
+{
+    if (!scene->pass || !scene->textured_pipeline || !texture || !sampler)
+        return false;
+
+    SDL_BindGPUGraphicsPipeline(scene->pass, scene->textured_pipeline);
+
+    /* Fragment sampler slot 0: shadow map
+     * Fragment sampler slot 1: material texture */
+    SDL_GPUTextureSamplerBinding frag_binds[FORGE_SCENE_TEXTURED_FRAG_SAMPLER_COUNT];
+    frag_binds[0].texture = scene->shadow_map;
+    frag_binds[0].sampler = scene->shadow_sampler;
+    frag_binds[1].texture = texture;
+    frag_binds[1].sampler = sampler;
+    SDL_BindGPUFragmentSamplers(scene->pass, 0, frag_binds,
+                                SDL_arraysize(frag_binds));
+    return true;
+}
+
+static void forge_scene_draw_textured_mesh_no_bind(ForgeScene *scene,
+                                                     SDL_GPUBuffer *vb,
+                                                     SDL_GPUBuffer *ib,
+                                                     Uint32 index_count,
+                                                     mat4 model,
+                                                     const float uv_transform[4])
+{
+    if (!scene->pass || !scene->textured_pipeline || !vb || !ib ||
+        index_count == 0 || !uv_transform)
+        return;
+
+    SDL_GPUBufferBinding vb_bind = { vb, 0 };
+    SDL_BindGPUVertexBuffers(scene->pass, 0, &vb_bind, 1);
+    SDL_GPUBufferBinding ib_bind = { ib, 0 };
+    SDL_BindGPUIndexBuffer(scene->pass, &ib_bind,
+                           SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    /* Vertex uniforms: same 3-matrix layout as the base scene pipeline */
+    ForgeSceneVertUniforms vu;
+    vu.mvp      = mat4_multiply(scene->cam_vp, model);
+    vu.model    = model;
+    vu.light_vp = mat4_multiply(scene->light_vp, model);
+    SDL_PushGPUVertexUniformData(scene->cmd, 0, &vu, sizeof(vu));
+
+    /* Fragment uniforms: UV transform + lighting */
+    ForgeSceneTexturedFragUniforms fu;
+    SDL_memset(&fu, 0, sizeof(fu));
+    fu.uv_transform[0]  = uv_transform[0];
+    fu.uv_transform[1]  = uv_transform[1];
+    fu.uv_transform[2]  = uv_transform[2];
+    fu.uv_transform[3]  = uv_transform[3];
+    fu.eye_pos[0]        = scene->cam_position.x;
+    fu.eye_pos[1]        = scene->cam_position.y;
+    fu.eye_pos[2]        = scene->cam_position.z;
+    fu.ambient           = scene->config.ambient;
+    fu.light_dir[0]      = scene->light_dir.x;
+    fu.light_dir[1]      = scene->light_dir.y;
+    fu.light_dir[2]      = scene->light_dir.z;
+    fu.light_dir[3]      = 0.0f;
+    fu.light_color[0]    = scene->config.light_color[0];
+    fu.light_color[1]    = scene->config.light_color[1];
+    fu.light_color[2]    = scene->config.light_color[2];
+    fu.light_intensity   = scene->config.light_intensity;
+    fu.shininess         = scene->config.shininess;
+    fu.specular_str      = scene->config.specular_str;
+    SDL_PushGPUFragmentUniformData(scene->cmd, 0, &fu, sizeof(fu));
+
+    SDL_DrawGPUIndexedPrimitives(scene->pass, index_count, 1, 0, 0, 0);
 }
 
 /* ── Public pipeline creation ─────────────────────────────────────────── */
@@ -3089,6 +3450,12 @@ static void forge_scene_destroy(ForgeScene *scene)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->scene_pipeline);
     if (scene->shadow_pipeline)
         SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->shadow_pipeline);
+    if (scene->shadow_pipeline_pos)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->shadow_pipeline_pos);
+    if (scene->shadow_pipeline_tex)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->shadow_pipeline_tex);
+    if (scene->textured_pipeline)
+        SDL_ReleaseGPUGraphicsPipeline(scene->device, scene->textured_pipeline);
 
     /* Scene shaders (kept alive for forge_scene_create_pipeline) */
     if (scene->scene_vs)

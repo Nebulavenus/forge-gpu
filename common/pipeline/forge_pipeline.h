@@ -64,6 +64,9 @@
 #define FORGE_PIPELINE_FMESH_VERSION      2
 #define FORGE_PIPELINE_FMESH_VERSION_SKIN 3
 
+/* Atlas JSON format version */
+#define FORGE_PIPELINE_ATLAS_VERSION 1
+
 /* .fmesh header layout sizes (bytes) */
 #define FORGE_PIPELINE_HEADER_SIZE    32
 
@@ -830,6 +833,66 @@ uint32_t forge_pipeline_compute_joint_matrices(
     mat4 *out_matrices, uint32_t max_joints);
 
 #endif /* FORGE_MATH_H — animation evaluation requires forge_math.h */
+
+/* ── Atlas metadata ────────────────────────────────────────────────────── */
+
+/* Maximum material name length in atlas entries */
+#define FORGE_PIPELINE_ATLAS_NAME_LEN 128
+
+/* Maximum number of entries in an atlas (rejects malformed files) */
+#define FORGE_PIPELINE_MAX_ATLAS_ENTRIES 4096
+
+/*
+ * ForgePipelineAtlasEntry — one material's rectangle within a texture atlas.
+ *
+ * Pixel coordinates (x, y, width, height) describe the material's region
+ * in the atlas image.  UV transform values (u_offset, v_offset, u_scale,
+ * v_scale) are pre-computed for the shader:
+ *
+ *     atlas_uv = original_uv * vec2(u_scale, v_scale)
+ *              + vec2(u_offset, v_offset)
+ */
+typedef struct ForgePipelineAtlasEntry {
+    char     name[FORGE_PIPELINE_ATLAS_NAME_LEN]; /* material / texture name */
+    int32_t  x, y;            /* pixel position in atlas             */
+    int32_t  width, height;   /* pixel dimensions                    */
+    float    u_offset;        /* UV offset X (x / atlas_width)       */
+    float    v_offset;        /* UV offset Y (y / atlas_height)      */
+    float    u_scale;         /* UV scale X  (width / atlas_width)   */
+    float    v_scale;         /* UV scale Y  (height / atlas_height) */
+} ForgePipelineAtlasEntry;
+
+/*
+ * ForgePipelineAtlas — parsed atlas.json metadata.
+ *
+ * Produced by the pipeline's atlas plugin (Asset Lesson 17).  Contains
+ * the atlas dimensions and an array of per-material UV remap entries.
+ */
+typedef struct ForgePipelineAtlas {
+    int32_t                   width;        /* atlas image width  (px) */
+    int32_t                   height;       /* atlas image height (px) */
+    int32_t                   padding;      /* texel padding per side  */
+    float                     utilization;  /* packing efficiency 0-1  */
+    ForgePipelineAtlasEntry  *entries;      /* heap array of entries   */
+    int32_t                   entry_count;  /* number of entries       */
+} ForgePipelineAtlas;
+
+/*
+ * forge_pipeline_load_atlas — Parse an atlas.json metadata file.
+ *
+ * Reads the JSON file at json_path and populates *atlas with the atlas
+ * dimensions and per-material UV entries.  Returns true on success.
+ * The caller owns the memory and must call forge_pipeline_free_atlas().
+ */
+bool forge_pipeline_load_atlas(const char *json_path,
+                               ForgePipelineAtlas *atlas);
+
+/*
+ * forge_pipeline_free_atlas — Release all memory owned by an atlas.
+ *
+ * Safe to call on a zeroed or already-freed atlas.
+ */
+void forge_pipeline_free_atlas(ForgePipelineAtlas *atlas);
 
 /* ── Implementation ────────────────────────────────────────────────────── */
 
@@ -4098,6 +4161,212 @@ uint32_t forge_pipeline_compute_joint_matrices(
 }
 
 #endif /* FORGE_MATH_H — animation evaluation implementation */
+
+/* ── Atlas metadata loader ─────────────────────────────────────────────── */
+
+bool forge_pipeline_load_atlas(const char *json_path,
+                               ForgePipelineAtlas *atlas)
+{
+    if (!json_path) {
+        SDL_Log("forge_pipeline_load_atlas: json_path is NULL");
+        return false;
+    }
+    if (!atlas) {
+        SDL_Log("forge_pipeline_load_atlas: atlas is NULL");
+        return false;
+    }
+    SDL_memset(atlas, 0, sizeof(*atlas));
+
+    /* Read the JSON file */
+    size_t file_size = 0;
+    void *file_data = SDL_LoadFile(json_path, &file_size);
+    if (!file_data) {
+        SDL_Log("forge_pipeline_load_atlas: failed to load '%s': %s",
+                json_path, SDL_GetError());
+        return false;
+    }
+
+    cJSON *root = cJSON_ParseWithLength((const char *)file_data, file_size);
+    SDL_free(file_data);
+    if (!root) {
+        SDL_Log("forge_pipeline_load_atlas: failed to parse JSON '%s'",
+                json_path);
+        return false;
+    }
+
+    /* Validate version field — must be present, numeric, and match exactly */
+    cJSON *j_version = cJSON_GetObjectItemCaseSensitive(root, "version");
+    if (!cJSON_IsNumber(j_version) ||
+        j_version->valuedouble != (double)FORGE_PIPELINE_ATLAS_VERSION) {
+        SDL_Log("forge_pipeline_load_atlas: '%s' has unsupported version "
+                "(expected %d)", json_path, FORGE_PIPELINE_ATLAS_VERSION);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    /* Read top-level fields */
+    cJSON *j_width  = cJSON_GetObjectItemCaseSensitive(root, "width");
+    cJSON *j_height = cJSON_GetObjectItemCaseSensitive(root, "height");
+    cJSON *j_pad    = cJSON_GetObjectItemCaseSensitive(root, "padding");
+    cJSON *j_util   = cJSON_GetObjectItemCaseSensitive(root, "utilization");
+    cJSON *j_entries = cJSON_GetObjectItemCaseSensitive(root, "entries");
+
+    if (!cJSON_IsNumber(j_width) || !cJSON_IsNumber(j_height) ||
+        j_width->valuedouble <= 0.0 || j_height->valuedouble <= 0.0 ||
+        j_width->valuedouble > (double)INT32_MAX ||
+        j_height->valuedouble > (double)INT32_MAX ||
+        (double)(int32_t)j_width->valuedouble != j_width->valuedouble ||
+        (double)(int32_t)j_height->valuedouble != j_height->valuedouble) {
+        SDL_Log("forge_pipeline_load_atlas: '%s' missing or invalid "
+                "width/height (must be positive integers)", json_path);
+        cJSON_Delete(root);
+        return false;
+    }
+    if (cJSON_IsNumber(j_pad) &&
+        (j_pad->valuedouble < 0.0 ||
+         j_pad->valuedouble > (double)INT32_MAX ||
+         (double)(int32_t)j_pad->valuedouble != j_pad->valuedouble)) {
+        SDL_Log("forge_pipeline_load_atlas: '%s' invalid padding value",
+                json_path);
+        cJSON_Delete(root);
+        return false;
+    }
+    if (!cJSON_IsObject(j_entries)) {
+        SDL_Log("forge_pipeline_load_atlas: '%s' missing entries object",
+                json_path);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    atlas->width   = (int32_t)j_width->valuedouble;
+    atlas->height  = (int32_t)j_height->valuedouble;
+    atlas->padding = cJSON_IsNumber(j_pad)  ? (int32_t)j_pad->valuedouble : 0;
+    atlas->utilization = cJSON_IsNumber(j_util) ? (float)j_util->valuedouble
+                                                : 0.0f;
+
+    /* Count entries — cJSON_GetArraySize works on objects too (both use
+     * the same linked-list structure internally) */
+    int count = cJSON_GetArraySize(j_entries);
+    if (count <= 0) {
+        SDL_Log("forge_pipeline_load_atlas: '%s' has no entries", json_path);
+        cJSON_Delete(root);
+        return false;
+    }
+    if (count > FORGE_PIPELINE_MAX_ATLAS_ENTRIES) {
+        SDL_Log("forge_pipeline_load_atlas: '%s' has %d entries "
+                "(max %d)", json_path, count,
+                FORGE_PIPELINE_MAX_ATLAS_ENTRIES);
+        cJSON_Delete(root);
+        return false;
+    }
+
+    atlas->entries = (ForgePipelineAtlasEntry *)SDL_calloc(
+        (size_t)count, sizeof(ForgePipelineAtlasEntry));
+    if (!atlas->entries) {
+        SDL_Log("forge_pipeline_load_atlas: allocation failed for %d entries",
+                count);
+        cJSON_Delete(root);
+        return false;
+    }
+    atlas->entry_count = (int32_t)count;
+
+    /* Parse each entry */
+    int idx = 0;
+    cJSON *child = NULL;
+    cJSON_ArrayForEach(child, j_entries) {
+        if (idx >= count) break;  /* safety: prevent out-of-bounds write */
+        ForgePipelineAtlasEntry *e = &atlas->entries[idx];
+
+        /* Name is the JSON key */
+        if (child->string) {
+            SDL_strlcpy(e->name, child->string, sizeof(e->name));
+        }
+
+        cJSON *jx = cJSON_GetObjectItemCaseSensitive(child, "x");
+        cJSON *jy = cJSON_GetObjectItemCaseSensitive(child, "y");
+        cJSON *jw = cJSON_GetObjectItemCaseSensitive(child, "width");
+        cJSON *jh = cJSON_GetObjectItemCaseSensitive(child, "height");
+        cJSON *ju = cJSON_GetObjectItemCaseSensitive(child, "u_offset");
+        cJSON *jv = cJSON_GetObjectItemCaseSensitive(child, "v_offset");
+        cJSON *jus = cJSON_GetObjectItemCaseSensitive(child, "u_scale");
+        cJSON *jvs = cJSON_GetObjectItemCaseSensitive(child, "v_scale");
+
+        /* Pixel rect fields are required, must be integers, and positive */
+        if (!cJSON_IsNumber(jx) || !cJSON_IsNumber(jy) ||
+            !cJSON_IsNumber(jw) || !cJSON_IsNumber(jh)) {
+            SDL_Log("forge_pipeline_load_atlas: entry '%s' missing "
+                    "x/y/width/height", e->name);
+            SDL_free(atlas->entries);
+            atlas->entries = NULL;
+            atlas->entry_count = 0;
+            cJSON_Delete(root);
+            return false;
+        }
+
+        /* Validate numeric fields are exact integers within int32 range
+         * before casting — prevents truncation of fractional values and
+         * overflow on out-of-range doubles */
+        if (jx->valuedouble < 0.0 || jy->valuedouble < 0.0 ||
+            jw->valuedouble <= 0.0 || jh->valuedouble <= 0.0 ||
+            jx->valuedouble > (double)INT32_MAX ||
+            jy->valuedouble > (double)INT32_MAX ||
+            jw->valuedouble > (double)INT32_MAX ||
+            jh->valuedouble > (double)INT32_MAX ||
+            (double)(int32_t)jx->valuedouble != jx->valuedouble ||
+            (double)(int32_t)jy->valuedouble != jy->valuedouble ||
+            (double)(int32_t)jw->valuedouble != jw->valuedouble ||
+            (double)(int32_t)jh->valuedouble != jh->valuedouble) {
+            SDL_Log("forge_pipeline_load_atlas: entry '%s' has non-integer "
+                    "or out-of-range rectangle fields", e->name);
+            SDL_free(atlas->entries);
+            atlas->entries = NULL;
+            atlas->entry_count = 0;
+            cJSON_Delete(root);
+            return false;
+        }
+        e->x      = (int32_t)jx->valuedouble;
+        e->y      = (int32_t)jy->valuedouble;
+        e->width  = (int32_t)jw->valuedouble;
+        e->height = (int32_t)jh->valuedouble;
+
+        /* Bounds check with overflow-safe arithmetic — use uint64 to
+         * prevent int32 addition overflow when x + width exceeds INT32_MAX */
+        {
+            uint64_t right  = (uint64_t)e->x + (uint64_t)e->width;
+            uint64_t bottom = (uint64_t)e->y + (uint64_t)e->height;
+            if (right > (uint64_t)atlas->width ||
+                bottom > (uint64_t)atlas->height) {
+                SDL_Log("forge_pipeline_load_atlas: entry '%s' has invalid "
+                        "bounds (%d,%d %dx%d) for %dx%d atlas",
+                        e->name, e->x, e->y, e->width, e->height,
+                        atlas->width, atlas->height);
+                SDL_free(atlas->entries);
+                atlas->entries = NULL;
+                atlas->entry_count = 0;
+                cJSON_Delete(root);
+                return false;
+            }
+        }
+
+        /* UV fields default to sensible values if absent */
+        e->u_offset = cJSON_IsNumber(ju)  ? (float)ju->valuedouble  : 0.0f;
+        e->v_offset = cJSON_IsNumber(jv)  ? (float)jv->valuedouble  : 0.0f;
+        e->u_scale  = cJSON_IsNumber(jus) ? (float)jus->valuedouble : 1.0f;
+        e->v_scale  = cJSON_IsNumber(jvs) ? (float)jvs->valuedouble : 1.0f;
+
+        idx++;
+    }
+
+    cJSON_Delete(root);
+    return true;
+}
+
+void forge_pipeline_free_atlas(ForgePipelineAtlas *atlas)
+{
+    if (!atlas) return;
+    SDL_free(atlas->entries);
+    SDL_memset(atlas, 0, sizeof(*atlas));
+}
 
 #endif /* FORGE_PIPELINE_IMPLEMENTATION */
 

@@ -490,6 +490,37 @@ static void test_struct_frag_uniforms_size(void)
     END_TEST();
 }
 
+/* Expected ABI sizes for textured pipeline structs — must match the HLSL
+ * cbuffer layouts.  Named constants prevent magic-number lint warnings and
+ * document the contract between C and shader code. */
+#define TEXTURED_VERTEX_SIZE             32  /* vec3 pos + vec3 normal + vec2 uv */
+#define TEXTURED_VERTEX_POSITION_OFFSET   0
+#define TEXTURED_VERTEX_NORMAL_OFFSET    12  /* sizeof(vec3) */
+#define TEXTURED_VERTEX_UV_OFFSET        24  /* 2 * sizeof(vec3) */
+#define TEXTURED_FRAG_UNIFORMS_SIZE      80  /* matches scene_textured.frag.hlsl cbuffer */
+
+static void test_struct_textured_vertex_size(void)
+{
+    TEST("struct — ForgeSceneTexturedVertex is 32 bytes (pos+normal+uv)");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneTexturedVertex),
+                  TEXTURED_VERTEX_SIZE);
+    ASSERT_INT_EQ((int)offsetof(ForgeSceneTexturedVertex, position),
+                  TEXTURED_VERTEX_POSITION_OFFSET);
+    ASSERT_INT_EQ((int)offsetof(ForgeSceneTexturedVertex, normal),
+                  TEXTURED_VERTEX_NORMAL_OFFSET);
+    ASSERT_INT_EQ((int)offsetof(ForgeSceneTexturedVertex, uv),
+                  TEXTURED_VERTEX_UV_OFFSET);
+    END_TEST();
+}
+
+static void test_struct_textured_frag_uniforms_size(void)
+{
+    TEST("struct — ForgeSceneTexturedFragUniforms is 80 bytes");
+    ASSERT_INT_EQ((int)sizeof(ForgeSceneTexturedFragUniforms),
+                  TEXTURED_FRAG_UNIFORMS_SIZE);
+    END_TEST();
+}
+
 static void test_struct_grid_vert_uniforms_size(void)
 {
     TEST("struct — ForgeSceneGridVertUniforms is 128 bytes (2 x mat4)");
@@ -564,6 +595,9 @@ static void test_gpu_init_destroy_no_font(void)
     ASSERT_TRUE_C(scene.window != NULL);
     ASSERT_TRUE_C(scene.scene_pipeline != NULL);
     ASSERT_TRUE_C(scene.shadow_pipeline != NULL);
+    ASSERT_TRUE_C(scene.shadow_pipeline_pos != NULL);
+    ASSERT_TRUE_C(scene.shadow_pipeline_tex != NULL);
+    ASSERT_TRUE_C(scene.textured_pipeline != NULL);
     ASSERT_TRUE_C(scene.grid_pipeline != NULL);
     ASSERT_TRUE_C(scene.sky_pipeline != NULL);
     ASSERT_TRUE_C(!scene.ui_enabled);
@@ -929,6 +963,9 @@ cleanup:
     /* After destroy, owned pointers/state from the init path should be reset */
     if (scene.device != NULL || scene.window != NULL ||
         scene.scene_pipeline != NULL || scene.shadow_pipeline != NULL ||
+        scene.shadow_pipeline_pos != NULL ||
+        scene.shadow_pipeline_tex != NULL ||
+        scene.textured_pipeline != NULL ||
         scene.grid_pipeline != NULL || scene.sky_pipeline != NULL ||
         scene.ui_pipeline != NULL || scene.ui_atlas_texture != NULL ||
         scene.ui_enabled) {
@@ -1055,11 +1092,143 @@ static void test_draw_shadow_mesh_null_buffers_is_safe(void)
     TEST("robustness — draw_shadow_mesh with NULL buffers does not crash");
     ForgeScene scene;
     SDL_memset(&scene, 0, sizeof(scene));
-    /* Seed a non-NULL pass so the function reaches the vb/ib guard
-     * instead of early-returning on the pass check. */
     scene.pass = (SDL_GPURenderPass *)1;
+    scene.shadow_pipeline = (SDL_GPUGraphicsPipeline *)1;
     forge_scene_draw_shadow_mesh(&scene, NULL, NULL, 0, mat4_identity());
     /* reached here without crashing */
+    END_TEST();
+}
+
+static void test_draw_shadow_mesh_pos_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_shadow_mesh_pos with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.shadow_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    scene.shadow_pipeline_pos = (SDL_GPUGraphicsPipeline *)1;
+    forge_scene_draw_shadow_mesh_pos(&scene, NULL, NULL, 0, mat4_identity());
+    /* reached here without crashing */
+    END_TEST();
+}
+
+static void test_draw_shadow_mesh_pos_zero_count_is_safe(void)
+{
+    TEST("robustness — draw_shadow_mesh_pos with zero index count is a no-op");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.shadow_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    scene.shadow_pipeline_pos = (SDL_GPUGraphicsPipeline *)1;
+    /* Non-NULL buffers but zero count — should early-return without drawing */
+    forge_scene_draw_shadow_mesh_pos(&scene, (SDL_GPUBuffer *)1,
+                                      (SDL_GPUBuffer *)1, 0, mat4_identity());
+    END_TEST();
+}
+
+static void test_draw_shadow_mesh_pos_null_pass_is_safe(void)
+{
+    TEST("robustness — draw_shadow_mesh_pos with NULL pass is a no-op");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.shadow_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    scene.shadow_pipeline_pos = (SDL_GPUGraphicsPipeline *)1;
+    /* pass is NULL (zeroed) — should early-return */
+    forge_scene_draw_shadow_mesh_pos(&scene, (SDL_GPUBuffer *)1,
+                                      (SDL_GPUBuffer *)1, 36, mat4_identity());
+    END_TEST();
+}
+
+static void test_draw_shadow_textured_mesh_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_shadow_textured_mesh with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.shadow_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    scene.shadow_pipeline_tex = (SDL_GPUGraphicsPipeline *)1;
+    forge_scene_draw_shadow_textured_mesh(&scene, NULL, NULL, 0, mat4_identity());
+    END_TEST();
+}
+
+static void test_draw_textured_mesh_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_textured_mesh with NULL buffers does not crash");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.textured_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    float uv[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    forge_scene_draw_textured_mesh(&scene, NULL, NULL, 0,
+                                    mat4_identity(), NULL, NULL, uv);
+    END_TEST();
+}
+
+static void test_draw_textured_mesh_null_pass_is_safe(void)
+{
+    TEST("robustness — draw_textured_mesh with NULL pass is a no-op");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    float uv[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    forge_scene_draw_textured_mesh(&scene, (SDL_GPUBuffer *)1,
+                                    (SDL_GPUBuffer *)1, 36,
+                                    mat4_identity(),
+                                    (SDL_GPUTexture *)1,
+                                    (SDL_GPUSampler *)1, uv);
+    END_TEST();
+}
+
+static void test_draw_textured_mesh_null_uv_transform_is_safe(void)
+{
+    TEST("robustness — draw_textured_mesh with NULL uv_transform is a no-op");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.textured_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    forge_scene_draw_textured_mesh(&scene, (SDL_GPUBuffer *)1,
+                                    (SDL_GPUBuffer *)1, 36,
+                                    mat4_identity(),
+                                    (SDL_GPUTexture *)1,
+                                    (SDL_GPUSampler *)1, NULL);
+    END_TEST();
+}
+
+static void test_bind_textured_resources_null_texture_is_safe(void)
+{
+    TEST("robustness — bind_textured_resources with NULL texture returns false");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.textured_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    ASSERT_TRUE(!forge_scene_bind_textured_resources(&scene, NULL,
+                                                      (SDL_GPUSampler *)1));
+    END_TEST();
+}
+
+static void test_draw_textured_mesh_no_bind_null_buffers_is_safe(void)
+{
+    TEST("robustness — draw_textured_mesh_no_bind with NULL buffers is a no-op");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.textured_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    float uv[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    forge_scene_draw_textured_mesh_no_bind(&scene, NULL, NULL, 0,
+                                            mat4_identity(), uv);
+    /* reached here without crashing */
+    END_TEST();
+}
+
+static void test_draw_textured_mesh_no_bind_null_uv_is_safe(void)
+{
+    TEST("robustness — draw_textured_mesh_no_bind with NULL uv_transform is a no-op");
+    ForgeScene scene;
+    SDL_memset(&scene, 0, sizeof(scene));
+    scene.pass = (SDL_GPURenderPass *)1;
+    scene.textured_pipeline = (SDL_GPUGraphicsPipeline *)1;
+    forge_scene_draw_textured_mesh_no_bind(&scene, (SDL_GPUBuffer *)1,
+                                            (SDL_GPUBuffer *)1, 36,
+                                            mat4_identity(), NULL);
     END_TEST();
 }
 
@@ -1374,6 +1543,8 @@ int main(int argc, char **argv)
     test_struct_scene_vertex_size();
     test_struct_vert_uniforms_size();
     test_struct_frag_uniforms_size();
+    test_struct_textured_vertex_size();
+    test_struct_textured_frag_uniforms_size();
     test_struct_grid_vert_uniforms_size();
     test_struct_grid_frag_uniforms_size();
     test_struct_shadow_uniforms_size();
@@ -1393,6 +1564,16 @@ int main(int argc, char **argv)
     test_upload_texture_null_scene();
     test_upload_texture_null_surface();
     test_draw_shadow_mesh_null_buffers_is_safe();
+    test_draw_shadow_mesh_pos_null_buffers_is_safe();
+    test_draw_shadow_mesh_pos_zero_count_is_safe();
+    test_draw_shadow_mesh_pos_null_pass_is_safe();
+    test_draw_shadow_textured_mesh_null_buffers_is_safe();
+    test_draw_textured_mesh_null_buffers_is_safe();
+    test_draw_textured_mesh_null_pass_is_safe();
+    test_draw_textured_mesh_null_uv_transform_is_safe();
+    test_bind_textured_resources_null_texture_is_safe();
+    test_draw_textured_mesh_no_bind_null_buffers_is_safe();
+    test_draw_textured_mesh_no_bind_null_uv_is_safe();
     test_draw_mesh_null_buffers_is_safe();
     test_draw_mesh_zero_index_count_is_safe();
     test_destroy_null_scene_is_safe();

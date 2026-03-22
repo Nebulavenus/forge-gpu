@@ -84,6 +84,13 @@ All other files include the header without the define.
 | `forge_pipeline_free_skins(skins)` | Free skin data |
 | `forge_pipeline_compute_joint_matrices(...)` | Compute final joint matrices for GPU upload |
 
+## Atlas API
+
+| Function | Description |
+|----------|-------------|
+| `forge_pipeline_load_atlas(path, atlas)` | Load an `atlas.json` metadata file (UV offset/scale per material) |
+| `forge_pipeline_free_atlas(atlas)` | Free atlas data |
+
 ## See also
 
 - [Asset Lesson 06](../../lessons/assets/06-loading-processed-assets/) — mesh and texture loading walkthrough
@@ -93,4 +100,6 @@ All other files include the header without the define.
 - [tools/mesh/](../../tools/mesh/) — the .fmesh writer
 - [tools/scene/](../../tools/scene/) — the .fscene writer
 - [tools/anim/](../../tools/anim/) — the .fanim writer
+- [Asset Lesson 17](../../lessons/assets/17-texture-atlas/) — atlas packing and metadata
+- [GPU Lesson 47](../../lessons/gpu/47-texture-atlas-rendering/) — atlas rendering on the GPU
 - [pipeline/plugins/texture.py](../../pipeline/plugins/texture.py) — texture processor

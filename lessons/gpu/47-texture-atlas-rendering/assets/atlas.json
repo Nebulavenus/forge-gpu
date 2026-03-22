@@ -1,0 +1,309 @@
+{
+  "version": 1,
+  "width": 2048,
+  "height": 2048,
+  "padding": 4,
+  "utilization": 0.4985,
+  "entries": {
+    "bark": {
+      "x": 4,
+      "y": 4,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.001953125,
+      "v_offset": 0.001953125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "brushed_steel": {
+      "x": 268,
+      "y": 4,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.130859375,
+      "v_offset": 0.001953125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "cobblestone": {
+      "x": 532,
+      "y": 4,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.259765625,
+      "v_offset": 0.001953125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "copper_patina": {
+      "x": 796,
+      "y": 4,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.388671875,
+      "v_offset": 0.001953125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "corrugated_metal": {
+      "x": 1060,
+      "y": 4,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.517578125,
+      "v_offset": 0.001953125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "cracked_concrete": {
+      "x": 1324,
+      "y": 4,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.646484375,
+      "v_offset": 0.001953125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "diamond_plate": {
+      "x": 4,
+      "y": 268,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.001953125,
+      "v_offset": 0.130859375,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "dirt": {
+      "x": 268,
+      "y": 268,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.130859375,
+      "v_offset": 0.130859375,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "flagstone": {
+      "x": 532,
+      "y": 268,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.259765625,
+      "v_offset": 0.130859375,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "grass": {
+      "x": 796,
+      "y": 268,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.388671875,
+      "v_offset": 0.130859375,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "gravel": {
+      "x": 1060,
+      "y": 268,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.517578125,
+      "v_offset": 0.130859375,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "hardwood_floor": {
+      "x": 1324,
+      "y": 268,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.646484375,
+      "v_offset": 0.130859375,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "herringbone_brick": {
+      "x": 4,
+      "y": 532,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.001953125,
+      "v_offset": 0.259765625,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "leather": {
+      "x": 268,
+      "y": 532,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.130859375,
+      "v_offset": 0.259765625,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "marble": {
+      "x": 532,
+      "y": 532,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.259765625,
+      "v_offset": 0.259765625,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "old_brick_wall": {
+      "x": 796,
+      "y": 532,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.388671875,
+      "v_offset": 0.259765625,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "parquet": {
+      "x": 1060,
+      "y": 532,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.517578125,
+      "v_offset": 0.259765625,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "plywood": {
+      "x": 1324,
+      "y": 532,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.646484375,
+      "v_offset": 0.259765625,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "red_brick": {
+      "x": 4,
+      "y": 796,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.001953125,
+      "v_offset": 0.388671875,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "roof_tiles": {
+      "x": 268,
+      "y": 796,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.130859375,
+      "v_offset": 0.388671875,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "rough_plaster": {
+      "x": 532,
+      "y": 796,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.259765625,
+      "v_offset": 0.388671875,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "rough_rock": {
+      "x": 796,
+      "y": 796,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.388671875,
+      "v_offset": 0.388671875,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "rusted_iron": {
+      "x": 1060,
+      "y": 796,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.517578125,
+      "v_offset": 0.388671875,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "sandstone": {
+      "x": 1324,
+      "y": 796,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.646484375,
+      "v_offset": 0.388671875,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "slate": {
+      "x": 4,
+      "y": 1060,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.001953125,
+      "v_offset": 0.517578125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "smooth_concrete": {
+      "x": 268,
+      "y": 1060,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.130859375,
+      "v_offset": 0.517578125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "stucco": {
+      "x": 532,
+      "y": 1060,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.259765625,
+      "v_offset": 0.517578125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "weathered_planks": {
+      "x": 796,
+      "y": 1060,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.388671875,
+      "v_offset": 0.517578125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "white_brick": {
+      "x": 1060,
+      "y": 1060,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.517578125,
+      "v_offset": 0.517578125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    },
+    "woven_fabric": {
+      "x": 1324,
+      "y": 1060,
+      "width": 256,
+      "height": 256,
+      "u_offset": 0.646484375,
+      "v_offset": 0.517578125,
+      "u_scale": 0.125,
+      "v_scale": 0.125
+    }
+  }
+}

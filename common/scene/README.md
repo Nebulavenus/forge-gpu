@@ -37,10 +37,15 @@ if (!forge_scene_init(&scene, &cfg, argc, argv)) {
 |----------|-------------|
 | `forge_scene_begin_frame(scene)` | Compute dt, update camera, acquire swapchain (false = skip frame) |
 | `forge_scene_begin_shadow_pass(scene)` | Begin the depth-only shadow pass |
-| `forge_scene_draw_shadow_mesh(scene, vb, ib, count, model)` | Draw a mesh into the shadow map |
+| `forge_scene_draw_shadow_mesh(scene, vb, ib, count, model)` | Draw a mesh into the shadow map (24B stride, 32-bit indices) |
+| `forge_scene_draw_shadow_mesh_pos(scene, pos_vb, ib, count, model)` | Draw a mesh into the shadow map (12B stride, 32-bit indices) |
+| `forge_scene_draw_shadow_textured_mesh(scene, vb, ib, count, model)` | Draw a mesh into the shadow map (32B stride, 32-bit indices) |
 | `forge_scene_end_shadow_pass(scene)` | End shadow pass |
 | `forge_scene_begin_main_pass(scene)` | Begin main color+depth pass (draws sky) |
-| `forge_scene_draw_mesh(scene, vb, ib, count, model, color)` | Draw a lit mesh with Blinn-Phong and shadow |
+| `forge_scene_draw_mesh(scene, vb, ib, count, model, color)` | Draw a lit mesh with Blinn-Phong and shadow (32-bit indices) |
+| `forge_scene_draw_textured_mesh(scene, vb, ib, count, model, tex, samp, uv)` | Draw a textured mesh with atlas UV remap and shadow (32-bit indices) |
+| `forge_scene_bind_textured_resources(scene, tex, samp)` | Bind textured pipeline + samplers once for batched draws |
+| `forge_scene_draw_textured_mesh_no_bind(scene, vb, ib, count, model, uv)` | Draw textured mesh without re-binding, 32-bit indices (use after bind above) |
 | `forge_scene_draw_mesh_ex(scene, pipeline, vb, ib, count, model, color)` | Draw a lit mesh with a caller-provided pipeline |
 | `forge_scene_create_pipeline(scene, cull_mode, fill_mode)` | Create a pipeline with custom rasterizer state |
 | `forge_scene_draw_grid(scene)` | Draw procedural grid floor |

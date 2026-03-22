@@ -93,6 +93,7 @@ from .gpu import (
     diagram_arvo_method,
     diagram_aspect_ratio,
     diagram_asset_pipeline_flow,
+    diagram_atlas_uv_remap,
     diagram_atmosphere_layers,
     diagram_back_face_culling_decals,
     diagram_bc5_normal_z_reconstruction,
@@ -839,6 +840,9 @@ DIAGRAMS = {
         ("billboard_expansion.png", diagram_billboard_expansion),
         ("gpu_data_flow.png", diagram_gpu_data_flow),
     ],
+    "gpu/47": [
+        ("lesson_47_atlas_uv_remap.png", diagram_atlas_uv_remap),
+    ],
     "ui/01": [
         ("ttf_file_structure.png", diagram_ttf_file_structure),
         ("glyph_anatomy.png", diagram_glyph_anatomy),
@@ -1008,6 +1012,7 @@ LESSON_NAMES = {
     "gpu/38": "gpu/38-indirect-drawing",
     "gpu/39": "gpu/39-pipeline-processed-assets",
     "gpu/46": "gpu/46-particle-animations",
+    "gpu/47": "gpu/47-texture-atlas-rendering",
     "ui/01": "ui/01-ttf-parsing",
     "ui/02": "ui/02-glyph-rasterization",
     "ui/03": "ui/03-font-atlas",
