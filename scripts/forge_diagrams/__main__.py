@@ -24,6 +24,7 @@ from .assets import (
     diagram_atlas_uv_transform,
     diagram_bundle_layout,
     diagram_dependency_graph,
+    diagram_editor_layout,
     diagram_fmesh_v2_layout,
     diagram_guillotine_packing,
     diagram_lod_simplification,
@@ -34,6 +35,7 @@ from .assets import (
     diagram_morph_pipeline,
     diagram_parametric_sphere,
     diagram_random_vs_sequential,
+    diagram_scene_data_model,
     diagram_scene_hierarchy,
     diagram_seam_duplication,
     diagram_settings_data_flow,
@@ -42,6 +44,7 @@ from .assets import (
     diagram_struct_of_arrays,
     diagram_texture_block_compression,
     diagram_texture_format_comparison,
+    diagram_undo_redo_flow,
 )
 from .audio import (
     diagram_adaptive_layers,
@@ -461,6 +464,11 @@ DIAGRAMS = {
         ("lesson_17_guillotine_packing.png", diagram_guillotine_packing),
         ("lesson_17_atlas_uv_transform.png", diagram_atlas_uv_transform),
         ("lesson_17_mipmap_bleeding.png", diagram_mipmap_bleeding),
+    ],
+    "assets/18": [
+        ("scene_data_model.png", diagram_scene_data_model),
+        ("undo_redo_flow.png", diagram_undo_redo_flow),
+        ("editor_layout.png", diagram_editor_layout),
     ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
@@ -953,6 +961,7 @@ LESSON_NAMES = {
     "assets/13": "assets/13-morph-targets",
     "assets/16": "assets/16-import-settings-editor",
     "assets/17": "assets/17-texture-atlas",
+    "assets/18": "assets/18-scene-editor",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",

@@ -36,6 +36,13 @@ from pipeline.import_settings import (
 )
 from pipeline.plugin import PluginRegistry
 from pipeline.scanner import FingerprintCache, fingerprint_file
+from pipeline.scenes import (
+    create_scene,
+    delete_scene,
+    list_scenes,
+    load_scene,
+    save_scene,
+)
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +151,55 @@ class ProcessResponse(BaseModel):
     """JSON shape for the process endpoint."""
 
     message: str
+
+
+# -- Scene editor models ----------------------------------------------------
+
+
+class SceneObjectModel(BaseModel):
+    """A single placed object in an authored scene."""
+
+    id: str
+    name: str
+    asset_id: str | None
+    position: list[float]
+    rotation: list[float]
+    scale: list[float]
+    parent_id: str | None
+    visible: bool
+
+
+class SceneResponse(BaseModel):
+    """Full scene data returned by get/create/save endpoints."""
+
+    id: str
+    version: int
+    name: str
+    created_at: str
+    modified_at: str
+    objects: list[SceneObjectModel]
+
+
+class SceneListItem(BaseModel):
+    """Summary of a scene for the list endpoint."""
+
+    id: str
+    name: str
+    modified_at: str
+    object_count: int
+
+
+class SceneListResponse(BaseModel):
+    """Response from GET /api/scenes."""
+
+    scenes: list[SceneListItem]
+    total: int
+
+
+class CreateSceneRequest(BaseModel):
+    """Request body for POST /api/scenes."""
+
+    name: str
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +747,66 @@ def create_app(config: PipelineConfig) -> FastAPI:
             media_type="image/png",
             filename="atlas.png",
         )
+
+    # -- Scene editor ------------------------------------------------------
+
+    @app.get("/api/scenes")
+    async def get_scenes() -> SceneListResponse:
+        """List all authored scenes."""
+        items = list_scenes(config)
+        return SceneListResponse(
+            scenes=[SceneListItem(**s) for s in items],
+            total=len(items),
+        )
+
+    @app.post("/api/scenes", status_code=201)
+    async def post_scene(body: CreateSceneRequest) -> SceneResponse:
+        """Create a new empty scene."""
+        data = create_scene(config, body.name)
+        return SceneResponse(**data)
+
+    @app.get("/api/scenes/{scene_id}")
+    async def get_scene(scene_id: str) -> SceneResponse:
+        """Get a single scene by ID."""
+        try:
+            data = load_scene(config, scene_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Scene not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return SceneResponse(**data)
+
+    @app.put("/api/scenes/{scene_id}")
+    async def put_scene(scene_id: str, request: Request) -> SceneResponse:
+        """Save (overwrite) scene data."""
+        try:
+            body = await request.json()
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400, detail="Request body must be valid JSON"
+            ) from exc
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400, detail="Request body must be a JSON object"
+            )
+        try:
+            data = save_scene(config, scene_id, body)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Scene not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return SceneResponse(**data)
+
+    @app.delete("/api/scenes/{scene_id}")
+    async def delete_scene_endpoint(scene_id: str) -> dict:
+        """Delete a scene."""
+        try:
+            delete_scene(config, scene_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Scene not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"message": "Deleted"}
 
     # -- WebSocket ---------------------------------------------------------
 

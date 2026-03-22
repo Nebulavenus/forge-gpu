@@ -148,6 +148,7 @@ All C loaders are in `common/pipeline/forge_pipeline.h` (header-only).
 | `.meta.json` | All plugins | Processing metadata (dimensions, settings, compression info) |
 | `.import.toml` | User / web UI | Per-asset setting overrides |
 | `atlas.json` | Atlas plugin | Atlas rect positions and UV coordinates |
+| `*.scene.json` | Scene editor (web UI) | Authored scene composition (object placement, hierarchy, transforms) |
 
 ### Processed image formats
 
@@ -515,6 +516,57 @@ values remap material UVs from individual-texture space to atlas space.
 
 ---
 
+### `*.scene.json` — Authored scene
+
+JSON file describing a scene composed in the web editor. Each scene
+contains a flat list of placed objects with parent references forming a
+hierarchy. Objects reference pipeline assets by ID. Rotations are stored
+as quaternions to match three.js conventions and avoid gimbal lock.
+
+This is the **authored** format — distinct from the binary `.fscene`
+format used for processed glTF hierarchies. A future export step compiles
+authored scenes to `.fscene` for runtime loading.
+
+```json
+{
+  "version": 1,
+  "name": "My Scene",
+  "created_at": "2026-03-22T10:00:00Z",
+  "modified_at": "2026-03-22T10:30:00Z",
+  "objects": [
+    {
+      "id": "a1b2c3d4e5f6",
+      "name": "Player Model",
+      "asset_id": "models--player.gltf",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "parent_id": null,
+      "visible": true
+    }
+  ]
+}
+```
+
+**Object fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique object identifier |
+| `name` | string | Display name |
+| `asset_id` | string \| null | Pipeline asset ID (null = placeholder box) |
+| `position` | [x, y, z] | World position |
+| `rotation` | [x, y, z, w] | Quaternion rotation |
+| `scale` | [x, y, z] | Scale factors |
+| `parent_id` | string \| null | Parent object ID (null = root) |
+| `visible` | boolean | Visibility toggle |
+
+Scene files are stored in `{output_dir}/scenes/` and managed through the
+REST API — `GET/POST /api/scenes` for listing and creating,
+`GET/PUT/DELETE /api/scenes/{id}` for individual scenes.
+
+---
+
 ### Validation limits
 
 All binary loaders enforce maximum sizes defined in
@@ -656,6 +708,7 @@ The pipeline is built incrementally across the
 | [15 — Asset Preview](../lessons/assets/15-asset-preview/) | react-three-fiber 3D mesh preview, texture channel isolation, file serving |
 | [16 — Import Settings Editor](../lessons/assets/16-import-settings-editor/) | Per-asset `.import.toml` sidecars, schema-driven settings UI, single-asset reprocessing |
 | [17 — Texture Atlas Packing](../lessons/assets/17-texture-atlas/) | Guillotine bin-packing, atlas compositing, UV remapping metadata |
+| [18 — Scene Editor](../lessons/assets/18-scene-editor/) | Visual scene composition, transform gizmos, hierarchy panel, undo/redo, JSON scene files |
 
 ## License
 

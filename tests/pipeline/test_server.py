@@ -846,6 +846,108 @@ def test_process_creates_output_subdir(tmp_path: Path) -> None:
     assert call_args[0][1] == config.output_dir / "textures"
 
 
+# ---------------------------------------------------------------------------
+# Scene editor endpoints
+# ---------------------------------------------------------------------------
+
+
+def test_scene_create(tmp_path: Path) -> None:
+    """POST /api/scenes creates a new scene."""
+    client, _ = _setup(tmp_path)
+    resp = client.post("/api/scenes", json={"name": "My Scene"})
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["name"] == "My Scene"
+    assert data["version"] == 1
+    assert data["objects"] == []
+    assert "id" in data
+
+
+def test_scene_list(tmp_path: Path) -> None:
+    """GET /api/scenes returns all scenes."""
+    client, _ = _setup(tmp_path)
+    client.post("/api/scenes", json={"name": "A"})
+    client.post("/api/scenes", json={"name": "B"})
+
+    resp = client.get("/api/scenes")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    assert len(data["scenes"]) == 2
+
+
+def test_scene_get(tmp_path: Path) -> None:
+    """GET /api/scenes/{id} returns a single scene."""
+    client, _ = _setup(tmp_path)
+    created = client.post("/api/scenes", json={"name": "Test"}).json()
+
+    resp = client.get(f"/api/scenes/{created['id']}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == created["id"]
+    assert data["name"] == "Test"
+
+
+def test_scene_save(tmp_path: Path) -> None:
+    """PUT /api/scenes/{id} updates scene objects."""
+    client, _ = _setup(tmp_path)
+    created = client.post("/api/scenes", json={"name": "Editable"}).json()
+
+    scene_data = {
+        "version": 1,
+        "name": "Editable",
+        "created_at": created["created_at"],
+        "modified_at": created["modified_at"],
+        "objects": [
+            {
+                "id": "obj1",
+                "name": "Cube",
+                "asset_id": None,
+                "position": [1.0, 2.0, 3.0],
+                "rotation": [0.0, 0.0, 0.0, 1.0],
+                "scale": [1.0, 1.0, 1.0],
+                "parent_id": None,
+                "visible": True,
+            }
+        ],
+    }
+    resp = client.put(f"/api/scenes/{created['id']}", json=scene_data)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["created_at"] == created["created_at"]
+    assert data["modified_at"] >= created["modified_at"]
+    assert len(data["objects"]) == 1
+    assert data["objects"][0]["name"] == "Cube"
+
+
+def test_scene_delete(tmp_path: Path) -> None:
+    """DELETE /api/scenes/{id} removes a scene."""
+    client, _ = _setup(tmp_path)
+    created = client.post("/api/scenes", json={"name": "Doomed"}).json()
+
+    resp = client.delete(f"/api/scenes/{created['id']}")
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Deleted"
+
+    # Verify it's gone
+    resp = client.get(f"/api/scenes/{created['id']}")
+    assert resp.status_code == 404
+
+
+def test_scene_not_found(tmp_path: Path) -> None:
+    """GET /api/scenes/{id} returns 404 for nonexistent scene."""
+    client, _ = _setup(tmp_path)
+    resp = client.get("/api/scenes/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_scene_create_missing_name(tmp_path: Path) -> None:
+    """POST /api/scenes without name returns 422."""
+    client, _ = _setup(tmp_path)
+    resp = client.post("/api/scenes", json={})
+    assert resp.status_code == 422
+
+
 def test_process_asset_plugin_error(tmp_path: Path) -> None:
     """POST /api/assets/{id}/process returns 500 when the plugin raises."""
     mock_plugin = MagicMock()

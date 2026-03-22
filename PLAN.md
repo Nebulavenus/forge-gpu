@@ -58,17 +58,17 @@ The following foundations, tooling, and lesson ranges are complete:
 ## GPU Lessons — Remaining
 
 Lessons 47, 49–50, and 52–58 have no cross-track blockers. The **Terrain & Vegetation** arc
-(Lessons 48, 51) depends on Asset Lessons 19–20 (procedural textures). The
-**Particle Effects** arc (Lessons 59–60) is blocked by Asset Lesson 21
+(Lessons 48, 51) depends on Asset Lessons 20–21 (procedural textures). The
+**Particle Effects** arc (Lessons 59–60) is blocked by Asset Lesson 22
 (particle effect definitions).
 
 ### Terrain & Vegetation
 
 - [x] **Lesson 47 — Texture Atlas Rendering** — C atlas metadata loader (`ForgePipelineAtlas` / `forge_pipeline_load_atlas()`) in `forge_pipeline.h`; atlas UV transform in custom fragment shader; per-material UV offset/scale as push constants; single atlas texture bind replacing per-material binds; UI panel comparing bind counts between atlas and individual modes; backwards-compatible identity UV transform for non-atlas models; 30 CC0 material textures from ambientCG
-- [ ] **Lesson 48 — Height Map Terrain** — GPU terrain from pipeline-generated noise heightmaps (Asset Lesson 19); vertex displacement from R16 heightmap in the vertex shader; normal computation from height samples via central differences; texture splatting with slope- and height-based blend maps (rock, dirt, grass); chunked terrain mesh with distance-based LOD (geo-clipmaps or quadtree); scattered tree placement using density maps derived from terrain slope and height; tree and grass rendering as instanced alpha-tested billboards using pipeline-generated vegetation textures (Asset Lesson 20), full grass animation in Lesson 51 (depends on GPU Lessons 13, 25 and Asset Lessons 19–20)
+- [ ] **Lesson 48 — Height Map Terrain** — GPU terrain from pipeline-generated noise heightmaps (Asset Lesson 20); vertex displacement from R16 heightmap in the vertex shader; normal computation from height samples via central differences; texture splatting with slope- and height-based blend maps (rock, dirt, grass); chunked terrain mesh with distance-based LOD (geo-clipmaps or quadtree); scattered tree placement using density maps derived from terrain slope and height; tree and grass rendering as instanced alpha-tested billboards using pipeline-generated vegetation textures (Asset Lesson 21), full grass animation in Lesson 51 (depends on GPU Lessons 13, 25 and Asset Lessons 20–21)
 - [ ] **Lesson 49 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles) to an offscreen render target; selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 - [ ] **Lesson 50 — Level of Detail** — Distance-based LOD system for mesh rendering; discrete LOD with multiple mesh detail levels and screen-size switching thresholds; continuous LOD with cross-fade (alpha dithering) to hide pop-in; compute-based LOD selection using camera distance and bounding sphere screen coverage; integrating imposters from Lesson 49 as the lowest LOD tier; LOD bias and hysteresis to prevent rapid switching; application to the terrain scene — full tree meshes up close, simplified meshes at mid range, imposters at distance (depends on Lessons 13, 38, 48, 49)
-- [ ] **Lesson 51 — Grass Rendering** — Dense grass on the height map terrain from Lesson 48; begins with instanced alpha-tested billboard quads using pipeline-generated grass blade atlas textures (Asset Lesson 20); then adds compute-generated geometry blades with per-vertex deformation — base anchored, tip displaced by layered noise wind; per-blade normals for correct lighting; LOD transition from geometry blades (near) to billboard quads (mid) to culled (far) using the LOD system from Lesson 50; density controlled by terrain slope and height maps; frustum and distance culling via compute shader (depends on GPU Lessons 13, 16, 25, 48, 50 and Asset Lesson 20)
+- [ ] **Lesson 51 — Grass Rendering** — Dense grass on the height map terrain from Lesson 48; begins with instanced alpha-tested billboard quads using pipeline-generated grass blade atlas textures (Asset Lesson 21); then adds compute-generated geometry blades with per-vertex deformation — base anchored, tip displaced by layered noise wind; per-blade normals for correct lighting; LOD transition from geometry blades (near) to billboard quads (mid) to culled (far) using the LOD system from Lesson 50; density controlled by terrain slope and height maps; frustum and distance culling via compute shader (depends on GPU Lessons 13, 16, 25, 48, 50 and Asset Lesson 21)
 
 ### PBR Introduction
 
@@ -86,7 +86,7 @@ Lessons 47, 49–50, and 52–58 have no cross-track blockers. The **Terrain & V
 
 - [ ] **Lesson 58 — Volumetric Fog** — Ray marching through participating media in a froxel grid or screen-space pass; Beer-Lambert absorption; in-scattering from lights with shadow map sampling; temporal reprojection for performance; combining volumetric fog with terrain and vegetation scene from Lessons 48–51
 
-### Particle Effects (depends on Asset Lesson 21)
+### Particle Effects (depends on Asset Lesson 22)
 
 - [ ] **Lesson 59 — Data-Driven Particle Effects** — Emitter pool with shared GPU particle buffer; loading .fpart effect definitions at runtime; parameter-driven compute simulation (one shader, many effects); multi-effect rendering batched by blend mode; spawning effects from gameplay events
 - [ ] **Lesson 60 — Particle Ribbons & Trails** — Generating ribbon geometry from particle position history; catmull-rom smoothing; UV scrolling along trail length; application to sword swings, missile trails, magic effects
@@ -95,6 +95,10 @@ Lessons 47, 49–50, and 52–58 have no cross-track blockers. The **Terrain & V
 
 - [ ] **Lesson 61 — Occlusion Culling** — GPU-driven occlusion culling using hierarchical z-buffer (Hi-Z); downsampled depth pyramid from the previous frame; compute shader tests object bounding boxes against the Hi-Z pyramid to discard fully occluded objects before drawing; two-phase rendering (occluder pass with large objects, then Hi-Z test for the rest); integration with indirect drawing from Lesson 38; comparison of draw call counts and frame time with and without occlusion culling; application to dense scenes with many hidden objects (depends on Lessons 13, 25, 38)
 - [ ] **Lesson 62 — Portal-Based Visibility** — Visibility determination for indoor environments using portals; defining portal polygons between rooms/sectors; frustum narrowing through portal sequences; recursive portal traversal with shrinking clip regions; sector-based scene organization; rendering only visible sectors and their contents; anti-portal support for large occluders; debug visualization of portal frustums and sector visibility; application to a multi-room interior scene (depends on Lessons 13, 38)
+
+### Authored Scene Integration
+
+- [ ] **Lesson 63 — Authored Scene Rendering** — Load and render authored JSON scenes (Asset Lesson 18) through `forge_scene.h`; new `forge_scene_load_authored()` function that parses the JSON scene format, resolves `asset_id` references to `.fmesh`/`.fmat`/`.ftex` pipeline assets, and builds the same `ForgeScene` node hierarchy used by processed `.fscene` files; world transform computation from the authored parent-child hierarchy; per-object visibility toggle support; runtime scene reload (edit in browser, see changes in the GPU app); comparison rendering of authored scene vs. exported `.fscene` binary; integration with `forge_scene_render()` so authored scenes get shadow maps, Blinn-Phong lighting, grid, and camera controls with zero additional code; serves as the bridge between the web editor (Asset Lessons 18–19) and the GPU runtime (depends on GPU Lessons 26, 39 and Asset Lessons 18–19)
 
 ## Physics Lessons — New Track
 
@@ -143,15 +147,15 @@ C library (`common/shapes/forge_shapes.h`).
 Some later lessons across tracks depend on authored asset formats that need the
 web editor. The order is:
 
-1. **Web Frontend** (Asset Lessons 14–17 complete, 18 remaining) — editor for authoring effect
-   definitions, import settings, atlas packing, scene composition, and
-   navmesh editing
-2. **Procedural Textures** (Asset Lessons 19–20) — noise heightmaps and
+1. **Web Frontend** (Asset Lessons 14–17 complete, 18–19 remaining) — scene
+   editor, pipeline asset viewer, import settings, atlas packing, navmesh
+   editing
+2. **Procedural Textures** (Asset Lessons 20–21) — noise heightmaps and
    vegetation textures for the terrain/vegetation GPU arc
-3. **Effect & Asset Authoring** (Asset Lessons 21–23) — particle effect
+3. **Effect & Asset Authoring** (Asset Lessons 22–24) — particle effect
    definitions, animation event data, material definitions — all need the
    editor
-4. **Navigation Mesh Tooling** (Asset Lessons 24–25) — navmesh generation
+4. **Navigation Mesh Tooling** (Asset Lessons 25–26) — navmesh generation
    and editing — also needs the web editor
 5. **Downstream consumers** — GPU Lessons 59–60 (particle effects), Anim
    Lesson 09 (animation events), AI Lessons 05–06 (navmesh pathfinding)
@@ -175,25 +179,26 @@ full plan. Summary:
 TanStack Router and Query for routing and data fetching. shadcn/ui + Tailwind
 for UI components. Authored content (scenes, materials, effects) persisted as
 JSON/TOML files — no database. react-three-fiber for 3D preview (Lesson 15),
-reactflow for node-graph editing (Lessons 20+).
+reactflow for node-graph editing (Lessons 22+).
 
-- [ ] **Asset Lesson 18 — Scene Editor** — Visual scene composition with react-three-fiber viewport; place, move, rotate, scale objects with transform gizmos; scene hierarchy panel; scene saved as JSON files; undo/redo with command pattern using React state
+- [x] **Asset Lesson 18 — Scene Editor** — Visual scene composition with react-three-fiber viewport; place, move, rotate, scale objects with transform gizmos; scene hierarchy panel; scene saved as JSON files; undo/redo with command pattern using React state
+- [ ] **Asset Lesson 19 — Pipeline Asset Viewer** — Custom three.js loaders for forge binary formats (`.fmesh`, `.fmat`, `.ftex`) so the web editor and asset preview render processed pipeline output instead of raw glTF source files; TypeScript `.fmesh` parser that reads the binary header, vertex/index buffers, and LOD/submesh table into `THREE.BufferGeometry`; `.fmat` JSON loader that creates `THREE.MeshStandardMaterial` with PBR properties (base color, metallic, roughness, normal, emissive, AO); `.ftex` binary loader that reads block-compressed texture data (BC7/BC5) and uploads via `CompressedTexture`; `usePipelineModel` React hook replacing `useGLTF` in `mesh-preview.tsx` and the scene editor viewport; server endpoint for serving processed output files by asset ID; LOD level selector in the preview UI; side-by-side source (glTF) vs. processed (forge binary) comparison; the scene editor places processed assets — what you see in the browser matches what `forge_scene.h` loads at runtime (depends on Asset Lessons 06, 07, 15, 18)
 
 ### Procedural Textures
 
-- [ ] **Asset Lesson 19 — Noise Texture Generation** — Pipeline plugin for generating procedural noise textures (Perlin, fBm, ridged multi-fractal, Worley); configurable resolution, octaves, frequency, persistence, and seed via `pipeline.toml`; outputs 16-bit heightmaps (R16 PNG or raw) and 8-bit RGBA noise maps; normal map derivation from heightmap gradients; BC5-compressed normal map output and BC4-compressed heightmap output; tiling support for seamless textures; integration with GPU Lesson 48 (Height Map Terrain) as the heightmap source; Python noise generation with NumPy; preview thumbnails in the pipeline cache (depends on Asset Lessons 01–02)
-- [ ] **Asset Lesson 20 — Vegetation Texture Generation** — Pipeline plugin for generating procedural tree and grass textures in Python; tree bark textures via layered fBm with vertical grain bias and color variation; tree canopy/leaf cluster textures with randomized leaf shapes, vein detail, and seasonal color palettes; grass blade atlas with multiple blade shapes, width variation, and tip taper; alpha masks for alpha-tested rendering; all textures tileable where appropriate; color and shape parameters exposed in `pipeline.toml` for rapid iteration; BC7-compressed RGBA output with pre-multiplied alpha; generates texture atlases ready for instanced billboard rendering in GPU Lessons 48 and 51 (depends on Asset Lesson 19)
+- [ ] **Asset Lesson 20 — Noise Texture Generation** — Pipeline plugin for generating procedural noise textures (Perlin, fBm, ridged multi-fractal, Worley); configurable resolution, octaves, frequency, persistence, and seed via `pipeline.toml`; outputs 16-bit heightmaps (R16 PNG or raw) and 8-bit RGBA noise maps; normal map derivation from heightmap gradients; BC5-compressed normal map output and BC4-compressed heightmap output; tiling support for seamless textures; integration with GPU Lesson 48 (Height Map Terrain) as the heightmap source; Python noise generation with NumPy; preview thumbnails in the pipeline cache (depends on Asset Lessons 01–02)
+- [ ] **Asset Lesson 21 — Vegetation Texture Generation** — Pipeline plugin for generating procedural tree and grass textures in Python; tree bark textures via layered fBm with vertical grain bias and color variation; tree canopy/leaf cluster textures with randomized leaf shapes, vein detail, and seasonal color palettes; grass blade atlas with multiple blade shapes, width variation, and tip taper; alpha masks for alpha-tested rendering; all textures tileable where appropriate; color and shape parameters exposed in `pipeline.toml` for rapid iteration; BC7-compressed RGBA output with pre-multiplied alpha; generates texture atlases ready for instanced billboard rendering in GPU Lessons 48 and 51 (depends on Asset Lesson 20)
 
 ### Effect & Asset Authoring (blocks GPU Lessons 59–60)
 
-- [ ] **Asset Lesson 21 — Particle Effect Definitions** — Data-driven particle effect format (.fpart); emission shape, spawn rate, forces, color/size curves, atlas region, blend mode; reactflow node-graph editor for authoring effects; pipeline plugin to validate and compile effect files; runtime loader in `common/pipeline/`
-- [ ] **Asset Lesson 22 — Animation Event Data** — Authored event tracks (.faevt) attached to animation clips; frame-triggered events (sounds, particles, hitboxes); editor timeline UI for placing events; pipeline processing and runtime loading (connects to Anim Lesson 09)
-- [ ] **Asset Lesson 23 — Material Definitions** — Data-driven material format (.fmat2) beyond per-mesh materials; texture references, shader parameters, render state; reactflow node-graph material editor with live preview; pipeline validation and compilation
+- [ ] **Asset Lesson 22 — Particle Effect Definitions** — Data-driven particle effect format (.fpart); emission shape, spawn rate, forces, color/size curves, atlas region, blend mode; reactflow node-graph editor for authoring effects; pipeline plugin to validate and compile effect files; runtime loader in `common/pipeline/`
+- [ ] **Asset Lesson 23 — Animation Event Data** — Authored event tracks (.faevt) attached to animation clips; frame-triggered events (sounds, particles, hitboxes); editor timeline UI for placing events; pipeline processing and runtime loading (connects to Anim Lesson 09)
+- [ ] **Asset Lesson 24 — Material Definitions** — Data-driven material format (.fmat2) beyond per-mesh materials; texture references, shader parameters, render state; reactflow node-graph material editor with live preview; pipeline validation and compilation
 
 ### Navigation Mesh Tooling (blocks AI Lessons 05–06)
 
-- [ ] **Asset Lesson 24 — NavMesh Generation** — C tool in `tools/nav/` that voxelizes scene collision geometry and builds a navigation mesh (heightfield → compact → contours → polygon mesh); `.fnav` binary format; pipeline plugin for batch processing; runtime loader in `common/pipeline/`
-- [ ] **Asset Lesson 25 — NavMesh Editor** — Visual navmesh editing in the web UI; display auto-generated mesh overlaid on the 3D scene; add/remove/reshape polygons; mark areas (walkable, blocked, jump, door); set traversal costs per area; save edits as a layer on top of the generated mesh; re-bake workflow (edit → regenerate → re-apply layer)
+- [ ] **Asset Lesson 25 — NavMesh Generation** — C tool in `tools/nav/` that voxelizes scene collision geometry and builds a navigation mesh (heightfield → compact → contours → polygon mesh); `.fnav` binary format; pipeline plugin for batch processing; runtime loader in `common/pipeline/`
+- [ ] **Asset Lesson 26 — NavMesh Editor** — Visual navmesh editing in the web UI; display auto-generated mesh overlaid on the 3D scene; add/remove/reshape polygons; mark areas (walkable, blocked, jump, door); set traversal costs per area; save edits as a layer on top of the generated mesh; re-bake workflow (edit → regenerate → re-apply layer)
 
 ## Game AI Lessons — Future Track
 
@@ -204,7 +209,7 @@ grows incrementally like physics and audio — documented, tested, visual.
 **Cross-track dependencies:** Steering and pathfinding lessons use physics
 for collision queries and ground detection. NavMesh lessons (05–06) can use
 hand-built meshes initially but benefit from the pipeline navmesh tools
-(Asset Lessons 24–25) for authored levels. Decision-making lessons integrate
+(Asset Lessons 25–26) for authored levels. Decision-making lessons integrate
 with the Animation track for state-driven animation transitions.
 
 ### Steering & Movement
@@ -216,7 +221,7 @@ with the Animation track for state-driven animation transitions.
 ### Pathfinding
 
 - [ ] **AI Lesson 04 — Grid Pathfinding** — A* on a 2D grid; heuristics (Manhattan, Euclidean, octile); path smoothing; visualization of open/closed sets during search
-- [ ] **AI Lesson 05 — Navigation Meshes** — NavMesh representation; point-in-polygon queries; A* on a polygon graph; funnel algorithm for string-pulling smooth paths; demo with agents walking a navmesh; can use hand-built meshes or pipeline-generated `.fnav` (Asset Lesson 24)
+- [ ] **AI Lesson 05 — Navigation Meshes** — NavMesh representation; point-in-polygon queries; A* on a polygon graph; funnel algorithm for string-pulling smooth paths; demo with agents walking a navmesh; can use hand-built meshes or pipeline-generated `.fnav` (Asset Lesson 25)
 - [ ] **AI Lesson 06 — Dynamic Pathfinding** — Handling moving obstacles; replanning strategies; local avoidance (RVO/ORCA); combining global paths with local steering
 
 ### Decision Making
@@ -256,7 +261,7 @@ effects. The AI decision-making track drives animation state transitions.
 
 ### Sequencing & Tools
 
-- [ ] **Anim Lesson 09 — Animation Events & Notifies** — Frame-triggered events (footstep sounds, particle spawns, hitbox activation); event curves; integration with audio and physics systems; uses `.faevt` data from Asset Lesson 22 when available
+- [ ] **Anim Lesson 09 — Animation Events & Notifies** — Frame-triggered events (footstep sounds, particle spawns, hitbox activation); event curves; integration with audio and physics systems; uses `.faevt` data from Asset Lesson 23 when available
 - [ ] **Anim Lesson 10 — Animation Compression** — Curve fitting and keyframe reduction; quantization; error metrics; storage/memory trade-offs; comparing raw vs. compressed playback
 - [ ] **Anim Lesson 11 — Animation Graph** — Connecting blend trees, state machines, and IK into a unified evaluation graph; data flow and evaluation order; runtime editing via UI
 - [ ] **Anim Lesson 12 — Animation Debugging** — Pose visualization (skeleton overlay, bone axes); slow motion and frame stepping; graph inspection; per-bone contribution display

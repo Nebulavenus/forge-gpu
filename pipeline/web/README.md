@@ -1,7 +1,8 @@
 # Pipeline Web UI
 
 Browser frontend for the forge asset pipeline. Displays asset status,
-previews textures and 3D models, and edits per-asset import settings.
+previews textures and 3D models, edits per-asset import settings, and
+provides a visual scene editor for composing 3D scenes.
 
 ## Stack
 
@@ -48,6 +49,8 @@ process needed. Run `python -m pipeline serve` and open the browser.
 |------|-------------|
 | `/` | Asset browser — grid of cards with search, type filter, atlas preview |
 | `/assets/$assetId` | Asset detail — metadata table, preview, import settings editor |
+| `/scenes` | Scene list — cards for each authored scene, create and delete |
+| `/scenes/$sceneId` | Scene editor — 3D viewport, hierarchy panel, inspector, undo/redo |
 
 TanStack Router generates `routeTree.gen.ts` from files in `src/routes/`.
 Do not edit the generated file — add or rename route files and the plugin
@@ -71,9 +74,15 @@ The frontend consumes these REST endpoints from the FastAPI backend
 | `GET` | `/api/status` | Pipeline summary (counts by type and status) |
 | `GET` | `/api/atlas` | Atlas metadata JSON (rect positions, UV coordinates) |
 | `GET` | `/api/atlas/image` | Atlas PNG image |
+| `GET` | `/api/scenes` | List all authored scenes |
+| `POST` | `/api/scenes` | Create a new scene (`{name}`) |
+| `GET` | `/api/scenes/{scene_id}` | Get scene data (objects, hierarchy, transforms) |
+| `PUT` | `/api/scenes/{scene_id}` | Save scene data (full replacement) |
+| `DELETE` | `/api/scenes/{scene_id}` | Delete a scene |
 
-All fetch logic is in `src/lib/api.ts` with typed request/response
-interfaces. Errors throw `ApiError` with the HTTP status code.
+Asset fetch logic is in `src/lib/api.ts`, scene fetch logic in
+`src/lib/scene-api.ts`. Both use typed request/response interfaces.
+Errors throw `ApiError` with the HTTP status code.
 
 ## WebSocket
 
@@ -168,6 +177,38 @@ processing overrides:
    under a header with separators (e.g., "Basis Universal", "ASTC",
    "JPEG").
 
+## Scene editor
+
+The scene editor (`/scenes/$sceneId`) provides visual scene composition
+with four panels:
+
+- **Toolbar** — gizmo mode (translate/rotate/scale), add/delete object,
+  undo/redo, save
+- **Hierarchy panel** — tree view built from a flat object list with
+  `parent_id` references. Click to select, chevron to expand/collapse.
+- **Viewport** — react-three-fiber canvas with drei `TransformControls`
+  on the selected object, `OrbitControls` for camera, and an infinite
+  grid. Objects without an `asset_id` render as wireframe boxes.
+- **Inspector panel** — name, position, rotation (Euler degrees converted
+  to/from quaternions), scale, parent dropdown, visibility toggle.
+
+### Undo/redo
+
+State is managed by `useReducer` in `use-scene-store.ts` with
+snapshot-based undo. Every undoable action (add, remove, transform,
+rename, reparent, visibility) deep-clones the current scene and pushes
+it to the undo stack. SELECT and SET_GIZMO_MODE do not create undo
+entries. Keyboard shortcuts: Ctrl+Z (undo), Ctrl+Shift+Z (redo).
+
+### TransformControls integration
+
+Transforms are committed on mouse release, not every frame. During a
+drag, drei's `TransformControls` manipulates the Three.js object
+directly for smooth feedback. On release, `onMouseUp` reads the final
+position/quaternion/scale and dispatches `UPDATE_TRANSFORM` — one undo
+snapshot per drag operation. OrbitControls is disabled during gizmo
+drags via the `dragging-changed` event.
+
 ## UI primitives
 
 The `src/components/ui/` directory contains low-level components
@@ -195,9 +236,12 @@ src/
 ├── routeTree.gen.ts                Auto-generated route tree (TanStack Router)
 ├── test-setup.ts                   Vitest setup (jest-dom matchers)
 ├── routes/
-│   ├── __root.tsx                  Root layout (header, status bar, WebSocket)
+│   ├── __root.tsx                  Root layout (header, nav, status bar, WebSocket)
 │   ├── index.tsx                   Asset browser page
-│   └── assets/$assetId.tsx         Asset detail page
+│   ├── assets/$assetId.tsx         Asset detail page
+│   └── scenes/
+│       ├── index.tsx               Scene list page
+│       └── $sceneId.tsx            Scene editor page
 ├── components/
 │   ├── preview-panel.tsx           Routes asset type to the correct preview
 │   ├── texture-preview.tsx         Canvas viewer — RGBA channels, zoom, pan
@@ -208,10 +252,20 @@ src/
 │   ├── status-bar.tsx              WebSocket connection indicator
 │   ├── type-filter.tsx             Asset type button group
 │   ├── preview-panel.test.tsx      Preview routing tests
+│   ├── scene-editor/
+│   │   ├── types.ts                Scene object and action type definitions
+│   │   ├── use-scene-store.ts      useReducer state manager with undo/redo
+│   │   ├── toolbar.tsx             Gizmo mode, add/delete, undo/redo, save
+│   │   ├── hierarchy-panel.tsx     Tree view with selection and expand/collapse
+│   │   ├── inspector-panel.tsx     Transform fields, parent dropdown, visibility
+│   │   ├── viewport.tsx            R3F canvas with TransformControls and grid
+│   │   └── __tests__/
+│   │       └── use-scene-store.test.ts  Reducer unit tests (15 cases)
 │   └── ui/                         Primitives (badge, button, card, input,
 │       ...                           label, select, separator, switch, table)
 └── lib/
-    ├── api.ts                      Typed fetch wrappers for REST endpoints
+    ├── api.ts                      Typed fetch wrappers for asset REST endpoints
+    ├── scene-api.ts                Typed fetch wrappers for scene REST endpoints
     ├── ws.ts                       WebSocket hook with reconnect backoff
     ├── utils.ts                    cn() helper, formatBytes()
     └── companion-manager.ts        Three.js LoadingManager for glTF companions

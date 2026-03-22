@@ -34,7 +34,7 @@ export class ApiError extends Error {
   }
 }
 
-async function apiFetch<T>(url: string): Promise<T> {
+export async function apiFetch<T>(url: string): Promise<T> {
   const response = await fetch(url)
   if (!response.ok) {
     throw new ApiError(response.status, response.statusText)
@@ -93,7 +93,7 @@ export function fetchImportSettings(
   return apiFetch<ImportSettingsResponse>(`/api/assets/${encodeURIComponent(assetId)}/settings`)
 }
 
-async function apiWrite<T>(
+export async function apiWrite<T>(
   url: string,
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown,

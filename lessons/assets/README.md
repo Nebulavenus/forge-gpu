@@ -69,6 +69,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 15 | [Asset Preview](15-asset-preview/) | Python + TypeScript | react-three-fiber 3D mesh preview, texture viewer with channel isolation, file serving endpoints, source vs. processed comparison |
 | 16 | [Import Settings Editor](16-import-settings-editor/) | Python + TypeScript | Per-asset TOML sidecar files, three-layer settings merge (schema → global → per-asset), settings editor form, single-asset re-processing |
 | 17 | [Texture Atlas](17-texture-atlas/) | Python | Guillotine bin packing, material-grouped atlas compositing, UV remap, padding and mipmap bleed, atlas metadata |
+| 18 | [Scene Editor](18-scene-editor/) | Python + TypeScript | Visual scene composition with react-three-fiber viewport, transform gizmos, hierarchy panel, undo/redo, JSON scene files |
 
 ## Building
 

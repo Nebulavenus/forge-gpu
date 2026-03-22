@@ -22,6 +22,9 @@ __all__ = [
     "diagram_guillotine_packing",
     "diagram_atlas_uv_transform",
     "diagram_mipmap_bleeding",
+    "diagram_scene_data_model",
+    "diagram_undo_redo_flow",
+    "diagram_editor_layout",
 ]
 
 from .lesson_02 import (
@@ -48,4 +51,9 @@ from .lesson_17 import (
     diagram_atlas_uv_transform,
     diagram_guillotine_packing,
     diagram_mipmap_bleeding,
+)
+from .lesson_18 import (
+    diagram_editor_layout,
+    diagram_scene_data_model,
+    diagram_undo_redo_flow,
 )
