@@ -8,6 +8,7 @@ lives in its own subdirectory and has a detailed README with API reference.
 | Module      | Header(s)                  | Purpose                                     |
 |-------------|----------------------------|---------------------------------------------|
 | `arena/`    | `forge_arena.h`            | Arena (bump) allocator                      |
+| `containers/` | `forge_containers.h`     | Dynamic arrays and hash maps (fat-pointer pattern) |
 | `math/`     | `forge_math.h`             | Vectors, matrices, quaternions, transforms  |
 | `obj/`      | `forge_obj.h`              | Wavefront OBJ file parser                   |
 | `gltf/`     | `forge_gltf.h`             | glTF 2.0 scene/material/hierarchy parser    |

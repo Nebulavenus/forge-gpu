@@ -91,7 +91,7 @@ smp.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
 /* Lengyel's logarithmic-linear blend */
 for (int i = 0; i < NUM_CASCADES; i++) {
     float p = (float)(i + 1) / (float)NUM_CASCADES;
-    float log_split = near * powf(far / near, p);
+    float log_split = near * SDL_powf(far / near, p);
     float lin_split = near + (far - near) * p;
     splits[i] = lambda * log_split + (1.0f - lambda) * lin_split;
 }

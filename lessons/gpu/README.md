@@ -244,6 +244,7 @@ the same pattern. Use these to build projects quickly:
 - **`/forge-pipeline-texture-compression`** — Load GPU block-compressed textures (BC7/BC5) through the asset pipeline
 - **`/forge-pipeline-skinned-animations`** — Pipeline-based skeletal animation with .fskin/.fanim assets and ForgeSceneSkinnedModel
 - **`/forge-pipeline-morph-animations`** — Pipeline-based morph target (blend shape) animation with .fmesh morph deltas and ForgeSceneMorphModel
+- **`/forge-particle-system`** — GPU-driven particle system with compute simulation, billboard rendering, texture atlas animation, and blending modes
 
 **How to use:**
 

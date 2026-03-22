@@ -601,7 +601,7 @@ The metadata sidecar records compression results:
 
 ```bash
 # From the forge-gpu repository root
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 This installs the `forge-pipeline` CLI with Pillow for image processing and
@@ -629,7 +629,7 @@ ls assets/processed/textures/
 
 ```bash
 # From the repository root
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 ```
 
 48 tests covering dimension clamping, mip count calculation, full processing

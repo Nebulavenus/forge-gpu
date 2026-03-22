@@ -1,12 +1,12 @@
 ---
 name: forge-pipeline-library
-description: Use the forge-gpu asset pipeline library — a pip-installable Python package for scanning, fingerprinting, processing, and bundling game assets with a plugin architecture. Use when working with pipeline code, writing plugins, processing textures/meshes/animations, bundling assets, or extending the pipeline CLI.
+description: Use the forge-gpu asset pipeline library — a Python package installed via uv for scanning, fingerprinting, processing, and bundling game assets with a plugin architecture. Use when working with pipeline code, writing plugins, processing textures/meshes/animations, bundling assets, or extending the pipeline CLI.
 ---
 
 # forge-pipeline-library
 
-The forge asset pipeline is a pip-installable Python package at the repo root
-(`pipeline/`). It processes raw game assets (textures, meshes, animations)
+The forge asset pipeline is a Python package at the repo root (`pipeline/`),
+installed via `uv sync`. It processes raw game assets (textures, meshes, animations)
 into GPU-ready formats with incremental builds driven by content hashing.
 
 ## When to use this skill
@@ -23,11 +23,11 @@ into GPU-ready formats with incremental builds driven by content hashing.
 ## Installation
 
 ```bash
-# Install in development mode (editable) from the repo root
-pip install -e ".[dev]"
+# Install all dependencies from the lockfile (including dev extras)
+uv sync --extra dev
 
 # Verify
-forge-pipeline --help
+uv run forge-pipeline --help
 ```
 
 The package is defined in `pyproject.toml` at the repo root. The CLI entry
@@ -39,15 +39,20 @@ point is `forge-pipeline`, which maps to `pipeline.__main__:main`.
 pipeline/
 ├── __init__.py          # Package version (__version__ = "0.1.0")
 ├── __main__.py          # CLI entry point — argparse, scan, process, bundle
+├── atlas.py             # Texture atlas packing (guillotine + shelf algorithms)
+├── bundler.py           # .forgepak bundle writer/reader, dependency graph
 ├── config.py            # TOML config loader → PipelineConfig dataclass
+├── import_settings.py   # Per-asset import settings (TOML sidecars, three-layer merge)
 ├── plugin.py            # AssetPlugin base class, PluginRegistry, discovery
 ├── scanner.py           # File scanning, SHA-256 fingerprinting, cache
-├── bundler.py           # .forgepak bundle writer/reader, dependency graph
+├── server.py            # Web UI backend (FastAPI)
 └── plugins/
     ├── __init__.py
-    ├── texture.py       # TexturePlugin — resize, mipmaps, GPU compression
+    ├── animation.py     # AnimationPlugin — glTF animation → .fanim binary
+    ├── atlas.py         # AtlasPlugin — texture atlas packing
     ├── mesh.py          # MeshPlugin — deduplicate, optimize, tangents, LOD
-    └── animation.py     # AnimationPlugin — glTF animation → .fanim binary
+    ├── scene.py         # ScenePlugin — glTF scene hierarchy → .fscene binary
+    └── texture.py       # TexturePlugin — resize, mipmaps, GPU compression
 ```
 
 ## Core modules
@@ -366,14 +371,14 @@ graph for correct processing order and invalidation.
 
 ```bash
 # Run all pipeline tests
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 
 # Run a specific test module
-pytest tests/pipeline/test_scanner.py -v
+uv run pytest tests/pipeline/test_scanner.py -v
 
 # Lint
-ruff check pipeline/ tests/pipeline/
-ruff format --check pipeline/ tests/pipeline/
+uv run ruff check pipeline/ tests/pipeline/
+uv run ruff format --check pipeline/ tests/pipeline/
 ```
 
 ## Common mistakes

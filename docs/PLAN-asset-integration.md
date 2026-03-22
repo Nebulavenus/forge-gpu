@@ -110,7 +110,7 @@ Add to root `CMakeLists.txt`. The target uses a three-tier strategy:
 
 1. `assets/processed/` already exists locally → do nothing (already built)
 2. Not found → download pre-built tarball from the latest GitHub release
-3. Download fails (offline, no release yet) → run `python -m pipeline` locally
+3. Download fails (offline, no release yet) → run `uv run python -m pipeline` locally
 
 ```cmake
 set(FORGE_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets/processed")
@@ -136,7 +136,7 @@ The `cmake/AcquireAssets.cmake` script implements the three-tier logic:
 
 - Checks if `assets/processed/` exists and is non-empty
 - If missing, tries `gh release download ${RELEASE_TAG}` for the tarball
-- If download fails, runs `python -m pipeline --verbose`
+- If download fails, runs `uv run python -m pipeline --verbose`
 - Writes a `.stamp` file so CMake knows assets are up to date
 
 GPU Lesson 39+ declares a build dependency on this target:
@@ -151,14 +151,14 @@ Building any lesson 39+ automatically acquires processed assets. Lessons 01–38
 have no dependency on it.
 
 For local development (modifying assets or the pipeline itself), run
-`python -m pipeline` directly — the existing `assets/processed/` directory
+`uv run python -m pipeline` directly — the existing `assets/processed/` directory
 satisfies the CMake target and skips the download.
 
 ### 0D: Verify pipeline runs on existing assets
 
 ```bash
-pip install -e ".[dev]"
-python -m pipeline --verbose
+uv sync --extra dev
+uv run python -m pipeline --verbose
 cmake --build build --target forge-assets
 ```
 
@@ -200,7 +200,7 @@ everything else → BC7). Output: compressed textures in
 ### 1C: Bundle creation
 
 ```bash
-python -m pipeline bundle --output assets/bundles/forge.forgepak
+uv run python -m pipeline bundle --output assets/bundles/forge.forgepak
 ```
 
 ---
@@ -276,7 +276,7 @@ Add a mandatory section:
 > - All textures are BC7 (albedo) or BC5 (normal maps) — shaders must
 >   reconstruct normal Z from BC5 two-channel data.
 > - If a lesson needs a new model, add it to `assets/models/`, run
->   `python -m pipeline`, and load the processed output.
+>   `uv run python -m pipeline`, and load the processed output.
 > - Reference `lessons/assets/` when first introducing an asset.
 > - Purely procedural shader lessons (fullscreen effects) are exempt.
 > - CMake: `add_dependencies(lesson_XX forge-assets)` is mandatory.
@@ -306,13 +306,13 @@ New checklist category:
 > - [ ] No ad-hoc geometry construction (manual vertex buffer fills for
 >       standard shapes)
 > - [ ] CMake has `add_dependencies(lesson_XX forge-assets)`
-> - [ ] If new assets added, `python -m pipeline` runs clean
+> - [ ] If new assets added, `uv run python -m pipeline` runs clean
 
 ### 5D: `dev-final-pass` (additional PR validation)
 
 > **Asset Pipeline Check** (GPU Lessons 39+)
 >
-> - [ ] `python -m pipeline --verbose` succeeds (validates current branch processes assets correctly)
+> - [ ] `uv run python -m pipeline --verbose` succeeds (validates current branch processes assets correctly)
 > - [ ] No raw asset loads in lessons 39+
 > - [ ] No inline vertex arrays for standard 3D shapes
 > - [ ] CMake declares `forge-assets` dependency
@@ -364,13 +364,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install pipeline
-        run: pip install -e ".[dev]"
+        run: uv sync --extra dev
       - name: Build mesh tool
         run: |
           cmake -B build
           cmake --build build --target forge-mesh-tool
       - name: Run pipeline
-        run: python -m pipeline --verbose
+        run: uv run python -m pipeline --verbose
       - name: Upload processed assets
         uses: actions/upload-artifact@v4
         with:
@@ -445,7 +445,7 @@ Phase 4 requires Phase 2 (the C loader must exist first).
 3. **Three-tier asset acquisition.** The `forge-assets` CMake target is a
    build dependency for GPU Lessons 39+. It checks: (1) local
    `assets/processed/` exists → use it, (2) download pre-built tarball from
-   the `assets-latest` GitHub release, (3) run `python -m pipeline` locally.
+   the `assets-latest` GitHub release, (3) run `uv run python -m pipeline` locally.
    Python is only needed if you're modifying assets or the pipeline itself.
    Lessons 01–38 have no pipeline dependency.
 

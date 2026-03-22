@@ -303,7 +303,7 @@ The execution flow:
 
 ```bash
 # From the forge-gpu repository root
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 This installs the `forge-pipeline` CLI and all development dependencies
@@ -323,7 +323,7 @@ forge-pipeline                 # second run — all unchanged
 
 ```bash
 # From the repository root
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 ```
 
 29 tests covering all three modules: config loading, plugin registration and

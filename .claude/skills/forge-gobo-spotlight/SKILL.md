@@ -6,7 +6,7 @@ description: Add a projected-texture (gobo/cookie) spotlight with cone falloff, 
 Add a spotlight with inner/outer cone angles, projected gobo texture, and a
 single 2D shadow map. The spotlight's view-projection matrix serves triple
 duty — shadow mapping, gobo UV projection, and cone masking. Based on
-Lesson 24.
+[GPU Lesson 24](../../../lessons/gpu/24-gobo-spotlight/).
 
 ## When to use
 

@@ -34,7 +34,7 @@ mid-speed, blue at high speed.
 |---|---|
 | WASD / Arrows | Move camera |
 | Mouse | Look around |
-| Space | Pause / resume simulation |
+| P | Pause / resume simulation |
 | R | Reset all particles to initial positions |
 | T | Toggle slow motion (half speed) |
 | Escape | Release mouse / quit |

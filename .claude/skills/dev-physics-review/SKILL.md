@@ -238,7 +238,7 @@ Ensure the simulation is deterministic with fixed timestep and identical inputs:
 - The accumulator pattern correctly drains without skipping or doubling steps
 - Reset (R key) restores the exact initial state — no accumulated drift in
   "initial" values
-- Pause (Space) truly freezes physics — no partial steps leak through
+- Pause (P key) truly freezes physics — no partial steps leak through
 
 ### Check 8: Test setup return values
 

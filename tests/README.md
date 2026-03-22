@@ -17,6 +17,7 @@ corresponds to a module in `common/` or `pipeline/`.
 | `shapes/`   | C        | Procedural geometry (`common/shapes/`) |
 | `ui/`       | C        | UI library (`common/ui/`)              |
 | `audio/`    | C        | Audio library (`common/audio/`)        |
+| `containers/` | C      | Stretchy containers (`common/containers/`) |
 | `pipeline/` | Python   | Asset pipeline (`pipeline/`)           |
 
 ## Running
@@ -31,5 +32,5 @@ cmake --build build --target test_math
 ctest --test-dir build -R math
 
 # Run Python pipeline tests
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 ```

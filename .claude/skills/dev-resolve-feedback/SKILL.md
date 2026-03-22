@@ -1,4 +1,5 @@
 ---
+name: dev-resolve-feedback
 description: Ask CodeRabbit to verify and resolve each unresolved feedback thread on a PR. Use when CodeRabbit posts "No actionable comments" but old threads remain open, blocking approval.
 user-invokable: true
 ---

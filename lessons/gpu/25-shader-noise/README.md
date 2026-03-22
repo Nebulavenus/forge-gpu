@@ -194,7 +194,7 @@ This lesson uses:
 | 6 | Procedural terrain |
 | D | Toggle dithering |
 | +/- | Adjust noise scale |
-| Space | Pause/resume animation |
+| P | Pause/resume animation |
 | Escape | Quit |
 
 ## Shaders

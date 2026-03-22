@@ -12,7 +12,7 @@
 
 ![Asset browser showing 8 assets with type badges and status](assets/screenshot.png)
 
-Running `python -m pipeline serve` starts a local web server. Open
+Running `uv run python -m pipeline serve` starts a local web server. Open
 `http://localhost:8000` to browse all assets the pipeline knows about —
 filtered by type, searchable by name, with real-time build status via
 WebSocket.
@@ -113,9 +113,9 @@ the pipeline gains async processing — the infrastructure is in place.
 The `serve` subcommand was added to the pipeline CLI:
 
 ```bash
-python -m pipeline serve                    # default: 127.0.0.1:8000
-python -m pipeline serve --port 3000        # custom port
-python -m pipeline serve --host 0.0.0.0     # listen on all interfaces
+uv run python -m pipeline serve                    # default: 127.0.0.1:8000
+uv run python -m pipeline serve --port 3000        # custom port
+uv run python -m pipeline serve --host 0.0.0.0     # listen on all interfaces
 ```
 
 ## Frontend
@@ -190,7 +190,7 @@ Run both servers in separate terminals:
 
 ```bash
 # Terminal 1 — FastAPI backend
-python -m pipeline serve
+uv run python -m pipeline serve
 
 # Terminal 2 — Vite dev server (with HMR)
 cd pipeline/web

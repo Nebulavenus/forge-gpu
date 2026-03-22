@@ -329,7 +329,7 @@ Each batch agent does the same work:
 2. **Testing section** — verify the documented test commands work:
    - `cmake --build build --target test_gltf`
    - `ctest --test-dir build`
-   - `pytest tests/pipeline/`
+   - `uv run pytest tests/pipeline/`
    - Check for new test targets that should be documented
 
 3. **Shader compilation** — verify the documented commands match the actual

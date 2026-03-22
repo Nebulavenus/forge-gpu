@@ -487,7 +487,7 @@ tool_path = "../../build/forge_mesh_tool"  # path to the compiled binary
 - CMake 3.24+ and a C/C++ compiler
 - meshoptimizer (fetched automatically via CMake FetchContent)
 - MikkTSpace (fetched automatically via CMake FetchContent)
-- Python 3.10+ with the pipeline installed (`pip install -e ".[dev]"`)
+- Python 3.10+ with the pipeline installed (`uv sync --extra dev`)
 
 ### Compile the C tool
 
@@ -499,7 +499,7 @@ cmake --build build --target forge_mesh_tool
 ### Install the Python pipeline
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ## Running
@@ -534,7 +534,7 @@ hexdump -C assets/processed/models/cube.fmesh | head -20
 cmake --build build --target forge_mesh_tool
 
 # Python tests
-pytest tests/pipeline/test_mesh.py -v
+uv run pytest tests/pipeline/test_mesh.py -v
 ```
 
 ## Where it connects

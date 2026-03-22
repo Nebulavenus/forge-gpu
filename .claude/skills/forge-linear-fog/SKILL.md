@@ -115,6 +115,6 @@ float3 final_color = lerp(fog_color.rgb, lit_color, fog_factor);
 
 ## Reference
 
-- Lesson 20: `lessons/gpu/20-linear-fog/`
-- Fragment shader: `lessons/gpu/20-linear-fog/shaders/fog.frag.hlsl`
-- Grid shader: `lessons/gpu/20-linear-fog/shaders/grid_fog.frag.hlsl`
+- [GPU Lesson 20 — Linear Fog](../../../lessons/gpu/20-linear-fog/)
+- [Fragment shader](../../../lessons/gpu/20-linear-fog/shaders/fog.frag.hlsl)
+- [Grid shader](../../../lessons/gpu/20-linear-fog/shaders/grid_fog.frag.hlsl)

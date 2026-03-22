@@ -135,6 +135,6 @@ The forge-gpu glTF parser stores tangents in `ForgeGltfPrimitive.tangents`
 
 ## Reference
 
-- Lesson 17 source: `lessons/gpu/17-normal-maps/`
+- [Lesson 17 source](../../../lessons/gpu/17-normal-maps/)
 - Eric Lengyel, "Foundations of Game Engine Development, Volume 2: Rendering"
 - glTF 2.0 specification: tangent vectors and normal textures

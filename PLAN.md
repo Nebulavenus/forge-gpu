@@ -27,7 +27,7 @@ of unique meshes, up to ~100 rigid bodies, moderate draw counts.
 | **Anim** (planned) | `common/anim/` | Blending, layering, blend trees, state machines, IK, root motion |
 | **ECS** (planned) | `common/ecs/` | Entity-component-system: archetypes, sparse sets, parallel systems |
 
-The **Python asset pipeline** (`pipeline/`, pip-installable) handles offline
+The **Python asset pipeline** (`pipeline/`, installed via `uv sync`) handles offline
 processing: scanning, fingerprinting, texture compression, mesh optimization.
 C tools in `tools/` do the heavy lifting (meshoptimizer, MikkTSpace, basisu).
 
@@ -51,21 +51,20 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Engine Lessons 01–13** — From Intro to C through Stretchy Containers
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Physics Lessons 01–11** — From Point Particles through Contact Manifold
+- **Physics Lessons 01–12** — From Point Particles through Impulse-Based Resolution
 - **Audio Lessons 01–06** — From Audio Basics through DSP Effects
-- **Asset Lessons 01–16** — From Pipeline Scaffold through Import Settings Editor
+- **Asset Lessons 01–17** — From Pipeline Scaffold through Texture Atlas Packing
 
 ## GPU Lessons — Remaining
 
-Lesson 47 (Texture Atlas Rendering) depends on Asset Lesson 17. Lessons 49–50
-and 52–58 have no cross-track blockers. The **Terrain & Vegetation** arc
+Lessons 47, 49–50, and 52–58 have no cross-track blockers. The **Terrain & Vegetation** arc
 (Lessons 48, 51) depends on Asset Lessons 19–20 (procedural textures). The
 **Particle Effects** arc (Lessons 59–60) is blocked by Asset Lesson 21
 (particle effect definitions).
 
 ### Terrain & Vegetation
 
-- [ ] **Lesson 47 — Texture Atlas Rendering** — C atlas metadata loader in `forge_pipeline.h`; atlas UV transform in scene model fragment shader; `ForgeSceneAtlasRect` per-material UV offset/scale; `forge_scene_load_atlas_model()` for atlas-based model loading; single atlas texture bind replacing per-material binds; UI panel comparing draw call and bind counts between atlas and individual modes; backwards-compatible identity UV transform for non-atlas models (depends on Asset Lesson 17)
+- [ ] **Lesson 47 — Texture Atlas Rendering** — C atlas metadata loader in `forge_pipeline.h`; atlas UV transform in scene model fragment shader; `ForgeSceneAtlasRect` per-material UV offset/scale; `forge_scene_load_atlas_model()` for atlas-based model loading; single atlas texture bind replacing per-material binds; UI panel comparing draw call and bind counts between atlas and individual modes; backwards-compatible identity UV transform for non-atlas models
 - [ ] **Lesson 48 — Height Map Terrain** — GPU terrain from pipeline-generated noise heightmaps (Asset Lesson 19); vertex displacement from R16 heightmap in the vertex shader; normal computation from height samples via central differences; texture splatting with slope- and height-based blend maps (rock, dirt, grass); chunked terrain mesh with distance-based LOD (geo-clipmaps or quadtree); scattered tree placement using density maps derived from terrain slope and height; tree and grass rendering as instanced alpha-tested billboards using pipeline-generated vegetation textures (Asset Lesson 20), full grass animation in Lesson 51 (depends on GPU Lessons 13, 25 and Asset Lessons 19–20)
 - [ ] **Lesson 49 — Imposters** — Billboard LOD representations of complex meshes; baking an imposter atlas (multiple view angles) to an offscreen render target; selecting the correct atlas frame based on view direction; cross-fading between imposter and full mesh; application to distant trees, props, and crowd rendering
 - [ ] **Lesson 50 — Level of Detail** — Distance-based LOD system for mesh rendering; discrete LOD with multiple mesh detail levels and screen-size switching thresholds; continuous LOD with cross-fade (alpha dithering) to hide pop-in; compute-based LOD selection using camera distance and bounding sphere screen coverage; integrating imposters from Lesson 49 as the lowest LOD tier; LOD bias and hysteresis to prevent rapid switching; application to the terrain scene — full tree meshes up close, simplified meshes at mid range, imposters at distance (depends on Lessons 13, 38, 48, 49)
@@ -111,7 +110,6 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 ### Rigid Body Dynamics
 
-- [x] **Physics Lesson 12 — Impulse-Based Resolution** — Computing collision impulses for linear and angular response; friction impulses; sequential impulse solver; position correction (Baumgarte stabilization or split impulses)
 - [ ] **Physics Lesson 13 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
 - [ ] **Physics Lesson 14 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
 - [ ] **Physics Lesson 15 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance
@@ -131,12 +129,10 @@ come free. If a lesson needs a UI widget that does not exist (waveform display,
 VU meter, frequency plot), the widget is added to `common/ui/` as part of that
 lesson.
 
-### Spatial & Advanced
-
 ## Asset Pipeline — Remaining
 
 A hybrid Python + C track. The pipeline is a **reusable Python library** at
-`pipeline/` in the repo root (`pip install -e ".[dev]"`). Each lesson adds
+`pipeline/` in the repo root (`uv sync --extra dev`). Each lesson adds
 real functionality to the shared package. Processing plugins that need
 high-performance C libraries (meshoptimizer, MikkTSpace) are compiled C tools
 invoked as subprocesses. Procedural geometry generation lives in a header-only
@@ -147,7 +143,7 @@ C library (`common/shapes/forge_shapes.h`).
 Some later lessons across tracks depend on authored asset formats that need the
 web editor. The order is:
 
-1. **Web Frontend** (Asset Lessons 14–18) — editor for authoring effect
+1. **Web Frontend** (Asset Lessons 14–17 complete, 18 remaining) — editor for authoring effect
    definitions, import settings, atlas packing, scene composition, and
    navmesh editing
 2. **Procedural Textures** (Asset Lessons 19–20) — noise heightmaps and
@@ -181,7 +177,6 @@ for UI components. Authored content (scenes, materials, effects) persisted as
 JSON/TOML files — no database. react-three-fiber for 3D preview (Lesson 15),
 reactflow for node-graph editing (Lessons 20+).
 
-- [ ] **Asset Lesson 17 — Texture Atlas Packing** — Guillotine bin packing algorithm for variable-size texture rects; material-grouped atlas compositing with Pillow; `atlas.json` metadata with per-material UV offset/scale; atlas settings schema (max size, padding, enable toggle); web UI canvas-based atlas visualization with labeled bounding rects and hover tooltips; pipeline plugin running as a post-processing pass after texture processing; tests for packer, plugin, and metadata format
 - [ ] **Asset Lesson 18 — Scene Editor** — Visual scene composition with react-three-fiber viewport; place, move, rotate, scale objects with transform gizmos; scene hierarchy panel; scene saved as JSON files; undo/redo with command pattern using React state
 
 ### Procedural Textures
@@ -209,7 +204,7 @@ grows incrementally like physics and audio — documented, tested, visual.
 **Cross-track dependencies:** Steering and pathfinding lessons use physics
 for collision queries and ground detection. NavMesh lessons (05–06) can use
 hand-built meshes initially but benefit from the pipeline navmesh tools
-(Asset Lessons 23–24) for authored levels. Decision-making lessons integrate
+(Asset Lessons 24–25) for authored levels. Decision-making lessons integrate
 with the Animation track for state-driven animation transitions.
 
 ### Steering & Movement
@@ -221,7 +216,7 @@ with the Animation track for state-driven animation transitions.
 ### Pathfinding
 
 - [ ] **AI Lesson 04 — Grid Pathfinding** — A* on a 2D grid; heuristics (Manhattan, Euclidean, octile); path smoothing; visualization of open/closed sets during search
-- [ ] **AI Lesson 05 — Navigation Meshes** — NavMesh representation; point-in-polygon queries; A* on a polygon graph; funnel algorithm for string-pulling smooth paths; demo with agents walking a navmesh; can use hand-built meshes or pipeline-generated `.fnav` (Asset Lesson 23)
+- [ ] **AI Lesson 05 — Navigation Meshes** — NavMesh representation; point-in-polygon queries; A* on a polygon graph; funnel algorithm for string-pulling smooth paths; demo with agents walking a navmesh; can use hand-built meshes or pipeline-generated `.fnav` (Asset Lesson 24)
 - [ ] **AI Lesson 06 — Dynamic Pathfinding** — Handling moving obstacles; replanning strategies; local avoidance (RVO/ORCA); combining global paths with local steering
 
 ### Decision Making
@@ -261,7 +256,7 @@ effects. The AI decision-making track drives animation state transitions.
 
 ### Sequencing & Tools
 
-- [ ] **Anim Lesson 09 — Animation Events & Notifies** — Frame-triggered events (footstep sounds, particle spawns, hitbox activation); event curves; integration with audio and physics systems; uses `.faevt` data from Asset Lesson 21 when available
+- [ ] **Anim Lesson 09 — Animation Events & Notifies** — Frame-triggered events (footstep sounds, particle spawns, hitbox activation); event curves; integration with audio and physics systems; uses `.faevt` data from Asset Lesson 22 when available
 - [ ] **Anim Lesson 10 — Animation Compression** — Curve fitting and keyframe reduction; quantization; error metrics; storage/memory trade-offs; comparing raw vs. compressed playback
 - [ ] **Anim Lesson 11 — Animation Graph** — Connecting blend trees, state machines, and IK into a unified evaluation graph; data flow and evaluation order; runtime editing via UI
 - [ ] **Anim Lesson 12 — Animation Debugging** — Pose visualization (skeleton overlay, bone axes); slow motion and frame stepping; graph inspection; per-bone contribution display

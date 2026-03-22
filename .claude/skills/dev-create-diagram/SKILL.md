@@ -249,15 +249,15 @@ the reader build intuition before reading the technical details.
 Verify the new code passes linting:
 
 ```bash
-ruff check scripts/forge_diagrams/
-ruff format --check scripts/forge_diagrams/
+uv run ruff check scripts/forge_diagrams/
+uv run ruff format --check scripts/forge_diagrams/
 ```
 
 Auto-fix if needed:
 
 ```bash
-ruff check --fix scripts/forge_diagrams/
-ruff format scripts/forge_diagrams/
+uv run ruff check --fix scripts/forge_diagrams/
+uv run ruff format scripts/forge_diagrams/
 ```
 
 ## Shared helpers reference

@@ -243,10 +243,10 @@ Structure varies by lesson type but always includes:
 **Python lessons:**
 
 ```bash
-cd lessons/assets/NN-topic-name
-pip install -e ".[dev]"
-pytest
-ruff check .
+uv sync --extra dev
+uv run pytest tests/pipeline/
+uv run ruff check pipeline/
+uv run ruff format --check pipeline/
 ```
 
 **C tool/library lessons:**
@@ -444,8 +444,9 @@ In these cases, update existing documentation or plan for later.
   portable. Timestamps break on copy, git clone, and CI.
 - **Show before/after** — File size comparisons, vertex count reductions, and
   load time improvements make the value of the pipeline concrete.
-- **Keep the web UI simple** — Static HTML/CSS/JS served by Python. No npm,
-  no webpack, no framework. The pipeline is the lesson, not the frontend stack.
+- **Web UI lives in `pipeline/web/`** — The frontend is a Vite + TypeScript
+  project served by the FastAPI backend in `pipeline/server.py`. The pipeline
+  is the lesson, not the frontend stack.
 - **Chunked writes for large C files** — `forge_shapes.h` and GPU demo
   `main.c` will exceed 800 lines. Use the chunked-write pattern per
   `.claude/large-file-strategy.md`.

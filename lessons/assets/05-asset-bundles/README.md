@@ -55,7 +55,7 @@ meshes/environment.fmesh                1,048,576      187,648   17.9%
 Running the tests:
 
 ```text
-$ pytest tests/pipeline/test_bundler.py -v
+$ uv run pytest tests/pipeline/test_bundler.py -v
 
 tests/pipeline/test_bundler.py::TestBundleEntry::test_to_dict_round_trip PASSED
 tests/pipeline/test_bundler.py::TestBundleEntry::test_to_dict_omits_empty_dependencies PASSED
@@ -377,10 +377,10 @@ CLI flags override configuration:
 ### Prerequisites
 
 - Python 3.10+
-- The pipeline package installed: `pip install -e ".[dev]"` (from repo root)
+- The pipeline package installed: `uv sync --extra dev` (from repo root)
 
 The `zstandard` package is listed as a dependency in `pyproject.toml` and
-installs automatically with `pip install`.
+installs automatically with `uv sync`.
 
 ### Running
 
@@ -395,7 +395,7 @@ forge-pipeline bundle
 forge-pipeline info assets/bundles/assets.forgepak
 
 # Run the tests
-pytest tests/pipeline/test_bundler.py -v
+uv run pytest tests/pipeline/test_bundler.py -v
 ```
 
 ## AI skill

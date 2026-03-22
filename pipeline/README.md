@@ -11,7 +11,7 @@ it works in the [asset pipeline lessons](../lessons/assets/).
 
 ```bash
 # From the forge-gpu repository root
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Or install directly (once published)
 pip install forge-pipeline
@@ -61,6 +61,8 @@ The pipeline has four components:
 | Scanner | `pipeline.scanner` | Walk directories, SHA-256 fingerprint, classify NEW/CHANGED/UNCHANGED |
 | Bundler | `pipeline.bundler` | Pack processed assets into compressed bundles with random-access TOC |
 | CLI | `pipeline.__main__` | `argparse` entry point tying everything together |
+| Import settings | `pipeline.import_settings` | Per-asset `.import.toml` sidecar overrides |
+| Atlas packer | `pipeline.atlas` | Guillotine bin-packing for texture atlases |
 | Web server | `pipeline.server` | FastAPI app for browsing assets, REST API, WebSocket status |
 
 ```text
@@ -117,6 +119,7 @@ The plugin is discovered automatically — no core code changes needed.
 | `mesh` | `.obj`, `.gltf`, `.glb` | Scaffold (no-op) |
 | `animation` | `.gltf`, `.glb` | Animation extraction and keyframe processing |
 | `scene` | `.gltf`, `.glb` | Scene hierarchy extraction via `forge-scene-tool` |
+| `atlas` | (post-processing) | Guillotine bin-pack processed textures into a single atlas |
 
 The texture plugin was built in Lesson 02.  Mesh optimization with
 meshoptimizer and MikkTSpace is added in Lesson 03.  The animation plugin
@@ -127,7 +130,7 @@ was added in Lesson 08.
 Browse assets in the browser:
 
 ```bash
-python -m pipeline serve
+uv run python -m pipeline serve
 ```
 
 Opens at `http://localhost:8000`. API docs at `http://localhost:8000/api/docs`.
@@ -135,15 +138,15 @@ Opens at `http://localhost:8000`. API docs at `http://localhost:8000/api/docs`.
 Options:
 
 ```bash
-python -m pipeline serve --port 3000          # custom port
-python -m pipeline serve --host 0.0.0.0       # listen on all interfaces
+uv run python -m pipeline serve --port 3000          # custom port
+uv run python -m pipeline serve --host 0.0.0.0       # listen on all interfaces
 ```
 
 For frontend development with hot reload:
 
 ```bash
 # Terminal 1 — backend
-python -m pipeline serve
+uv run python -m pipeline serve
 
 # Terminal 2 — frontend (proxies API calls to backend)
 cd pipeline/web
@@ -208,10 +211,10 @@ for f in files:
 
 ```bash
 # Run pipeline tests
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 
 # Run all tests (C + Python)
-ctest --test-dir build && pytest tests/pipeline/
+ctest --test-dir build && uv run pytest tests/pipeline/
 ```
 
 ## Lesson track
@@ -236,6 +239,8 @@ The pipeline is built incrementally across the
 | [13 — Morph Targets](../lessons/assets/13-morph-targets/) | Morph target deltas, weight channels, blend shape pipeline |
 | [14 — Web UI Scaffold](../lessons/assets/14-web-ui-scaffold/) | FastAPI backend, Vite + React frontend, asset browser, WebSocket status |
 | [15 — Asset Preview](../lessons/assets/15-asset-preview/) | react-three-fiber 3D mesh preview, texture channel isolation, file serving |
+| [16 — Import Settings Editor](../lessons/assets/16-import-settings-editor/) | Per-asset `.import.toml` sidecars, three-layer merge, settings editor UI |
+| [17 — Texture Atlas](../lessons/assets/17-texture-atlas/) | Guillotine bin packing, atlas plugin, atlas metadata |
 
 ## License
 

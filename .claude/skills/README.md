@@ -22,7 +22,6 @@ purpose, inputs, and step-by-step instructions.
 | `dev-create-diagram`     | Generate matplotlib diagrams for lessons       |
 | `dev-review-diagrams`    | Review diagram quality and accuracy            |
 | `dev-docs-review`        | Review documentation for completeness          |
-| `dev-review-pr`          | Review a pull request                          |
 | `dev-final-pass`         | Final quality pass before merging              |
 | `dev-markdown-lint`      | Run markdownlint checks                        |
 | `dev-audio-lesson`       | Scaffold an audio lesson                       |
@@ -31,6 +30,13 @@ purpose, inputs, and step-by-step instructions.
 | `dev-local-review`       | Run local code review before pushing           |
 | `dev-ui-review`          | Review UI library changes                      |
 | `dev-reset-workspace`    | Reset workspace to a clean state               |
+| `dev-review-pr`          | Review an open pull request                    |
+| `dev-update-working-branch` | Sync working branch with main              |
+| `dev-resolve-feedback`   | Resolve CodeRabbit review feedback             |
+| `dev-explain`            | Explain a concept or code section              |
+| `dev-ask`                | Ask a question about the codebase              |
+| `dev-request`            | Make a structured code change request          |
+| `dev-fyi`                | Share information or context with Claude       |
 
 ## Topic skills (`forge-*`)
 
@@ -83,6 +89,8 @@ answer questions and help debug code related to each lesson.
 | `forge-pipeline-texture-compression` | BC7/BC5 block-compressed textures |
 | `forge-pipeline-skinned-animations` | Pipeline skeletal animation with `.fskin`/`.fanim` |
 | `forge-pipeline-morph-animations` | Morph target animation with `.fmesh` deltas |
+| `forge-particle-system` | GPU-driven particle system with compute simulation and billboard rendering |
+| `forge-import-settings-editor` | Per-asset `.import.toml` sidecar settings editor |
 | `forge-asset-pipeline` | Python asset pipeline library |
 | `forge-pipeline-library` | `forge_pipeline.h` C runtime loader |
 | `forge-procedural-geometry` | `forge_shapes.h` procedural geometry |

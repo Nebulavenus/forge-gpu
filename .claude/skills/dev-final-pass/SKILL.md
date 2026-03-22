@@ -368,13 +368,13 @@ npx markdownlint-cli2 "lessons/<track>/NN-name/**/*.md" ".claude/skills/<topic>/
 If any Python scripts in `scripts/` were added or modified:
 
 ```bash
-ruff check scripts/
-ruff format --check scripts/
+uv run ruff check scripts/
+uv run ruff format --check scripts/
 ```
 
 - [ ] No lint errors from `ruff check`
 - [ ] No format issues from `ruff format --check`
-- [ ] Auto-fix with `ruff check --fix scripts/ && ruff format scripts/` if needed
+- [ ] Auto-fix with `uv run ruff check --fix scripts/ && uv run ruff format scripts/` if needed
 
 ---
 
@@ -383,7 +383,7 @@ ruff format --check scripts/
 If any Python files in `scripts/` or `pipeline/` were added or modified:
 
 ```bash
-pyright
+uv run pyright
 ```
 
 - [ ] No errors from `pyright`
@@ -431,7 +431,7 @@ cmake --build build --target NN-name
 **For asset lessons (Python):**
 
 ```bash
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 ```
 
 - [ ] Pipeline tests pass

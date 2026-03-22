@@ -5,7 +5,7 @@ pipeline to a full asset editor with a web frontend.
 
 The pipeline is a **reusable Python library** at
 [`pipeline/`](../../pipeline/) in the repo root. Install it with
-`pip install -e ".[dev]"` and use it in your own projects. These lessons teach
+`uv sync --extra dev` and use it in your own projects. These lessons teach
 how each piece was designed and built.
 
 ## What you'll learn
@@ -36,7 +36,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
   subprocesses. Procedural geometry lives in a header-only C library that GPU
   lessons include directly.
 - **Reusable library** — The pipeline lives at `pipeline/` in the repo root
-  as a pip-installable package. Each lesson adds functionality to the shared
+  as a reusable package (installed via `uv sync`). Each lesson adds functionality to the shared
   library, not to throwaway lesson-local code.
 - **Incremental builds** — Only reprocess what changed. Fingerprint source
   files by content hash and skip unchanged assets.
@@ -67,6 +67,8 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 | 13 | [Morph Targets](13-morph-targets/) | C + Python | Morph target (blend shape) pipeline: glTF morph parsing, `.fmesh` morph deltas, weight animation channels, runtime loader |
 | 14 | [Web UI Scaffold](14-web-ui-scaffold/) | Python + TypeScript | FastAPI backend, Vite + React + TypeScript frontend, asset browser with type filtering and search, WebSocket build status |
 | 15 | [Asset Preview](15-asset-preview/) | Python + TypeScript | react-three-fiber 3D mesh preview, texture viewer with channel isolation, file serving endpoints, source vs. processed comparison |
+| 16 | [Import Settings Editor](16-import-settings-editor/) | Python + TypeScript | Per-asset TOML sidecar files, three-layer settings merge (schema → global → per-asset), settings editor form, single-asset re-processing |
+| 17 | [Texture Atlas](17-texture-atlas/) | Python | Guillotine bin packing, material-grouped atlas compositing, UV remap, padding and mipmap bleed, atlas metadata |
 
 ## Building
 
@@ -80,7 +82,7 @@ procedural geometry. Later lessons add a browser-based UI for asset browsing,
 
 ```bash
 # From the forge-gpu repository root
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ### Running
@@ -94,7 +96,7 @@ cd lessons/assets/01-pipeline-scaffold
 forge-pipeline -v
 
 # Run the tests
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 ```
 
 C tools (mesh processing, procedural geometry) are built via CMake alongside

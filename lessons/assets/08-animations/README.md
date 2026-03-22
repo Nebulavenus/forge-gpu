@@ -412,7 +412,7 @@ cmake --build build --config Debug --target forge_anim_tool
 
 ```bash
 ctest --test-dir build -R gltf -C Debug        # C parser + evaluation tests
-python -m pytest tests/pipeline/ -v             # pipeline plugin tests
+uv run pytest tests/pipeline/ -v                 # pipeline plugin tests
 ```
 
 ### Process a glTF file

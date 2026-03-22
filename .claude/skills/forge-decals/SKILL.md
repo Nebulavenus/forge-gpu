@@ -176,7 +176,7 @@ for (int y = 0; y < size; y++) {
     for (int x = 0; x < size; x++) {
         float u = (x + 0.5f) / size * 2.0f - 1.0f;
         float v = (y + 0.5f) / size * 2.0f - 1.0f;
-        float dist = sqrtf(u * u + v * v);
+        float dist = SDL_sqrtf(u * u + v * v);
 
         uint8_t r = 255, g = 50, b = 20;
         /* Soft circular falloff */

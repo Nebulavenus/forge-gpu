@@ -380,7 +380,7 @@ focus on physics. See the `forge-scene-renderer` skill for the full API.
 - **Reset key** — Press R to reset the simulation to its initial state. This
   is essential for physics demos where objects settle or leave the scene.
 
-- **Pause key** — Press SPACE (or P) to pause/resume the simulation. Rendering
+- **Pause key** — Press P to pause/resume the simulation. Rendering
   and camera controls continue while paused.
 
 - **Slow motion** — Press T to toggle half-speed simulation for observing
@@ -623,7 +623,7 @@ both a screenshot AND an animated GIF showing the behavior over time.]
 | WASD / Arrows | Move camera |
 | Mouse | Look around |
 | R | Reset simulation |
-| Space | Pause / resume |
+| P | Pause / resume |
 | T | Toggle slow motion |
 | Escape | Release mouse / quit |
 
@@ -875,7 +875,7 @@ Every physics lesson must support these controls:
 | Key | Action | Purpose |
 |---|---|---|
 | R | Reset simulation | Return all objects to initial positions and velocities |
-| Space | Pause / resume | Freeze physics while camera still works |
+| P | Pause / resume | Freeze physics while camera still works |
 | T | Toggle slow motion | Run at half speed for observing fast phenomena |
 
 ### Fixed timestep

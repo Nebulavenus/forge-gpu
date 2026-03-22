@@ -135,7 +135,7 @@ system and other relevant topics.
 - **[UI](lessons/ui/)** — Immediate-mode UI from TTF parsing to draggable windows and developer tools
 - **[Physics](lessons/physics/)** — Particles, rigid bodies, collisions, constraints
 - **[Audio](lessons/audio/)** — PCM audio, WAV loading, mixing, SDL audio streams
-- **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry, asset bundles, animation pipeline
+- **[Asset Pipeline](lessons/assets/)** — Texture compression, mesh optimization, procedural geometry, asset bundles, animation pipeline, web UI
 
 ## Using Claude Code
 

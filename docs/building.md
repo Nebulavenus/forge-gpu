@@ -290,6 +290,6 @@ ctest --test-dir build -R math
 Run Python pipeline tests:
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/pipeline/ -v
+uv sync --extra dev
+uv run pytest tests/pipeline/ -v
 ```

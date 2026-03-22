@@ -212,8 +212,10 @@ omissions.
    - If any `scripts/*.py` or `pipeline/*.py` files are staged, lint only those files:
 
      ```bash
-     STAGED_PY=$(git diff --cached --name-only -- 'scripts/*.py' 'pipeline/*.py' 'tests/pipeline/*.py')
-     [ -n "$STAGED_PY" ] && ruff check $STAGED_PY && ruff format --check $STAGED_PY
+     git diff --cached --name-only -z -- 'scripts/*.py' 'pipeline/*.py' 'tests/pipeline/*.py' \
+       | xargs -0 -r uv run ruff check
+     git diff --cached --name-only -z -- 'scripts/*.py' 'pipeline/*.py' 'tests/pipeline/*.py' \
+       | xargs -0 -r uv run ruff format --check
      ```
 
      Fix issues if found.
@@ -223,7 +225,7 @@ omissions.
 
      ```bash
      STAGED_PY=$(git diff --cached --name-only -- '*.py')
-     [ -n "$STAGED_PY" ] && pyright
+     [ -n "$STAGED_PY" ] && uv run pyright
      ```
 
      Fix issues if found.

@@ -138,7 +138,7 @@ companion files (`.bin`, textures) through the companions endpoint.
 
 ```bash
 # Install Python dependencies (if not already done)
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Install frontend dependencies and build
 cd pipeline/web
@@ -147,7 +147,7 @@ npm run build
 
 # Start the server
 cd ../..
-python -m pipeline serve
+uv run python -m pipeline serve
 ```
 
 ## Exercises

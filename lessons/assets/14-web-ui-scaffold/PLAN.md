@@ -14,7 +14,7 @@ and diagrams.
 ## What the user gets
 
 ```bash
-python -m pipeline serve
+uv run python -m pipeline serve
 ```
 
 Opens a browser at `http://localhost:8000` showing:

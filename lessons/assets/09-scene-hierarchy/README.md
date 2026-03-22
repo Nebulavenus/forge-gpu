@@ -262,7 +262,7 @@ The Python plugin invokes the tool automatically when processing `.gltf` or
 `.glb` files through the pipeline:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev
 forge-pipeline -v
 ```
 
@@ -271,7 +271,7 @@ Run the tests:
 ```bash
 cmake --build build --config Debug --target test_pipeline
 ctest --test-dir build -C Debug -R pipeline
-pytest tests/pipeline/test_scene.py -v
+uv run pytest tests/pipeline/test_scene.py -v
 ```
 
 ## Exercises

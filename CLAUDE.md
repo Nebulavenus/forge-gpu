@@ -183,14 +183,18 @@ forge-gpu/
 │   ├── audio/             # Audio programming (playback, mixing, spatial audio, DSP)
 │   ├── assets/            # Asset pipeline lessons (walkthroughs + exercises)
 │   └── gpu/               # SDL GPU lessons (rendering, pipelines, etc.)
-├── pipeline/              # Asset pipeline library (Python, pip-installable)
+├── pipeline/              # Asset pipeline library (Python, uv-managed)
 │   ├── __init__.py        # Package marker
 │   ├── __main__.py        # CLI entry point
+│   ├── atlas.py           # Texture atlas packing
+│   ├── bundler.py         # Asset bundle packing and compression
 │   ├── config.py          # TOML configuration loader
+│   ├── import_settings.py # Per-asset import settings
 │   ├── plugin.py          # Plugin base class, registry, discovery
 │   ├── scanner.py         # File scanning and fingerprinting
-│   ├── bundler.py         # Asset bundle packing and compression
-│   └── plugins/           # Built-in asset type plugins
+│   ├── server.py          # Web UI backend (FastAPI)
+│   ├── plugins/           # Built-in asset type plugins
+│   └── web/               # Web UI frontend (Vite + TypeScript)
 ├── common/
 │   ├── arena/             # Arena (bump) allocator (header-only)
 │   ├── containers/        # Dynamic arrays and hash maps (header-only, fat-pointer pattern)
@@ -221,7 +225,7 @@ forge-gpu/
 │   ├── add_msl_support.py # Add MSL (Metal) shader support to lessons
 │   ├── cloud-setup.sh     # Headless Linux environment setup (Lavapipe + Mesa)
 │   └── forge_diagrams/    # Matplotlib diagram generator (per-lesson modules)
-│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_43.py)
+│       ├── gpu/           # GPU lesson diagrams (lesson_03.py … lesson_46.py)
 │       ├── math/          # Math lesson diagrams
 │       ├── ui/            # UI lesson diagrams
 │       ├── engine/        # Engine lesson diagrams
@@ -246,12 +250,12 @@ forge-gpu/
 cmake --build build --target test_gltf   # build one C test
 ctest --test-dir build -R gltf           # run one C test
 ctest --test-dir build                   # run all C tests
-pytest tests/pipeline/ -v                # run pipeline (Python) tests
+uv run pytest tests/pipeline/ -v         # run pipeline (Python) tests
 ```
 
 When modifying parsers or libraries in `common/`, always build and run the
 corresponding tests. When modifying the pipeline library in `pipeline/`,
-run `pytest tests/pipeline/`. When adding a new module, add a matching test
+run `uv run pytest tests/pipeline/`. When adding a new module, add a matching test
 under `tests/` and register it in the root `CMakeLists.txt` (C) or
 `pyproject.toml` (Python).
 
@@ -344,7 +348,7 @@ the C build does not auto-detect shader changes.
 - **Hybrid Python + C track** — Python orchestrates, C handles performance-
   critical processing (meshoptimizer, MikkTSpace) and procedural geometry
 - **The pipeline is a reusable library** at `pipeline/` in the repo root,
-  pip-installable via `pip install -e ".[dev]"`. Lessons teach how each
+  installed via `uv sync --extra dev`. Lessons teach how each
   piece works; the code lives in the shared library, not in lesson directories.
 - Each lesson adds real functionality to `pipeline/` — config, plugins,
   scanning, processing. Tests live in `tests/pipeline/`.
@@ -353,7 +357,7 @@ the C build does not auto-detect shader changes.
   C tools are invoked as subprocesses by the Python pipeline
 - Procedural geometry lives in `common/shapes/forge_shapes.h` (header-only)
 - Incremental builds with content-hash fingerprinting
-- Later lessons add a web frontend (Flask/FastAPI + static HTML/JS)
+- Later lessons add a web frontend (`pipeline/web/`, Vite + TypeScript, served by FastAPI)
 - Cross-reference GPU lessons that consume the processed assets
 - Cross-reference engine lessons for build system and dependency concepts
 
@@ -380,8 +384,8 @@ Test locally: `npx markdownlint-cli2 "**/*.md"`
 ### Python linting
 
 All Python code is linted with [Ruff](https://docs.astral.sh/ruff/) (config: `pyproject.toml`).
-Test locally: `ruff check && ruff format --check`
-Auto-fix: `ruff check --fix && ruff format`
+Test locally: `uv run ruff check && uv run ruff format --check`
+Auto-fix: `uv run ruff check --fix && uv run ruff format`
 
 ### CRITICAL: Never circumvent quality checks
 

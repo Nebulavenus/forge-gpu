@@ -445,7 +445,7 @@ After all theme fixes are applied, run a final verification:
 
    ```bash
    ctest --test-dir build -R <relevant-test>    # C tests
-   pytest tests/pipeline/ -v                     # Python tests (if applicable)
+   uv run pytest tests/pipeline/ -v               # Python tests (if applicable)
    ```
 
 4. **Doc consistency check**: For each file pair (code + doc), verify the
@@ -461,7 +461,7 @@ After all theme fixes are applied, run a final verification:
 6. **Python lint** (if Python files changed):
 
    ```bash
-   ruff check && ruff format --check
+   uv run ruff check && uv run ruff format --check
    ```
 
 If any check fails, fix the issue before proceeding. Do NOT push code that

@@ -30,7 +30,7 @@
  *   D        — Toggle dithering (Interleaved Gradient Noise)
  *   =/+      — Increase noise scale (zoom in to detail)
  *   -        — Decrease noise scale (zoom out)
- *   Space    — Pause/resume animation
+ *   P        — Pause/resume animation
  *   Escape   — Quit
  *
  * SPDX-License-Identifier: Zlib
@@ -348,7 +348,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_Log("Mode: %s (press 1-6 to switch)", MODE_NAMES[state->noise_mode]);
     SDL_Log("Scale: %.0f (press +/- to adjust)", state->scale);
     SDL_Log("Dithering: off (press D to toggle)");
-    SDL_Log("Press Space to pause/resume animation");
+    SDL_Log("Press P to pause/resume animation");
 
 #ifdef FORGE_CAPTURE
     if (state->capture.mode != FORGE_CAPTURE_NONE) {
@@ -406,7 +406,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         }
 
         /* Pause/resume animation. */
-        if (key == SDLK_SPACE) {
+        if (key == SDLK_P) {
             state->paused = !state->paused;
             SDL_Log("Animation: %s",
                     state->paused ? "paused" : "running");

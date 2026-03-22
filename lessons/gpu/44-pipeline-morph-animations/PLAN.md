@@ -167,8 +167,8 @@ Download from glTF-Sample-Assets and process through the pipeline:
 Process with:
 
 ```bash
-python -m pipeline process assets/AnimatedMorphCube/AnimatedMorphCube.gltf
-python -m pipeline process assets/SimpleMorph/SimpleMorph.gltf
+uv run python -m pipeline process assets/AnimatedMorphCube/AnimatedMorphCube.gltf
+uv run python -m pipeline process assets/SimpleMorph/SimpleMorph.gltf
 ```
 
 Or use `forge-mesh-tool` and `forge-anim-tool` directly.

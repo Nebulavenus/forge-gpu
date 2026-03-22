@@ -23,7 +23,7 @@ and the C runtime loader (`common/pipeline/forge_pipeline.h`).
 
 ```bash
 # Run Python pipeline tests
-pytest tests/pipeline/ -v
+uv run pytest tests/pipeline/ -v
 
 # Run the C pipeline loader test
 cmake --build build --target test_pipeline
@@ -31,7 +31,7 @@ ctest --test-dir build -R pipeline --output-on-failure
 
 # Run all tests (C + Python)
 cmake --build build
-ctest --test-dir build && pytest tests/pipeline/
+ctest --test-dir build && uv run pytest tests/pipeline/
 ```
 
 ## Exit codes
