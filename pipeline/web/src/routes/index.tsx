@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TypeFilter } from "@/components/type-filter"
+import { AtlasPreview } from "@/components/atlas-preview"
 
 export const Route = createFileRoute("/")({
   component: AssetBrowser,
@@ -142,6 +143,8 @@ function AssetBrowser() {
           {data.total} asset{data.total !== 1 ? "s" : ""}
         </div>
       )}
+
+      <AtlasPreview />
     </div>
   )
 }

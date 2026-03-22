@@ -21,14 +21,23 @@ import argparse
 import sys
 
 from .assets import (
+    diagram_atlas_uv_transform,
     diagram_bundle_layout,
     diagram_dependency_graph,
+    diagram_fmesh_v2_layout,
+    diagram_guillotine_packing,
     diagram_lod_simplification,
+    diagram_material_data_flow,
     diagram_mesh_processing_pipeline,
+    diagram_mipmap_bleeding,
+    diagram_morph_binary_layout,
+    diagram_morph_pipeline,
     diagram_parametric_sphere,
     diagram_random_vs_sequential,
     diagram_scene_hierarchy,
     diagram_seam_duplication,
+    diagram_settings_data_flow,
+    diagram_settings_merge,
     diagram_smooth_vs_flat_normals,
     diagram_struct_of_arrays,
     diagram_texture_block_compression,
@@ -427,8 +436,25 @@ DIAGRAMS = {
         ("random_vs_sequential.png", diagram_random_vs_sequential),
         ("dependency_graph.png", diagram_dependency_graph),
     ],
+    "assets/07": [
+        ("fmesh_v2_layout.png", diagram_fmesh_v2_layout),
+        ("material_data_flow.png", diagram_material_data_flow),
+    ],
     "assets/09": [
         ("scene_hierarchy.png", diagram_scene_hierarchy),
+    ],
+    "assets/13": [
+        ("morph_pipeline.png", diagram_morph_pipeline),
+        ("morph_binary_layout.png", diagram_morph_binary_layout),
+    ],
+    "assets/16": [
+        ("lesson_16_settings_merge.png", diagram_settings_merge),
+        ("lesson_16_settings_data_flow.png", diagram_settings_data_flow),
+    ],
+    "assets/17": [
+        ("lesson_17_guillotine_packing.png", diagram_guillotine_packing),
+        ("lesson_17_atlas_uv_transform.png", diagram_atlas_uv_transform),
+        ("lesson_17_mipmap_bleeding.png", diagram_mipmap_bleeding),
     ],
     "engine/04": [
         ("stack_vs_heap.png", diagram_stack_vs_heap),
@@ -906,7 +932,11 @@ LESSON_NAMES = {
     "assets/03": "assets/03-mesh-processing",
     "assets/04": "assets/04-procedural-geometry",
     "assets/05": "assets/05-asset-bundles",
+    "assets/07": "assets/07-materials",
     "assets/09": "assets/09-scene-hierarchy",
+    "assets/13": "assets/13-morph-targets",
+    "assets/16": "assets/16-import-settings-editor",
+    "assets/17": "assets/17-texture-atlas",
     "engine/04": "engine/04-pointers-and-memory",
     "engine/07": "engine/07-using-a-debugger",
     "engine/10": "engine/10-cpu-rasterization",

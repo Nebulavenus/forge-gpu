@@ -141,6 +141,31 @@ TEXTURE_SETTINGS_SCHEMA: dict[str, dict] = {
     },
 }
 
+ATLAS_SETTINGS_SCHEMA: dict[str, dict] = {
+    "atlas_enabled": {
+        "type": "bool",
+        "label": "Enable atlas packing",
+        "description": "Pack all material textures into a single atlas image.",
+        "default": False,
+    },
+    "atlas_max_size": {
+        "type": "int",
+        "label": "Atlas max size",
+        "description": "Maximum atlas dimension on either axis (pixels).",
+        "default": 4096,
+        "min": 256,
+        "max": 8192,
+    },
+    "atlas_padding": {
+        "type": "int",
+        "label": "Atlas padding",
+        "description": "Texel padding around each rectangle to prevent bleeding.",
+        "default": 4,
+        "min": 0,
+        "max": 32,
+    },
+}
+
 MESH_SETTINGS_SCHEMA: dict[str, dict] = {
     "deduplicate": {
         "type": "bool",
@@ -175,6 +200,7 @@ MESH_SETTINGS_SCHEMA: dict[str, dict] = {
 SETTINGS_SCHEMAS: dict[str, dict[str, dict]] = {
     "texture": TEXTURE_SETTINGS_SCHEMA,
     "mesh": MESH_SETTINGS_SCHEMA,
+    "atlas": ATLAS_SETTINGS_SCHEMA,
 }
 
 

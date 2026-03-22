@@ -17,6 +17,11 @@ __all__ = [
     "diagram_scene_hierarchy",
     "diagram_morph_pipeline",
     "diagram_morph_binary_layout",
+    "diagram_settings_merge",
+    "diagram_settings_data_flow",
+    "diagram_guillotine_packing",
+    "diagram_atlas_uv_transform",
+    "diagram_mipmap_bleeding",
 ]
 
 from .lesson_02 import (
@@ -38,3 +43,9 @@ from .lesson_05 import (
 from .lesson_07 import diagram_fmesh_v2_layout, diagram_material_data_flow
 from .lesson_09 import diagram_scene_hierarchy
 from .lesson_13 import diagram_morph_binary_layout, diagram_morph_pipeline
+from .lesson_16 import diagram_settings_data_flow, diagram_settings_merge
+from .lesson_17 import (
+    diagram_atlas_uv_transform,
+    diagram_guillotine_packing,
+    diagram_mipmap_bleeding,
+)

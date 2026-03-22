@@ -7,6 +7,7 @@ browsing assets, and (eventually) triggering builds from the browser.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -358,6 +359,7 @@ def create_app(config: PipelineConfig) -> FastAPI:
         ".glb": "model/gltf-binary",
         ".obj": "text/plain",
         ".bin": "application/octet-stream",
+        ".json": "application/json",
     }
 
     def _media_type_for(path: Path) -> str:
@@ -657,6 +659,38 @@ def create_app(config: PipelineConfig) -> FastAPI:
         await asyncio.to_thread(_update_cache)
 
         return ProcessResponse(message=f"Processed {asset.name}")
+
+    # -- Atlas metadata ----------------------------------------------------
+
+    @app.get("/api/atlas")
+    async def get_atlas_metadata() -> dict:
+        """Return atlas metadata if an atlas has been built."""
+        atlas_meta_path = config.output_dir / "atlas.json"
+        if not atlas_meta_path.is_file():
+            raise HTTPException(status_code=404, detail="No atlas found")
+
+        try:
+            data = json.loads(atlas_meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            log.exception("Failed to read atlas metadata from %s", atlas_meta_path)
+            raise HTTPException(
+                status_code=500, detail="Failed to read atlas metadata"
+            ) from exc
+
+        return data
+
+    @app.get("/api/atlas/image")
+    async def get_atlas_image() -> FileResponse:
+        """Serve the atlas PNG image."""
+        atlas_path = config.output_dir / "atlas.png"
+        if not atlas_path.is_file():
+            raise HTTPException(status_code=404, detail="No atlas image found")
+
+        return FileResponse(
+            path=str(atlas_path),
+            media_type="image/png",
+            filename="atlas.png",
+        )
 
     # -- WebSocket ---------------------------------------------------------
 
