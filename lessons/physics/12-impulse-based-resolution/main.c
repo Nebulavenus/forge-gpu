@@ -153,134 +153,27 @@ typedef struct app_state {
 
 /* ── Helper: Upload a ForgeShape to GPU vertex + index buffers ─────── */
 
-static bool upload_shape(SDL_GPUDevice *device,
-                         const ForgeShape *shape,
-                         SDL_GPUBuffer **out_vb,
-                         SDL_GPUBuffer **out_ib,
-                         int *out_index_count)
+static SDL_GPUBuffer *upload_shape_vb(ForgeScene *scene,
+                                       const ForgeShape *shape)
 {
-    if (!device || !shape || !out_vb || !out_ib || !out_index_count) return false;
-    if (shape->vertex_count == 0) return false;
-
-    /* Interleaved vertex data: position (3f) + normal (3f) = 24 bytes */
-    Uint32 vert_count = shape->vertex_count;
-    Uint32 vert_size = vert_count * 6 * sizeof(float);
-    float *verts = SDL_malloc(vert_size);
-    if (!verts) return false;
-
-    for (Uint32 i = 0; i < vert_count; i++) {
-        verts[i * 6 + 0] = shape->positions[i].x;
-        verts[i * 6 + 1] = shape->positions[i].y;
-        verts[i * 6 + 2] = shape->positions[i].z;
-        verts[i * 6 + 3] = shape->normals[i].x;
-        verts[i * 6 + 4] = shape->normals[i].y;
-        verts[i * 6 + 5] = shape->normals[i].z;
+    ForgeSceneVertex *verts = SDL_calloc((size_t)shape->vertex_count,
+                                         sizeof(ForgeSceneVertex));
+    if (!verts) {
+        SDL_Log("ERROR: Failed to allocate %d vertices for shape upload",
+                shape->vertex_count);
+        return NULL;
     }
 
-    Uint32 idx_count = shape->index_count;
-    Uint32 idx_size = idx_count * sizeof(Uint32);
-
-    SDL_GPUBufferCreateInfo vb_info = {
-        .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
-        .size  = vert_size,
-    };
-    SDL_GPUBufferCreateInfo ib_info = {
-        .usage = SDL_GPU_BUFFERUSAGE_INDEX,
-        .size  = idx_size,
-    };
-
-    *out_vb = SDL_CreateGPUBuffer(device, &vb_info);
-    *out_ib = SDL_CreateGPUBuffer(device, &ib_info);
-    if (!*out_vb || !*out_ib) {
-        SDL_Log("upload_shape: SDL_CreateGPUBuffer failed: %s", SDL_GetError());
-        if (*out_vb) { SDL_ReleaseGPUBuffer(device, *out_vb); *out_vb = NULL; }
-        if (*out_ib) { SDL_ReleaseGPUBuffer(device, *out_ib); *out_ib = NULL; }
-        SDL_free(verts);
-        return false;
+    for (int i = 0; i < shape->vertex_count; i++) {
+        verts[i].position = shape->positions[i];
+        verts[i].normal   = shape->normals[i];
     }
 
-    /* Upload via transfer buffer */
-    SDL_GPUTransferBufferCreateInfo xfer_info = {
-        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-        .size  = (vert_size > idx_size) ? vert_size : idx_size,
-    };
-    SDL_GPUTransferBuffer *xfer = SDL_CreateGPUTransferBuffer(device, &xfer_info);
-    if (!xfer) {
-        SDL_Log("upload_shape: SDL_CreateGPUTransferBuffer failed: %s",
-                SDL_GetError());
-        SDL_ReleaseGPUBuffer(device, *out_vb); *out_vb = NULL;
-        SDL_ReleaseGPUBuffer(device, *out_ib); *out_ib = NULL;
-        SDL_free(verts);
-        return false;
-    }
-
-    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device);
-    if (!cmd) {
-        SDL_Log("upload_shape: SDL_AcquireGPUCommandBuffer failed: %s",
-                SDL_GetError());
-        SDL_ReleaseGPUTransferBuffer(device, xfer);
-        SDL_ReleaseGPUBuffer(device, *out_vb); *out_vb = NULL;
-        SDL_ReleaseGPUBuffer(device, *out_ib); *out_ib = NULL;
-        SDL_free(verts);
-        return false;
-    }
-
-    SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
-
-    /* Upload vertices */
-    void *map = SDL_MapGPUTransferBuffer(device, xfer, false);
-    if (!map) {
-        SDL_Log("upload_shape: SDL_MapGPUTransferBuffer failed: %s",
-                SDL_GetError());
-        SDL_EndGPUCopyPass(copy);
-        SDL_SubmitGPUCommandBuffer(cmd);
-        SDL_ReleaseGPUTransferBuffer(device, xfer);
-        SDL_ReleaseGPUBuffer(device, *out_vb); *out_vb = NULL;
-        SDL_ReleaseGPUBuffer(device, *out_ib); *out_ib = NULL;
-        SDL_free(verts);
-        return false;
-    }
-    SDL_memcpy(map, verts, vert_size);
-    SDL_UnmapGPUTransferBuffer(device, xfer);
-    SDL_GPUTransferBufferLocation src_loc = { .transfer_buffer = xfer, .offset = 0 };
-    SDL_GPUBufferRegion dst_region = { .buffer = *out_vb, .offset = 0, .size = vert_size };
-    SDL_UploadToGPUBuffer(copy, &src_loc, &dst_region, false);
-
-    /* Upload indices */
-    map = SDL_MapGPUTransferBuffer(device, xfer, false);
-    if (!map) {
-        SDL_Log("upload_shape: SDL_MapGPUTransferBuffer (indices) failed: %s",
-                SDL_GetError());
-        SDL_EndGPUCopyPass(copy);
-        SDL_SubmitGPUCommandBuffer(cmd);
-        SDL_ReleaseGPUTransferBuffer(device, xfer);
-        SDL_ReleaseGPUBuffer(device, *out_vb); *out_vb = NULL;
-        SDL_ReleaseGPUBuffer(device, *out_ib); *out_ib = NULL;
-        SDL_free(verts);
-        return false;
-    }
-    SDL_memcpy(map, shape->indices, idx_size);
-    SDL_UnmapGPUTransferBuffer(device, xfer);
-    dst_region.buffer = *out_ib;
-    dst_region.size   = idx_size;
-    SDL_UploadToGPUBuffer(copy, &src_loc, &dst_region, false);
-
-    SDL_EndGPUCopyPass(copy);
-    if (!SDL_SubmitGPUCommandBuffer(cmd)) {
-        SDL_Log("upload_shape: SDL_SubmitGPUCommandBuffer failed: %s",
-                SDL_GetError());
-        SDL_ReleaseGPUTransferBuffer(device, xfer);
-        SDL_ReleaseGPUBuffer(device, *out_vb); *out_vb = NULL;
-        SDL_ReleaseGPUBuffer(device, *out_ib); *out_ib = NULL;
-        SDL_free(verts);
-        return false;
-    }
-
-    SDL_ReleaseGPUTransferBuffer(device, xfer);
+    SDL_GPUBuffer *buf = forge_scene_upload_buffer(scene,
+        SDL_GPU_BUFFERUSAGE_VERTEX, verts,
+        (Uint32)shape->vertex_count * (Uint32)sizeof(ForgeSceneVertex));
     SDL_free(verts);
-
-    *out_index_count = (int)idx_count;
-    return true;
+    return buf;
 }
 
 /* ── Helper: Create a body with sphere shape ─────────────────────── */
@@ -939,8 +832,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     if (!forge_scene_init(&state->scene, &cfg, argc, argv))
         return SDL_APP_FAILURE;
 
-    SDL_GPUDevice *device = forge_scene_device(&state->scene);
-
     /* ── Generate and upload shapes ──────────────────────────────── */
 
     /* Sphere */
@@ -949,14 +840,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_Log("Failed to generate sphere");
         return SDL_APP_FAILURE;
     }
-    if (!upload_shape(device, &sphere,
-                      &state->sphere_vb, &state->sphere_ib,
-                      &state->sphere_index_count)) {
+    state->sphere_vb = upload_shape_vb(&state->scene, &sphere);
+    state->sphere_ib = forge_scene_upload_buffer(&state->scene,
+        SDL_GPU_BUFFERUSAGE_INDEX, sphere.indices,
+        (Uint32)sphere.index_count * (Uint32)sizeof(uint32_t));
+    state->sphere_index_count = (int)sphere.index_count;
+    forge_shapes_free(&sphere);
+    if (!state->sphere_vb || !state->sphere_ib) {
         SDL_Log("Failed to upload sphere");
-        forge_shapes_free(&sphere);
         return SDL_APP_FAILURE;
     }
-    forge_shapes_free(&sphere);
 
     /* Cube */
     ForgeShape cube = forge_shapes_cube(1, 1);
@@ -965,14 +858,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         return SDL_APP_FAILURE;
     }
     forge_shapes_compute_flat_normals(&cube);
-    if (!upload_shape(device, &cube,
-                      &state->cube_vb, &state->cube_ib,
-                      &state->cube_index_count)) {
+    state->cube_vb = upload_shape_vb(&state->scene, &cube);
+    state->cube_ib = forge_scene_upload_buffer(&state->scene,
+        SDL_GPU_BUFFERUSAGE_INDEX, cube.indices,
+        (Uint32)cube.index_count * (Uint32)sizeof(uint32_t));
+    state->cube_index_count = (int)cube.index_count;
+    forge_shapes_free(&cube);
+    if (!state->cube_vb || !state->cube_ib) {
         SDL_Log("Failed to upload cube");
-        forge_shapes_free(&cube);
         return SDL_APP_FAILURE;
     }
-    forge_shapes_free(&cube);
 
     /* ── Initialize default scene ────────────────────────────────── */
     init_current_scene(state);

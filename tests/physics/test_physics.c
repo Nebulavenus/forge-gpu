@@ -5929,6 +5929,9 @@ int main(int argc, char *argv[])
     /* ── Sequential Impulse Solver (test_physics_si.c) ─────────────── */
     run_si_tests();
 
+    /* ── Joint Constraint Solver (test_physics_joints.c) ─────────────── */
+    run_joint_tests();
+
     /* ── Production Hardening (test_physics_production.c) ─────────────── */
     run_production_tests();
 

@@ -53,6 +53,7 @@ void run_production_tests(void);
 void run_epa_tests(void);
 void run_manifold_tests(void);
 void run_si_tests(void);
+void run_joint_tests(void);
 
 /* ── Shared test constants ─────────────────────────────────────────────── */
 

@@ -47,6 +47,11 @@ __all__ = [
     "diagram_accumulated_vs_per_iteration",
     "diagram_friction_cone",
     "diagram_solver_pipeline",
+    "diagram_ball_socket_joint",
+    "diagram_hinge_joint",
+    "diagram_slider_joint",
+    "diagram_effective_mass",
+    "diagram_joint_contact_pipeline",
 ]
 
 from .lesson_01 import (
@@ -112,4 +117,11 @@ from .lesson_12 import (
     diagram_accumulated_vs_per_iteration,
     diagram_friction_cone,
     diagram_solver_pipeline,
+)
+from .lesson_13 import (
+    diagram_ball_socket_joint,
+    diagram_effective_mass,
+    diagram_hinge_joint,
+    diagram_joint_contact_pipeline,
+    diagram_slider_joint,
 )

@@ -7909,4 +7909,1226 @@ static inline bool forge_physics_si_rb_contacts_to_manifold(
 }
 
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Joint Constraint Solver (Lesson 13)
+ *
+ * Velocity-level joint constraints solved with sequential impulses
+ * (Gauss-Seidel iteration). Each joint removes degrees of freedom by
+ * constraining relative motion between two rigid bodies.
+ *
+ * Joint types:
+ *   Ball-socket — 3 DOF removed (point constraint)
+ *   Hinge       — 5 DOF removed (point + 2 angular)
+ *   Slider      — 5 DOF removed (3 angular + 2 linear)
+ *
+ * Integration with existing SI contact solver:
+ *   Joints and contacts are solved in the same iteration loop for
+ *   best convergence. The pipeline is:
+ *     integrate_velocities → detect_collisions →
+ *     joint_prepare + si_prepare →
+ *     joint_warm_start + si_warm_start →
+ *     N × { joint_solve_velocities + si_solve_velocities } →
+ *     joint_store + si_store →
+ *     correct_positions → integrate_positions
+ *
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005
+ * Ref: Catto, "Modeling and Solving Constraints", GDC 2009
+ * See: Physics Lesson 13 — Constraint Solver
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Joint Constants ──────────────────────────────────────────────────────── */
+
+/* Baumgarte stabilization factor for joint position correction.
+ *
+ * Lower than the contact Baumgarte factor (0.2) because joints are
+ * stiff equality constraints. Higher values cause oscillation when
+ * combined with warm-starting.
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+#define FORGE_PHYSICS_JOINT_BAUMGARTE   0.1f
+
+/* Positional slop tolerance for joint constraints (meters).
+ *
+ * Joint position errors below this threshold are not corrected, to
+ * avoid jitter from the solver fighting floating-point drift. Tighter
+ * than contact slop (0.01) because joints should have near-zero error.
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+#define FORGE_PHYSICS_JOINT_SLOP        0.005f
+
+/* ── Joint Types ──────────────────────────────────────────────────────────── */
+
+/* Joint type discriminator.
+ *
+ * Each type removes a different set of degrees of freedom:
+ *   BALL_SOCKET — removes 3 translational DOF (point constraint)
+ *   HINGE       — removes 3 translational + 2 rotational DOF
+ *   SLIDER      — removes 3 rotational + 2 translational DOF
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+typedef enum ForgePhysicsJointType {
+    FORGE_PHYSICS_JOINT_BALL_SOCKET = 0,
+    FORGE_PHYSICS_JOINT_HINGE       = 1,
+    FORGE_PHYSICS_JOINT_SLIDER      = 2
+} ForgePhysicsJointType;
+
+/* Persistent joint definition connecting two rigid bodies.
+ *
+ * Stores the joint configuration (anchors, axes) and accumulated
+ * impulses for warm-starting across frames. Joints are persistent —
+ * unlike contacts which are transient, joints exist for the lifetime
+ * of the connected bodies.
+ *
+ * body_a or body_b can be -1 to indicate a world (static) anchor.
+ * When a body index is -1, the local anchor is treated as a world-space
+ * position, and the body has infinite mass (inv_mass = 0).
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005
+ */
+typedef struct ForgePhysicsJoint {
+    ForgePhysicsJointType type;  /* constraint type discriminator          */
+    int body_a;                  /* index into body array, -1 = world      */
+    int body_b;                  /* index into body array, -1 = world      */
+    vec3 local_anchor_a;         /* attachment point in body A local space (m) */
+    vec3 local_anchor_b;         /* attachment point in body B local space (m) */
+    vec3 local_axis_a;           /* joint axis in body A local space (unit vec,
+                                  * normalized at creation; hinge rotation
+                                  * axis / slider slide axis).               */
+    vec3 local_axis_b;           /* joint axis in body B local space (unit vec).
+                                  * Used by hinge/slider to compute body B's
+                                  * world-space axis independently of body A.
+                                  * Set by constructors to match local_axis_a
+                                  * (assumes identity initial orientation).   */
+
+    /* Accumulated impulses for warm-starting (persistent across frames) */
+    vec3  j_point;               /* point constraint impulse (N*s, 3 DOF)  */
+    vec3  j_angular;             /* angular constraint impulse (N*m*s):
+                                  *   hinge: x,y components used (2 DOF)
+                                  *   slider: x,y,z all used (3 DOF)       */
+    float j_slide[2];            /* slider linear constraint impulses (N*s,
+                                  * 2 perpendicular axes)                  */
+} ForgePhysicsJoint;
+
+/* Per-step precomputed solver workspace for one joint.
+ *
+ * Computed once per timestep in forge_physics_joint_prepare(), then
+ * used across all solver iterations. Mirrors the role of
+ * ForgePhysicsSIManifold for contact constraints.
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+typedef struct ForgePhysicsJointSolverData {
+    /* World-space geometric data (from body transforms) */
+    vec3 r_a;                    /* world offset: anchor - body_a COM (m)  */
+    vec3 r_b;                    /* world offset: anchor - body_b COM (m)  */
+    vec3 world_axis_a;           /* joint axis in world space (unit vec)   */
+    vec3 perp1;                  /* axis perpendicular to world_axis_a     */
+    vec3 perp2;                  /* second perpendicular axis              */
+
+    /* Inverse effective mass matrices */
+    mat3  K_point_inv;           /* inverse 3×3 eff mass (kg^-1)           */
+    mat3  K_angular_inv;         /* inverse 3×3 angular eff mass (slider)  */
+    float eff_mass_ang[2];       /* scalar eff mass, hinge angular (kg*m^2)*/
+    float eff_mass_slide[2];     /* scalar eff mass, slider linear (kg)   */
+
+    /* Baumgarte bias velocities (position error correction) */
+    vec3  point_bias;            /* translational position error (m/s)     */
+    vec3  angular_bias;          /* angular orientation error (rad/s)      */
+    float slide_bias[2];         /* slider positional error (m/s)          */
+} ForgePhysicsJointSolverData;
+
+/* ── Joint Creation Functions ─────────────────────────────────────────────── */
+
+/* Create a ball-and-socket joint between two bodies.
+ *
+ * A ball-socket joint constrains two anchor points to coincide in world
+ * space, removing 3 translational degrees of freedom while allowing
+ * free rotation in all directions. This is the simplest rigid body joint.
+ *
+ * The anchors are specified in each body's local coordinate space. At
+ * runtime, the solver transforms them to world space using each body's
+ * current position and orientation.
+ *
+ * Parameters:
+ *   body_a         — index of first body (-1 for world anchor)
+ *   body_b         — index of second body (-1 for world anchor)
+ *   local_anchor_a — attachment point in body A's local space
+ *   local_anchor_b — attachment point in body B's local space
+ *
+ * Returns: initialized ForgePhysicsJoint with type BALL_SOCKET
+ *
+ * Usage:
+ *   // Pendulum: body 0 attached to world at (0, 5, 0)
+ *   ForgePhysicsJoint j = forge_physics_joint_ball_socket(
+ *       0, -1,
+ *       vec3_create(0, 0.5f, 0),   // top of body
+ *       vec3_create(0, 5, 0));     // world anchor point
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005
+ */
+static inline ForgePhysicsJoint forge_physics_joint_ball_socket(
+    int body_a, int body_b, vec3 local_anchor_a, vec3 local_anchor_b)
+{
+    ForgePhysicsJoint j;
+    SDL_memset(&j, 0, sizeof(j));
+    j.type = FORGE_PHYSICS_JOINT_BALL_SOCKET;
+    j.body_a = body_a;
+    j.body_b = body_b;
+    j.local_anchor_a = local_anchor_a;
+    j.local_anchor_b = local_anchor_b;
+    j.local_axis_a = vec3_create(0, 1, 0); /* unused for ball-socket */
+    j.local_axis_b = j.local_axis_a;
+    return j;
+}
+
+/* Create a hinge (revolute) joint between two bodies.
+ *
+ * A hinge joint constrains two anchor points to coincide (like a
+ * ball-socket) AND constrains relative rotation to a single axis.
+ * This removes 5 DOF (3 translational + 2 rotational), leaving only
+ * rotation around the hinge axis.
+ *
+ * The hinge axis is specified in body A's local space. Two perpendicular
+ * axes are computed at runtime to form the angular constraint rows.
+ *
+ * Parameters:
+ *   body_a         — index of first body (-1 for world anchor)
+ *   body_b         — index of second body (-1 for world anchor)
+ *   local_anchor_a — attachment point in body A's local space
+ *   local_anchor_b — attachment point in body B's local space
+ *   local_axis_a   — rotation axis in body A's local space (unit vector)
+ *
+ * Returns: initialized ForgePhysicsJoint with type HINGE
+ *
+ * Usage:
+ *   // Door hinged along Y axis at the left edge
+ *   ForgePhysicsJoint j = forge_physics_joint_hinge(
+ *       0, -1,
+ *       vec3_create(-0.5f, 0, 0),  // left edge of body
+ *       vec3_create(0, 2, 0),      // world hinge point
+ *       vec3_create(0, 1, 0));     // Y-axis rotation
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Modeling and Solving Constraints", GDC 2009
+ */
+static inline ForgePhysicsJoint forge_physics_joint_hinge(
+    int body_a, int body_b,
+    vec3 local_anchor_a, vec3 local_anchor_b,
+    vec3 local_axis_a)
+{
+    ForgePhysicsJoint j;
+    SDL_memset(&j, 0, sizeof(j));
+    j.type = FORGE_PHYSICS_JOINT_HINGE;
+    j.body_a = body_a;
+    j.body_b = body_b;
+    j.local_anchor_a = local_anchor_a;
+    j.local_anchor_b = local_anchor_b;
+    /* Normalize the axis to guarantee unit length */
+    float len = vec3_length(local_axis_a);
+    j.local_axis_a = (len > FORGE_PHYSICS_EPSILON)
+        ? vec3_scale(local_axis_a, 1.0f / len)
+        : vec3_create(0, 1, 0);
+    j.local_axis_b = j.local_axis_a;
+    return j;
+}
+
+/* Create a slider (prismatic) joint between two bodies.
+ *
+ * A slider joint locks all relative rotation (3 DOF) and constrains
+ * translation to a single axis (removes 2 more DOF), leaving only
+ * linear sliding along the specified axis. Total: 5 DOF removed.
+ *
+ * The slide axis is specified in body A's local space. The angular
+ * constraint uses the full relative orientation error (3 DOF lock).
+ * The linear constraint removes translation along two axes
+ * perpendicular to the slide axis.
+ *
+ * Parameters:
+ *   body_a         — index of first body (-1 for world anchor)
+ *   body_b         — index of second body (-1 for world anchor)
+ *   local_anchor_a — reference point in body A's local space
+ *   local_anchor_b — reference point in body B's local space
+ *   local_axis_a   — slide axis in body A's local space (unit vector)
+ *
+ * Returns: initialized ForgePhysicsJoint with type SLIDER
+ *
+ * Usage:
+ *   // Piston sliding along X axis
+ *   ForgePhysicsJoint j = forge_physics_joint_slider(
+ *       0, -1,
+ *       vec3_create(0, 0, 0),
+ *       vec3_create(0, 2, 0),
+ *       vec3_create(1, 0, 0));   // slide along X
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Modeling and Solving Constraints", GDC 2009
+ */
+static inline ForgePhysicsJoint forge_physics_joint_slider(
+    int body_a, int body_b,
+    vec3 local_anchor_a, vec3 local_anchor_b,
+    vec3 local_axis_a)
+{
+    ForgePhysicsJoint j;
+    SDL_memset(&j, 0, sizeof(j));
+    j.type = FORGE_PHYSICS_JOINT_SLIDER;
+    j.body_a = body_a;
+    j.body_b = body_b;
+    j.local_anchor_a = local_anchor_a;
+    j.local_anchor_b = local_anchor_b;
+    float len = vec3_length(local_axis_a);
+    j.local_axis_a = (len > FORGE_PHYSICS_EPSILON)
+        ? vec3_scale(local_axis_a, 1.0f / len)
+        : vec3_create(1, 0, 0);
+    j.local_axis_b = j.local_axis_a;
+    return j;
+}
+
+/* ── Joint Solver Internal Helpers ────────────────────────────────────────── */
+
+/* Get world-space position for a body index, treating -1 as origin.
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline vec3 forge_physics_joint_body_pos_(
+    const ForgePhysicsRigidBody *bodies, int num_bodies, int idx)
+{
+    if (idx == -1) return vec3_create(0, 0, 0);  /* world anchor */
+    if (idx < 0 || idx >= num_bodies) {
+        SDL_Log("forge_physics: joint references invalid body %d (num=%d)",
+                idx, num_bodies);
+        return vec3_create(0, 0, 0);
+    }
+    return bodies[idx].position;
+}
+
+/* Get world-space orientation for a body index, treating -1 as identity.
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline quat forge_physics_joint_body_orient_(
+    const ForgePhysicsRigidBody *bodies, int num_bodies, int idx)
+{
+    if (idx == -1) return quat_identity();  /* world */
+    if (idx < 0 || idx >= num_bodies) {
+        SDL_Log("forge_physics: joint references invalid body %d (num=%d)",
+                idx, num_bodies);
+        return quat_identity();
+    }
+    return bodies[idx].orientation;
+}
+
+/* Get inverse mass for a body index, treating -1 as 0 (static).
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline float forge_physics_joint_body_inv_mass_(
+    const ForgePhysicsRigidBody *bodies, int num_bodies, int idx)
+{
+    if (idx == -1) return 0.0f;  /* world is static */
+    if (idx < 0 || idx >= num_bodies) {
+        SDL_Log("forge_physics: joint references invalid body %d (num=%d)",
+                idx, num_bodies);
+        return 0.0f;
+    }
+    return bodies[idx].inv_mass;
+}
+
+/* Get world-space inverse inertia for a body index, treating -1 as zero.
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline mat3 forge_physics_joint_body_inv_inertia_(
+    const ForgePhysicsRigidBody *bodies, int num_bodies, int idx)
+{
+    if (idx == -1) return mat3_from_diagonal(0, 0, 0);  /* world */
+    if (idx < 0 || idx >= num_bodies) {
+        SDL_Log("forge_physics: joint references invalid body %d (num=%d)",
+                idx, num_bodies);
+        return mat3_from_diagonal(0, 0, 0);
+    }
+    /* Static bodies (inv_mass == 0) must return zero inverse inertia so
+     * warm-start and solve paths do not apply angular impulses to them. */
+    if (bodies[idx].inv_mass == 0.0f)
+        return mat3_from_diagonal(0, 0, 0);
+    return bodies[idx].inv_inertia_world;
+}
+
+/* Compute the 3×3 effective mass matrix K for a point constraint.
+ *
+ * K = (inv_m_a + inv_m_b) * I_3x3
+ *   + [r_a]× * I_inv_a * [r_a]×^T
+ *   + [r_b]× * I_inv_b * [r_b]×^T
+ *
+ * where [r]× is the skew-symmetric matrix of r, and [r]×^T = -[r]×.
+ *
+ * The effective mass is K_inv = inverse(K). The impulse for each
+ * iteration is: lambda = K_inv * (-v_rel - bias).
+ *
+ * Parameters:
+ *   r_a        — world offset from body A COM to anchor
+ *   r_b        — world offset from body B COM to anchor
+ *   inv_m_a    — inverse mass of body A (0 for static)
+ *   inv_m_b    — inverse mass of body B (0 for static)
+ *   I_inv_a    — world-space inverse inertia of body A
+ *   I_inv_b    — world-space inverse inertia of body B
+ *
+ * Returns: 3×3 effective mass matrix K (caller must invert)
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", §4.2
+ */
+static inline mat3 forge_physics_joint_K_point_(
+    vec3 r_a, vec3 r_b,
+    float inv_m_a, float inv_m_b,
+    mat3 I_inv_a, mat3 I_inv_b)
+{
+    /* Mass contribution: (1/m_a + 1/m_b) * I_3x3 */
+    mat3 K = mat3_scale_scalar(mat3_identity(), inv_m_a + inv_m_b);
+
+    /* Angular contribution from body A: [r_a]× * I_inv_a * [r_a]×^T
+     * This product is positive semi-definite and adds to K. */
+    mat3 skew_a = mat3_skew(r_a);
+    mat3 skew_a_T = mat3_transpose(skew_a);
+    mat3 ang_a = mat3_multiply(mat3_multiply(skew_a, I_inv_a), skew_a_T);
+    K = mat3_add(K, ang_a);
+
+    /* Angular contribution from body B */
+    mat3 skew_b = mat3_skew(r_b);
+    mat3 skew_b_T = mat3_transpose(skew_b);
+    mat3 ang_b = mat3_multiply(mat3_multiply(skew_b, I_inv_b), skew_b_T);
+    K = mat3_add(K, ang_b);
+
+    return K;
+}
+
+/* Build a stable perpendicular basis from an axis vector.
+ *
+ * Uses the least-aligned-axis method (same as
+ * forge_physics_si_tangent_basis) to find two axes perpendicular to
+ * the given axis, forming an orthonormal frame {axis, perp1, perp2}.
+ *
+ * Parameters:
+ *   axis  — unit vector to build basis from (must be normalized)
+ *   perp1 — [out] first perpendicular axis
+ *   perp2 — [out] second perpendicular axis
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline void forge_physics_joint_perp_basis_(
+    vec3 axis, vec3 *perp1, vec3 *perp2)
+{
+    /* Pick the cardinal axis least aligned with the input axis */
+    float ax = SDL_fabsf(axis.x);
+    float ay = SDL_fabsf(axis.y);
+    float az = SDL_fabsf(axis.z);
+
+    vec3 ref;
+    if (ax <= ay && ax <= az)
+        ref = vec3_create(1, 0, 0);
+    else if (ay <= az)
+        ref = vec3_create(0, 1, 0);
+    else
+        ref = vec3_create(0, 0, 1);
+
+    *perp1 = vec3_normalize(vec3_cross(axis, ref));
+    *perp2 = vec3_cross(axis, *perp1);
+}
+
+/* ── Joint Solver Functions ───────────────────────────────────────────────── */
+
+/* Precompute solver data for all joints before iteration begins.
+ *
+ * Transforms anchors and axes to world space, builds effective mass
+ * matrices, and computes Baumgarte bias velocities for position error
+ * correction. Called once per timestep before the iteration loop.
+ *
+ * Parameters:
+ *   joints     — array of joint definitions (must not be NULL if count > 0)
+ *   count      — number of joints
+ *   bodies     — array of rigid bodies
+ *   num_bodies — number of bodies
+ *   dt         — timestep (seconds, must be > 0)
+ *   out        — [out] solver workspace array (same size as joints)
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005
+ */
+static inline void forge_physics_joint_prepare(
+    const ForgePhysicsJoint *joints, int count,
+    const ForgePhysicsRigidBody *bodies, int num_bodies,
+    float dt, ForgePhysicsJointSolverData *out)
+{
+    if (!joints || !bodies || !out || count <= 0 ||
+        num_bodies <= 0 || !(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    float inv_dt = 1.0f / dt;
+    float beta = FORGE_PHYSICS_JOINT_BAUMGARTE;
+    float slop = FORGE_PHYSICS_JOINT_SLOP;
+
+    for (int i = 0; i < count; i++) {
+        const ForgePhysicsJoint *j = &joints[i];
+        ForgePhysicsJointSolverData *s = &out[i];
+        SDL_memset(s, 0, sizeof(*s));
+
+        /* Validate body indices: -1 = world anchor (expected), anything else
+         * outside [0, num_bodies) is a stale/invalid reference — skip. */
+        if ((j->body_a != -1 && (j->body_a < 0 || j->body_a >= num_bodies)) ||
+            (j->body_b != -1 && (j->body_b < 0 || j->body_b >= num_bodies))) {
+            continue;
+        }
+
+        /* Get body properties (world anchor uses defaults) */
+        vec3 pos_a = forge_physics_joint_body_pos_(bodies, num_bodies, j->body_a);
+        vec3 pos_b = forge_physics_joint_body_pos_(bodies, num_bodies, j->body_b);
+        quat ori_a = forge_physics_joint_body_orient_(bodies, num_bodies, j->body_a);
+        quat ori_b = forge_physics_joint_body_orient_(bodies, num_bodies, j->body_b);
+        float inv_m_a = forge_physics_joint_body_inv_mass_(bodies, num_bodies, j->body_a);
+        float inv_m_b = forge_physics_joint_body_inv_mass_(bodies, num_bodies, j->body_b);
+        mat3  I_inv_a = forge_physics_joint_body_inv_inertia_(bodies, num_bodies, j->body_a);
+        mat3  I_inv_b = forge_physics_joint_body_inv_inertia_(bodies, num_bodies, j->body_b);
+
+        /* Transform anchors to world space */
+        vec3 world_anchor_a, world_anchor_b;
+        if (j->body_a >= 0 && j->body_a < num_bodies) {
+            world_anchor_a = vec3_add(pos_a, quat_rotate_vec3(ori_a, j->local_anchor_a));
+        } else {
+            world_anchor_a = j->local_anchor_a; /* world anchor directly */
+        }
+        if (j->body_b >= 0 && j->body_b < num_bodies) {
+            world_anchor_b = vec3_add(pos_b, quat_rotate_vec3(ori_b, j->local_anchor_b));
+        } else {
+            world_anchor_b = j->local_anchor_b;
+        }
+
+        /* Lever arms from COM to anchor */
+        s->r_a = vec3_sub(world_anchor_a, pos_a);
+        s->r_b = vec3_sub(world_anchor_b, pos_b);
+
+        /* If both bodies are static (or world anchors), the K matrix is
+         * singular (all zeros). Skip all constraint math — there are no
+         * velocities to constrain. Leave solver data zeroed. */
+        if (inv_m_a < FORGE_PHYSICS_EPSILON &&
+            inv_m_b < FORGE_PHYSICS_EPSILON) {
+            continue;
+        }
+
+        /* ── Effective mass matrix K (used by point and slider linear) ── */
+        mat3 K = forge_physics_joint_K_point_(
+            s->r_a, s->r_b, inv_m_a, inv_m_b, I_inv_a, I_inv_b);
+
+        vec3 pos_error = vec3_sub(world_anchor_b, world_anchor_a);
+
+        /* ── Point constraint (ball-socket and hinge only) ──
+         * Sliders do NOT use the 3-DOF point constraint — their
+         * translation is constrained by 2 perpendicular linear rows
+         * plus the free slide axis. Applying the point constraint to
+         * sliders would over-constrain them into a weld joint. */
+        if (j->type != FORGE_PHYSICS_JOINT_SLIDER) {
+            s->K_point_inv = mat3_inverse(K);
+
+            /* Position error and Baumgarte bias */
+            float err_len = vec3_length(pos_error);
+            if (err_len > slop) {
+                s->point_bias = vec3_scale(pos_error, beta * inv_dt);
+            } else {
+                s->point_bias = vec3_create(0, 0, 0);
+            }
+        }
+
+        /* ── Joint-specific constraints ── */
+        if (j->type == FORGE_PHYSICS_JOINT_HINGE ||
+            j->type == FORGE_PHYSICS_JOINT_SLIDER) {
+            /* Transform joint axis to world space */
+            if (j->body_a >= 0 && j->body_a < num_bodies) {
+                s->world_axis_a = quat_rotate_vec3(ori_a, j->local_axis_a);
+            } else {
+                s->world_axis_a = j->local_axis_a;
+            }
+            float axis_len = vec3_length(s->world_axis_a);
+            if (axis_len > FORGE_PHYSICS_EPSILON) {
+                s->world_axis_a = vec3_scale(s->world_axis_a, 1.0f / axis_len);
+            } else {
+                s->world_axis_a = vec3_create(0, 1, 0);
+            }
+
+            /* Build perpendicular basis */
+            forge_physics_joint_perp_basis_(
+                s->world_axis_a, &s->perp1, &s->perp2);
+        }
+
+        if (j->type == FORGE_PHYSICS_JOINT_HINGE) {
+            /* Hinge angular constraint: body B must not rotate around
+             * perp1 or perp2 relative to the hinge axis direction.
+             *
+             * For each perpendicular axis p, the angular velocity
+             * constraint is: dot(p, omega_a - omega_b) = 0
+             * Effective mass: 1 / (dot(p, I_inv_a * p) + dot(p, I_inv_b * p))
+             */
+            for (int k = 0; k < 2; k++) {
+                vec3 p = (k == 0) ? s->perp1 : s->perp2;
+                float ka = vec3_dot(p, mat3_multiply_vec3(I_inv_a, p));
+                float kb = vec3_dot(p, mat3_multiply_vec3(I_inv_b, p));
+                float denom = ka + kb;
+                s->eff_mass_ang[k] = (denom > FORGE_PHYSICS_EPSILON)
+                    ? (1.0f / denom) : 0.0f;
+            }
+
+            /* Angular Baumgarte bias: measure how far body B's axis has
+             * drifted from body A's hinge axis. The error is the cross
+             * product of the axes projected onto each perp direction. */
+            vec3 axis_b;
+            if (j->body_b >= 0 && j->body_b < num_bodies) {
+                axis_b = quat_rotate_vec3(ori_b, j->local_axis_b);
+            } else {
+                axis_b = j->local_axis_b;
+            }
+            vec3 axis_error = vec3_cross(axis_b, s->world_axis_a);
+            float ang_err_1 = vec3_dot(axis_error, s->perp1);
+            float ang_err_2 = vec3_dot(axis_error, s->perp2);
+            s->angular_bias = vec3_create(
+                ang_err_1 * beta * inv_dt,
+                ang_err_2 * beta * inv_dt,
+                0);
+        }
+
+        if (j->type == FORGE_PHYSICS_JOINT_SLIDER) {
+            /* Slider angular constraint: lock all relative rotation (3 DOF).
+             *
+             * The angular error is the imaginary part of the relative
+             * quaternion q_error = q_b * conj(q_a). When the bodies are
+             * aligned, q_error = (1, 0, 0, 0) and the imaginary part is
+             * zero. The bias drives this toward zero.
+             *
+             * Angular K matrix:
+             *   K_ang = I_inv_a + I_inv_b
+             */
+            mat3 K_ang = mat3_add(I_inv_a, I_inv_b);
+            s->K_angular_inv = mat3_inverse(K_ang);
+
+            /* Quaternion error: q_err = q_b * conj(q_a) */
+            quat q_a_conj = quat_conjugate(ori_a);
+            quat q_err = quat_multiply(ori_b, q_a_conj);
+            /* Ensure shortest path (positive w) */
+            if (q_err.w < 0.0f) {
+                q_err.x = -q_err.x;
+                q_err.y = -q_err.y;
+                q_err.z = -q_err.z;
+                q_err.w = -q_err.w;
+            }
+            /* The angular error is 2 * imaginary part of q_err */
+            s->angular_bias = vec3_scale(
+                vec3_create(q_err.x, q_err.y, q_err.z),
+                2.0f * beta * inv_dt);
+
+            /* Slider linear constraint: remove translation perpendicular
+             * to the slide axis.
+             *
+             * For each perpendicular axis p, the linear velocity constraint
+             * at the anchor point is:
+             *   dot(p, v_b + omega_b × r_b - v_a - omega_a × r_a) = 0
+             *
+             * Effective mass per row:
+             *   1 / (inv_m_a + inv_m_b
+             *        + dot(p, I_inv_a * (r_a × p)) × r_a ... )
+             * which is dot(p, K * p) where K is the point constraint K.
+             */
+            for (int k = 0; k < 2; k++) {
+                vec3 p = (k == 0) ? s->perp1 : s->perp2;
+                float eff = vec3_dot(p, mat3_multiply_vec3(K, p));
+                s->eff_mass_slide[k] = (eff > FORGE_PHYSICS_EPSILON)
+                    ? (1.0f / eff) : 0.0f;
+
+                /* Linear position error along perpendicular axis */
+                float lin_err = vec3_dot(pos_error, p);
+                if (SDL_fabsf(lin_err) > slop) {
+                    s->slide_bias[k] = lin_err * beta * inv_dt;
+                }
+            }
+        }
+    }
+}
+
+/* Apply cached (warm-start) impulses from previous frame.
+ *
+ * Warm-starting applies the accumulated impulses from the last frame
+ * before iteration begins. For joints, this is simpler than contacts
+ * because joints are persistent — the impulses don't need spatial
+ * hashing or manifold matching.
+ *
+ * Warm-starting reduces the number of iterations needed for convergence
+ * by 3-5×, which is critical for joint chains (pendulums, ragdolls).
+ *
+ * Parameters:
+ *   joints     — array of joint definitions (with cached j_point etc.)
+ *   solvers    — precomputed solver data from joint_prepare
+ *   count      — number of joints
+ *   bodies     — [in/out] rigid body array (velocities modified)
+ *   num_bodies — number of bodies
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", §5
+ */
+static inline void forge_physics_joint_warm_start(
+    const ForgePhysicsJoint *joints,
+    const ForgePhysicsJointSolverData *solvers,
+    int count,
+    ForgePhysicsRigidBody *bodies, int num_bodies)
+{
+    if (!joints || !solvers || !bodies || count <= 0) return;
+
+    for (int i = 0; i < count; i++) {
+        const ForgePhysicsJoint *j = &joints[i];
+        const ForgePhysicsJointSolverData *s = &solvers[i];
+
+        /* Point constraint warm-start impulse (not for sliders — they use
+         * perpendicular linear rows instead of the 3-DOF point constraint) */
+        if (j->type != FORGE_PHYSICS_JOINT_SLIDER) {
+            vec3 p_impulse = j->j_point;
+
+            /* Apply to body A (negative direction) */
+            if (j->body_a >= 0 && j->body_a < num_bodies) {
+                ForgePhysicsRigidBody *a = &bodies[j->body_a];
+                a->velocity = vec3_sub(a->velocity,
+                    vec3_scale(p_impulse, a->inv_mass));
+                if (a->inv_mass > 0.0f) {
+                    a->angular_velocity = vec3_sub(a->angular_velocity,
+                        mat3_multiply_vec3(a->inv_inertia_world,
+                            vec3_cross(s->r_a, p_impulse)));
+                }
+            }
+            /* Apply to body B (positive direction) */
+            if (j->body_b >= 0 && j->body_b < num_bodies) {
+                ForgePhysicsRigidBody *b = &bodies[j->body_b];
+                b->velocity = vec3_add(b->velocity,
+                    vec3_scale(p_impulse, b->inv_mass));
+                if (b->inv_mass > 0.0f) {
+                    b->angular_velocity = vec3_add(b->angular_velocity,
+                        mat3_multiply_vec3(b->inv_inertia_world,
+                            vec3_cross(s->r_b, p_impulse)));
+                }
+            }
+        }
+
+        /* Hinge angular warm-start */
+        if (j->type == FORGE_PHYSICS_JOINT_HINGE) {
+            vec3 ang_impulse = vec3_add(
+                vec3_scale(s->perp1, j->j_angular.x),
+                vec3_scale(s->perp2, j->j_angular.y));
+            if (j->body_a >= 0 && j->body_a < num_bodies &&
+                bodies[j->body_a].inv_mass > 0.0f) {
+                bodies[j->body_a].angular_velocity = vec3_sub(
+                    bodies[j->body_a].angular_velocity,
+                    mat3_multiply_vec3(bodies[j->body_a].inv_inertia_world,
+                        ang_impulse));
+            }
+            if (j->body_b >= 0 && j->body_b < num_bodies &&
+                bodies[j->body_b].inv_mass > 0.0f) {
+                bodies[j->body_b].angular_velocity = vec3_add(
+                    bodies[j->body_b].angular_velocity,
+                    mat3_multiply_vec3(bodies[j->body_b].inv_inertia_world,
+                        ang_impulse));
+            }
+        }
+
+        /* Slider angular + linear warm-start */
+        if (j->type == FORGE_PHYSICS_JOINT_SLIDER) {
+            /* Angular impulse (3 DOF) */
+            vec3 ang_impulse = j->j_angular;
+            if (j->body_a >= 0 && j->body_a < num_bodies &&
+                bodies[j->body_a].inv_mass > 0.0f) {
+                bodies[j->body_a].angular_velocity = vec3_sub(
+                    bodies[j->body_a].angular_velocity,
+                    mat3_multiply_vec3(bodies[j->body_a].inv_inertia_world,
+                        ang_impulse));
+            }
+            if (j->body_b >= 0 && j->body_b < num_bodies &&
+                bodies[j->body_b].inv_mass > 0.0f) {
+                bodies[j->body_b].angular_velocity = vec3_add(
+                    bodies[j->body_b].angular_velocity,
+                    mat3_multiply_vec3(bodies[j->body_b].inv_inertia_world,
+                        ang_impulse));
+            }
+
+            /* Linear slide impulses along perpendicular axes.
+             * NOTE: the cached scalar magnitudes were accumulated along the
+             * previous frame's perp basis.  When the body rotates between
+             * frames, the current perp axes differ slightly, making the
+             * warm-start direction approximate.  This is standard practice
+             * in sequential impulse solvers and converges within a few
+             * iterations. */
+            for (int k = 0; k < 2; k++) {
+                vec3 axis = (k == 0) ? s->perp1 : s->perp2;
+                vec3 lin_imp = vec3_scale(axis, j->j_slide[k]);
+                if (j->body_a >= 0 && j->body_a < num_bodies) {
+                    ForgePhysicsRigidBody *a = &bodies[j->body_a];
+                    a->velocity = vec3_sub(a->velocity,
+                        vec3_scale(lin_imp, a->inv_mass));
+                    if (a->inv_mass > 0.0f) {
+                        a->angular_velocity = vec3_sub(a->angular_velocity,
+                            mat3_multiply_vec3(a->inv_inertia_world,
+                                vec3_cross(s->r_a, lin_imp)));
+                    }
+                }
+                if (j->body_b >= 0 && j->body_b < num_bodies) {
+                    ForgePhysicsRigidBody *b = &bodies[j->body_b];
+                    b->velocity = vec3_add(b->velocity,
+                        vec3_scale(lin_imp, b->inv_mass));
+                    if (b->inv_mass > 0.0f) {
+                        b->angular_velocity = vec3_add(b->angular_velocity,
+                            mat3_multiply_vec3(b->inv_inertia_world,
+                                vec3_cross(s->r_b, lin_imp)));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Solve joint velocity constraints for one Gauss-Seidel iteration.
+ *
+ * For each joint, computes the relative velocity at the constraint
+ * point, determines the impulse needed to satisfy the constraint,
+ * and applies it to both bodies. This is called multiple times
+ * (typically 10-20 iterations) for convergence.
+ *
+ * Unlike contact constraints, equality joint constraints have NO
+ * clamping — impulses can be positive or negative because the joint
+ * must resist both push and pull.
+ *
+ * Parameters:
+ *   joints     — [in/out] joint array (accumulated impulses updated)
+ *   solvers    — precomputed solver data
+ *   count      — number of joints
+ *   bodies     — [in/out] rigid body array (velocities modified)
+ *   num_bodies — number of bodies
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ * Ref: Catto, "Iterative Dynamics with Temporal Coherence", §4
+ */
+static inline void forge_physics_joint_solve_velocities(
+    ForgePhysicsJoint *joints,
+    const ForgePhysicsJointSolverData *solvers,
+    int count,
+    ForgePhysicsRigidBody *bodies, int num_bodies)
+{
+    if (!joints || !solvers || !bodies || count <= 0) return;
+
+    for (int i = 0; i < count; i++) {
+        ForgePhysicsJoint *j = &joints[i];
+        const ForgePhysicsJointSolverData *s = &solvers[i];
+
+        /* Get body velocities (zero for world anchors) */
+        vec3 v_a = vec3_create(0, 0, 0), w_a = vec3_create(0, 0, 0);
+        vec3 v_b = vec3_create(0, 0, 0), w_b = vec3_create(0, 0, 0);
+        if (j->body_a >= 0 && j->body_a < num_bodies) {
+            v_a = bodies[j->body_a].velocity;
+            w_a = bodies[j->body_a].angular_velocity;
+        }
+        if (j->body_b >= 0 && j->body_b < num_bodies) {
+            v_b = bodies[j->body_b].velocity;
+            w_b = bodies[j->body_b].angular_velocity;
+        }
+
+        /* ── Point constraint (ball-socket and hinge only) ──
+         *
+         * Velocity at anchor: v + ω × r
+         * Relative velocity: v_rel = (v_b + ω_b × r_b) - (v_a + ω_a × r_a)
+         * Constraint velocity: C_dot = v_rel (should be zero)
+         * Impulse: lambda = K_inv * (-(C_dot + bias))
+         *
+         * Sliders skip this — their translation is handled by the 2
+         * perpendicular linear rows below, preserving the free slide axis.
+         */
+        if (j->type != FORGE_PHYSICS_JOINT_SLIDER) {
+            vec3 vel_a = vec3_add(v_a, vec3_cross(w_a, s->r_a));
+            vec3 vel_b = vec3_add(v_b, vec3_cross(w_b, s->r_b));
+            vec3 v_rel = vec3_sub(vel_b, vel_a);
+
+            vec3 rhs = vec3_scale(vec3_add(v_rel, s->point_bias), -1.0f);
+            vec3 lambda = mat3_multiply_vec3(s->K_point_inv, rhs);
+
+            /* Accumulate (no clamping for equality constraints) */
+            j->j_point = vec3_add(j->j_point, lambda);
+
+            /* Apply impulse to bodies */
+            if (j->body_a >= 0 && j->body_a < num_bodies) {
+                ForgePhysicsRigidBody *a = &bodies[j->body_a];
+                a->velocity = vec3_sub(a->velocity,
+                    vec3_scale(lambda, a->inv_mass));
+                if (a->inv_mass > 0.0f) {
+                    a->angular_velocity = vec3_sub(a->angular_velocity,
+                        mat3_multiply_vec3(a->inv_inertia_world,
+                            vec3_cross(s->r_a, lambda)));
+                }
+            }
+            if (j->body_b >= 0 && j->body_b < num_bodies) {
+                ForgePhysicsRigidBody *b = &bodies[j->body_b];
+                b->velocity = vec3_add(b->velocity,
+                    vec3_scale(lambda, b->inv_mass));
+                if (b->inv_mass > 0.0f) {
+                    b->angular_velocity = vec3_add(b->angular_velocity,
+                        mat3_multiply_vec3(b->inv_inertia_world,
+                            vec3_cross(s->r_b, lambda)));
+                }
+            }
+        }
+
+        /* Re-read angular velocities after point impulse */
+        if (j->body_a >= 0 && j->body_a < num_bodies)
+            w_a = bodies[j->body_a].angular_velocity;
+        if (j->body_b >= 0 && j->body_b < num_bodies)
+            w_b = bodies[j->body_b].angular_velocity;
+
+        /* ── Hinge angular constraints (2 rows) ── */
+        if (j->type == FORGE_PHYSICS_JOINT_HINGE) {
+            for (int k = 0; k < 2; k++) {
+                vec3 p = (k == 0) ? s->perp1 : s->perp2;
+                float bias = (k == 0) ? s->angular_bias.x : s->angular_bias.y;
+
+                /* Angular relative velocity along this perpendicular axis */
+                float w_rel = vec3_dot(p, vec3_sub(w_b, w_a));
+                float delta_j = s->eff_mass_ang[k] * (-(w_rel + bias));
+
+                /* Accumulate */
+                if (k == 0) j->j_angular.x += delta_j;
+                else        j->j_angular.y += delta_j;
+
+                /* Apply angular impulse */
+                vec3 ang_imp = vec3_scale(p, delta_j);
+                if (j->body_a >= 0 && j->body_a < num_bodies &&
+                    bodies[j->body_a].inv_mass > 0.0f) {
+                    bodies[j->body_a].angular_velocity = vec3_sub(
+                        bodies[j->body_a].angular_velocity,
+                        mat3_multiply_vec3(bodies[j->body_a].inv_inertia_world,
+                            ang_imp));
+                }
+                if (j->body_b >= 0 && j->body_b < num_bodies &&
+                    bodies[j->body_b].inv_mass > 0.0f) {
+                    bodies[j->body_b].angular_velocity = vec3_add(
+                        bodies[j->body_b].angular_velocity,
+                        mat3_multiply_vec3(bodies[j->body_b].inv_inertia_world,
+                            ang_imp));
+                }
+
+                /* Re-read angular velocities so the next perpendicular row
+                 * (k=1) sees the impulse applied by this row (k=0). */
+                if (j->body_a >= 0 && j->body_a < num_bodies)
+                    w_a = bodies[j->body_a].angular_velocity;
+                if (j->body_b >= 0 && j->body_b < num_bodies)
+                    w_b = bodies[j->body_b].angular_velocity;
+            }
+
+            /* Re-read after angular solve */
+            if (j->body_a >= 0 && j->body_a < num_bodies)
+                w_a = bodies[j->body_a].angular_velocity;
+            if (j->body_b >= 0 && j->body_b < num_bodies)
+                w_b = bodies[j->body_b].angular_velocity;
+        }
+
+        /* ── Slider angular constraint (3 DOF lock) ── */
+        if (j->type == FORGE_PHYSICS_JOINT_SLIDER) {
+            vec3 w_rel_ang = vec3_sub(w_b, w_a);
+            vec3 rhs_ang = vec3_scale(
+                vec3_add(w_rel_ang, s->angular_bias), -1.0f);
+            vec3 lambda_ang = mat3_multiply_vec3(s->K_angular_inv, rhs_ang);
+
+            j->j_angular = vec3_add(j->j_angular, lambda_ang);
+
+            if (j->body_a >= 0 && j->body_a < num_bodies &&
+                bodies[j->body_a].inv_mass > 0.0f) {
+                bodies[j->body_a].angular_velocity = vec3_sub(
+                    bodies[j->body_a].angular_velocity,
+                    mat3_multiply_vec3(bodies[j->body_a].inv_inertia_world,
+                        lambda_ang));
+            }
+            if (j->body_b >= 0 && j->body_b < num_bodies &&
+                bodies[j->body_b].inv_mass > 0.0f) {
+                bodies[j->body_b].angular_velocity = vec3_add(
+                    bodies[j->body_b].angular_velocity,
+                    mat3_multiply_vec3(bodies[j->body_b].inv_inertia_world,
+                        lambda_ang));
+            }
+
+            /* Re-read velocities after angular solve */
+            if (j->body_a >= 0 && j->body_a < num_bodies) {
+                v_a = bodies[j->body_a].velocity;
+                w_a = bodies[j->body_a].angular_velocity;
+            }
+            if (j->body_b >= 0 && j->body_b < num_bodies) {
+                v_b = bodies[j->body_b].velocity;
+                w_b = bodies[j->body_b].angular_velocity;
+            }
+
+            /* ── Slider linear constraints (2 perpendicular axes) ── */
+            for (int k = 0; k < 2; k++) {
+                vec3 p = (k == 0) ? s->perp1 : s->perp2;
+
+                /* Relative velocity at anchor projected onto perp axis */
+                vec3 vel_a2 = vec3_add(v_a, vec3_cross(w_a, s->r_a));
+                vec3 vel_b2 = vec3_add(v_b, vec3_cross(w_b, s->r_b));
+                float v_perp = vec3_dot(p, vec3_sub(vel_b2, vel_a2));
+
+                float delta_j = s->eff_mass_slide[k] *
+                    (-(v_perp + s->slide_bias[k]));
+
+                j->j_slide[k] += delta_j;
+
+                /* Apply linear+angular impulse along perpendicular axis */
+                vec3 lin_imp = vec3_scale(p, delta_j);
+                if (j->body_a >= 0 && j->body_a < num_bodies) {
+                    ForgePhysicsRigidBody *a = &bodies[j->body_a];
+                    a->velocity = vec3_sub(a->velocity,
+                        vec3_scale(lin_imp, a->inv_mass));
+                    if (a->inv_mass > 0.0f) {
+                        a->angular_velocity = vec3_sub(a->angular_velocity,
+                            mat3_multiply_vec3(a->inv_inertia_world,
+                                vec3_cross(s->r_a, lin_imp)));
+                    }
+                }
+                if (j->body_b >= 0 && j->body_b < num_bodies) {
+                    ForgePhysicsRigidBody *b = &bodies[j->body_b];
+                    b->velocity = vec3_add(b->velocity,
+                        vec3_scale(lin_imp, b->inv_mass));
+                    if (b->inv_mass > 0.0f) {
+                        b->angular_velocity = vec3_add(b->angular_velocity,
+                            mat3_multiply_vec3(b->inv_inertia_world,
+                                vec3_cross(s->r_b, lin_imp)));
+                    }
+                }
+
+                /* Re-read for next axis */
+                if (j->body_a >= 0 && j->body_a < num_bodies) {
+                    v_a = bodies[j->body_a].velocity;
+                    w_a = bodies[j->body_a].angular_velocity;
+                }
+                if (j->body_b >= 0 && j->body_b < num_bodies) {
+                    v_b = bodies[j->body_b].velocity;
+                    w_b = bodies[j->body_b].angular_velocity;
+                }
+            }
+        }
+    }
+}
+
+/* Finalize impulse storage after velocity solving (no-op).
+ *
+ * Joint impulses are accumulated in-place on ForgePhysicsJoint during
+ * solve_velocities, so no copy is needed here. This function exists
+ * for API symmetry with forge_physics_si_store_impulses (which does
+ * copy impulses from workspace to manifolds) and for future extensions.
+ *
+ * Parameters:
+ *   joints  — [in/out] joint array (impulses already updated in-place)
+ *   solvers — solver workspace (unused in current implementation)
+ *   count   — number of joints
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline void forge_physics_joint_store_impulses(
+    ForgePhysicsJoint *joints,
+    const ForgePhysicsJointSolverData *solvers,
+    int count)
+{
+    /* Impulses are accumulated directly on ForgePhysicsJoint during
+     * solve_velocities, so no copy is needed. This function exists
+     * for API symmetry with forge_physics_si_store_impulses. */
+    (void)joints;
+    (void)solvers;
+    (void)count;
+}
+
+/* Reset cached impulses on all joints (cold-start).
+ *
+ * Zeroes accumulated j_point, j_angular, and j_slide impulses so the
+ * solver starts from scratch rather than warm-starting from previous
+ * frame values. Call this before solve_velocities when warm-starting
+ * is disabled or when joints have been reconfigured.
+ *
+ * This is the public equivalent of the cold-start branch in
+ * forge_physics_joint_solve(). Low-level callers that use the
+ * interleaved API (prepare → warm_start → solve_velocities) directly
+ * should call this helper instead of skipping warm_start, to avoid
+ * accumulating onto stale cached impulse values.
+ *
+ * Parameters:
+ *   joints — [in/out] joint array (cached impulses zeroed)
+ *   count  — number of joints
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline void forge_physics_joint_reset_cached_impulses(
+    ForgePhysicsJoint *joints, int count)
+{
+    if (!joints || count <= 0) return;
+    for (int i = 0; i < count; i++) {
+        joints[i].j_point   = vec3_create(0, 0, 0);
+        joints[i].j_angular = vec3_create(0, 0, 0);
+        joints[i].j_slide[0] = 0.0f;
+        joints[i].j_slide[1] = 0.0f;
+    }
+}
+
+/* Apply position-level correction to reduce joint drift.
+ *
+ * Directly adjusts body positions (not velocities) to correct
+ * accumulated positional error that the velocity-level Baumgarte
+ * bias cannot fully resolve. Applied after velocity solving but
+ * before position integration.
+ *
+ * Parameters:
+ *   joints     — array of joint definitions
+ *   count      — number of joints
+ *   bodies     — [in/out] rigid body array (positions modified)
+ *   num_bodies — number of bodies
+ *   fraction   — correction fraction [0..1], typically 0.2-0.4
+ *   slop       — positional error tolerance below which no correction
+ *                is applied (meters)
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline void forge_physics_joint_correct_positions(
+    const ForgePhysicsJoint *joints, int count,
+    ForgePhysicsRigidBody *bodies, int num_bodies,
+    float fraction, float slop)
+{
+    if (!joints || !bodies || count <= 0) return;
+
+    for (int i = 0; i < count; i++) {
+        const ForgePhysicsJoint *j = &joints[i];
+
+        /* Skip joints with invalid (non-sentinel) body indices */
+        if ((j->body_a != -1 && (j->body_a < 0 || j->body_a >= num_bodies)) ||
+            (j->body_b != -1 && (j->body_b < 0 || j->body_b >= num_bodies))) {
+            continue;
+        }
+
+        /* Get body properties */
+        vec3 pos_a = forge_physics_joint_body_pos_(bodies, num_bodies, j->body_a);
+        vec3 pos_b = forge_physics_joint_body_pos_(bodies, num_bodies, j->body_b);
+        quat ori_a = forge_physics_joint_body_orient_(bodies, num_bodies, j->body_a);
+        quat ori_b = forge_physics_joint_body_orient_(bodies, num_bodies, j->body_b);
+        float inv_m_a = forge_physics_joint_body_inv_mass_(bodies, num_bodies, j->body_a);
+        float inv_m_b = forge_physics_joint_body_inv_mass_(bodies, num_bodies, j->body_b);
+
+        /* Compute world anchors */
+        vec3 world_a = (j->body_a >= 0 && j->body_a < num_bodies)
+            ? vec3_add(pos_a, quat_rotate_vec3(ori_a, j->local_anchor_a))
+            : j->local_anchor_a;
+        vec3 world_b = (j->body_b >= 0 && j->body_b < num_bodies)
+            ? vec3_add(pos_b, quat_rotate_vec3(ori_b, j->local_anchor_b))
+            : j->local_anchor_b;
+
+        /* Position error — for sliders, only correct perpendicular to the
+         * slide axis so the body remains free to translate along it. */
+        vec3 error = vec3_sub(world_b, world_a);
+        if (j->type == FORGE_PHYSICS_JOINT_SLIDER) {
+            vec3 axis = (j->body_a >= 0 && j->body_a < num_bodies)
+                ? quat_rotate_vec3(ori_a, j->local_axis_a)
+                : j->local_axis_a;
+            /* Renormalize to counter floating-point drift over many frames
+             * (prepare() normalizes too, but correct_positions runs separately). */
+            float axis_len = vec3_length(axis);
+            if (axis_len > FORGE_PHYSICS_EPSILON)
+                axis = vec3_scale(axis, 1.0f / axis_len);
+            float along = vec3_dot(error, axis);
+            error = vec3_sub(error, vec3_scale(axis, along));
+        }
+        float err_len = vec3_length(error);
+        if (err_len <= slop) continue;
+
+        float inv_mass_sum = inv_m_a + inv_m_b;
+        if (inv_mass_sum < FORGE_PHYSICS_EPSILON) continue;
+
+        /* Correction vector */
+        vec3 correction = vec3_scale(error,
+            fraction * (err_len - slop) / (err_len * inv_mass_sum));
+
+        if (j->body_a >= 0 && j->body_a < num_bodies) {
+            bodies[j->body_a].position = vec3_add(
+                bodies[j->body_a].position,
+                vec3_scale(correction, inv_m_a));
+        }
+        if (j->body_b >= 0 && j->body_b < num_bodies) {
+            bodies[j->body_b].position = vec3_sub(
+                bodies[j->body_b].position,
+                vec3_scale(correction, inv_m_b));
+        }
+    }
+}
+
+/* Solve all joint constraints in one call (convenience wrapper).
+ *
+ * Combines prepare, warm-start, N iterations of velocity solving,
+ * impulse storage, and position correction into a single function.
+ * Use this when joints are the only constraints; when mixing with
+ * contact constraints, call the individual functions to interleave
+ * joint and contact solving in the same iteration loop.
+ *
+ * Parameters:
+ *   joints     — [in/out] array of joints (impulses updated)
+ *   count      — number of joints
+ *   bodies     — [in/out] rigid body array
+ *   num_bodies — number of bodies
+ *   iterations — solver iteration count (10-20 recommended)
+ *   dt         — timestep (seconds)
+ *   warm_start — true to apply cached impulses before iteration
+ *   workspace  — solver workspace (same size as joints array)
+ *
+ * Usage:
+ *   ForgePhysicsJointSolverData ws[MAX_JOINTS];
+ *   forge_physics_joint_solve(joints, nj, bodies, nb,
+ *                             20, PHYSICS_DT, true, ws);
+ *
+ * See: Physics Lesson 13 — Constraint Solver
+ */
+static inline void forge_physics_joint_solve(
+    ForgePhysicsJoint *joints, int count,
+    ForgePhysicsRigidBody *bodies, int num_bodies,
+    int iterations, float dt, bool warm_start,
+    ForgePhysicsJointSolverData *workspace)
+{
+    if (!joints || !bodies || !workspace || count <= 0 ||
+        num_bodies <= 0 || !(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    /* Clamp iterations */
+    if (iterations < FORGE_PHYSICS_SOLVER_MIN_ITERATIONS)
+        iterations = FORGE_PHYSICS_SOLVER_MIN_ITERATIONS;
+    if (iterations > FORGE_PHYSICS_SOLVER_MAX_ITERATIONS)
+        iterations = FORGE_PHYSICS_SOLVER_MAX_ITERATIONS;
+
+    /* Phase 1: Precompute constraint data */
+    forge_physics_joint_prepare(joints, count, bodies, num_bodies,
+                                dt, workspace);
+
+    /* Phase 2: Warm-start from previous frame */
+    if (warm_start) {
+        forge_physics_joint_warm_start(joints, workspace, count,
+                                       bodies, num_bodies);
+    } else {
+        /* Cold-start: zero cached impulses so solve_velocities does not
+         * accumulate onto stale values from previous frames. */
+        forge_physics_joint_reset_cached_impulses(joints, count);
+    }
+
+    /* Phase 3: Iterative velocity solving */
+    for (int iter = 0; iter < iterations; iter++) {
+        forge_physics_joint_solve_velocities(joints, workspace, count,
+                                             bodies, num_bodies);
+    }
+
+    /* Phase 4: Store converged impulses (no-op, accumulated in-place) */
+    forge_physics_joint_store_impulses(joints, workspace, count);
+
+    /* Phase 5: Position correction for joint drift */
+    forge_physics_joint_correct_positions(
+        joints, count, bodies, num_bodies,
+        FORGE_PHYSICS_JOINT_BAUMGARTE, FORGE_PHYSICS_JOINT_SLOP);
+}
+
+
 #endif /* FORGE_PHYSICS_H */

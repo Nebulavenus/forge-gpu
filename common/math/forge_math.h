@@ -1157,8 +1157,10 @@ static inline float mat2_anisotropy_ratio(mat2 m)
  *
  * See: lessons/math/05-matrices
  */
+#define FORGE_MAT3_ELEMENTS 9
+
 typedef struct mat3 {
-    float m[9];
+    float m[FORGE_MAT3_ELEMENTS];
 } mat3;
 
 /* Create a 3×3 matrix from 9 values in row-major order.
@@ -1483,6 +1485,93 @@ static inline mat3 mat3_scale(vec2 scale)
     m.m[0] = scale.x;
     m.m[4] = scale.y;
     return m;
+}
+
+/* Add two 3×3 matrices element-wise.
+ *
+ * Used to combine contributions from multiple bodies into a single
+ * effective mass matrix (e.g. K = K_mass + K_inertia_a + K_inertia_b).
+ *
+ * Parameters:
+ *   a — first matrix
+ *   b — second matrix
+ *
+ * Returns: element-wise sum a + b
+ *
+ * Usage:
+ *   mat3 K = mat3_add(K_a, K_b);
+ *
+ * See: lessons/math/05-matrices, lessons/physics/13-constraint-solver
+ */
+static inline mat3 mat3_add(mat3 a, mat3 b)
+{
+    mat3 r;
+    for (int i = 0; i < FORGE_MAT3_ELEMENTS; i++) r.m[i] = a.m[i] + b.m[i];
+    return r;
+}
+
+/* Multiply every element of a 3×3 matrix by a scalar.
+ *
+ * Used to scale identity matrices by inverse mass (e.g. (1/m) * I_3x3)
+ * when building effective mass matrices for constraints.
+ *
+ * Parameters:
+ *   m — matrix to scale
+ *   s — scalar multiplier
+ *
+ * Returns: element-wise product s * m
+ *
+ * Usage:
+ *   mat3 mass_term = mat3_scale_scalar(mat3_identity(), inv_mass);
+ *
+ * See: lessons/math/05-matrices, lessons/physics/13-constraint-solver
+ */
+static inline mat3 mat3_scale_scalar(mat3 m, float s)
+{
+    mat3 r;
+    for (int i = 0; i < FORGE_MAT3_ELEMENTS; i++) r.m[i] = m.m[i] * s;
+    return r;
+}
+
+/* Build the skew-symmetric (cross-product) matrix from a vector.
+ *
+ * The skew-symmetric matrix [v]× satisfies:
+ *   mat3_multiply_vec3(skew(v), u) == vec3_cross(v, u)
+ *
+ * This is fundamental to rigid body constraint solvers: the velocity
+ * at a point offset r from the center of mass is v + ω × r, and the
+ * cross product ω × r can be written as [ω]× * r using this matrix.
+ *
+ * The matrix form (row-major notation):
+ *   [  0  -v.z   v.y ]
+ *   [ v.z   0   -v.x ]
+ *   [-v.y  v.x    0  ]
+ *
+ * Stored in column-major order (m[col*3+row]):
+ *   m[0]= 0    m[3]=-v.z  m[6]= v.y
+ *   m[1]= v.z  m[4]= 0    m[7]=-v.x
+ *   m[2]=-v.y  m[5]= v.x  m[8]= 0
+ *
+ * Parameters:
+ *   v — vector to build the skew-symmetric matrix from
+ *
+ * Returns: 3×3 skew-symmetric matrix [v]×
+ *
+ * Usage:
+ *   mat3 wx = mat3_skew(omega);
+ *   vec3 omega_cross_r = mat3_multiply_vec3(wx, r);
+ *   // equivalent to: vec3_cross(omega, r)
+ *
+ * See: lessons/math/05-matrices, lessons/physics/13-constraint-solver
+ * Ref: Baraff, "Physically Based Modeling", SIGGRAPH Course Notes
+ */
+static inline mat3 mat3_skew(vec3 v)
+{
+    mat3 r;
+    r.m[0] =  0.0f;  r.m[3] = -v.z;   r.m[6] =  v.y;
+    r.m[1] =  v.z;   r.m[4] =  0.0f;  r.m[7] = -v.x;
+    r.m[2] = -v.y;   r.m[5] =  v.x;   r.m[8] =  0.0f;
+    return r;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

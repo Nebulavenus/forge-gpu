@@ -1241,6 +1241,65 @@ static void test_mat3_scale(void)
     END_TEST();
 }
 
+static void test_mat3_add(void)
+{
+    TEST("mat3_add");
+    /* Use non-diagonal matrices to verify all 9 elements */
+    mat3 a;
+    a.m[0] = 1.0f; a.m[1] = 2.0f; a.m[2] = 3.0f;
+    a.m[3] = 4.0f; a.m[4] = 5.0f; a.m[5] = 6.0f;
+    a.m[6] = 7.0f; a.m[7] = 8.0f; a.m[8] = 9.0f;
+    mat3 b;
+    b.m[0] = 9.0f; b.m[1] = 8.0f; b.m[2] = 7.0f;
+    b.m[3] = 6.0f; b.m[4] = 5.0f; b.m[5] = 4.0f;
+    b.m[6] = 3.0f; b.m[7] = 2.0f; b.m[8] = 1.0f;
+    mat3 c = mat3_add(a, b);
+    for (int i = 0; i < 9; i++) {
+        ASSERT_FLOAT_EQ(c.m[i], 10.0f);
+    }
+    END_TEST();
+}
+
+static void test_mat3_scale_scalar(void)
+{
+    TEST("mat3_scale_scalar");
+    /* Use non-diagonal matrix to verify all 9 elements are scaled */
+    mat3 m;
+    m.m[0] = 1.0f; m.m[1] = 2.0f; m.m[2] = 3.0f;
+    m.m[3] = 4.0f; m.m[4] = 5.0f; m.m[5] = 6.0f;
+    m.m[6] = 7.0f; m.m[7] = 8.0f; m.m[8] = 9.0f;
+    mat3 s = mat3_scale_scalar(m, 3.0f);
+    ASSERT_FLOAT_EQ(s.m[0], 3.0f);
+    ASSERT_FLOAT_EQ(s.m[1], 6.0f);
+    ASSERT_FLOAT_EQ(s.m[2], 9.0f);
+    ASSERT_FLOAT_EQ(s.m[3], 12.0f);
+    ASSERT_FLOAT_EQ(s.m[4], 15.0f);
+    ASSERT_FLOAT_EQ(s.m[5], 18.0f);
+    ASSERT_FLOAT_EQ(s.m[6], 21.0f);
+    ASSERT_FLOAT_EQ(s.m[7], 24.0f);
+    ASSERT_FLOAT_EQ(s.m[8], 27.0f);
+    END_TEST();
+}
+
+static void test_mat3_skew(void)
+{
+    TEST("mat3_skew");
+    /* skew(v) * u should equal cross(v, u) */
+    vec3 v = vec3_create(1.0f, 2.0f, 3.0f);
+    vec3 u = vec3_create(4.0f, 5.0f, 6.0f);
+    mat3 sv = mat3_skew(v);
+    vec3 result = mat3_multiply_vec3(sv, u);
+    vec3 expected = vec3_cross(v, u);
+    ASSERT_VEC3_EQ(result, expected);
+
+    /* skew of zero vector should produce zero matrix */
+    mat3 zero_skew = mat3_skew(vec3_create(0, 0, 0));
+    for (int i = 0; i < 9; i++) {
+        ASSERT_FLOAT_EQ(zero_skew.m[i], 0.0f);
+    }
+    END_TEST();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * mat4 Additional Tests (transpose, determinant, inverse)
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -3887,6 +3946,9 @@ int main(int argc, char *argv[])
     test_mat3_inverse();
     test_mat3_rotate();
     test_mat3_scale();
+    test_mat3_add();
+    test_mat3_scale_scalar();
+    test_mat3_skew();
 
     /* mat4 tests */
     SDL_Log("\nmat4 tests:");

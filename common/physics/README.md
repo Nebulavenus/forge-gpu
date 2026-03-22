@@ -221,11 +221,32 @@ Types: `ForgePhysicsSIConstraint` (precomputed per-contact data),
 
 Constants: `FORGE_PHYSICS_SI_DEFAULT_ITERATIONS` (10).
 
+### Lesson 13 — Constraint Solver
+
+| Function | Purpose |
+|---|---|
+| `forge_physics_joint_ball_socket()` | Create a ball-socket (point) joint — 3 DOF removed |
+| `forge_physics_joint_hinge()` | Create a hinge (revolute) joint — 5 DOF removed |
+| `forge_physics_joint_slider()` | Create a slider (prismatic) joint — 5 DOF removed |
+| `forge_physics_joint_prepare()` | Precompute K matrices, Baumgarte bias for all joints |
+| `forge_physics_joint_warm_start()` | Apply cached impulses to body velocities |
+| `forge_physics_joint_solve_velocities()` | One Gauss-Seidel iteration for joint constraints |
+| `forge_physics_joint_store_impulses()` | Write accumulated impulses back to joints |
+| `forge_physics_joint_correct_positions()` | Positional correction for joint drift |
+| `forge_physics_joint_solve()` | Complete solver: prepare + warm-start + N iterations + store + position correction |
+
+Types: `ForgePhysicsJoint` (persistent joint definition),
+`ForgePhysicsJointType` (BALL_SOCKET / HINGE / SLIDER),
+`ForgePhysicsJointSolverData` (per-step precomputed workspace).
+
+Constants: `FORGE_PHYSICS_JOINT_BAUMGARTE` (0.1),
+`FORGE_PHYSICS_JOINT_SLOP` (0.005).
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 13–15 | *TBD* | Constraints, joints, stacking stability |
+| 14–15 | *TBD* | Stacking stability, advanced constraints |
 
 ## Design
 
@@ -261,3 +282,5 @@ Constants: `FORGE_PHYSICS_SI_DEFAULT_ITERATIONS` (10).
 | [Physics L09](../../lessons/physics/09-gjk-intersection/) | `ForgePhysicsGJKResult`, `forge_physics_gjk_support()`, `forge_physics_gjk_intersect()`, `forge_physics_gjk_test_bodies()` |
 | [Physics L10](../../lessons/physics/10-epa-penetration-depth/) | `ForgePhysicsEPAResult`, `forge_physics_epa()`, `forge_physics_epa_bodies()`, `forge_physics_gjk_epa_contact()` |
 | [Physics L11](../../lessons/physics/11-contact-manifold/) | `ForgePhysicsManifold`, `forge_physics_gjk_epa_manifold()`, `forge_physics_manifold_cache_update()`, `forge_physics_manifold_cache_prune()`, `forge_physics_manifold_to_rb_contacts()` |
+| [Physics L12](../../lessons/physics/12-impulse-based-resolution/) | `ForgePhysicsSIManifold`, `forge_physics_si_prepare()`, `forge_physics_si_warm_start()`, `forge_physics_si_solve_velocities()`, `forge_physics_si_store_impulses()`, `forge_physics_si_correct_positions()` |
+| [Physics L13](../../lessons/physics/13-constraint-solver/) | `ForgePhysicsJoint`, `ForgePhysicsJointSolverData`, `forge_physics_joint_ball_socket()`, `forge_physics_joint_hinge()`, `forge_physics_joint_slider()`, `forge_physics_joint_prepare()`, `forge_physics_joint_warm_start()`, `forge_physics_joint_solve_velocities()`, `forge_physics_joint_store_impulses()`, `forge_physics_joint_correct_positions()`, `forge_physics_joint_solve()` |

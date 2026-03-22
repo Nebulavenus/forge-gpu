@@ -198,10 +198,15 @@ def capture_screenshot(
     except subprocess.TimeoutExpired:
         print("Capture timed out after 120 seconds")
         return False
+    # Always show application output — SDL_Log sends warnings to stdout
+    # on SDL3 (missing fonts, uninitialized UI state, etc.) that are
+    # critical diagnostics even on successful runs.
+    if result.stdout:
+        print(result.stdout.rstrip())
+    if result.stderr:
+        print(result.stderr.rstrip())
     if result.returncode != 0:
         print(f"Capture failed (exit code {result.returncode})")
-        if result.stderr:
-            print(result.stderr)
         return False
     return os.path.isfile(output_bmp)
 
@@ -273,10 +278,13 @@ def capture_gif_frames(
     except subprocess.TimeoutExpired:
         print("GIF capture timed out after 300 seconds")
         return False
+    # Always show application output — SDL_Log goes to stdout on SDL3.
+    if result.stdout:
+        print(result.stdout.rstrip())
+    if result.stderr:
+        print(result.stderr.rstrip())
     if result.returncode != 0:
         print(f"GIF capture failed (exit code {result.returncode})")
-        if result.stderr:
-            print(result.stderr)
         return False
 
     # Verify the expected number of frames were captured

@@ -51,6 +51,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="10-epa-penetration-depth/assets/screenshot.png" width="480" alt="EPA Penetration Depth"/>](10-epa-penetration-depth/) | [**10 — EPA Penetration Depth**](10-epa-penetration-depth/) | Expanding Polytope Algorithm, penetration depth and contact normal from GJK simplex, barycentric contact reconstruction, SAP+GJK+EPA pipeline |
 | [<img src="11-contact-manifold/assets/screenshot.png" width="480" alt="Contact Manifold"/>](11-contact-manifold/) | [**11 — Contact Manifold**](11-contact-manifold/) | Sutherland-Hodgman clipping, multi-point contact generation from GJK/EPA, contact point reduction, manifold cache with persistent IDs, warm-starting |
 | [<img src="12-impulse-based-resolution/assets/screenshot.png" width="480" alt="Impulse-Based Resolution"/>](12-impulse-based-resolution/) | [**12 — Impulse-Based Resolution**](12-impulse-based-resolution/) | Sequential impulse solver, accumulated impulse clamping, warm-starting, manifold-aware resolution, per-axis Coulomb friction, Baumgarte stabilization, position correction |
+| [<img src="13-constraint-solver/assets/screenshot.png" width="480" alt="Constraint Solver"/>](13-constraint-solver/) | [**13 — Constraint Solver**](13-constraint-solver/) | Joint constraints (ball-socket, hinge, slider), unified solver pipeline with contacts, warm-starting, position correction |
 
 ## Shared library
 
