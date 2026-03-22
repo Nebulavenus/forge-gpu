@@ -148,8 +148,8 @@ $$
 Each angular row has a scalar effective mass:
 
 $$
-m_{eff,k} = \frac{1}{\text{perp}_k \cdot I_a^{-1} \, \text{perp}_k
-  + \text{perp}_k \cdot I_b^{-1} \, \text{perp}_k}
+m_{eff,k} = \frac{1}{\text{perp}_k \cdot I_a^{-1} \, \text{perp}_k +
+  \text{perp}_k \cdot I_b^{-1} \, \text{perp}_k}
 $$
 
 The perpendicular axes are recomputed each frame from the hinge axis

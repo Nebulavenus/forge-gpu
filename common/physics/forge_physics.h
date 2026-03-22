@@ -8487,7 +8487,7 @@ static inline void forge_physics_joint_prepare(
             } else {
                 axis_b = j->local_axis_b;
             }
-            vec3 axis_error = vec3_cross(axis_b, s->world_axis_a);
+            vec3 axis_error = vec3_cross(s->world_axis_a, axis_b);
             float ang_err_1 = vec3_dot(axis_error, s->perp1);
             float ang_err_2 = vec3_dot(axis_error, s->perp2);
             s->angular_bias = vec3_create(

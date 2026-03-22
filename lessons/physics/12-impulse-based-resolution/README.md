@@ -79,23 +79,17 @@ the total, and applies only the difference.
 For a single contact constraint, let $\lambda$ be the accumulated normal
 impulse and $\Delta\lambda$ be the impulse computed this iteration:
 
-```text
 $$
 \lambda' = \max(\lambda + \Delta\lambda,\ 0)
 $$
-```
 
-```text
 $$
 \Delta\lambda_\text{applied} = \lambda' - \lambda
 $$
-```
 
-```text
 $$
 \lambda \leftarrow \lambda'
 $$
-```
 
 The clamp $\lambda \geq 0$ enforces the non-penetration condition: contacts
 can only push, never pull. Applying only the delta means the accumulated
@@ -104,24 +98,18 @@ impulse can never decrease below zero regardless of iteration order.
 For friction along tangent direction $\hat{t}$, with accumulated tangent
 impulse $\lambda_t$ and accumulated normal impulse $\lambda_n$:
 
-```text
 $$
-\lambda_t' = \operatorname{clamp}(\lambda_t + \Delta\lambda_t,\
+\lambda_t' = \text{clamp}(\lambda_t + \Delta\lambda_t,\
     -\mu\,\lambda_n, \mu\,\lambda_n)
 $$
-```
 
-```text
 $$
 \Delta\lambda_{t,\text{applied}} = \lambda_t' - \lambda_t
 $$
-```
 
-```text
 $$
 \lambda_t \leftarrow \lambda_t'
 $$
-```
 
 This is Coulomb's friction law in impulse form: each tangent impulse
 magnitude cannot exceed $\mu$ times the normal impulse magnitude. The
@@ -142,18 +130,14 @@ directions $\hat{t}_1$ and $\hat{t}_2$ span the plane perpendicular to
 $\hat{n}$. Any vector not parallel to $\hat{n}$ can seed the first tangent
 via the least-aligned-axis cross-product method:
 
-```text
 $$
 \hat{t}_1 = \frac{\hat{n} \times \hat{u}}
                   {\|\hat{n} \times \hat{u}\|}
 $$
-```
 
-```text
 $$
 \hat{t}_2 = \hat{n} \times \hat{t}_1
 $$
-```
 
 The seed vector $\hat{u}$ must not be parallel to $\hat{n}$.
 `forge_physics_si_tangent_basis()` selects the world axis (X, Y, or Z)
@@ -166,22 +150,18 @@ tangents in the constraint struct.
 Each constraint involves two bodies (A and B) and one contact point. Define
 the offset vectors from each body's center of mass to the contact point:
 
-```text
 $$
 \mathbf{r}_A = \mathbf{p}_c - \mathbf{x}_A, \qquad
 \mathbf{r}_B = \mathbf{p}_c - \mathbf{x}_B
 $$
-```
 
 The effective inverse mass along direction $\hat{d}$ is:
 
-```text
 $$
-m_\text{eff}^{-1} = m_A^{-1} + m_B^{-1}
-    + \hat{d} \cdot \bigl[(I_A^{-1}(\mathbf{r}_A \times \hat{d})) \times \mathbf{r}_A\bigr]
-    + \hat{d} \cdot \bigl[(I_B^{-1}(\mathbf{r}_B \times \hat{d})) \times \mathbf{r}_B\bigr]
+m_\text{eff}^{-1} = m_A^{-1} + m_B^{-1} +
+    \hat{d} \cdot \bigl[(I_A^{-1}(\mathbf{r}_A \times \hat{d})) \times \mathbf{r}_A\bigr] +
+    \hat{d} \cdot \bigl[(I_B^{-1}(\mathbf{r}_B \times \hat{d})) \times \mathbf{r}_B\bigr]
 $$
-```
 
 This quantity is constant for a given contact point and direction as long
 as bodies do not move significantly within the step. Computing it once in
@@ -201,13 +181,11 @@ is close to this frame's answer.
 `forge_physics_si_warm_start()` applies the cached impulses before the first
 iteration:
 
-```text
 $$
-\mathbf{v}_A \mathrel{+}= m_A^{-1}\,\lambda_n^{\text{prev}}\hat{n}
-    + m_A^{-1}\,\lambda_{t1}^{\text{prev}}\hat{t}_1
-    + m_A^{-1}\,\lambda_{t2}^{\text{prev}}\hat{t}_2
+\mathbf{v}_A \mathrel{+}= m_A^{-1}\,\lambda_n^{\text{prev}}\hat{n} +
+    m_A^{-1}\,\lambda_{t1}^{\text{prev}}\hat{t}_1 +
+    m_A^{-1}\,\lambda_{t2}^{\text{prev}}\hat{t}_2
 $$
-```
 
 and the symmetric update for body B with opposite sign. The impulses are
 loaded from `ForgePhysicsManifoldContact.normal_impulse`,
@@ -227,11 +205,9 @@ Without correction this drift grows until visible interpenetration appears.
 Baumgarte stabilization adds a velocity bias to the normal constraint that
 pushes penetrating bodies apart:
 
-```text
 $$
 v_\text{bias} = \frac{\beta}{\Delta t}\,\max(\phi - \phi_\text{slop}, 0)
 $$
-```
 
 where $\phi$ is the penetration depth (positive means overlap), $\phi_\text{slop}$
 is a small allowed overlap (0.01 m by default) that prevents jitter from
@@ -239,17 +215,13 @@ overcorrection, and $\beta \in [0.1, 0.3]$ is the correction rate.
 
 The bias is added to the target relative velocity at the contact:
 
-```text
 $$
 v_\text{target} = -e\,v_n + v_\text{bias}
 $$
-```
 
-```text
 $$
 \Delta\lambda = m_\text{eff}\,(v_\text{target} - v_n)
 $$
-```
 
 where $e$ is the coefficient of restitution (zeroed at resting contact,
 per the threshold from Lesson 06).

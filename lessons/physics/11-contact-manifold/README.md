@@ -88,22 +88,18 @@ The EPA normal $\hat{n}$ points from body B toward body A (the separation
 direction). The reference face is the face whose outward normal is most
 aligned with $\hat{n}$:
 
-```text
 $$
-\text{ref face} = \operatorname*{arg\,max}_{f \in \text{faces}(A)}
+\text{ref face} = \arg\max_{f \in \text{faces}(A)}
     \hat{n}_f \cdot \hat{n}
 $$
-```
 
 The incident face is the face on the other body most *anti-aligned* with
 the reference face normal $\hat{n}_\text{ref}$:
 
-```text
 $$
-\text{inc face} = \operatorname*{arg\,min}_{f \in \text{faces}(B)}
+\text{inc face} = \arg\min_{f \in \text{faces}(B)}
     \hat{n}_f \cdot \hat{n}_\text{ref}
 $$
-```
 
 For a box, both searches reduce to finding the axis-aligned face whose
 local-space direction has the largest absolute component along the query
@@ -135,11 +131,9 @@ one edge of the reference face.
 
 A half-plane is defined by a normal $\hat{n}_p$ and a distance $d_p$:
 
-```text
 $$
 \hat{n}_p \cdot \mathbf{v} \leq d_p
 $$
-```
 
 Points satisfying this inequality are "inside" the half-plane and are
 kept. Points outside are discarded. When an edge of the polygon crosses
@@ -149,29 +143,23 @@ For each consecutive vertex pair $(\mathbf{v}_i, \mathbf{v}_{i+1})$:
 
 1. Compute signed distances to the plane:
 
-```text
 $$
 d_i = \hat{n}_p \cdot \mathbf{v}_i - d_p, \qquad
 d_{i+1} = \hat{n}_p \cdot \mathbf{v}_{i+1} - d_p
 $$
-```
 
 1. If $d_i \leq 0$, vertex $\mathbf{v}_i$ is inside — emit it.
 
 1. If $d_i$ and $d_{i+1}$ have opposite signs, the edge crosses the
    plane. The intersection is at parameter:
 
-```text
 $$
 t = \frac{d_i}{d_i - d_{i+1}}
 $$
-```
 
-```text
 $$
 \mathbf{v}_\text{intersect} = \mathbf{v}_i + t(\mathbf{v}_{i+1} - \mathbf{v}_i)
 $$
-```
 
 Emit $\mathbf{v}_\text{intersect}$.
 
@@ -260,11 +248,9 @@ This is **warm-starting** (Catto, "Iterative Dynamics with Temporal
 Coherence", GDC 2005). The contact manifold carries accumulated impulses
 from the previous frame:
 
-```text
 $$
 \lambda^{(0)} = \alpha \, \lambda^{\text{prev}}
 $$
-```
 
 where $\lambda^{(0)}$ is the initial guess for the current frame,
 $\lambda^\text{prev}$ is the converged impulse from the last frame, and
@@ -273,12 +259,10 @@ factor that discounts stale impulses when bodies have moved.
 
 The impulse is applied at the start of the solver step:
 
-```text
 $$
 \mathbf{v}_A \mathrel{+}= m_A^{-1} \lambda^{(0)} \hat{n}, \qquad
 \boldsymbol{\omega}_A \mathrel{+}= I_A^{-1} (\mathbf{r}_A \times \lambda^{(0)} \hat{n})
 $$
-```
 
 and similarly for body B with opposite sign.
 
