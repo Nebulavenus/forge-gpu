@@ -352,43 +352,55 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Interpolation factor for smooth rendering between physics steps.
      * alpha blends from prev_position (alpha=0) to position (alpha=1). */
     float alpha = state->accumulator / PHYSICS_DT;
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    if (state->paused) alpha = 1.0f;
 
-    /* ── Shadow pass ─────────────────────────────────────────────── */
+    /* ── Collect instanced data ──────────────────────────────────── */
+    /* Build per-instance transforms + velocity-based colors, then upload
+     * once and draw all particles with a single instanced call per pass. */
 
-    forge_scene_begin_shadow_pass(s);
+    ForgeSceneColoredInstance sphere_instances[NUM_PARTICLES];
     for (int i = 0; i < NUM_PARTICLES; i++) {
         vec3 render_pos = vec3_lerp(
             state->particles[i].prev_position,
             state->particles[i].position, alpha);
-        mat4 model = mat4_multiply(
+        sphere_instances[i].transform = mat4_multiply(
             mat4_translate(render_pos),
             mat4_scale_uniform(SPHERE_RADIUS));
-        forge_scene_draw_shadow_mesh(s, state->sphere_vb, state->sphere_ib,
-                                     state->sphere_index_count, model);
+
+        float speed = vec3_length(state->particles[i].velocity);
+        velocity_to_color(speed, sphere_instances[i].color);
+    }
+
+    SDL_GPUBuffer *sphere_inst_buf = forge_scene_upload_buffer_deferred(
+        s, SDL_GPU_BUFFERUSAGE_VERTEX,
+        sphere_instances, (Uint32)(NUM_PARTICLES * sizeof(ForgeSceneColoredInstance)));
+
+    /* ── Shadow pass ─────────────────────────────────────────────── */
+
+    forge_scene_begin_shadow_pass(s);
+    if (sphere_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count, sphere_inst_buf, NUM_PARTICLES);
     }
     forge_scene_end_shadow_pass(s);
 
     /* ── Main pass ───────────────────────────────────────────────── */
 
     forge_scene_begin_main_pass(s);
-    for (int i = 0; i < NUM_PARTICLES; i++) {
-        vec3 render_pos = vec3_lerp(
-            state->particles[i].prev_position,
-            state->particles[i].position, alpha);
-        mat4 model = mat4_multiply(
-            mat4_translate(render_pos),
-            mat4_scale_uniform(SPHERE_RADIUS));
-
-        /* Color encodes velocity — red at rest, yellow mid, blue fast */
-        float color[4];
-        float speed = vec3_length(state->particles[i].velocity);
-        velocity_to_color(speed, color);
-
-        forge_scene_draw_mesh(s, state->sphere_vb, state->sphere_ib,
-                              state->sphere_index_count, model, color);
+    if (sphere_inst_buf) {
+        float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count, sphere_inst_buf, NUM_PARTICLES, white);
     }
     forge_scene_draw_grid(s);
     forge_scene_end_main_pass(s);
+
+    if (sphere_inst_buf)
+        SDL_ReleaseGPUBuffer(forge_scene_device(s), sphere_inst_buf);
 
     /* ── UI pass ─────────────────────────────────────────────────── */
 

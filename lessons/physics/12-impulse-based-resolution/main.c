@@ -898,9 +898,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* Interpolation factor for smooth rendering */
     float alpha = state->accumulator / PHYSICS_DT;
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    if (state->paused) alpha = 1.0f;
 
-    /* ── Shadow pass ─────────────────────────────────────────────── */
-    forge_scene_begin_shadow_pass(s);
+    /* ── Collect instanced draw data ────────────────────────────── */
+    ForgeSceneColoredInstance box_instances[MAX_BODIES];
+    ForgeSceneColoredInstance sphere_instances[MAX_BODIES];
+    int box_count    = 0;
+    int sphere_count = 0;
 
     for (int i = 0; i < state->num_bodies; i++) {
         /* Interpolate position and orientation */
@@ -909,24 +915,59 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         quat ori = quat_slerp(state->bodies[i].prev_orientation,
                               state->bodies[i].orientation, alpha);
 
-        mat4 model;
-
         if (state->shapes[i].type == FORGE_PHYSICS_SHAPE_BOX) {
             vec3 he = state->shapes[i].data.box.half_extents;
             mat4 scale_m = mat4_scale(vec3_create(he.x, he.y, he.z));
             mat4 rot_m   = quat_to_mat4(ori);
             mat4 trans_m = mat4_translate(pos);
-            model = mat4_multiply(trans_m, mat4_multiply(rot_m, scale_m));
-            forge_scene_draw_shadow_mesh(s, state->cube_vb, state->cube_ib,
-                                          state->cube_index_count, model);
+            box_instances[box_count].transform =
+                mat4_multiply(trans_m, mat4_multiply(rot_m, scale_m));
+            SDL_memcpy(box_instances[box_count].color,
+                       state->body_colors[i], 4 * sizeof(float));
+            box_count++;
         } else {
             float r = state->shapes[i].data.sphere.radius;
             mat4 scale_m = mat4_scale(vec3_create(r, r, r));
             mat4 trans_m = mat4_translate(pos);
-            model = mat4_multiply(trans_m, scale_m);
-            forge_scene_draw_shadow_mesh(s, state->sphere_vb, state->sphere_ib,
-                                          state->sphere_index_count, model);
+            sphere_instances[sphere_count].transform =
+                mat4_multiply(trans_m, scale_m);
+            SDL_memcpy(sphere_instances[sphere_count].color,
+                       state->body_colors[i], 4 * sizeof(float));
+            sphere_count++;
         }
+    }
+
+    /* Upload instance buffers — batch into one copy pass */
+    SDL_GPUBuffer *box_inst_buf = NULL;
+    SDL_GPUBuffer *sphere_inst_buf = NULL;
+
+    forge_scene_begin_deferred_uploads(s);
+    if (box_count > 0) {
+        box_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX,
+            box_instances,
+            (Uint32)(box_count * sizeof(ForgeSceneColoredInstance)));
+    }
+    if (sphere_count > 0) {
+        sphere_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX,
+            sphere_instances,
+            (Uint32)(sphere_count * sizeof(ForgeSceneColoredInstance)));
+    }
+    forge_scene_end_deferred_uploads(s);
+
+    /* ── Shadow pass ─────────────────────────────────────────────── */
+    forge_scene_begin_shadow_pass(s);
+
+    if (box_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->cube_vb, state->cube_ib,
+            state->cube_index_count, box_inst_buf, (Uint32)box_count);
+    }
+    if (sphere_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count, sphere_inst_buf, (Uint32)sphere_count);
     }
 
     forge_scene_end_shadow_pass(s);
@@ -934,38 +975,26 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* ── Main pass ───────────────────────────────────────────────── */
     forge_scene_begin_main_pass(s);
 
-    for (int i = 0; i < state->num_bodies; i++) {
-        vec3 pos = vec3_lerp(state->bodies[i].prev_position,
-                             state->bodies[i].position, alpha);
-        quat ori = quat_slerp(state->bodies[i].prev_orientation,
-                              state->bodies[i].orientation, alpha);
-
-        float color[4] = {
-            state->body_colors[i][0], state->body_colors[i][1],
-            state->body_colors[i][2], state->body_colors[i][3]
-        };
-        mat4 model;
-
-        if (state->shapes[i].type == FORGE_PHYSICS_SHAPE_BOX) {
-            vec3 he = state->shapes[i].data.box.half_extents;
-            mat4 scale_m = mat4_scale(vec3_create(he.x, he.y, he.z));
-            mat4 rot_m   = quat_to_mat4(ori);
-            mat4 trans_m = mat4_translate(pos);
-            model = mat4_multiply(trans_m, mat4_multiply(rot_m, scale_m));
-            forge_scene_draw_mesh(s, state->cube_vb, state->cube_ib,
-                                   state->cube_index_count, model, color);
-        } else {
-            float r = state->shapes[i].data.sphere.radius;
-            mat4 scale_m = mat4_scale(vec3_create(r, r, r));
-            mat4 trans_m = mat4_translate(pos);
-            model = mat4_multiply(trans_m, scale_m);
-            forge_scene_draw_mesh(s, state->sphere_vb, state->sphere_ib,
-                                   state->sphere_index_count, model, color);
-        }
+    float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    if (box_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->cube_vb, state->cube_ib,
+            state->cube_index_count, box_inst_buf, (Uint32)box_count, white);
+    }
+    if (sphere_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count, sphere_inst_buf, (Uint32)sphere_count,
+            white);
     }
 
     forge_scene_draw_grid(s);
     forge_scene_end_main_pass(s);
+
+    /* Release per-frame instance buffers */
+    SDL_GPUDevice *dev = forge_scene_device(s);
+    if (box_inst_buf)    SDL_ReleaseGPUBuffer(dev, box_inst_buf);
+    if (sphere_inst_buf) SDL_ReleaseGPUBuffer(dev, sphere_inst_buf);
 
     /* ── UI pass ─────────────────────────────────────────────────── */
     float mx, my;

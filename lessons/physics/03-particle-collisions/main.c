@@ -696,7 +696,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* Interpolation factor for smooth rendering */
     float alpha = state->accumulator / PHYSICS_DT;
+    if (alpha < 0.0f) alpha = 0.0f;
     if (alpha > 1.0f) alpha = 1.0f;
+    if (state->paused) alpha = 1.0f;
 
     /* ── Determine particle color for this scene ─────────────────── */
     float dynamic_color[4];
@@ -738,56 +740,98 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             state->particles[i].position, alpha);
     }
 
-    /* ── Shadow pass ─────────────────────────────────────────────── */
+    /* ── Build instance arrays ───────────────────────────────────── */
 
-    forge_scene_begin_shadow_pass(s);
-
-    for (int i = 0; i < state->num_particles; i++) {
-        float r = state->particles[i].radius;
-        mat4 model = mat4_multiply(
-            mat4_translate(render_pos[i]),
-            mat4_scale_uniform(r));
-        forge_scene_draw_shadow_mesh(s, state->sphere_vb, state->sphere_ib,
-                                     state->sphere_index_count, model);
-    }
-
-    /* Draw constraint connections as cylinders (Newton's cradle ropes) */
-    for (int i = 0; i < state->num_constraints; i++) {
-        int a = state->constraints[i].a;
-        int b = state->constraints[i].b;
-        mat4 model = cylinder_between(render_pos[a], render_pos[b]);
-        forge_scene_draw_shadow_mesh(s, state->cylinder_vb, state->cylinder_ib,
-                                     state->cylinder_index_count, model);
-    }
-
-    forge_scene_end_shadow_pass(s);
-
-    /* ── Main pass ───────────────────────────────────────────────── */
-
-    forge_scene_begin_main_pass(s);
-
+    /* Sphere instances — one per particle (radius varies per particle) */
+    ForgeSceneColoredInstance sphere_instances[MAX_PARTICLES];
+    int sphere_count = 0;
     for (int i = 0; i < state->num_particles; i++) {
         float r = state->particles[i].radius;
         mat4 model = mat4_multiply(
             mat4_translate(render_pos[i]),
             mat4_scale_uniform(r));
         bool is_fixed = (state->particles[i].inv_mass == 0.0f);
-        forge_scene_draw_mesh(s, state->sphere_vb, state->sphere_ib,
-                              state->sphere_index_count, model,
-                              is_fixed ? fixed_color : dynamic_color);
+        const float *col = is_fixed ? fixed_color : dynamic_color;
+        sphere_instances[sphere_count].transform = model;
+        SDL_memcpy(sphere_instances[sphere_count].color, col,
+                   4 * sizeof(float));
+        sphere_count++;
     }
 
-    /* Draw constraint connections */
+    /* Cylinder instances — constraint connections (Newton's cradle ropes) */
+    ForgeSceneColoredInstance cyl_instances[MAX_CONSTRAINTS];
+    int cyl_count = 0;
     for (int i = 0; i < state->num_constraints; i++) {
         int a = state->constraints[i].a;
         int b = state->constraints[i].b;
-        mat4 model = cylinder_between(render_pos[a], render_pos[b]);
-        forge_scene_draw_mesh(s, state->cylinder_vb, state->cylinder_ib,
-                              state->cylinder_index_count, model, conn_color);
+        cyl_instances[cyl_count].transform =
+            cylinder_between(render_pos[a], render_pos[b]);
+        SDL_memcpy(cyl_instances[cyl_count].color, conn_color,
+                   4 * sizeof(float));
+        cyl_count++;
+    }
+
+    /* Upload instance buffers — batch into one copy pass */
+    SDL_GPUBuffer *sphere_inst_buf = NULL;
+    SDL_GPUBuffer *cyl_inst_buf    = NULL;
+    forge_scene_begin_deferred_uploads(s);
+    if (sphere_count > 0) {
+        sphere_inst_buf = forge_scene_upload_buffer_deferred(s,
+            SDL_GPU_BUFFERUSAGE_VERTEX, sphere_instances,
+            (Uint32)sphere_count * (Uint32)sizeof(ForgeSceneColoredInstance));
+    }
+    if (cyl_count > 0) {
+        cyl_inst_buf = forge_scene_upload_buffer_deferred(s,
+            SDL_GPU_BUFFERUSAGE_VERTEX, cyl_instances,
+            (Uint32)cyl_count * (Uint32)sizeof(ForgeSceneColoredInstance));
+    }
+    forge_scene_end_deferred_uploads(s);
+
+    /* ── Shadow pass ─────────────────────────────────────────────── */
+
+    forge_scene_begin_shadow_pass(s);
+
+    if (sphere_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count,
+            sphere_inst_buf, (Uint32)sphere_count);
+    }
+    if (cyl_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->cylinder_vb, state->cylinder_ib,
+            state->cylinder_index_count,
+            cyl_inst_buf, (Uint32)cyl_count);
+    }
+
+    forge_scene_end_shadow_pass(s);
+
+    /* ── Main pass ───────────────────────────────────────────────── */
+
+    float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    forge_scene_begin_main_pass(s);
+
+    if (sphere_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count,
+            sphere_inst_buf, (Uint32)sphere_count, white);
+    }
+    if (cyl_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->cylinder_vb, state->cylinder_ib,
+            state->cylinder_index_count,
+            cyl_inst_buf, (Uint32)cyl_count, white);
     }
 
     forge_scene_draw_grid(s);
     forge_scene_end_main_pass(s);
+
+    /* Release per-frame instance buffers */
+    SDL_GPUDevice *dev = forge_scene_device(s);
+    if (sphere_inst_buf) SDL_ReleaseGPUBuffer(dev, sphere_inst_buf);
+    if (cyl_inst_buf)    SDL_ReleaseGPUBuffer(dev, cyl_inst_buf);
 
     /* ── UI pass ─────────────────────────────────────────────────── */
 

@@ -1138,78 +1138,6 @@ static void physics_step(app_state *state, float dt)
 
 /* ── Drawing helpers ──────────────────────────────────────────────── */
 
-/* Draw a shape body (shadow pass) */
-static void draw_body_shadow(app_state *state, int idx, float alpha)
-{
-    const ForgePhysicsCollisionShape *shape = &state->shapes[idx];
-    mat4 model = get_body_model_matrix(&state->bodies[idx], shape, alpha);
-
-    switch (shape->type) {
-    case FORGE_PHYSICS_SHAPE_SPHERE:
-        forge_scene_draw_shadow_mesh(&state->scene,
-            state->sphere_vb, state->sphere_ib,
-            state->sphere_index_count, model);
-        break;
-    case FORGE_PHYSICS_SHAPE_BOX:
-        forge_scene_draw_shadow_mesh(&state->scene,
-            state->cube_vb, state->cube_ib,
-            state->cube_index_count, model);
-        break;
-    case FORGE_PHYSICS_SHAPE_CAPSULE: {
-        int ci = find_capsule_mesh(state, shape);
-        forge_scene_draw_shadow_mesh(&state->scene,
-            state->capsule_meshes[ci].vb, state->capsule_meshes[ci].ib,
-            state->capsule_meshes[ci].index_count, model);
-        break;
-    }
-    default:
-        break;
-    }
-}
-
-/* Draw a shape body (main pass) */
-static void draw_body_main(app_state *state, int idx, float alpha)
-{
-    const ForgePhysicsCollisionShape *shape = &state->shapes[idx];
-    mat4 model = get_body_model_matrix(&state->bodies[idx], shape, alpha);
-
-    /* Color: red tint if GJK confirmed intersection, else body color */
-    float color[4];
-    if (state->body_gjk_hit[idx]) {
-        color[0] = COLOR_INTERSECT_R;
-        color[1] = COLOR_INTERSECT_G;
-        color[2] = COLOR_INTERSECT_B;
-        color[3] = 1.0f;
-    } else {
-        color[0] = state->body_colors[idx][0];
-        color[1] = state->body_colors[idx][1];
-        color[2] = state->body_colors[idx][2];
-        color[3] = state->body_colors[idx][3];
-    }
-
-    switch (shape->type) {
-    case FORGE_PHYSICS_SHAPE_SPHERE:
-        forge_scene_draw_mesh(&state->scene,
-            state->sphere_vb, state->sphere_ib,
-            state->sphere_index_count, model, color);
-        break;
-    case FORGE_PHYSICS_SHAPE_BOX:
-        forge_scene_draw_mesh(&state->scene,
-            state->cube_vb, state->cube_ib,
-            state->cube_index_count, model, color);
-        break;
-    case FORGE_PHYSICS_SHAPE_CAPSULE: {
-        int ci = find_capsule_mesh(state, shape);
-        forge_scene_draw_mesh(&state->scene,
-            state->capsule_meshes[ci].vb, state->capsule_meshes[ci].ib,
-            state->capsule_meshes[ci].index_count, model, color);
-        break;
-    }
-    default:
-        break;
-    }
-}
-
 /* Draw an AABB as a wireframe cube using the wireframe pipeline */
 static void draw_aabb_wireframe(app_state *state, ForgePhysicsAABB aabb,
                                  bool in_pair, bool gjk_hit)
@@ -1355,19 +1283,118 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (alpha > 1.0f) alpha = 1.0f;
     if (state->scene_index == 0 || state->paused) alpha = 1.0f;
 
-    /* ── Shadow pass ─────────────────────────────────────────────── */
-    forge_scene_begin_shadow_pass(s);
+    /* ── Collect instanced data ──────────────────────────────────── */
+
+    ForgeSceneColoredInstance sphere_instances[MAX_BODIES];
+    ForgeSceneColoredInstance cube_instances[MAX_BODIES];
+    ForgeSceneColoredInstance capsule_instances[MAX_CAPSULE_MESHES][MAX_BODIES];
+    int sphere_count = 0, cube_count = 0;
+    int capsule_counts[MAX_CAPSULE_MESHES];
+    SDL_memset(capsule_counts, 0, sizeof(capsule_counts));
+
     for (int i = 0; i < state->num_bodies; i++) {
-        draw_body_shadow(state, i, alpha);
+        const ForgePhysicsCollisionShape *shape = &state->shapes[i];
+        mat4 model = get_body_model_matrix(&state->bodies[i], shape, alpha);
+
+        /* Color: red tint if GJK confirmed intersection, else body color */
+        float color[4];
+        if (state->body_gjk_hit[i]) {
+            color[0] = COLOR_INTERSECT_R;
+            color[1] = COLOR_INTERSECT_G;
+            color[2] = COLOR_INTERSECT_B;
+            color[3] = 1.0f;
+        } else {
+            SDL_memcpy(color, state->body_colors[i], sizeof(color));
+        }
+
+        ForgeSceneColoredInstance inst;
+        inst.transform = model;
+        SDL_memcpy(inst.color, color, sizeof(inst.color));
+
+        switch (shape->type) {
+        case FORGE_PHYSICS_SHAPE_SPHERE:
+            sphere_instances[sphere_count++] = inst;
+            break;
+        case FORGE_PHYSICS_SHAPE_BOX:
+            cube_instances[cube_count++] = inst;
+            break;
+        case FORGE_PHYSICS_SHAPE_CAPSULE: {
+            int ci = find_capsule_mesh(state, shape);
+            if (ci >= 0 && ci < state->num_capsule_meshes)
+                capsule_instances[ci][capsule_counts[ci]++] = inst;
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    /* Upload instance buffers — batch into one copy pass */
+    forge_scene_begin_deferred_uploads(s);
+    SDL_GPUBuffer *sphere_inst_buf = NULL;
+    SDL_GPUBuffer *cube_inst_buf = NULL;
+    SDL_GPUBuffer *capsule_inst_bufs[MAX_CAPSULE_MESHES];
+    SDL_memset(capsule_inst_bufs, 0, sizeof(capsule_inst_bufs));
+
+    if (sphere_count > 0)
+        sphere_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX, sphere_instances,
+            (Uint32)(sphere_count * sizeof(ForgeSceneColoredInstance)));
+    if (cube_count > 0)
+        cube_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX, cube_instances,
+            (Uint32)(cube_count * sizeof(ForgeSceneColoredInstance)));
+    for (int ci = 0; ci < state->num_capsule_meshes; ci++) {
+        if (capsule_counts[ci] > 0)
+            capsule_inst_bufs[ci] = forge_scene_upload_buffer_deferred(
+                s, SDL_GPU_BUFFERUSAGE_VERTEX, capsule_instances[ci],
+                (Uint32)(capsule_counts[ci] * sizeof(ForgeSceneColoredInstance)));
+    }
+    forge_scene_end_deferred_uploads(s);
+
+    /* ── Shadow pass ─────────────────────────────────────────────── */
+
+    forge_scene_begin_shadow_pass(s);
+    if (sphere_inst_buf)
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            state->sphere_index_count, sphere_inst_buf, (Uint32)sphere_count);
+    if (cube_inst_buf)
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->cube_vb, state->cube_ib,
+            state->cube_index_count, cube_inst_buf, (Uint32)cube_count);
+    for (int ci = 0; ci < state->num_capsule_meshes; ci++) {
+        if (capsule_inst_bufs[ci])
+            forge_scene_draw_shadow_mesh_instanced_colored(
+                s, state->capsule_meshes[ci].vb, state->capsule_meshes[ci].ib,
+                state->capsule_meshes[ci].index_count,
+                capsule_inst_bufs[ci], (Uint32)capsule_counts[ci]);
     }
     forge_scene_end_shadow_pass(s);
 
     /* ── Main pass ───────────────────────────────────────────────── */
-    forge_scene_begin_main_pass(s);
 
-    /* Draw all bodies */
-    for (int i = 0; i < state->num_bodies; i++) {
-        draw_body_main(state, i, alpha);
+    forge_scene_begin_main_pass(s);
+    {
+        float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        if (sphere_inst_buf)
+            forge_scene_draw_mesh_instanced_colored(
+                s, state->sphere_vb, state->sphere_ib,
+                state->sphere_index_count, sphere_inst_buf,
+                (Uint32)sphere_count, white);
+        if (cube_inst_buf)
+            forge_scene_draw_mesh_instanced_colored(
+                s, state->cube_vb, state->cube_ib,
+                state->cube_index_count, cube_inst_buf,
+                (Uint32)cube_count, white);
+        for (int ci = 0; ci < state->num_capsule_meshes; ci++) {
+            if (capsule_inst_bufs[ci])
+                forge_scene_draw_mesh_instanced_colored(
+                    s, state->capsule_meshes[ci].vb,
+                    state->capsule_meshes[ci].ib,
+                    state->capsule_meshes[ci].index_count,
+                    capsule_inst_bufs[ci], (Uint32)capsule_counts[ci], white);
+        }
     }
 
     /* Scene 1: draw manifold contacts — point markers and normal arrows */
@@ -1431,6 +1458,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     forge_scene_draw_grid(s);
     forge_scene_end_main_pass(s);
+
+    /* Release per-frame instance buffers */
+    SDL_GPUDevice *dev = forge_scene_device(s);
+    if (sphere_inst_buf)  SDL_ReleaseGPUBuffer(dev, sphere_inst_buf);
+    if (cube_inst_buf)    SDL_ReleaseGPUBuffer(dev, cube_inst_buf);
+    for (int ci = 0; ci < state->num_capsule_meshes; ci++) {
+        if (capsule_inst_bufs[ci]) SDL_ReleaseGPUBuffer(dev, capsule_inst_bufs[ci]);
+    }
 
     /* ── UI pass ─────────────────────────────────────────────────── */
     float mx, my;

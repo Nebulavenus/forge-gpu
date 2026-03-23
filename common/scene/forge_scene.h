@@ -101,6 +101,11 @@
 /* Textured pipeline sampler count: shadow map + material texture */
 #define FORGE_SCENE_TEXTURED_FRAG_SAMPLER_COUNT 2
 
+/* SDL3 GPU instance step rate — must be 0 for per-instance advancement.
+ * The VERTEXINPUTRATE_INSTANCE flag controls stepping; step_rate is reserved
+ * and must stay 0 or SDL asserts.  See GPU Lesson 13 for details. */
+#define FORGE_SCENE_INSTANCE_STEP_RATE 0
+
 /* Debug line initial vertex capacity (vertices, not lines — 2 verts per line) */
 #define FORGE_SCENE_DEBUG_VB_INITIAL_CAPACITY 4096
 
@@ -1061,11 +1066,33 @@ static SDL_GPUShader *forge_scene_create_shader(
     int num_samplers, int num_storage_textures,
     int num_storage_buffers, int num_uniform_buffers);
 
-/* Upload CPU data to a GPU buffer via a transfer buffer. */
+/* Upload CPU data to a GPU buffer via a transfer buffer.
+ * Creates and submits its own command buffer — safe to call anytime. */
 static SDL_GPUBuffer *forge_scene_upload_buffer(
     ForgeScene *scene,
     SDL_GPUBufferUsageFlags usage,
     const void *data, Uint32 size);
+
+/* Upload CPU data to a GPU buffer using the scene's command buffer.
+ * Avoids creating a separate command buffer — use this for per-frame
+ * uploads (instance buffers, dynamic vertex data).
+ *
+ * Must be called after forge_scene_begin_frame() while scene->cmd is active
+ * and no render pass is open (for example, before a pass starts or between
+ * passes).  Returns NULL on failure. */
+static SDL_GPUBuffer *forge_scene_upload_buffer_deferred(
+    ForgeScene *scene,
+    SDL_GPUBufferUsageFlags usage,
+    const void *data, Uint32 size);
+
+/* Open a batched copy pass so multiple forge_scene_upload_buffer_deferred()
+ * calls share a single pass instead of opening/closing one each.  Call
+ * forge_scene_end_deferred_uploads() when done.  Nests safely — if the model
+ * copy pass is already open, this is a no-op. */
+static void forge_scene_begin_deferred_uploads(ForgeScene *scene);
+
+/* Close the batched copy pass opened by begin_deferred_uploads. */
+static void forge_scene_end_deferred_uploads(ForgeScene *scene);
 
 /* Upload an SDL_Surface to the GPU as a texture with mipmaps.
  * srgb=true for diffuse/color textures, false for data textures. */
@@ -1477,6 +1504,120 @@ static SDL_GPUBuffer *forge_scene_upload_buffer(
     }
     SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
     return buffer;
+}
+
+/* ── Deferred buffer upload (uses scene->cmd) ──────────────────────────── */
+
+static SDL_GPUBuffer *forge_scene_upload_buffer_deferred(
+    ForgeScene *scene,
+    SDL_GPUBufferUsageFlags usage,
+    const void *data, Uint32 size)
+{
+    if (!scene || !scene->device || !scene->cmd) {
+        SDL_Log("forge_scene: upload_buffer_deferred requires an active frame "
+                "(call after begin_frame)");
+        return NULL;
+    }
+    if (scene->pass) {
+        SDL_Log("forge_scene: upload_buffer_deferred requires an active frame "
+                "with no open render pass");
+        return NULL;
+    }
+    if (size == 0 || !data) {
+        SDL_Log("forge_scene: upload_buffer_deferred called with %s",
+                size == 0 ? "size 0" : "NULL data");
+        return NULL;
+    }
+
+    SDL_GPUBufferCreateInfo buf_info;
+    SDL_zero(buf_info);
+    buf_info.usage = usage;
+    buf_info.size  = size;
+
+    SDL_GPUBuffer *buffer = SDL_CreateGPUBuffer(scene->device, &buf_info);
+    if (!buffer) {
+        SDL_Log("forge_scene: SDL_CreateGPUBuffer failed: %s", SDL_GetError());
+        return NULL;
+    }
+
+    SDL_GPUTransferBufferCreateInfo xfer_info;
+    SDL_zero(xfer_info);
+    xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    xfer_info.size  = size;
+
+    SDL_GPUTransferBuffer *xfer =
+        SDL_CreateGPUTransferBuffer(scene->device, &xfer_info);
+    if (!xfer) {
+        SDL_Log("forge_scene: SDL_CreateGPUTransferBuffer failed: %s",
+                SDL_GetError());
+        SDL_ReleaseGPUBuffer(scene->device, buffer);
+        return NULL;
+    }
+
+    void *mapped = SDL_MapGPUTransferBuffer(scene->device, xfer, false);
+    if (!mapped) {
+        SDL_Log("forge_scene: SDL_MapGPUTransferBuffer failed: %s",
+                SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+        SDL_ReleaseGPUBuffer(scene->device, buffer);
+        return NULL;
+    }
+    SDL_memcpy(mapped, data, size);
+    SDL_UnmapGPUTransferBuffer(scene->device, xfer);
+
+    /* Use the scene's command buffer — no extra submit.
+     * If a model copy pass is already open (skinned/morph animation upload),
+     * piggyback on it.  Otherwise open and close our own. */
+    bool owns_copy_pass = false;
+    SDL_GPUCopyPass *copy = scene->model_copy_pass;
+    if (!copy) {
+        copy = SDL_BeginGPUCopyPass(scene->cmd);
+        if (!copy) {
+            SDL_Log("forge_scene: SDL_BeginGPUCopyPass failed: %s",
+                    SDL_GetError());
+            SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+            SDL_ReleaseGPUBuffer(scene->device, buffer);
+            return NULL;
+        }
+        owns_copy_pass = true;
+    }
+
+    SDL_GPUTransferBufferLocation src;
+    SDL_zero(src);
+    src.transfer_buffer = xfer;
+
+    SDL_GPUBufferRegion dst;
+    SDL_zero(dst);
+    dst.buffer = buffer;
+    dst.size   = size;
+
+    SDL_UploadToGPUBuffer(copy, &src, &dst, false);
+
+    if (owns_copy_pass)
+        SDL_EndGPUCopyPass(copy);
+
+    SDL_ReleaseGPUTransferBuffer(scene->device, xfer);
+    return buffer;
+}
+
+/* ── Batched deferred upload helpers ────────────────────────────────────── */
+
+static void forge_scene_begin_deferred_uploads(ForgeScene *scene)
+{
+    if (!scene || !scene->cmd) return;
+    if (scene->model_copy_pass) return; /* already open — no-op */
+
+    scene->model_copy_pass = SDL_BeginGPUCopyPass(scene->cmd);
+    if (!scene->model_copy_pass)
+        SDL_Log("forge_scene: begin_deferred_uploads copy pass failed: %s",
+                SDL_GetError());
+}
+
+static void forge_scene_end_deferred_uploads(ForgeScene *scene)
+{
+    if (!scene || !scene->model_copy_pass) return;
+    SDL_EndGPUCopyPass(scene->model_copy_pass);
+    scene->model_copy_pass = NULL;
 }
 
 /* ── Texture upload helper ──────────────────────────────────────────────── */
@@ -3334,7 +3475,7 @@ static void forge_scene__init_instanced_pipelines(ForgeScene *scene)
     vb_descs[1].slot       = 1;
     vb_descs[1].pitch      = sizeof(mat4);
     vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
-    vb_descs[1].instance_step_rate = 1;
+    vb_descs[1].instance_step_rate = FORGE_SCENE_INSTANCE_STEP_RATE;
 
     SDL_GPUVertexAttribute attrs[6];
     SDL_zero(attrs);
@@ -3575,7 +3716,7 @@ static void forge_scene__init_instanced_colored_pipelines(ForgeScene *scene)
     vb_descs[1].slot       = 1;
     vb_descs[1].pitch      = sizeof(ForgeSceneColoredInstance);
     vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
-    vb_descs[1].instance_step_rate = 1;
+    vb_descs[1].instance_step_rate = FORGE_SCENE_INSTANCE_STEP_RATE;
 
     /* Attributes: pos + normal + 4 mat4 columns + color */
     SDL_GPUVertexAttribute attrs[FORGE_SCENE_COLORED_INST_ATTR_COUNT];
@@ -6312,7 +6453,7 @@ static void forge_scene__init_model_instanced_pipelines(ForgeScene *scene)
     vb_descs[1].slot       = 1;
     vb_descs[1].pitch      = sizeof(mat4);
     vb_descs[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
-    vb_descs[1].instance_step_rate = 1;
+    vb_descs[1].instance_step_rate = FORGE_SCENE_INSTANCE_STEP_RATE;
 
     SDL_GPUVertexAttribute attrs[8];
     SDL_zero(attrs);

@@ -176,9 +176,11 @@ static int add_body(app_state *state, vec3 pos, float mass,
 
     ForgePhysicsRigidBody *b = &state->bodies[idx];
     SDL_memset(b, 0, sizeof(*b));
-    b->position    = pos;
-    b->orientation = quat_identity();
-    b->mass        = mass;
+    b->position         = pos;
+    b->prev_position    = pos;
+    b->orientation      = quat_identity();
+    b->prev_orientation = quat_identity();
+    b->mass             = mass;
     b->inv_mass    = (mass > FORGE_PHYSICS_EPSILON) ? (1.0f / mass) : 0.0f;
     b->restitution = DEFAULT_RESTIT;
     b->damping     = DEFAULT_DAMPING;
@@ -644,51 +646,40 @@ static SDL_GPUBuffer *upload_shape_vb(ForgeScene *scene,
 
 /* Compute world-space anchor for rendering */
 static vec3 get_world_anchor(const app_state *state, int body_idx,
-                              vec3 local_anchor)
+                              vec3 local_anchor, float alpha)
 {
     if (body_idx < 0 || body_idx >= state->num_bodies)
         return local_anchor;
     const ForgePhysicsRigidBody *b = &state->bodies[body_idx];
-    return vec3_add(b->position, quat_rotate_vec3(b->orientation, local_anchor));
+    vec3 pos = vec3_lerp(b->prev_position, b->position, alpha);
+    quat orient = quat_slerp(b->prev_orientation, b->orientation, alpha);
+    return vec3_add(pos, quat_rotate_vec3(orient, local_anchor));
 }
 
-/* Draw small spheres at joint anchor positions */
-static void draw_joint_anchors(app_state *state, bool shadow_pass)
+/* Collect joint anchor instances into a CPU array for instanced drawing.
+ * Returns the number of instances written (2 per joint: A=green, B=red). */
+static int collect_joint_anchor_instances(
+    const app_state *state, float alpha,
+    ForgeSceneColoredInstance *out, int max_count)
 {
-    for (int i = 0; i < state->num_joints; i++) {
+    int count = 0;
+    for (int i = 0; i < state->num_joints && count + 1 < max_count; i++) {
         const ForgePhysicsJoint *j = &state->joints[i];
 
-        vec3 wa = get_world_anchor(state, j->body_a, j->local_anchor_a);
-        vec3 wb = get_world_anchor(state, j->body_b, j->local_anchor_b);
+        vec3 wa = get_world_anchor(state, j->body_a, j->local_anchor_a, alpha);
+        vec3 wb = get_world_anchor(state, j->body_b, j->local_anchor_b, alpha);
 
-        /* Anchor A (green) */
-        mat4 model_a = mat4_multiply(
-            mat4_translate(wa),
-            mat4_scale_uniform(ANCHOR_SPHERE_SCALE));
+        out[count].transform = mat4_multiply(
+            mat4_translate(wa), mat4_scale_uniform(ANCHOR_SPHERE_SCALE));
+        SDL_memcpy(out[count].color, COLOR_ANCHOR_A, sizeof(out[count].color));
+        count++;
 
-        /* Anchor B (red) */
-        mat4 model_b = mat4_multiply(
-            mat4_translate(wb),
-            mat4_scale_uniform(ANCHOR_SPHERE_SCALE));
-
-        if (shadow_pass) {
-            forge_scene_draw_shadow_mesh(&state->scene,
-                state->sphere_vb, state->sphere_ib,
-                (Uint32)state->sphere_index_count, model_a);
-            forge_scene_draw_shadow_mesh(&state->scene,
-                state->sphere_vb, state->sphere_ib,
-                (Uint32)state->sphere_index_count, model_b);
-        } else {
-            forge_scene_draw_mesh(&state->scene,
-                state->sphere_vb, state->sphere_ib,
-                (Uint32)state->sphere_index_count, model_a,
-                COLOR_ANCHOR_A);
-            forge_scene_draw_mesh(&state->scene,
-                state->sphere_vb, state->sphere_ib,
-                (Uint32)state->sphere_index_count, model_b,
-                COLOR_ANCHOR_B);
-        }
+        out[count].transform = mat4_multiply(
+            mat4_translate(wb), mat4_scale_uniform(ANCHOR_SPHERE_SCALE));
+        SDL_memcpy(out[count].color, COLOR_ANCHOR_B, sizeof(out[count].color));
+        count++;
     }
+    return count;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -830,60 +821,131 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
     }
 
-    /* ── Render: Shadow pass ───────────────────────────────────── */
-    forge_scene_begin_shadow_pass(s);
+    /* ── Collect instanced draw data ────────────────────────────── */
+    /* Interpolation factor for smooth rendering between physics steps.
+     * alpha blends from prev_position (alpha=0) to position (alpha=1). */
+    float alpha = state->accumulator / PHYSICS_DT;
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    if (state->paused) alpha = 1.0f;
+
+    ForgeSceneColoredInstance sphere_instances[MAX_BODIES];
+    ForgeSceneColoredInstance cube_instances[MAX_BODIES];
+    int sphere_count = 0;
+    int cube_count   = 0;
 
     for (int i = 0; i < state->num_bodies; i++) {
-        ForgePhysicsRigidBody *b = &state->bodies[i];
         BodyRenderInfo *ri = &state->render_info[i];
 
-        mat4 rot = quat_to_mat4(b->orientation);
-        mat4 scl = mat4_scale(vec3_create(ri->scale[0], ri->scale[1], ri->scale[2]));
-        mat4 trans = mat4_translate(b->position);
-        mat4 model = mat4_multiply(trans, mat4_multiply(rot, scl));
+        /* Interpolate position and orientation for smooth rendering */
+        vec3 pos = vec3_lerp(state->bodies[i].prev_position,
+                             state->bodies[i].position, alpha);
+        quat ori = quat_slerp(state->bodies[i].prev_orientation,
+                               state->bodies[i].orientation, alpha);
+
+        mat4 rot_m   = quat_to_mat4(ori);
+        mat4 scale_m = mat4_scale(vec3_create(ri->scale[0], ri->scale[1],
+                                               ri->scale[2]));
+        mat4 trans_m = mat4_translate(pos);
+        mat4 model   = mat4_multiply(trans_m, mat4_multiply(rot_m, scale_m));
 
         if (ri->shape == SHAPE_SPHERE) {
-            forge_scene_draw_shadow_mesh(s,
-                state->sphere_vb, state->sphere_ib,
-                (Uint32)state->sphere_index_count, model);
+            sphere_instances[sphere_count].transform = model;
+            SDL_memcpy(sphere_instances[sphere_count].color,
+                       ri->color, 4 * sizeof(float));
+            sphere_count++;
         } else {
-            forge_scene_draw_shadow_mesh(s,
-                state->cube_vb, state->cube_ib,
-                (Uint32)state->cube_index_count, model);
+            cube_instances[cube_count].transform = model;
+            SDL_memcpy(cube_instances[cube_count].color,
+                       ri->color, 4 * sizeof(float));
+            cube_count++;
         }
     }
 
-    draw_joint_anchors(state, true);
+    /* Collect joint anchor instances (2 per joint: green A + red B) */
+    ForgeSceneColoredInstance anchor_instances[MAX_JOINTS * 2];
+    int anchor_count = collect_joint_anchor_instances(
+        state, alpha, anchor_instances, MAX_JOINTS * 2);
+
+    /* Upload all instance buffers — batch into one copy pass */
+    SDL_GPUBuffer *sphere_inst_buf = NULL;
+    SDL_GPUBuffer *cube_inst_buf   = NULL;
+    SDL_GPUBuffer *anchor_inst_buf = NULL;
+
+    forge_scene_begin_deferred_uploads(s);
+    if (sphere_count > 0) {
+        sphere_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX,
+            sphere_instances,
+            (Uint32)(sphere_count * sizeof(ForgeSceneColoredInstance)));
+    }
+    if (cube_count > 0) {
+        cube_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX,
+            cube_instances,
+            (Uint32)(cube_count * sizeof(ForgeSceneColoredInstance)));
+    }
+    if (anchor_count > 0) {
+        anchor_inst_buf = forge_scene_upload_buffer_deferred(
+            s, SDL_GPU_BUFFERUSAGE_VERTEX,
+            anchor_instances,
+            (Uint32)(anchor_count * sizeof(ForgeSceneColoredInstance)));
+    }
+    forge_scene_end_deferred_uploads(s);
+
+    /* ── Render: Shadow pass ───────────────────────────────────── */
+    forge_scene_begin_shadow_pass(s);
+
+    if (sphere_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            (Uint32)state->sphere_index_count,
+            sphere_inst_buf, (Uint32)sphere_count);
+    }
+    if (cube_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->cube_vb, state->cube_ib,
+            (Uint32)state->cube_index_count,
+            cube_inst_buf, (Uint32)cube_count);
+    }
+    if (anchor_inst_buf) {
+        forge_scene_draw_shadow_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            (Uint32)state->sphere_index_count,
+            anchor_inst_buf, (Uint32)anchor_count);
+    }
     forge_scene_end_shadow_pass(s);
 
     /* ── Render: Main pass ─────────────────────────────────────── */
     forge_scene_begin_main_pass(s);
 
-    for (int i = 0; i < state->num_bodies; i++) {
-        ForgePhysicsRigidBody *b = &state->bodies[i];
-        BodyRenderInfo *ri = &state->render_info[i];
-
-        mat4 rot = quat_to_mat4(b->orientation);
-        mat4 scl = mat4_scale(vec3_create(ri->scale[0], ri->scale[1], ri->scale[2]));
-        mat4 trans = mat4_translate(b->position);
-        mat4 model = mat4_multiply(trans, mat4_multiply(rot, scl));
-
-        if (ri->shape == SHAPE_SPHERE) {
-            forge_scene_draw_mesh(s,
-                state->sphere_vb, state->sphere_ib,
-                (Uint32)state->sphere_index_count, model,
-                ri->color);
-        } else {
-            forge_scene_draw_mesh(s,
-                state->cube_vb, state->cube_ib,
-                (Uint32)state->cube_index_count, model,
-                ri->color);
-        }
+    float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    if (sphere_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            (Uint32)state->sphere_index_count,
+            sphere_inst_buf, (Uint32)sphere_count, white);
     }
-
-    draw_joint_anchors(state, false);
+    if (cube_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->cube_vb, state->cube_ib,
+            (Uint32)state->cube_index_count,
+            cube_inst_buf, (Uint32)cube_count, white);
+    }
+    if (anchor_inst_buf) {
+        forge_scene_draw_mesh_instanced_colored(
+            s, state->sphere_vb, state->sphere_ib,
+            (Uint32)state->sphere_index_count,
+            anchor_inst_buf, (Uint32)anchor_count, white);
+    }
     forge_scene_draw_grid(s);
     forge_scene_end_main_pass(s);
+
+    /* Release per-frame instance buffers */
+    SDL_GPUDevice *dev = forge_scene_device(s);
+    if (sphere_inst_buf)  SDL_ReleaseGPUBuffer(dev, sphere_inst_buf);
+    if (cube_inst_buf)    SDL_ReleaseGPUBuffer(dev, cube_inst_buf);
+    if (anchor_inst_buf)  SDL_ReleaseGPUBuffer(dev, anchor_inst_buf);
 
     /* ── Render: UI pass ───────────────────────────────────────── */
     float mx, my;
@@ -944,8 +1006,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         float total_error = 0.0f;
         for (int i = 0; i < state->num_joints && i < 8; i++) {
             const ForgePhysicsJoint *j = &state->joints[i];
-            vec3 wa = get_world_anchor(state, j->body_a, j->local_anchor_a);
-            vec3 wb = get_world_anchor(state, j->body_b, j->local_anchor_b);
+            vec3 wa = get_world_anchor(state, j->body_a, j->local_anchor_a, 1.0f);
+            vec3 wb = get_world_anchor(state, j->body_b, j->local_anchor_b, 1.0f);
             vec3 err_vec = vec3_sub(wa, wb);
 
             /* For sliders, only measure error perpendicular to the slide
