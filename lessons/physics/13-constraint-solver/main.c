@@ -99,6 +99,9 @@ static const float COLOR_GRAY[]    = { 0.5f,  0.5f,  0.5f,  1.0f };
 static const float COLOR_ANCHOR_A[] = { 0.1f, 0.9f, 0.2f, 1.0f };  /* green */
 static const float COLOR_ANCHOR_B[] = { 0.9f, 0.1f, 0.2f, 1.0f };  /* red */
 
+/* Slider axis debug line visualization */
+#define SLIDER_LINE_HALF_LENGTH 4.0f   /* how far the axis line extends each way */
+
 /* Scene names */
 static const char *SCENE_NAMES[] = {
     "Ball-Socket Pendulum",
@@ -938,6 +941,28 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             (Uint32)state->sphere_index_count,
             anchor_inst_buf, (Uint32)anchor_count, white);
     }
+    /* Draw slider axis lines as debug lines (world-space, depth-tested) */
+    for (int i = 0; i < state->num_joints; i++) {
+        const ForgePhysicsJoint *j = &state->joints[i];
+        if (j->type != FORGE_PHYSICS_JOINT_SLIDER) continue;
+
+        /* Get the world-space anchor and slide axis.
+         * For world-attached sliders (body_b == -1), anchor_b IS the world
+         * position and local_axis_a is already in world space. For body-body
+         * sliders, we'd need to transform — but all L13 sliders are world-attached. */
+        vec3 anchor = j->local_anchor_b;
+        vec3 axis   = j->local_axis_a;
+
+        vec3 line_start = vec3_sub(anchor,
+            vec3_scale(axis, SLIDER_LINE_HALF_LENGTH));
+        vec3 line_end   = vec3_add(anchor,
+            vec3_scale(axis, SLIDER_LINE_HALF_LENGTH));
+
+        vec4 line_color = vec4_create(0.8f, 0.8f, 0.3f, 1.0f);
+        forge_scene_debug_line(s, line_start, line_end, line_color, false);
+    }
+    forge_scene_draw_debug_lines(s);
+
     forge_scene_draw_grid(s);
     forge_scene_end_main_pass(s);
 
