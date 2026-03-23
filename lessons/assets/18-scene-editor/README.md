@@ -10,6 +10,8 @@
 
 ## Result
 
+![Scene editor screenshot](assets/screenshot.png)
+
 ![Scene editor component layout](assets/editor_layout.png)
 
 A browser-based scene editor with a 3D viewport, transform gizmos, a scene
