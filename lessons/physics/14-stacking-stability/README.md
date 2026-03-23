@@ -31,7 +31,7 @@ boxes without collapse.
 |---|---|
 | ![Tower](assets/animation_tower.gif) | ![Pyramid](assets/animation_pyramid.gif) |
 
-| Wall (30) | Stress Test (15) |
+| Wall (30) | Stress Test (20) |
 |---|---|
 | ![Wall](assets/animation_wall.gif) | ![Stress Test](assets/animation_stress_test.gif) |
 

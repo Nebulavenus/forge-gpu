@@ -10,7 +10,7 @@
  *   1. Tall Tower (12)  — 12 boxes stacked vertically
  *   2. Pyramid          — 7-layer pyramid (28 boxes)
  *   3. Wall             — 6 columns x 5 rows (30 boxes)
- *   4. Stress Test (15) — 15 boxes in a single tower
+ *   4. Stress Test (20) — 20 boxes in a single tower
  *
  * Controls:
  *   WASD / Arrow keys — move camera
@@ -100,7 +100,7 @@ static const char *SCENE_NAMES[] = {
     "Tall Tower (12)",
     "Pyramid (28)",
     "Wall (30)",
-    "Stress Test (15)"
+    "Stress Test (20)"
 };
 
 /* Body color palette (8 distinguishable colors, cycled by body index) */
@@ -413,13 +413,13 @@ static void setup_scene_wall(app_state *state)
     state->num_bodies = idx;
 }
 
-/* Scene 4: Stress Test — 15 boxes in a single tower */
+/* Scene 4: Stress Test — 20 boxes in a single tower */
 static void setup_scene_stress(app_state *state)
 {
-    state->num_bodies = 15;
+    state->num_bodies = 20;
     vec3 half = vec3_create(BOX_HALF, BOX_HALF, BOX_HALF);
 
-    for (int i = 0; i < 15; i++) {
+    for (int i = 0; i < 20; i++) {
         float y = BOX_HALF + (float)i * (2.0f * BOX_HALF + STACK_OFFSET);
         int ci = i % NUM_BODY_COLORS;
         make_box_body(state, i,
