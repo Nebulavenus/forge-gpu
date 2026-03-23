@@ -14,8 +14,11 @@ import {
   TransformControls,
   useGLTF,
 } from "@react-three/drei"
+import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 import { useCompanionManager } from "@/lib/companion-manager"
+import { fetchAsset } from "@/lib/api"
+import { usePipelineModel } from "@/lib/use-pipeline-model"
 import type { GizmoMode, SceneAction, SceneObject } from "./types"
 
 // ── Fallback box for objects without an asset ───────────────────────────
@@ -29,15 +32,49 @@ function FallbackBox() {
   )
 }
 
-// ── Loaded glTF model ───────────────────────────────────────────────────
+// ── Loaded glTF model (source format fallback) ──────────────────────────
 
-function LoadedModel({ assetId }: { assetId: string }) {
+function GltfModel({ assetId }: { assetId: string }) {
   const url = `/api/assets/${encodeURIComponent(assetId)}/file`
   const manager = useCompanionManager(assetId)
   const { scene } = useGLTF(url, undefined, undefined, (loader) => {
     loader.manager = manager
   })
   return <primitive object={scene.clone()} />
+}
+
+// ── Pipeline model (.fmesh format) ──────────────────────────────────────
+
+function PipelineModelView({ assetId }: { assetId: string }) {
+  const { scene, error } = usePipelineModel(assetId, 0)
+  if (error || !scene) {
+    return <FallbackBox />
+  }
+  return <primitive object={scene} />
+}
+
+// ── Smart model loader — uses pipeline format when available ────────────
+
+function LoadedModel({ assetId }: { assetId: string }) {
+  const { data: asset, isLoading, isError } = useQuery({
+    queryKey: ["asset", assetId],
+    queryFn: () => fetchAsset(assetId),
+    staleTime: 60_000,
+  })
+
+  // Show fallback while asset info is loading or if the fetch failed,
+  // to avoid premature glTF rendering that crashes when companion
+  // files are missing
+  if (isLoading || isError) {
+    return <FallbackBox />
+  }
+
+  const hasFmesh = asset?.output_path?.endsWith(".fmesh") ?? false
+
+  if (hasFmesh) {
+    return <PipelineModelView assetId={assetId} />
+  }
+  return <GltfModel assetId={assetId} />
 }
 
 // ── Single scene object ─────────────────────────────────────────────────
@@ -233,7 +270,7 @@ export function Viewport({
     <div className="flex-1 min-h-0">
       <Canvas
         style={{ background: "#1a1a1a" }}
-        camera={{ position: [5, 5, 5], fov: 50 }}
+        camera={{ position: [12, 10, 12], fov: 50 }}
         onPointerMissed={() => dispatch({ type: "SELECT", objectId: null })}
       >
         <SceneContents

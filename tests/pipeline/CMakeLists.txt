@@ -5,6 +5,8 @@ target_include_directories(test_pipeline PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/cJSON)
 target_link_libraries(test_pipeline PRIVATE SDL3::SDL3
     $<$<NOT:$<C_COMPILER_ID:MSVC>>:m>)
+target_compile_definitions(test_pipeline PRIVATE
+    FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/")
 
 if(TARGET SDL3::SDL3-shared)
     add_custom_command(TARGET test_pipeline POST_BUILD

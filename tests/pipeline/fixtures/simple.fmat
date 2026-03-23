@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "materials": [
+    {
+      "name": "Wood",
+      "base_color_factor": [
+        0.8,
+        0.6,
+        0.3,
+        1.0
+      ],
+      "base_color_texture": "textures/wood_albedo.png",
+      "metallic_factor": 0.0,
+      "roughness_factor": 0.8,
+      "metallic_roughness_texture": "textures/wood_mr.png",
+      "normal_texture": "textures/wood_normal.png",
+      "normal_scale": 1.0,
+      "occlusion_texture": null,
+      "occlusion_strength": 1.0,
+      "emissive_factor": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "emissive_texture": null,
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.5,
+      "double_sided": false
+    },
+    {
+      "name": "Glass",
+      "base_color_factor": [
+        0.9,
+        0.9,
+        1.0,
+        0.5
+      ],
+      "base_color_texture": null,
+      "metallic_factor": 0.0,
+      "roughness_factor": 0.1,
+      "metallic_roughness_texture": null,
+      "normal_texture": null,
+      "normal_scale": 1.0,
+      "occlusion_texture": null,
+      "occlusion_strength": 1.0,
+      "emissive_factor": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "emissive_texture": null,
+      "alpha_mode": "BLEND",
+      "alpha_cutoff": 0.5,
+      "double_sided": true
+    }
+  ]
+}

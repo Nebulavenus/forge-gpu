@@ -25,6 +25,9 @@ __all__ = [
     "diagram_scene_data_model",
     "diagram_undo_redo_flow",
     "diagram_editor_layout",
+    "diagram_fmesh_browser_layout",
+    "diagram_loading_pipeline",
+    "diagram_lod_switching",
 ]
 
 from .lesson_02 import (
@@ -56,4 +59,9 @@ from .lesson_18 import (
     diagram_editor_layout,
     diagram_scene_data_model,
     diagram_undo_redo_flow,
+)
+from .lesson_19 import (
+    diagram_fmesh_browser_layout,
+    diagram_loading_pipeline,
+    diagram_lod_switching,
 )

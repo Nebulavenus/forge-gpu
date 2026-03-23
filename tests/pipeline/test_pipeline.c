@@ -11,8 +11,6 @@
  */
 
 #include <SDL3/SDL.h>
-#include <stdio.h>
-#include <math.h>
 /* SDL provides SDL_memset, SDL_memcpy, SDL_strcmp, etc. — no <string.h> needed */
 
 #include "math/forge_math.h"
@@ -311,8 +309,11 @@ static bool write_broken_fmesh(const char *path,
 /* Remove a temp file (best-effort cleanup) */
 static void cleanup_file(const char *path)
 {
-    /* SDL doesn't have a remove function; use stdio */
-    remove(path);
+    if (!SDL_RemovePath(path)) {
+        SDL_LogError(SDL_LOG_CATEGORY_TEST,
+                     "cleanup_file: SDL_RemovePath('%s') failed: %s",
+                     path, SDL_GetError());
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -4922,7 +4923,7 @@ static bool write_test_fmesh_v3_morph(const char *path, uint32_t stride,
     write_u32(morph_header, 4, morph_attr_flags);
 
     /* Per-target metadata: name + default_weight = MORPH_META_SIZE each */
-    if (morph_target_count > SIZE_MAX / FORGE_PIPELINE_MORPH_META_SIZE) {
+    if ((size_t)morph_target_count > SIZE_MAX / FORGE_PIPELINE_MORPH_META_SIZE) {
         SDL_Log("write_test_fmesh_v3_morph: meta_size overflow");
         SDL_free(verts);
         return false;
@@ -6080,14 +6081,16 @@ static void test_anim_apply_non_finite_time(void)
     anim.channel_count = 1;
 
     /* NaN time — should be sanitized to 0 */
-    float nan_val = NAN;
+    float zero = 0.0f;
+    float nan_val = zero / zero; /* runtime NaN */
     forge_pipeline_anim_apply(&anim, &node, 1, nan_val, false);
     ASSERT_TRUE(float_eq(node.translation[0], 0.0f));
     ASSERT_TRUE(float_eq(node.translation[1], 0.0f));
 
     /* Inf time — should be sanitized to 0 */
     init_identity_node(&node, -1);
-    float inf_val = INFINITY;
+    float one = 1.0f;
+    float inf_val = one / zero; /* runtime infinity */
     forge_pipeline_anim_apply(&anim, &node, 1, inf_val, false);
     ASSERT_TRUE(float_eq(node.translation[0], 0.0f));
     ASSERT_TRUE(float_eq(node.translation[1], 0.0f));
@@ -6878,6 +6881,148 @@ static void test_free_atlas_double(void)
     END_TEST();
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Golden fixture contract tests
+ *
+ * Load the committed binary fixtures from tests/pipeline/fixtures/ using
+ * forge_pipeline_load_mesh and verify every field.  If the C header
+ * (forge_pipeline.h) changes the binary layout, these tests fail — forcing
+ * both the C loader and the TypeScript parser (which tests the same
+ * fixtures) to stay in sync.
+ *
+ * FIXTURE_DIR is defined by CMake as the absolute path to the fixtures/
+ * directory.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Build a path into the fixtures directory, inserting a separator if needed */
+static void fixture_path(char *out, size_t out_size, const char *filename)
+{
+    size_t n = SDL_strlen(FIXTURE_DIR);
+    const bool has_sep = (n > 0) &&
+        (FIXTURE_DIR[n - 1] == '/' || FIXTURE_DIR[n - 1] == '\\');
+    SDL_snprintf(out, out_size, "%s%s%s",
+                 FIXTURE_DIR, has_sep ? "" : "/", filename);
+}
+
+static void test_fixture_triangle_fmesh(void)
+{
+    TEST("fixture triangle.fmesh — loads and matches expected fields");
+    char path[512];
+    fixture_path(path, sizeof(path), "triangle.fmesh");
+
+    ForgePipelineMesh mesh;
+    SDL_memset(&mesh, 0, sizeof(mesh));
+    bool ok = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(ok);
+
+    /* Header fields */
+    ASSERT_UINT_EQ(mesh.vertex_count, 3);
+    ASSERT_UINT_EQ(mesh.vertex_stride, FORGE_PIPELINE_VERTEX_STRIDE_TAN);
+    ASSERT_UINT_EQ(mesh.lod_count, 1);
+    ASSERT_UINT_EQ(mesh.flags, FORGE_PIPELINE_FLAG_TANGENTS);
+    ASSERT_TRUE(forge_pipeline_has_tangents(&mesh));
+    ASSERT_UINT_EQ(forge_pipeline_submesh_count(&mesh), 1);
+
+    /* LOD 0 indices */
+    ASSERT_UINT_EQ(forge_pipeline_lod_index_count(&mesh, 0), 3);
+    const uint32_t *idx = forge_pipeline_lod_indices(&mesh, 0);
+    ASSERT_NOT_NULL(idx);
+    ASSERT_UINT_EQ(idx[0], 0);
+    ASSERT_UINT_EQ(idx[1], 1);
+    ASSERT_UINT_EQ(idx[2], 2);
+
+    /* Submesh 0 */
+    const ForgePipelineSubmesh *sub = forge_pipeline_lod_submesh(&mesh, 0, 0);
+    ASSERT_NOT_NULL(sub);
+    ASSERT_UINT_EQ(sub->index_count, 3);
+    ASSERT_UINT_EQ(sub->index_offset, 0);
+    ASSERT_INT_EQ(sub->material_index, 0);
+
+    /* Vertex data — vertex 0: pos(0,0,0) norm(0,0,1) uv(0,0) tan(1,0,0,1) */
+    ASSERT_NOT_NULL(mesh.vertices);
+    ForgePipelineVertexTan *v = (ForgePipelineVertexTan *)mesh.vertices;
+    ASSERT_FLOAT_EQ(v[0].position[0], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].position[1], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].position[2], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].normal[0], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].normal[1], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].normal[2], 1.0f);
+    ASSERT_FLOAT_EQ(v[0].uv[0], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].uv[1], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].tangent[0], 1.0f);
+    ASSERT_FLOAT_EQ(v[0].tangent[1], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].tangent[2], 0.0f);
+    ASSERT_FLOAT_EQ(v[0].tangent[3], 1.0f);
+
+    /* Vertex 1: pos(1,0,0) */
+    ASSERT_FLOAT_EQ(v[1].position[0], 1.0f);
+    ASSERT_FLOAT_EQ(v[1].position[1], 0.0f);
+    ASSERT_FLOAT_EQ(v[1].position[2], 0.0f);
+
+    /* Vertex 2: pos(0,1,0) */
+    ASSERT_FLOAT_EQ(v[2].position[0], 0.0f);
+    ASSERT_FLOAT_EQ(v[2].position[1], 1.0f);
+    ASSERT_FLOAT_EQ(v[2].position[2], 0.0f);
+
+    forge_pipeline_free_mesh(&mesh);
+    END_TEST();
+}
+
+static void test_fixture_multi_lod_fmesh(void)
+{
+    TEST("fixture multi_lod.fmesh — 2 LODs, 2 submeshes each");
+    char path[512];
+    fixture_path(path, sizeof(path), "multi_lod.fmesh");
+
+    ForgePipelineMesh mesh;
+    SDL_memset(&mesh, 0, sizeof(mesh));
+    bool ok = forge_pipeline_load_mesh(path, &mesh);
+    ASSERT_TRUE(ok);
+
+    /* Header fields */
+    ASSERT_UINT_EQ(mesh.vertex_count, 3);
+    ASSERT_UINT_EQ(mesh.vertex_stride, FORGE_PIPELINE_VERTEX_STRIDE_TAN);
+    ASSERT_UINT_EQ(mesh.lod_count, 2);
+    ASSERT_TRUE(forge_pipeline_has_tangents(&mesh));
+    ASSERT_UINT_EQ(forge_pipeline_submesh_count(&mesh), 2);
+
+    /* LOD 0: target_error = 0.0, 2 submeshes × 3 indices each = 6 indices */
+    ASSERT_NOT_NULL(mesh.lods);
+    ASSERT_FLOAT_EQ(mesh.lods[0].target_error, 0.0f);
+    ASSERT_UINT_EQ(forge_pipeline_lod_index_count(&mesh, 0), 6);
+
+    /* LOD 0 submesh 0 */
+    const ForgePipelineSubmesh *s00 = forge_pipeline_lod_submesh(&mesh, 0, 0);
+    ASSERT_NOT_NULL(s00);
+    ASSERT_UINT_EQ(s00->index_count, 3);
+    ASSERT_INT_EQ(s00->material_index, 0);
+
+    /* LOD 0 submesh 1 */
+    const ForgePipelineSubmesh *s01 = forge_pipeline_lod_submesh(&mesh, 0, 1);
+    ASSERT_NOT_NULL(s01);
+    ASSERT_UINT_EQ(s01->index_count, 3);
+    ASSERT_INT_EQ(s01->material_index, 1);
+
+    /* LOD 1: target_error = 0.01 */
+    ASSERT_FLOAT_EQ(mesh.lods[1].target_error, 0.01f);
+    ASSERT_UINT_EQ(forge_pipeline_lod_index_count(&mesh, 1), 6);
+
+    /* LOD 1 submesh 0 */
+    const ForgePipelineSubmesh *s10 = forge_pipeline_lod_submesh(&mesh, 1, 0);
+    ASSERT_NOT_NULL(s10);
+    ASSERT_UINT_EQ(s10->index_count, 3);
+    ASSERT_INT_EQ(s10->material_index, 0);
+
+    /* LOD 1 submesh 1 */
+    const ForgePipelineSubmesh *s11 = forge_pipeline_lod_submesh(&mesh, 1, 1);
+    ASSERT_NOT_NULL(s11);
+    ASSERT_UINT_EQ(s11->index_count, 3);
+    ASSERT_INT_EQ(s11->material_index, 1);
+
+    forge_pipeline_free_mesh(&mesh);
+    END_TEST();
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -7243,6 +7388,11 @@ int main(int argc, char *argv[])
     test_free_atlas_null();
     test_free_atlas_zeroed();
     test_free_atlas_double();
+
+    /* ── Golden fixture contract tests (2 tests) ── */
+    SDL_Log("\nGolden fixture contract (C ↔ TypeScript):");
+    test_fixture_triangle_fmesh();
+    test_fixture_multi_lod_fmesh();
 
     /* ── Summary ── */
     SDL_Log("\n=== Results: %d/%d passed, %d failed ===",

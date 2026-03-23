@@ -24,6 +24,12 @@ vi.mock("@/components/material-preview", () => ({
   ),
 }))
 
+vi.mock("@/components/pipeline-mesh-preview", () => ({
+  PipelineMeshPreview: ({ assetId }: { assetId: string }) => (
+    <div data-testid="pipeline-mesh-preview" data-asset-id={assetId} />
+  ),
+}))
+
 function makeAsset(overrides: Partial<AssetInfo> = {}): AssetInfo {
   return {
     id: "test-asset",
@@ -105,7 +111,7 @@ describe("PreviewPanel", () => {
     expect(screen.getByText("Processed")).toBeInTheDocument()
   })
 
-  it("renders single preview when processed output is non-glTF (.fmesh)", () => {
+  it("renders PipelineMeshPreview when output is .fmesh", () => {
     render(
       <PreviewPanel
         asset={makeAsset({
@@ -116,8 +122,15 @@ describe("PreviewPanel", () => {
         })}
       />,
     )
-    const previews = screen.getAllByTestId("mesh-preview")
-    expect(previews).toHaveLength(1)
+    // Processed preview renders
+    const pipelinePreviews = screen.getAllByTestId("pipeline-mesh-preview")
+    expect(pipelinePreviews).toHaveLength(1)
+    expect(pipelinePreviews[0]).toHaveAttribute("data-asset-id", "hero")
+
+    // Source glTF preview is not shown (companion resolution is unreliable)
+    expect(screen.queryByTestId("mesh-preview")).not.toBeInTheDocument()
+
+    expect(screen.getByText("Processed (.fmesh)")).toBeInTheDocument()
   })
 
   it("renders MaterialPreview alongside mesh preview", () => {

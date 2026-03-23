@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'pipeline/web/**'
+      - 'pipeline/plugins/**'
+      - 'tests/pipeline/fixtures/**'
+      - 'tests/pipeline/generate_fixtures.py'
       - '.github/workflows/frontend-build.yml'
 
 jobs:
@@ -29,3 +32,10 @@ jobs:
       - name: Type check
         working-directory: pipeline/web
         run: npx tsc -b --noEmit
+
+      - name: Run tests
+        working-directory: pipeline/web
+        run: npx vitest run
+
+      - name: Verify format contract fixtures
+        run: python tests/pipeline/generate_fixtures.py --verify

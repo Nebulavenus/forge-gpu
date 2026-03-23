@@ -55,6 +55,17 @@ MESH_EXTENSIONS = {".gltf", ".glb", ".obj"}
 ANIMATION_EXTENSIONS = {".fanim", ".fanims"}
 SCENE_EXTENSIONS = {".fscene"}
 
+# Primary pipeline output extensions (consumers load these, not sidecars)
+PRIMARY_OUTPUT_EXTENSIONS = {".fmesh", ".ftex", ".fscene", ".fanim", ".fskin"}
+
+# Map source asset types to their expected primary output extension(s)
+EXPECTED_OUTPUT_EXTENSIONS: dict[str, set[str]] = {
+    "texture": {".ftex"},
+    "mesh": {".fmesh"},
+    "scene": {".fscene"},
+    "animation": {".fanim", ".fskin"},
+}
+
 
 def _classify_extension(ext: str) -> str:
     """Return the asset type string for a file extension (with leading dot)."""
@@ -239,14 +250,38 @@ def scan_assets(config: PipelineConfig) -> list[AssetInfo]:
         if output_candidate.is_file():
             output_file = output_candidate
         else:
-            # Check for any file with the same stem in the output subdirectory
+            # Check for any file with the same stem in the output subdirectory.
+            # Prefer the expected output extension for this asset type so we
+            # don't pick the wrong same-stem file (e.g. Duck.fmat instead of
+            # Duck.fmesh for a mesh asset).
             output_subdir = config.output_dir / relative.parent
             if output_subdir.is_dir():
                 stem = relative.stem
+                type_exts = EXPECTED_OUTPUT_EXTENSIONS.get(asset_type, set())
+                fallback: Path | None = None
+                fallback_is_primary = False
                 for candidate in output_subdir.iterdir():
                     if candidate.is_file() and candidate.stem == stem:
-                        output_file = candidate
-                        break
+                        # Best match: extension expected for this asset type
+                        if candidate.suffix in type_exts:
+                            output_file = candidate
+                            break
+                        # Second best: any primary output extension
+                        # (overwrites a non-primary fallback)
+                        if (
+                            candidate.suffix in PRIMARY_OUTPUT_EXTENSIONS
+                            and not fallback_is_primary
+                        ):
+                            fallback = candidate
+                            fallback_is_primary = True
+                        # Last resort: any same-stem file (skip sidecars)
+                        elif fallback is None and candidate.suffix not in {
+                            ".fmat",
+                            ".json",
+                        }:
+                            fallback = candidate
+                if output_file is None and fallback is not None:
+                    output_file = fallback
 
         # Determine status
         cached_fp = cache.get(relative)
@@ -416,6 +451,12 @@ def create_app(config: PipelineConfig) -> FastAPI:
         ".obj": "text/plain",
         ".bin": "application/octet-stream",
         ".json": "application/json",
+        ".fmesh": "application/octet-stream",
+        ".fmat": "application/json",
+        ".ftex": "application/octet-stream",
+        ".fscene": "application/octet-stream",
+        ".fanim": "application/octet-stream",
+        ".fskin": "application/octet-stream",
     }
 
     def _media_type_for(path: Path) -> str:

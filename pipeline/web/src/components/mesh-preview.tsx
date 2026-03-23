@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect } from "react"
+import { Component, Suspense, useState, useEffect, type ReactNode, type ErrorInfo } from "react"
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls, useGLTF, Center, Bounds, useBounds } from "@react-three/drei"
 import * as THREE from "three"
@@ -7,6 +7,32 @@ import { useCompanionManager } from "@/lib/companion-manager"
 interface MeshPreviewProps {
   url: string
   assetId: string
+  /** Label shown when the preview fails to load (default: "Preview unavailable"). */
+  fallbackLabel?: string
+}
+
+/** Error boundary that catches useGLTF failures inside the Canvas fiber. */
+class CanvasErrorBoundary extends Component<
+  { children: ReactNode; onError: (err: Error) => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode; onError: (err: Error) => void }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, _info: ErrorInfo) {
+    this.props.onError(error)
+  }
+
+  render() {
+    if (this.state.hasError) return null
+    return this.props.children
+  }
 }
 
 function Model({ url, wireframe, assetId }: { url: string; wireframe: boolean; assetId: string }) {
@@ -45,8 +71,22 @@ function LoadingFallback() {
   )
 }
 
-export function MeshPreview({ url, assetId }: MeshPreviewProps) {
+export function MeshPreview({ url, assetId, fallbackLabel = "Preview unavailable" }: MeshPreviewProps) {
   const [wireframe, setWireframe] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  // Reset error state when URL changes so a new asset gets a fresh attempt
+  useEffect(() => {
+    setError(null)
+  }, [url])
+
+  if (error) {
+    return (
+      <div className="flex h-[400px] w-full items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
+        {fallbackLabel}
+      </div>
+    )
+  }
 
   return (
     <div className="relative h-[400px] w-full rounded-lg border border-border bg-card overflow-hidden">
@@ -56,13 +96,15 @@ export function MeshPreview({ url, assetId }: MeshPreviewProps) {
       >
         <ambientLight intensity={0.4} />
         <directionalLight position={[5, 5, 5]} intensity={1.5} />
-        <Suspense fallback={<LoadingFallback />}>
-          <Bounds clip observe margin={1.2}>
-            <Center>
-              <Model url={url} wireframe={wireframe} assetId={assetId} />
-            </Center>
-          </Bounds>
-        </Suspense>
+        <CanvasErrorBoundary key={url} onError={setError}>
+          <Suspense fallback={<LoadingFallback />}>
+            <Bounds clip observe margin={1.2}>
+              <Center>
+                <Model url={url} wireframe={wireframe} assetId={assetId} />
+              </Center>
+            </Bounds>
+          </Suspense>
+        </CanvasErrorBoundary>
         <OrbitControls makeDefault />
       </Canvas>
       <button

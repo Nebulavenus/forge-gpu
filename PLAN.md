@@ -53,7 +53,7 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
 - **Physics Lessons 01–12** — From Point Particles through Impulse-Based Resolution
 - **Audio Lessons 01–06** — From Audio Basics through DSP Effects
-- **Asset Lessons 01–17** — From Pipeline Scaffold through Texture Atlas Packing
+- **Asset Lessons 01–18** — From Pipeline Scaffold through Scene Editor
 
 ## GPU Lessons — Remaining
 
@@ -182,7 +182,7 @@ JSON/TOML files — no database. react-three-fiber for 3D preview (Lesson 15),
 reactflow for node-graph editing (Lessons 22+).
 
 - [x] **Asset Lesson 18 — Scene Editor** — Visual scene composition with react-three-fiber viewport; place, move, rotate, scale objects with transform gizmos; scene hierarchy panel; scene saved as JSON files; undo/redo with command pattern using React state
-- [ ] **Asset Lesson 19 — Pipeline Asset Viewer** — Custom three.js loaders for forge binary formats (`.fmesh`, `.fmat`, `.ftex`) so the web editor and asset preview render processed pipeline output instead of raw glTF source files; TypeScript `.fmesh` parser that reads the binary header, vertex/index buffers, and LOD/submesh table into `THREE.BufferGeometry`; `.fmat` JSON loader that creates `THREE.MeshStandardMaterial` with PBR properties (base color, metallic, roughness, normal, emissive, AO); `.ftex` binary loader that reads block-compressed texture data (BC7/BC5) and uploads via `CompressedTexture`; `usePipelineModel` React hook replacing `useGLTF` in `mesh-preview.tsx` and the scene editor viewport; server endpoint for serving processed output files by asset ID; LOD level selector in the preview UI; side-by-side source (glTF) vs. processed (forge binary) comparison; the scene editor places processed assets — what you see in the browser matches what `forge_scene.h` loads at runtime (depends on Asset Lessons 06, 07, 15, 18)
+- [x] **Asset Lesson 19 — Pipeline Asset Viewer** — Custom three.js loaders for forge binary formats (`.fmesh`, `.fmat`, `.ftex`) so the web editor and asset preview render processed pipeline output instead of raw glTF source files; TypeScript `.fmesh` parser that reads the binary header, vertex/index buffers, and LOD/submesh table into `THREE.BufferGeometry`; `.fmat` JSON loader that creates `THREE.MeshStandardMaterial` with PBR properties (base color, metallic, roughness, normal, emissive, AO); `.ftex` binary loader that reads block-compressed texture data (BC7/BC5) and uploads via `CompressedTexture`; `usePipelineModel` React hook replacing `useGLTF` in `mesh-preview.tsx` and the scene editor viewport; server endpoint for serving processed output files by asset ID; LOD level selector in the preview UI; side-by-side source (glTF) vs. processed (forge binary) comparison; the scene editor places processed assets — what you see in the browser matches what `forge_scene.h` loads at runtime (depends on Asset Lessons 06, 07, 15, 18)
 
 ### Procedural Textures
 

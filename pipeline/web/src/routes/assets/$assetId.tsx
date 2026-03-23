@@ -1,3 +1,8 @@
+import {
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+} from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { PreviewPanel } from "@/components/preview-panel"
 import { useQuery } from "@tanstack/react-query"
@@ -16,6 +21,36 @@ import {
 export const Route = createFileRoute("/assets/$assetId")({
   component: AssetDetail,
 })
+
+/** Catch errors from 3D preview components so they don't crash the route. */
+class PreviewErrorFence extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.warn("Preview render error caught:", error, info)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          Preview failed: {this.state.error.message}
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function AssetDetail() {
   const { assetId } = Route.useParams()
@@ -119,7 +154,9 @@ function AssetDetail() {
         </TableBody>
       </Table>
 
-      <PreviewPanel asset={asset} />
+      <PreviewErrorFence key={asset.id}>
+        <PreviewPanel asset={asset} />
+      </PreviewErrorFence>
     </div>
   )
 }
