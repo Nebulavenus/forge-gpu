@@ -178,6 +178,7 @@ if(NOT FORGE_USE_SHIM)
     add_subdirectory(lessons/physics/11-contact-manifold)
     add_subdirectory(lessons/physics/12-impulse-based-resolution)
     add_subdirectory(lessons/physics/13-constraint-solver)
+    add_subdirectory(lessons/physics/14-stacking-stability)
 endif()
 
 # ── Audio Lessons ─────────────────────────────────────────────────────────

@@ -2396,6 +2396,80 @@ static inline mat4 forge_physics_rigid_body_get_transform(
  */
 #define FORGE_PHYSICS_RB_RESTING_THRESHOLD  0.5f
 
+/* Default position correction parameters (used by si_correct_positions). */
+#define FORGE_PHYSICS_DEFAULT_CORRECTION_FRACTION  0.4f
+#define FORGE_PHYSICS_DEFAULT_CORRECTION_SLOP      0.01f
+
+/* ── Solver configuration ──────────────────────────────────────────────────── */
+
+/* Per-solve configuration for the sequential impulse solver.
+ *
+ * Groups solver tuning parameters into one struct for convenience.
+ * The fields are consumed at different stages of the solver pipeline:
+ *
+ * - baumgarte_factor and penetration_slop are read by
+ *   forge_physics_si_prepare() (called internally by forge_physics_si_solve())
+ *   to compute velocity-level bias corrections.
+ *
+ * - correction_fraction and correction_slop are NOT read by
+ *   forge_physics_si_solve(). They must be passed explicitly to
+ *   forge_physics_si_correct_positions() as direct parameters.
+ *   The struct groups them for caller convenience, but the position
+ *   correction function does not take a config pointer.
+ *
+ * Pass NULL to forge_physics_si_solve() to use default baumgarte_factor
+ * and penetration_slop values.
+ *
+ * baumgarte_factor  — velocity bias rate for penetration correction [0..1].
+ *                     Higher values correct penetration faster but cause more
+ *                     energy injection (jitter). 0.1–0.3 is the stable range
+ *                     for stacking. Default: 0.2.
+ *
+ * penetration_slop  — overlap tolerance (m). Contacts shallower than this
+ *                     receive no bias correction, reducing jitter on resting
+ *                     contacts. Default: 0.01 (1 cm).
+ *
+ * correction_fraction — position correction rate per step [0..1]. Applied
+ *                       after velocity solving to push overlapping bodies
+ *                       apart. 0.2–0.4 is typical. Default: 0.4.
+ *
+ * correction_slop   — position correction tolerance (m). Same role as
+ *                     penetration_slop but for the position correction pass.
+ *                     Default: 0.01.
+ *
+ * Usage:
+ *   ForgePhysicsSolverConfig cfg = forge_physics_solver_config_default();
+ *   cfg.baumgarte_factor = 0.1f;   // gentler bias for tall stacks
+ *   cfg.penetration_slop = 0.005f; // tighter tolerance
+ *   forge_physics_si_solve(manifolds, count, bodies, num_bodies,
+ *                          20, dt, true, workspace, &cfg);
+ *   forge_physics_si_correct_positions(manifolds, count, bodies, num_bodies,
+ *                                      cfg.correction_fraction,
+ *                                      cfg.correction_slop);
+ *
+ * See: Physics Lesson 14 — Stacking Stability
+ * Ref: Catto, "Modeling and Solving Constraints" (GDC 2009)
+ */
+typedef struct ForgePhysicsSolverConfig {
+    float baumgarte_factor;      /* velocity bias rate [0..1]            */
+    float penetration_slop;      /* tolerated overlap (m)                */
+    float correction_fraction;   /* position correction rate [0..1]      */
+    float correction_slop;       /* position correction tolerance (m)    */
+} ForgePhysicsSolverConfig;
+
+/* Return a solver config with the default values matching the #define
+ * constants. Callers can override individual fields before passing to
+ * forge_physics_si_solve() and forge_physics_si_correct_positions(). */
+static inline ForgePhysicsSolverConfig forge_physics_solver_config_default(void)
+{
+    ForgePhysicsSolverConfig cfg;
+    cfg.baumgarte_factor    = FORGE_PHYSICS_BAUMGARTE_FACTOR;
+    cfg.penetration_slop    = FORGE_PHYSICS_PENETRATION_SLOP;
+    cfg.correction_fraction = FORGE_PHYSICS_DEFAULT_CORRECTION_FRACTION;
+    cfg.correction_slop     = FORGE_PHYSICS_DEFAULT_CORRECTION_SLOP;
+    return cfg;
+}
+
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 /* A contact between two rigid bodies (or a body and a plane).
@@ -6623,8 +6697,18 @@ static inline ForgePhysicsManifold forge_physics_manifold_generate(
             kept_ref_points[kept_count] = projected;
             kept_inc_points[kept_count] = clip_verts[i];
             kept_depths[kept_count] = -sep; /* penetration = positive */
-            kept_ids[kept_count] = forge_physics_manifold_contact_id(
-                ref_face_idx, inc_face_idx, i);
+            /* Contact ID from body-A local-space position. Local-space
+             * coordinates are stable across frames because they track the
+             * body's own reference frame, unlike world-space hashes (which
+             * break on quantization boundaries) or feature-based IDs (which
+             * break when the reference face selection flips). */
+            vec3 local_a = forge_physics_manifold_world_to_local(
+                kept_points[kept_count], pos_a, orient_a);
+            int lx = (int)SDL_floorf(local_a.x * 1000.0f);
+            int ly = (int)SDL_floorf(local_a.y * 1000.0f);
+            int lz = (int)SDL_floorf(local_a.z * 1000.0f);
+            kept_ids[kept_count] = (uint32_t)(
+                (lx * 73856093u) ^ (ly * 19349663u) ^ (lz * 83492791u));
             kept_count++;
         }
     }
@@ -6734,24 +6818,101 @@ static inline void forge_physics_manifold_cache_update(
 
     if (existing && existing->key == key &&
         existing->manifold.count > 0) {
-        /* Merge: carry over impulses from matched contacts */
+        /* Merge: carry over impulses from the previous frame.
+         *
+         * Two strategies depending on whether contact counts match:
+         *
+         * Same count: transfer impulses by index. The manifold generator
+         * produces contacts in a stable order (clipping + reduce), so
+         * contact[i] this frame corresponds to contact[i] last frame.
+         *
+         * Different count: transfer by closest-point matching. When the
+         * contact set changes (e.g., face-face → edge-face transition),
+         * match each new contact to the old contact with the nearest
+         * world-space position.
+         *
+         * Both strategies scale by FORGE_PHYSICS_MANIFOLD_WARM_SCALE to
+         * prevent impulse over-application from stale data. */
         const ForgePhysicsManifold *old = &existing->manifold;
-        for (int i = 0; i < entry.manifold.count; i++) {
-            ForgePhysicsManifoldContact *nc = &entry.manifold.contacts[i];
-            /* Search old contacts for matching ID */
-            for (int j = 0; j < old->count; j++) {
-                if (old->contacts[j].id == nc->id) {
-                    nc->normal_impulse    = old->contacts[j].normal_impulse
+        if (entry.manifold.count == old->count) {
+            /* Fast path: same contact count → index-based transfer */
+            for (int i = 0; i < entry.manifold.count; i++) {
+                ForgePhysicsManifoldContact *nc = &entry.manifold.contacts[i];
+                nc->normal_impulse    = old->contacts[i].normal_impulse
+                                        * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
+                nc->tangent_impulse_1 = old->contacts[i].tangent_impulse_1
+                                        * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
+                nc->tangent_impulse_2 = old->contacts[i].tangent_impulse_2
+                                        * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
+            }
+        } else {
+            /* Slow path: contact count changed → nearest-point matching */
+            for (int i = 0; i < entry.manifold.count; i++) {
+                ForgePhysicsManifoldContact *nc = &entry.manifold.contacts[i];
+                float best_dist = 1e30f;
+                int best_j = -1;
+                for (int j = 0; j < old->count; j++) {
+                    vec3 diff = vec3_sub(nc->world_point,
+                                         old->contacts[j].world_point);
+                    float d2 = vec3_dot(diff, diff);
+                    if (d2 < best_dist) {
+                        best_dist = d2;
+                        best_j = j;
+                    }
+                }
+                if (best_j >= 0 && best_dist < 0.1f) {
+                    nc->normal_impulse    = old->contacts[best_j].normal_impulse
                                             * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
-                    nc->tangent_impulse_1 = old->contacts[j].tangent_impulse_1
+                    nc->tangent_impulse_1 = old->contacts[best_j].tangent_impulse_1
                                             * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
-                    nc->tangent_impulse_2 = old->contacts[j].tangent_impulse_2
+                    nc->tangent_impulse_2 = old->contacts[best_j].tangent_impulse_2
                                             * FORGE_PHYSICS_MANIFOLD_WARM_SCALE;
-                    break;
                 }
             }
         }
     }
+
+    forge_hm_put_struct(*cache, entry);
+}
+
+/* Store a manifold directly into the cache without merging impulses.
+ *
+ * Use this after forge_physics_si_store_impulses() to save the solved
+ * impulse values. Unlike forge_physics_manifold_cache_update(), this
+ * function does NOT scale or overwrite the manifold's impulses — it
+ * stores them exactly as-is.
+ *
+ * The intended pipeline is:
+ *   1. collision detection produces fresh manifolds (zero impulses)
+ *   2. forge_physics_manifold_cache_update() merges cached warm-start
+ *      impulses into the fresh manifolds (for retrieval before solve)
+ *   3. solver runs (forge_physics_si_solve)
+ *   4. forge_physics_si_store_impulses() writes solved impulses back
+ *   5. forge_physics_manifold_cache_store() saves the solved impulses
+ *      into the cache (for warm-starting next frame)
+ *
+ * Calling forge_physics_manifold_cache_update() at step 5 is WRONG
+ * because the merge logic would overwrite the just-solved impulses
+ * with the pre-solve values scaled by FORGE_PHYSICS_MANIFOLD_WARM_SCALE,
+ * destroying the solver's converged solution.
+ *
+ * Parameters:
+ *   cache        — pointer to the hash map (ForgePhysicsManifoldCacheEntry*)
+ *   manifold     — manifold with solved impulses to store
+ *
+ * See: Physics Lesson 14 — Stacking Stability
+ */
+static inline void forge_physics_manifold_cache_store(
+    ForgePhysicsManifoldCacheEntry **cache,
+    const ForgePhysicsManifold *manifold)
+{
+    if (!cache || !manifold || manifold->count <= 0 ||
+        manifold->count > FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS) return;
+
+    ForgePhysicsManifoldCacheEntry entry;
+    entry.key = forge_physics_manifold_pair_key(
+        manifold->body_a, manifold->body_b);
+    entry.manifold = *manifold;
 
     forge_hm_put_struct(*cache, entry);
 }
@@ -7231,11 +7392,16 @@ static inline void forge_physics_si_prepare(
     const ForgePhysicsManifold *manifolds, int manifold_count,
     const ForgePhysicsRigidBody *bodies, int num_bodies,
     float dt, bool warm_start,
-    ForgePhysicsSIManifold *out)
+    ForgePhysicsSIManifold *out,
+    const ForgePhysicsSolverConfig *config)
 {
     if (!manifolds || !bodies || !out || manifold_count <= 0 ||
         num_bodies <= 0) return;
     if (!(dt > 0.0f) || !forge_isfinite(dt)) return;
+
+    /* Resolve config — use defaults when NULL */
+    float baum = config ? config->baumgarte_factor : FORGE_PHYSICS_BAUMGARTE_FACTOR;
+    float slop = config ? config->penetration_slop : FORGE_PHYSICS_PENETRATION_SLOP;
 
     for (int mi = 0; mi < manifold_count; mi++) {
         const ForgePhysicsManifold *m = &manifolds[mi];
@@ -7324,10 +7490,9 @@ static inline void forge_physics_si_prepare(
 
             /* Baumgarte velocity bias for penetration correction */
             sc->velocity_bias = 0.0f;
-            float pen_excess = mc->penetration - FORGE_PHYSICS_PENETRATION_SLOP;
+            float pen_excess = mc->penetration - slop;
             if (pen_excess > 0.0f) {
-                sc->velocity_bias =
-                    (FORGE_PHYSICS_BAUMGARTE_FACTOR / dt) * pen_excess;
+                sc->velocity_bias = (baum / dt) * pen_excess;
             }
 
             /* Restitution bias — computed from pre-warmstart velocity.
@@ -7762,25 +7927,32 @@ static inline void forge_physics_si_correct_positions(
  *   warm_start      — if true, apply cached impulses before iterating
  *   workspace       — caller-allocated SI manifold array
  *                      (capacity >= manifold_count)
+ *   config          — solver tuning parameters (NULL → defaults).
+ *                      Use forge_physics_solver_config_default() to get a
+ *                      config with default values, then override fields.
  *
  * Usage:
  *   ForgePhysicsSIManifold workspace[MAX_MANIFOLDS];
  *   forge_physics_si_solve(manifolds, count, bodies, num_bodies,
- *                          10, PHYSICS_DT, true, workspace);
- *   // Manifold contacts now contain updated accumulated impulses.
- *   // Update the manifold cache for next-frame warm-starting:
- *   for (int i = 0; i < count; i++)
- *       forge_physics_manifold_cache_update(&cache, &manifolds[i]);
+ *                          10, PHYSICS_DT, true, workspace, NULL);
+ *
+ *   // With custom config:
+ *   ForgePhysicsSolverConfig cfg = forge_physics_solver_config_default();
+ *   cfg.baumgarte_factor = 0.1f;
+ *   forge_physics_si_solve(manifolds, count, bodies, num_bodies,
+ *                          20, PHYSICS_DT, true, workspace, &cfg);
  *
  * Reference: Catto, "Iterative Dynamics with Temporal Coherence" (GDC 2005).
  *
  * See: Physics Lesson 12 — Impulse-Based Resolution
+ * See: Physics Lesson 14 — Stacking Stability
  */
 static inline void forge_physics_si_solve(
     ForgePhysicsManifold *manifolds, int manifold_count,
     ForgePhysicsRigidBody *bodies, int num_bodies,
     int iterations, float dt, bool warm_start,
-    ForgePhysicsSIManifold *workspace)
+    ForgePhysicsSIManifold *workspace,
+    const ForgePhysicsSolverConfig *config)
 {
     if (!manifolds || !bodies || !workspace) return;
     if (manifold_count <= 0 || num_bodies <= 0) return;
@@ -7794,7 +7966,7 @@ static inline void forge_physics_si_solve(
 
     /* Phase 1: Prepare constraint data */
     forge_physics_si_prepare(manifolds, manifold_count, bodies, num_bodies,
-                             dt, warm_start, workspace);
+                             dt, warm_start, workspace, config);
 
     /* Phase 2: Warm-start (apply cached impulses) */
     if (warm_start) {
@@ -7892,17 +8064,11 @@ static inline bool forge_physics_si_rb_contacts_to_manifold(
         mc->tangent_impulse_1 = 0.0f;
         mc->tangent_impulse_2 = 0.0f;
 
-        /* Generate a spatially stable contact ID by quantizing the contact
-         * point to a 1 mm grid and hashing. This ensures the same physical
-         * corner produces the same ID regardless of detection order, enabling
-         * correct warm-start matching in the manifold cache. */
-        int qx = (int)SDL_floorf(contacts[i].point.x * FORGE_PHYSICS_SI_HASH_QUANT_SCALE);
-        int qy = (int)SDL_floorf(contacts[i].point.y * FORGE_PHYSICS_SI_HASH_QUANT_SCALE);
-        int qz = (int)SDL_floorf(contacts[i].point.z * FORGE_PHYSICS_SI_HASH_QUANT_SCALE);
-        mc->id = (uint32_t)(
-            (qx * FORGE_PHYSICS_SI_HASH_PRIME_X) ^
-            (qy * FORGE_PHYSICS_SI_HASH_PRIME_Y) ^
-            (qz * FORGE_PHYSICS_SI_HASH_PRIME_Z));
+        /* Contact ID: use the sequential index within the manifold.
+         * Box-plane contacts are detected in a stable winding order
+         * (face vertices from forge_physics_rb_collide_box_plane), so the
+         * index is consistent across frames for the same physical corner. */
+        mc->id = (uint32_t)i;
     }
 
     return true;

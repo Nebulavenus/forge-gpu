@@ -61,7 +61,8 @@ static ForgePhysicsManifold make_ground_manifold(
 #define SI_TEST_BOUNCE_SPEED      5.0f    /* initial fall speed for bounce test (m/s) */
 #define SI_TEST_BOUNCE_THRESHOLD  4.0f    /* minimum post-bounce speed to pass (m/s) */
 #define SI_TEST_STACK_STEPS       3000    /* simulation steps for stacking stability */
-#define SI_TEST_STACK_KE_BOUND    1000.0f /* max kinetic energy for resting stack (J) */
+#define SI_TEST_STACK_KE_BOUND    1000.0f /* max KE for non-warm-started stack (J) */
+#define SI_TEST_TALL_STACK_KE     5.0f   /* max KE for warm-started tall stack (J) */
 #define SI_TEST_WARM_FRAMES       30      /* frame count for warm-start comparison */
 
 /* ── Tests ────────────────────────────────────────────────────────────────── */
@@ -109,7 +110,7 @@ static void test_SI_prepare_effective_mass(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_prepare(manifolds, 1, bodies, 1, PHYSICS_DT, false,
-                             workspace);
+                             workspace, NULL);
 
     ASSERT_TRUE(workspace[0].count == 1);
     ASSERT_TRUE(workspace[0].constraints[0].eff_mass_n > 0.0f);
@@ -135,7 +136,7 @@ static void test_SI_basic_bounce(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT,
-                           false, workspace);
+                           false, workspace, NULL);
 
     /* Velocity should reverse: v_y should be positive (~bounce speed) */
     ASSERT_TRUE(bodies[0].velocity.y > SI_TEST_BOUNCE_THRESHOLD);
@@ -159,7 +160,7 @@ static void test_SI_accumulated_clamp_nonnegative(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT,
-                           false, workspace);
+                           false, workspace, NULL);
 
     /* j_n must be >= 0 (normal impulse only pushes apart, never pulls) */
     ASSERT_TRUE(workspace[0].constraints[0].j_n >= 0.0f);
@@ -183,7 +184,7 @@ static void test_SI_friction_cone(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT,
-                           false, workspace);
+                           false, workspace, NULL);
 
     float j_n  = workspace[0].constraints[0].j_n;
     float j_t1 = workspace[0].constraints[0].j_t1;
@@ -277,7 +278,7 @@ static void test_SI_stacking_energy_bounded(void)
         if (mc > 0) {
             ForgePhysicsSIManifold workspace[STACK_N * 2];
             forge_physics_si_solve(manifolds, mc, bodies, STACK_N,
-                                   10, PHYSICS_DT, false, workspace);
+                                   10, PHYSICS_DT, false, workspace, NULL);
 
             /* Phase 4: position correction */
             forge_physics_si_correct_positions(
@@ -333,6 +334,189 @@ static void test_SI_stacking_energy_bounded(void)
     END_TEST();
 }
 
+static void test_SI_tall_stack_stability(void)
+{
+    TEST("SI — 12-box stack stays upright with tuned parameters");
+
+    /* 12 boxes stacked vertically — the lesson's first scene.
+     * Uses multi-contact box-plane detection (same as the real lesson)
+     * and runs for the full SI_TEST_STACK_STEPS (50 simulated seconds).
+     * The stack must remain ordered, laterally stable, and resting. */
+    #define TALL_N 12
+    #define TALL_MAX_MANIFOLDS (TALL_N * 2)
+    ForgePhysicsRigidBody bodies[TALL_N];
+    ForgePhysicsCollisionShape shapes[TALL_N];
+    float box_half = 0.5f;
+    float box_mass = 2.0f;
+    vec3 half_ext = vec3_create(box_half, box_half, box_half);
+    vec3 gravity = vec3_create(0, -9.81f, 0);
+    vec3 ground_pt = vec3_create(0, 0, 0);
+    vec3 ground_n  = vec3_create(0, 1, 0);
+
+    for (int i = 0; i < TALL_N; i++) {
+        float y = box_half + (float)i * (2.0f * box_half + 0.001f);
+        bodies[i] = make_si_body(vec3_create(0, y, 0), box_mass, 0.2f);
+        /* Box inertia tensor */
+        float side = 2.0f * box_half;
+        float a2 = side * side;
+        float I = FORGE_PHYSICS_INERTIA_BOX_COEFF * box_mass * (a2 + a2);
+        float inv_I = 1.0f / I;
+        bodies[i].inertia_local = mat3_from_diagonal(I, I, I);
+        bodies[i].inv_inertia_local = mat3_from_diagonal(inv_I, inv_I, inv_I);
+        bodies[i].inv_inertia_world = bodies[i].inv_inertia_local;
+        bodies[i].prev_position = bodies[i].position;
+        bodies[i].prev_orientation = bodies[i].orientation;
+
+        /* Collision shape */
+        shapes[i].type = FORGE_PHYSICS_SHAPE_BOX;
+        shapes[i].data.box.half_extents = half_ext;
+    }
+
+    /* Record initial top position for drift check */
+    float initial_top_y = bodies[TALL_N - 1].position.y;
+
+    /* Solver config tuned for tall stacks */
+    ForgePhysicsSolverConfig cfg = forge_physics_solver_config_default();
+    cfg.baumgarte_factor = 0.15f;
+    cfg.penetration_slop = 0.005f;
+    int solver_iters = 40;
+
+    /* Manifold cache for warm-starting */
+    ForgePhysicsManifoldCacheEntry *manifold_cache = NULL;
+
+    ForgePhysicsManifold manifolds[TALL_MAX_MANIFOLDS];
+    SDL_memset(manifolds, 0, sizeof(manifolds));
+    ForgePhysicsSIManifold workspace[TALL_MAX_MANIFOLDS];
+
+    for (int step = 0; step < SI_TEST_STACK_STEPS; step++) {
+        /* Apply gravity */
+        for (int i = 0; i < TALL_N; i++) {
+            forge_physics_rigid_body_apply_force(
+                &bodies[i], vec3_scale(gravity, bodies[i].mass));
+        }
+
+        /* Integrate velocities */
+        for (int i = 0; i < TALL_N; i++)
+            forge_physics_rigid_body_integrate_velocities(
+                &bodies[i], PHYSICS_DT);
+
+        /* Collision detection using multi-contact box-plane for ground
+         * and GJK/EPA for body-body — same pipeline as the lesson */
+        int mc = 0;
+        uint64_t active_keys[TALL_MAX_MANIFOLDS];
+        int active_key_count = 0;
+
+        /* Ground contacts (multi-contact box-plane) */
+        for (int i = 0; i < TALL_N && mc < TALL_MAX_MANIFOLDS; i++) {
+            ForgePhysicsRBContact gc[8];
+            int ng = forge_physics_rb_collide_box_plane(
+                &bodies[i], i, half_ext,
+                ground_pt, ground_n, 0.6f, 0.4f, gc, 8);
+
+            if (ng > 0) {
+                ForgePhysicsManifold manifold;
+                if (forge_physics_si_rb_contacts_to_manifold(
+                        gc, ng, 0.6f, 0.4f, &manifold)) {
+                    forge_physics_manifold_cache_update(
+                        &manifold_cache, &manifold);
+                    uint64_t key = forge_physics_manifold_pair_key(i, -1);
+                    if (active_key_count < TALL_MAX_MANIFOLDS)
+                        active_keys[active_key_count++] = key;
+                    ForgePhysicsManifoldCacheEntry *cached =
+                        forge_hm_get_ptr_or_null(manifold_cache, key);
+                    if (cached && cached->key == key)
+                        manifolds[mc++] = cached->manifold;
+                    else
+                        manifolds[mc++] = manifold;
+                }
+            }
+        }
+
+        /* Body-body contacts (GJK/EPA) */
+        for (int i = 0; i < TALL_N - 1 && mc < TALL_MAX_MANIFOLDS; i++) {
+            int j = i + 1;
+            ForgePhysicsManifold manifold;
+            if (forge_physics_gjk_epa_manifold(
+                    &bodies[i], &shapes[i],
+                    &bodies[j], &shapes[j],
+                    i, j, 0.6f, 0.4f, &manifold)) {
+                forge_physics_manifold_cache_update(
+                    &manifold_cache, &manifold);
+                uint64_t key = forge_physics_manifold_pair_key(i, j);
+                if (active_key_count < TALL_MAX_MANIFOLDS)
+                    active_keys[active_key_count++] = key;
+                ForgePhysicsManifoldCacheEntry *cached =
+                    forge_hm_get_ptr_or_null(manifold_cache, key);
+                if (cached && cached->key == key)
+                    manifolds[mc++] = cached->manifold;
+                else
+                    manifolds[mc++] = manifold;
+            }
+        }
+
+        /* Prune stale cache entries */
+        forge_physics_manifold_cache_prune(
+            &manifold_cache, active_keys, active_key_count);
+
+        /* Solve */
+        if (mc > 0) {
+            forge_physics_si_solve(manifolds, mc, bodies, TALL_N,
+                                   solver_iters, PHYSICS_DT, true,
+                                   workspace, &cfg);
+            /* si_solve stores impulses internally (Phase 4) */
+            for (int mi = 0; mi < mc; mi++)
+                forge_physics_manifold_cache_store(
+                    &manifold_cache, &manifolds[mi]);
+            forge_physics_si_correct_positions(
+                manifolds, mc, bodies, TALL_N,
+                cfg.correction_fraction, cfg.correction_slop);
+        }
+
+        /* Integrate positions */
+        for (int i = 0; i < TALL_N; i++)
+            forge_physics_rigid_body_integrate_positions(
+                &bodies[i], PHYSICS_DT);
+    }
+
+    /* Verify: stack ordering preserved (each body above the one below) */
+    for (int i = 0; i < TALL_N - 1; i++) {
+        ASSERT_TRUE(bodies[i + 1].position.y > bodies[i].position.y);
+    }
+
+    /* Verify: no body drifted laterally more than half a box width */
+    for (int i = 0; i < TALL_N; i++) {
+        ASSERT_TRUE(SDL_fabsf(bodies[i].position.x) < box_half);
+        ASSERT_TRUE(SDL_fabsf(bodies[i].position.z) < box_half);
+    }
+
+    /* Verify: top box hasn't dropped more than 1 box height */
+    float final_top_y = bodies[TALL_N - 1].position.y;
+    ASSERT_TRUE(final_top_y > initial_top_y - 2.0f * box_half);
+
+    /* Verify: no NaN, no explosion */
+    for (int i = 0; i < TALL_N; i++) {
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.x));
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.y));
+        ASSERT_TRUE(forge_isfinite(bodies[i].position.z));
+    }
+
+    /* Verify: stack is resting (low kinetic energy) */
+    float total_ke = 0.0f;
+    for (int i = 0; i < TALL_N; i++) {
+        total_ke += 0.5f * bodies[i].mass
+                  * vec3_dot(bodies[i].velocity, bodies[i].velocity);
+    }
+    ASSERT_TRUE(total_ke < SI_TEST_TALL_STACK_KE);
+
+    /* Clean up */
+    forge_hm_free(manifold_cache);
+
+    #undef TALL_N
+    #undef TALL_MAX_MANIFOLDS
+
+    END_TEST();
+}
+
 static void test_SI_determinism(void)
 {
     TEST("SI_determinism");
@@ -375,7 +559,7 @@ static void test_SI_determinism(void)
             if (mc > 0) {
                 ForgePhysicsSIManifold workspace[4];
                 forge_physics_si_solve(manifolds, mc, bodies, 2,
-                                       10, PHYSICS_DT, false, workspace);
+                                       10, PHYSICS_DT, false, workspace, NULL);
                 forge_physics_si_correct_positions(
                     manifolds, mc, bodies, 2, 0.4f,
                     FORGE_PHYSICS_PENETRATION_SLOP);
@@ -426,7 +610,7 @@ static void test_SI_static_body_unchanged(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_solve(manifolds, 1, bodies, 2, 10, PHYSICS_DT,
-                           false, workspace);
+                           false, workspace, NULL);
 
     /* Static body must not move */
     ASSERT_NEAR(bodies[1].velocity.x, 0.0f, 1e-6f);
@@ -454,7 +638,7 @@ static void test_SI_ground_contact(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT,
-                           false, workspace);
+                           false, workspace, NULL);
 
     /* Body should stop falling (v_y >= 0 after resolution) */
     ASSERT_TRUE(bodies[0].velocity.y >= -0.1f);
@@ -473,16 +657,16 @@ static void test_SI_null_inputs(void)
     ForgePhysicsSIManifold workspace[1];
 
     /* These should not crash */
-    forge_physics_si_prepare(NULL, 1, bodies, 1, PHYSICS_DT, false, workspace);
-    forge_physics_si_prepare(manifolds, 1, NULL, 1, PHYSICS_DT, false, workspace);
-    forge_physics_si_prepare(manifolds, 0, bodies, 1, PHYSICS_DT, false, workspace);
+    forge_physics_si_prepare(NULL, 1, bodies, 1, PHYSICS_DT, false, workspace, NULL);
+    forge_physics_si_prepare(manifolds, 1, NULL, 1, PHYSICS_DT, false, workspace, NULL);
+    forge_physics_si_prepare(manifolds, 0, bodies, 1, PHYSICS_DT, false, workspace, NULL);
     forge_physics_si_warm_start(NULL, 1, bodies, 1);
     forge_physics_si_warm_start(workspace, 0, bodies, 1);
     forge_physics_si_solve_velocities(NULL, 1, bodies, 1);
     forge_physics_si_store_impulses(NULL, 1, manifolds);
-    forge_physics_si_solve(NULL, 1, bodies, 1, 10, PHYSICS_DT, false, workspace);
-    forge_physics_si_solve(manifolds, 1, bodies, 1, 10, 0.0f, false, workspace);
-    forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT, false, NULL);
+    forge_physics_si_solve(NULL, 1, bodies, 1, 10, PHYSICS_DT, false, workspace, NULL);
+    forge_physics_si_solve(manifolds, 1, bodies, 1, 10, 0.0f, false, workspace, NULL);
+    forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT, false, NULL, NULL);
 
     /* Tangent basis null output */
     forge_physics_si_tangent_basis(vec3_create(0, 1, 0), NULL, NULL);
@@ -547,7 +731,7 @@ static void test_SI_warm_start_improves(void)
                 /* Phase 3: solve + position correction */
                 forge_physics_si_solve(manifolds, 1, bodies, 1,
                                        10, PHYSICS_DT,
-                                       (use_warm == 1), workspace);
+                                       (use_warm == 1), workspace, NULL);
                 forge_physics_si_correct_positions(
                     manifolds, 1, bodies, 1, 0.4f,
                     FORGE_PHYSICS_PENETRATION_SLOP);
@@ -612,24 +796,11 @@ static void test_SI_rb_contacts_to_manifold(void)
     ASSERT_NEAR(m.static_friction, 0.6f, 1e-6f);
     ASSERT_NEAR(m.dynamic_friction, 0.4f, 1e-6f);
 
-    /* IDs should be spatially stable — same points in different order
-     * should produce the same IDs */
-    uint32_t id0 = m.contacts[0].id;
-    uint32_t id1 = m.contacts[1].id;
-    ASSERT_TRUE(id0 != id1);  /* different points → different IDs */
-
-    /* Reverse the contact order and rebuild */
-    ForgePhysicsRBContact reversed[2];
-    reversed[0] = contacts[1];
-    reversed[1] = contacts[0];
-
-    ForgePhysicsManifold m2;
-    ASSERT_TRUE(forge_physics_si_rb_contacts_to_manifold(
-        reversed, 2, 0.6f, 0.4f, &m2));
-
-    /* Same spatial points → same IDs regardless of input order */
-    ASSERT_TRUE(m2.contacts[0].id == id1);
-    ASSERT_TRUE(m2.contacts[1].id == id0);
+    /* IDs are sequential indices — contacts are produced in a stable
+     * winding order by the collision detector, so index-based IDs give
+     * consistent warm-start matching across frames. */
+    ASSERT_TRUE(m.contacts[0].id == 0);
+    ASSERT_TRUE(m.contacts[1].id == 1);
 
     END_TEST();
 }
@@ -699,7 +870,7 @@ static void test_SI_prepare_clamps_count(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_prepare(manifolds, 1, bodies, 1, PHYSICS_DT, false,
-                             workspace);
+                             workspace, NULL);
 
     /* Count must be clamped to MAX_CONTACTS (4) */
     ASSERT_TRUE(workspace[0].count <= FORGE_PHYSICS_MANIFOLD_MAX_CONTACTS);
@@ -720,7 +891,7 @@ static void test_SI_prepare_negative_friction_clamped(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_prepare(manifolds, 1, bodies, 1, PHYSICS_DT, false,
-                             workspace);
+                             workspace, NULL);
 
     /* Negative friction must be clamped to 0 */
     ASSERT_NEAR(workspace[0].static_friction, 0.0f, 1e-6f);
@@ -743,7 +914,7 @@ static void test_SI_prepare_degenerate_normal_rejected(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_prepare(manifolds, 1, bodies, 1, PHYSICS_DT, false,
-                             workspace);
+                             workspace, NULL);
 
     /* Degenerate normal should result in count = 0 (skipped manifold) */
     ASSERT_TRUE(workspace[0].count == 0);
@@ -767,7 +938,7 @@ static void test_SI_solve_nan_normal_safe(void)
 
     ForgePhysicsSIManifold workspace[1];
     forge_physics_si_solve(manifolds, 1, bodies, 1, 10, PHYSICS_DT,
-                           false, workspace);
+                           false, workspace, NULL);
 
     /* Body velocity must remain finite (NaN normal was rejected in prepare) */
     ASSERT_TRUE(forge_isfinite(bodies[0].velocity.x));
@@ -1072,6 +1243,7 @@ void run_si_tests(void)
     test_SI_accumulated_clamp_nonnegative();
     test_SI_friction_cone();
     test_SI_stacking_energy_bounded();
+    test_SI_tall_stack_stability();
     test_SI_determinism();
     test_SI_static_body_unchanged();
     test_SI_ground_contact();

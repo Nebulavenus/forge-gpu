@@ -52,6 +52,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="11-contact-manifold/assets/screenshot.png" width="480" alt="Contact Manifold"/>](11-contact-manifold/) | [**11 — Contact Manifold**](11-contact-manifold/) | Sutherland-Hodgman clipping, multi-point contact generation from GJK/EPA, contact point reduction, manifold cache with persistent IDs, warm-starting |
 | [<img src="12-impulse-based-resolution/assets/screenshot.png" width="480" alt="Impulse-Based Resolution"/>](12-impulse-based-resolution/) | [**12 — Impulse-Based Resolution**](12-impulse-based-resolution/) | Sequential impulse solver, accumulated impulse clamping, warm-starting, manifold-aware resolution, per-axis Coulomb friction, Baumgarte stabilization, position correction |
 | [<img src="13-constraint-solver/assets/screenshot.png" width="480" alt="Constraint Solver"/>](13-constraint-solver/) | [**13 — Constraint Solver**](13-constraint-solver/) | Joint constraints (ball-socket, hinge, slider), unified solver pipeline with contacts, warm-starting, position correction |
+| [<img src="14-stacking-stability/assets/screenshot.png" width="480" alt="Stacking Stability"/>](14-stacking-stability/) | [**14 — Stacking Stability**](14-stacking-stability/) | Solver tuning for stable stacking: Baumgarte bias, penetration slop, warm-start convergence, configurable solver parameters, contact visualization |
 
 ## Shared library
 

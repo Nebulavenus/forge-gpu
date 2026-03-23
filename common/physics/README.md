@@ -242,11 +242,19 @@ Types: `ForgePhysicsJoint` (persistent joint definition),
 Constants: `FORGE_PHYSICS_JOINT_BAUMGARTE` (0.1),
 `FORGE_PHYSICS_JOINT_SLOP` (0.005).
 
+### Lesson 14 — Stacking Stability
+
+| Function / Type | Purpose |
+|---|---|
+| `ForgePhysicsSolverConfig` | Solver tuning parameters (Baumgarte, slop, correction) |
+| `forge_physics_solver_config_default()` | Initialize stable default solver tuning values |
+| `forge_physics_manifold_cache_store()` | Store solved impulses into cache without merge-scale |
+
 ### Planned API (from Physics Lessons)
 
 | Lesson | Functions | Purpose |
 |---|---|---|
-| 14–15 | *TBD* | Stacking stability, advanced constraints |
+| 15 | *TBD* | Advanced constraints |
 
 ## Design
 

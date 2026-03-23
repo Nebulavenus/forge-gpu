@@ -285,6 +285,7 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_angular_velocity,
     diagram_axis_selection,
     diagram_ball_socket_joint,
+    diagram_baumgarte_bias,
     diagram_box_plane_contacts,
     diagram_clipping_pipeline,
     diagram_cloth_topology,
@@ -331,6 +332,7 @@ from .physics import (  # pyright: ignore[reportUnusedImport]
     diagram_symplectic_vs_explicit_euler,
     diagram_temporal_coherence,
     diagram_torque_force_at_point,
+    diagram_warm_start_convergence,
     diagram_world_space_inertia,
 )
 from .ui import (
@@ -679,6 +681,10 @@ DIAGRAMS = {
         ("effective_mass.png", diagram_effective_mass),
         ("solver_pipeline.png", diagram_joint_contact_pipeline),
     ],
+    "physics/14": [
+        ("baumgarte_bias.png", diagram_baumgarte_bias),
+        ("warm_start_convergence.png", diagram_warm_start_convergence),
+    ],
     "gpu/03": [
         ("unit_circle.png", diagram_unit_circle),
         ("aspect_ratio.png", diagram_aspect_ratio),
@@ -1003,6 +1009,7 @@ LESSON_NAMES = {
     "physics/11": "physics/11-contact-manifold",
     "physics/12": "physics/12-impulse-based-resolution",
     "physics/13": "physics/13-constraint-solver",
+    "physics/14": "physics/14-stacking-stability",
     "gpu/03": "gpu/03-uniforms-and-motion",
     "gpu/04": "gpu/04-textures-and-samplers",
     "gpu/10": "gpu/10-basic-lighting",

@@ -500,7 +500,7 @@ static void solve_contacts(app_state *state,
                                state->bodies, state->num_bodies,
                                state->solver_iterations,
                                PHYSICS_DT, state->use_warm_start,
-                               state->si_workspace);
+                               state->si_workspace, NULL);
 
         /* Compute stats */
         for (int mi = 0; mi < manifold_count; mi++) {
@@ -594,12 +594,18 @@ static void physics_step(app_state *state, float dt)
     solve_contacts(state, state->manifolds, state->manifold_count);
 
     /* ── Phase 3b: Write solved impulses back to manifold cache ──
-     * si_solve stores converged impulses into the local manifold
-     * array. We must push those back into the persistent cache so
-     * the next frame can warm-start from them. */
-    for (int mi = 0; mi < state->manifold_count; mi++) {
-        forge_physics_manifold_cache_update(
-            &state->manifold_cache, &state->manifolds[mi]);
+     * forge_physics_si_solve() stores converged impulses into the
+     * manifold array internally. We push those into the persistent
+     * cache so the next frame can warm-start from them. Use
+     * cache_store (not cache_update) to preserve the solver's
+     * converged impulses without the warm-scale merge.
+     * Only do this after the SI solver — the L06 path does not
+     * write impulses into the manifold array. */
+    if (state->use_si_solver) {
+        for (int mi = 0; mi < state->manifold_count; mi++) {
+            forge_physics_manifold_cache_store(
+                &state->manifold_cache, &state->manifolds[mi]);
+        }
     }
 
     /* ── Phase 4: Position correction ──────────────────────────────

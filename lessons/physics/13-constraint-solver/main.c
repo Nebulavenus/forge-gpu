@@ -554,7 +554,7 @@ static void physics_step(app_state *state, float dt)
         forge_physics_si_prepare(
             state->manifolds, mc, state->bodies, nb,
             PHYSICS_DT, state->use_warm_start,
-            state->si_workspace);
+            state->si_workspace, NULL);
     }
 
     /* ── Phase 4: Warm-start ───────────────────────────────────── */
@@ -592,7 +592,7 @@ static void physics_step(app_state *state, float dt)
         forge_physics_si_store_impulses(
             state->si_workspace, mc, state->manifolds);
         for (int mi = 0; mi < mc; mi++) {
-            forge_physics_manifold_cache_update(
+            forge_physics_manifold_cache_store(
                 &state->manifold_cache, &state->manifolds[mi]);
         }
     }

@@ -52,6 +52,8 @@ __all__ = [
     "diagram_slider_joint",
     "diagram_effective_mass",
     "diagram_joint_contact_pipeline",
+    "diagram_baumgarte_bias",
+    "diagram_warm_start_convergence",
 ]
 
 from .lesson_01 import (
@@ -124,4 +126,8 @@ from .lesson_13 import (
     diagram_hinge_joint,
     diagram_joint_contact_pipeline,
     diagram_slider_joint,
+)
+from .lesson_14 import (
+    diagram_baumgarte_bias,
+    diagram_warm_start_convergence,
 )
