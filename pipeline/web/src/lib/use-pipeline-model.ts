@@ -117,7 +117,7 @@ export function usePipelineModel(
   assetId: string,
   lod: number = 0,
 ): PipelineModelResult {
-  const { gl: renderer } = useThree()
+  const { gl: renderer, invalidate } = useThree()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [fmeshData, setFmeshData] = useState<FmeshData | null>(null)
@@ -177,6 +177,7 @@ export function usePipelineModel(
             if (!abort.signal.aborted) {
               prevMaterialsRef.current = mats
               setMaterials(mats)
+              invalidate()
             }
           } else if (fmatResp.status !== 404) {
             // Only fall back to default material when .fmat does not exist.
