@@ -4,12 +4,14 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { fetchAssets } from "@/lib/api"
+import type { AssetInfo } from "@/lib/api"
 import { fetchScene, saveScene } from "@/lib/scene-api"
 import { useSceneStore } from "@/components/scene-editor/use-scene-store"
 import { Toolbar } from "@/components/scene-editor/toolbar"
 import { HierarchyPanel } from "@/components/scene-editor/hierarchy-panel"
 import { Viewport } from "@/components/scene-editor/viewport"
 import { InspectorPanel } from "@/components/scene-editor/inspector-panel"
+import { AssetPicker } from "@/components/scene-editor/asset-picker"
 import type { SceneObject } from "@/components/scene-editor/types"
 
 export const Route = createFileRoute("/scenes/$sceneId")({
@@ -37,7 +39,12 @@ function SceneEditor() {
   }, [data, initializedFor, sceneId, dispatch])
 
   // Fetch mesh assets for the "Add" picker
-  const { data: assetsData } = useQuery({
+  const {
+    data: assetsData,
+    isLoading: assetsLoading,
+    isError: assetsError,
+    error: assetsErrorObj,
+  } = useQuery({
     queryKey: ["assets", "mesh"],
     queryFn: () => fetchAssets({ type: "mesh" }),
   })
@@ -56,35 +63,13 @@ function SceneEditor() {
 
   const handleSave = () => saveMutation.mutate()
 
-  const handleAdd = () => {
-    const meshAssets = assetsData?.assets ?? []
-    if (meshAssets.length === 0) {
-      // No mesh assets — add a placeholder object
-      const obj: SceneObject = {
-        id: crypto.randomUUID().slice(0, 12),
-        name: "Empty Object",
-        asset_id: null,
-        position: [0, 0, 0],
-        rotation: [0, 0, 0, 1],
-        scale: [1, 1, 1],
-        parent_id: null,
-        visible: true,
-      }
-      dispatch({ type: "ADD_OBJECT", object: obj })
-      return
-    }
+  // Asset picker state
+  const [showPicker, setShowPicker] = useState(false)
 
-    // Simple prompt-based picker — list asset names
-    const names = meshAssets.map((a, i) => `${i + 1}. ${a.name}`)
-    const choice = window.prompt(
-      `Select a mesh asset:\n${names.join("\n")}\n\nEnter number (or empty for placeholder):`,
-    )
+  const handleAdd = () => setShowPicker(true)
 
-    if (choice === null) return // cancelled
-
-    const index = parseInt(choice, 10) - 1
-    const asset = meshAssets[index]
-
+  const handleAssetSelected = (asset: AssetInfo | null) => {
+    setShowPicker(false)
     const obj: SceneObject = {
       id: crypto.randomUUID().slice(0, 12),
       name: asset?.name ?? "Empty Object",
@@ -161,6 +146,18 @@ function SceneEditor() {
           dispatch={dispatch}
         />
       </div>
+
+      {/* Asset picker overlay */}
+      {showPicker && (
+        <AssetPicker
+          assets={assetsData?.assets ?? []}
+          isLoading={assetsLoading}
+          isError={assetsError}
+          error={assetsErrorObj as Error | null}
+          onSelect={handleAssetSelected}
+          onCancel={() => setShowPicker(false)}
+        />
+      )}
     </div>
   )
 }
