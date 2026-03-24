@@ -1,0 +1,27 @@
+# forge-gpu asset pipeline configuration
+#
+# Root-level config for processing the shared asset tree.
+# The pipeline reads this to find source assets, choose compression
+# formats, and write processed output.
+
+[pipeline]
+source_dir = "assets"           # Existing asset tree — not "assets/raw" (models already live here)
+output_dir = "assets/processed" # Processed output (gitignored)
+cache_dir  = ".forge-cache"     # Fingerprint cache for incremental builds
+
+[texture]
+max_size         = 2048
+generate_mipmaps = true
+
+[texture.compression]
+albedo = "bc7"   # High-quality RGBA block compression
+normal = "bc5"   # Two-channel RG — reconstruct Z in shader
+
+[mesh]
+deduplicate       = true
+optimize          = true
+generate_tangents = true
+lod_levels        = [1.0, 0.5, 0.25]
+
+[bundle]
+bundle_dir = "assets/bundles"   # Packed bundles (gitignored)

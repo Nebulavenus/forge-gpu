@@ -88,8 +88,10 @@ assets/audio/*.flac
 # Audio lesson config — local paths to user-supplied audio files
 lessons/**/audio.conf
 
-# Asset pipeline cache (generated at runtime)
+# Asset pipeline cache and output (generated at runtime)
 .forge-cache/
+assets/processed/
+assets/bundles/
 
 # Playwright MCP artifacts
 .playwright-mcp/

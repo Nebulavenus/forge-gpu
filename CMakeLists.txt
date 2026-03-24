@@ -48,6 +48,28 @@ add_subdirectory(third_party/basis_universal)
 set(FORGE_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set(FORGE_ASSETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 
+# ── Processed assets (forge-assets target) ────────────────────────────────
+# Three-tier acquisition: local → GitHub release → run pipeline locally.
+# GPU Lessons 39+ declare add_dependencies(lesson_XX forge-assets) so that
+# building any of those lessons automatically acquires processed assets.
+set(FORGE_PROCESSED_DIR "${CMAKE_SOURCE_DIR}/assets/processed")
+set(FORGE_ASSETS_STAMP "${FORGE_PROCESSED_DIR}/.stamp")
+set(FORGE_RELEASE_TAG "assets-latest")
+
+add_custom_command(
+    OUTPUT "${FORGE_ASSETS_STAMP}"
+    COMMENT "Acquiring processed assets..."
+    COMMAND "${CMAKE_COMMAND}"
+        "-DASSETS_DIR=${FORGE_PROCESSED_DIR}"
+        "-DRELEASE_TAG=${FORGE_RELEASE_TAG}"
+        "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        -P "${CMAKE_SOURCE_DIR}/cmake/AcquireAssets.cmake"
+    DEPENDS "${CMAKE_SOURCE_DIR}/pipeline.toml"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_custom_target(forge-assets DEPENDS "${FORGE_ASSETS_STAMP}")
+
 # ── Frame capture (optional) ───────────────────────────────────────────────
 # When enabled, lessons accept --screenshot / --capture-dir flags to save
 # rendered frames as BMP files.  Used by scripts/capture_lesson.py.
