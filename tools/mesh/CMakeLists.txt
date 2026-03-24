@@ -31,3 +31,12 @@ target_link_libraries(forge_mesh_tool PRIVATE
 if(NOT MSVC)
     target_link_libraries(forge_mesh_tool PRIVATE m)
 endif()
+
+# Copy SDL3.dll next to the executable so Windows can find it at runtime.
+if(TARGET SDL3::SDL3-shared)
+    add_custom_command(TARGET forge_mesh_tool POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL3::SDL3-shared>
+            $<TARGET_FILE_DIR:forge_mesh_tool>
+    )
+endif()

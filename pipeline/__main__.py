@@ -417,7 +417,13 @@ def main(argv: list[str] | None = None) -> int:
         log.error("Source directory not found: %s", config.source_dir)
         return 1
 
-    files = scan(config.source_dir, supported, cache)
+    # Exclude the output directory from scanning — it may be inside source_dir.
+    files = scan(
+        config.source_dir,
+        supported,
+        cache,
+        exclude_dirs=[config.output_dir.resolve()],
+    )
     if not files:
         print(f"\nNo supported files found in {config.source_dir}")
         return 0

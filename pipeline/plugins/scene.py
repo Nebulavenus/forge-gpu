@@ -26,16 +26,13 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import subprocess
 from pathlib import Path
 
 from pipeline.plugin import AssetPlugin, AssetResult
+from pipeline.tool_finder import find_tool
 
 log = logging.getLogger(__name__)
-
-# Names to search for via ``shutil.which``.
-_TOOL_NAMES = ["forge_scene_tool", "forge-scene-tool"]
 
 
 # ---------------------------------------------------------------------------
@@ -44,22 +41,8 @@ _TOOL_NAMES = ["forge_scene_tool", "forge-scene-tool"]
 
 
 def _find_scene_tool(settings: dict) -> str | None:
-    """Locate the ``forge-scene-tool`` binary.
-
-    If ``tool_path`` is set in *settings*, return that directly (the caller
-    is responsible for ensuring it exists).  Otherwise search ``$PATH`` for
-    each name in ``_TOOL_NAMES`` and return the first hit, or ``None``.
-    """
-    explicit = settings.get("tool_path", "")
-    if explicit:
-        return str(explicit)
-
-    for name in _TOOL_NAMES:
-        path = shutil.which(name)
-        if path is not None:
-            return path
-
-    return None
+    """Locate the ``forge-scene-tool`` binary via the shared tool finder."""
+    return find_tool("forge_scene_tool", settings)
 
 
 # ---------------------------------------------------------------------------

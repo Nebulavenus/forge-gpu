@@ -128,10 +128,16 @@ def scan(
     source_dir: Path,
     supported_extensions: set[str],
     cache: FingerprintCache,
+    *,
+    exclude_dirs: list[Path] | None = None,
 ) -> list[ScannedFile]:
     """Walk *source_dir* recursively, fingerprint every file whose extension
     is in *supported_extensions*, and classify it as new / changed / unchanged
     by comparing against *cache*.
+
+    *exclude_dirs* is a list of absolute directory paths to skip.  This
+    prevents the scanner from picking up its own output when ``output_dir``
+    is inside ``source_dir``.
 
     Returns a list of ``ScannedFile`` objects sorted by relative path.
     """
@@ -139,11 +145,20 @@ def scan(
         log.warning("Source directory does not exist: %s", source_dir)
         return []
 
+    # Resolve exclude dirs for reliable prefix matching.
+    resolved_excludes = [p.resolve() for p in (exclude_dirs or [])]
+
     results: list[ScannedFile] = []
 
     for path in sorted(source_dir.rglob("*")):
         if not path.is_file():
             continue
+
+        # Skip files inside excluded directories (e.g. output_dir).
+        if resolved_excludes:
+            resolved = path.resolve()
+            if any(resolved.is_relative_to(ex) for ex in resolved_excludes):
+                continue
 
         ext = path.suffix.lower()
         if ext not in supported_extensions:

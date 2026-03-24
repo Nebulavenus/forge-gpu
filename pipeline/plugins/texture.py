@@ -32,13 +32,13 @@ from __future__ import annotations
 import json
 import logging
 import math
-import shutil
 import subprocess
 from pathlib import Path
 
 from PIL import Image
 
 from pipeline.plugin import AssetPlugin, AssetResult
+from pipeline.tool_finder import find_tool as _find_build_tool
 
 log = logging.getLogger(__name__)
 
@@ -117,9 +117,17 @@ def _generate_mipmaps(
     return mip_info
 
 
-def _find_tool(name: str) -> str | None:
-    """Return the full path to an external tool, or None if not installed."""
-    return shutil.which(name)
+def _find_tool(name: str, settings: dict | None = None) -> str | None:
+    """Return the full path to an external tool, or None if not installed.
+
+    Delegates to the shared ``pipeline.tool_finder`` which searches
+    explicit settings, CMake build directories, and the system PATH.
+    """
+    return _find_build_tool(name, settings, settings_key=f"{name}_path")
+
+
+# Filename patterns that indicate a normal map (case-insensitive).
+_NORMAL_MAP_PATTERNS = ("_normal", "_normals", "_nrm", "_norm", "normal_map")
 
 
 def _run_basisu(
@@ -130,12 +138,16 @@ def _run_basisu(
     quality: int = 128,
     mipmaps: bool = True,
     normal_map: bool = False,
+    tool: str | None = None,
 ) -> Path:
     """Compress a PNG into a KTX2 file using Basis Universal.
 
     Returns the path to the generated .ktx2 file.
+    *tool* is the resolved path to ``basisu``; if ``None``, discovers it
+    via the shared tool finder.
     """
-    tool = _find_tool("basisu")
+    if tool is None:
+        tool = _find_tool("basisu")
     if tool is None:
         raise FileNotFoundError(
             "basisu not found — install Basis Universal to enable GPU "
@@ -295,7 +307,13 @@ class TexturePlugin(AssetPlugin):
                     f"Unsupported astc_quality {astc_quality!r} — "
                     f"choose from: {', '.join(sorted(_ASTC_QUALITIES))}"
                 )
-        normal_map = bool(settings.get("normal_map", False))
+        # Auto-detect normal maps by filename convention unless explicitly set.
+        normal_map_setting = settings.get("normal_map")
+        if normal_map_setting is not None:
+            normal_map = bool(normal_map_setting)
+        else:
+            stem_lower = source.stem.lower()
+            normal_map = any(p in stem_lower for p in _NORMAL_MAP_PATTERNS)
 
         pil_format = _FORMAT_MAP.get(out_fmt)
         if pil_format is None:
@@ -370,7 +388,7 @@ class TexturePlugin(AssetPlugin):
         # -- GPU compression (optional) -----------------------------------------
         compression_info: dict | None = None
         if compression == "basisu":
-            tool_path = _find_tool("basisu")
+            tool_path = _find_tool("basisu", settings)
             if tool_path is None:
                 log.warning(
                     "basisu not installed — skipping GPU texture compression for %s",
@@ -385,6 +403,7 @@ class TexturePlugin(AssetPlugin):
                     quality=basisu_quality,
                     mipmaps=generate_mips,
                     normal_map=normal_map,
+                    tool=tool_path,
                 )
                 if not compressed_path.exists():
                     log.warning(
@@ -404,7 +423,7 @@ class TexturePlugin(AssetPlugin):
                     }
 
         elif compression == "astc":
-            tool_path = _find_tool("astcenc")
+            tool_path = _find_tool("astcenc", settings)
             if tool_path is None:
                 log.warning(
                     "astcenc not installed — skipping ASTC compression for %s",

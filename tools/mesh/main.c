@@ -251,7 +251,10 @@ static bool parse_lod_ratios(const char *str, float *ratios, int *count)
             return false;
         }
         char *end = NULL;
-        float val = strtof(p, &end);
+        /* SDL_strtod is locale-independent (always uses '.' as decimal
+         * separator), unlike strtof which may interpret ',' as decimal
+         * on non-English locales. */
+        float val = (float)SDL_strtod(p, &end);
         if (end == p) {
             SDL_Log("Error: invalid LOD ratio near '%s'", p);
             return false;

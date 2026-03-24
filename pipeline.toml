@@ -12,10 +12,12 @@ cache_dir  = ".forge-cache"     # Fingerprint cache for incremental builds
 [texture]
 max_size         = 2048
 generate_mipmaps = true
-
-[texture.compression]
-albedo = "bc7"   # High-quality RGBA block compression
-normal = "bc5"   # Two-channel RG — reconstruct Z in shader
+compression      = "basisu"     # GPU block compression via Basis Universal (BC7/BC5)
+basisu_format    = "uastc"      # UASTC transcodes to BC7 (albedo) or BC5 (normal maps)
+basisu_quality   = 128          # 1-255, higher = better + slower
+# Normal maps are auto-detected by filename (*_normal*, *_nrm*, etc.)
+# and compressed with -normal_map -separate_rg_to_color_alpha flags.
+# Override per-asset with .import.toml sidecars if needed.
 
 [mesh]
 deduplicate       = true
