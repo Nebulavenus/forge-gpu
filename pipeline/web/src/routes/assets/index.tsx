@@ -1,16 +1,18 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useEffect, useState } from "react"
 import { Search, X } from "lucide-react"
 import { fetchAssets, type AssetInfo } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
-import { STATUS_META, TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams } from "@/lib/asset-meta"
+import { STATUS_META, TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams, type AssetViewMode } from "@/lib/asset-meta"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TypeFilter } from "@/components/type-filter"
 import { SortDropdown } from "@/components/sort-dropdown"
+import { ViewToggle } from "@/components/view-toggle"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AtlasPreview } from "@/components/atlas-preview"
 
 export const Route = createFileRoute("/assets/")({
@@ -53,10 +55,42 @@ function AssetThumbnail({ asset }: { asset: AssetInfo }) {
   )
 }
 
+function ListThumbnail({ asset }: { asset: AssetInfo }) {
+  const [failed, setFailed] = useState(false)
+  const onError = useCallback(() => setFailed(true), [])
+  const meta = TYPE_META[asset.asset_type]
+  const Icon = meta?.icon
+
+  if (THUMBNAIL_TYPES.has(asset.asset_type) && !failed) {
+    return (
+      <img
+        src={`/api/assets/${encodeURIComponent(asset.id)}/thumbnail`}
+        alt=""
+        width={32}
+        height={32}
+        loading="lazy"
+        onError={onError}
+        className="h-8 w-8 rounded object-cover"
+      />
+    )
+  }
+
+  if (Icon) {
+    return (
+      <div className={`flex h-8 w-8 items-center justify-center rounded ${meta?.bgColor ?? "bg-muted"}`}>
+        <Icon aria-hidden className="h-4 w-4 opacity-60" />
+      </div>
+    )
+  }
+
+  return <div className="h-8 w-8 rounded bg-muted" />
+}
+
 function AssetBrowser() {
   const navigate = useNavigate()
-  const { type: searchType, status: statusFilter, search: searchQuery, sort: sortField, order: sortOrder } = Route.useSearch()
+  const { type: searchType, status: statusFilter, search: searchQuery, sort: sortField, order: sortOrder, view: viewMode } = Route.useSearch()
   const typeFilter = searchType ?? ""
+  const currentView: AssetViewMode = viewMode ?? "grid"
   const [localSearch, setLocalSearch] = useState(searchQuery ?? "")
 
   /* Sync local input when the URL search param changes externally */
@@ -74,6 +108,7 @@ function AssetBrowser() {
       search: localSearch.trim() || undefined,
       sort: sortField,
       order: sortOrder,
+      view: viewMode,
       ...overrides,
     }
     // Strip undefined/empty values so the URL stays clean
@@ -96,7 +131,7 @@ function AssetBrowser() {
     }, 300)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localSearch, navigate, searchType, statusFilter, searchQuery, sortField, sortOrder])
+  }, [localSearch, navigate, searchType, statusFilter, searchQuery, sortField, sortOrder, viewMode])
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["assets", typeFilter, statusFilter, searchQuery, sortField, sortOrder],
@@ -189,6 +224,15 @@ function AssetBrowser() {
               })
             }
           />
+          <ViewToggle
+            value={currentView}
+            onChange={(mode) =>
+              navigate({
+                to: "/assets",
+                search: currentSearch({ view: mode === "grid" ? undefined : mode }),
+              })
+            }
+          />
         </div>
       </div>
 
@@ -210,7 +254,7 @@ function AssetBrowser() {
         </div>
       )}
 
-      {data && data.assets.length > 0 && (
+      {data && data.assets.length > 0 && currentView === "grid" && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {data.assets.map((asset) => (
             <Card
@@ -258,6 +302,69 @@ function AssetBrowser() {
             </Card>
           ))}
         </div>
+      )}
+
+      {data && data.assets.length > 0 && currentView === "list" && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10"><span className="sr-only">Thumbnail</span></TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Size</TableHead>
+              <TableHead>Output Size</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Fingerprint</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.assets.map((asset) => (
+                <TableRow
+                  key={asset.id}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    navigate({
+                      to: "/assets/$assetId",
+                      params: { assetId: asset.id },
+                      search: detailSearch(),
+                    })
+                  }
+                >
+                  <TableCell className="w-10 p-1">
+                    <ListThumbnail asset={asset} />
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      to="/assets/$assetId"
+                      params={{ assetId: asset.id }}
+                      search={detailSearch()}
+                      className="hover:underline focus:outline-none focus-visible:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {asset.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeBgColor(asset.asset_type)}`}>
+                      {asset.asset_type}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{formatBytes(asset.file_size)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {asset.output_size != null ? formatBytes(asset.output_size) : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusBadgeVariant(asset.status)} className="text-xs">
+                      {asset.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {asset.fingerprint.slice(0, 12)}
+                  </TableCell>
+                </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {data && (

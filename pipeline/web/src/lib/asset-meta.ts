@@ -42,16 +42,20 @@ export function typeBgColor(type: string): string {
 
 /* ── Shared asset search params ───────────────────────────────── */
 
+export type AssetViewMode = "grid" | "list"
+
 export interface AssetSearchParams {
   type?: string
   status?: string
   search?: string
   sort?: string
   order?: string
+  view?: AssetViewMode
 }
 
 const VALID_SORT_FIELDS = new Set(["name", "size", "status", "type", "recent"])
 const VALID_SORT_ORDERS = new Set(["asc", "desc"])
+const VALID_VIEW_MODES = new Set<string>(["grid", "list"])
 
 export function validateAssetSearch(search: Record<string, unknown>): AssetSearchParams {
   const type = typeof search.type === "string" ? search.type.trim() : undefined
@@ -61,11 +65,14 @@ export function validateAssetSearch(search: Record<string, unknown>): AssetSearc
   const rawOrder = typeof search.order === "string" ? search.order.trim() : undefined
   const sort = rawSort && VALID_SORT_FIELDS.has(rawSort) ? rawSort : undefined
   const order = sort && rawOrder && VALID_SORT_ORDERS.has(rawOrder) ? rawOrder : undefined
+  const rawView = typeof search.view === "string" ? search.view.trim() : undefined
+  const view = rawView && VALID_VIEW_MODES.has(rawView) && rawView !== "grid" ? (rawView as AssetViewMode) : undefined
   return {
     type: type || undefined,
     status: status || undefined,
     search: s || undefined,
     sort: sort || undefined,
     order: order || undefined,
+    view,
   }
 }
