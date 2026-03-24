@@ -165,12 +165,14 @@ web editor. The order is:
 See [docs/PLAN-asset-integration.md](docs/PLAN-asset-integration.md) for the
 full plan. Summary:
 
-- [ ] Root `pipeline.toml` — BC7 albedo, BC5 normal maps, mesh optimization
-- [ ] CMake `forge-assets` target — `add_dependencies(lesson_XX forge-assets)` for lessons 39+
-- [ ] `.gitignore` — `.forge-cache/`, `assets/processed/`, `assets/bundles/`
-- [ ] Process all existing models and textures through the pipeline
-- [ ] GPU Lesson 08 README hint pointing to the asset pipeline track
-- [ ] Update skills (dev-gpu-lesson, dev-physics-lesson, dev-final-pass, dev-create-pr) to mandate pipeline usage for lessons 39+
+- [x] Root `pipeline.toml` — BC7 albedo, BC5 normal maps, mesh optimization (PR #415)
+- [x] `.gitignore` — `.forge-cache/`, `assets/processed/`, `assets/bundles/` (PR #415)
+- [x] CMake `forge-assets` target — three-tier acquisition (PR #415, #416)
+- [x] Process all existing models and textures through the pipeline (PR #419)
+- [x] GPU Lesson 08 README hint pointing to the asset pipeline track (already existed)
+- [ ] Wire `add_dependencies(lesson_XX forge-assets)` into lessons 39–47
+- [ ] Scene editor export path — authored JSON → binary `.fscene`
+- [ ] Update skills (dev-gpu-lesson, dev-physics-lesson, dev-final-pass) to mandate pipeline usage for lessons 39+
 - [ ] CI integration — run real pipeline, publish pre-built assets as `assets-latest` release, add to merge gate
 
 ### Web Frontend (blocks Effect & Asset Authoring)
