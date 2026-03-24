@@ -14,7 +14,9 @@ import type {
   SceneData,
   SceneObject,
   SceneState,
+  SnapSize,
 } from "./types"
+import { SNAP_SIZES } from "./types"
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -44,6 +46,8 @@ export const initialState: SceneState = {
   scene: null,
   selectedId: null,
   gizmoMode: "translate" as GizmoMode,
+  snapEnabled: false,
+  snapSize: 1.0 as SnapSize,
   undoStack: [],
   redoStack: [],
   dirty: false,
@@ -219,6 +223,22 @@ export function sceneReducer(
 
     case "SET_GIZMO_MODE":
       return { ...state, gizmoMode: action.mode }
+
+    case "SET_SNAP": {
+      const newEnabled = action.enabled ?? state.snapEnabled
+      const newSize =
+        action.size != null && SNAP_SIZES.includes(action.size)
+          ? action.size
+          : state.snapSize
+      if (newEnabled === state.snapEnabled && newSize === state.snapSize) {
+        return state
+      }
+      return {
+        ...state,
+        snapEnabled: newEnabled,
+        snapSize: newSize,
+      }
+    }
 
     case "UNDO": {
       if (state.undoStack.length === 0 || !state.scene) return state

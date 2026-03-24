@@ -138,11 +138,15 @@ function SceneEditor() {
           objects={state.scene.objects}
           selectedId={state.selectedId}
           gizmoMode={state.gizmoMode}
+          snapEnabled={state.snapEnabled}
+          snapSize={state.snapSize}
           dispatch={dispatch}
         />
         <InspectorPanel
           object={selectedObject}
           allObjects={state.scene.objects}
+          snapEnabled={state.snapEnabled}
+          snapSize={state.snapSize}
           dispatch={dispatch}
         />
       </div>

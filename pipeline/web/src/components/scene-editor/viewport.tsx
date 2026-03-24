@@ -19,7 +19,7 @@ import * as THREE from "three"
 import { useCompanionManager } from "@/lib/companion-manager"
 import { fetchAsset } from "@/lib/api"
 import { usePipelineModel } from "@/lib/use-pipeline-model"
-import type { GizmoMode, SceneAction, SceneObject } from "./types"
+import type { GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
 
 // ── Fallback box for objects without an asset ───────────────────────────
 
@@ -83,6 +83,8 @@ interface SceneObjectMeshProps {
   obj: SceneObject
   isSelected: boolean
   gizmoMode: GizmoMode
+  snapEnabled: boolean
+  snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
   orbitRef: React.RefObject<any>
   children?: React.ReactNode
@@ -92,6 +94,8 @@ function SceneObjectMesh({
   obj,
   isSelected,
   gizmoMode,
+  snapEnabled,
+  snapSize,
   dispatch,
   orbitRef,
   children,
@@ -166,6 +170,9 @@ function SceneObjectMesh({
           ref={transformRef}
           object={groupRef.current}
           mode={gizmoMode}
+          translationSnap={snapEnabled ? snapSize : null}
+          rotationSnap={snapEnabled ? (Math.PI / 180) * 15 : null}
+          scaleSnap={snapEnabled ? snapSize : null}
           onMouseUp={commitTransform}
         />
       )}
@@ -175,14 +182,19 @@ function SceneObjectMesh({
 
 // ── Recursive hierarchy renderer ─────────────────────────────────────────
 
-function renderHierarchy(
-  obj: SceneObject,
-  childrenMap: Map<string | null, SceneObject[]>,
-  selectedId: string | null,
-  gizmoMode: GizmoMode,
-  dispatch: Dispatch<SceneAction>,
-  orbitRef: React.RefObject<any>,
-): React.ReactNode {
+interface RenderHierarchyProps {
+  obj: SceneObject
+  childrenMap: Map<string | null, SceneObject[]>
+  selectedId: string | null
+  gizmoMode: GizmoMode
+  snapEnabled: boolean
+  snapSize: SnapSize
+  dispatch: Dispatch<SceneAction>
+  orbitRef: React.RefObject<any>
+}
+
+function renderHierarchy(props: RenderHierarchyProps): React.ReactNode {
+  const { obj, childrenMap, selectedId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef } = props
   const children = childrenMap.get(obj.id) ?? []
   return (
     <SceneObjectMesh
@@ -190,11 +202,13 @@ function renderHierarchy(
       obj={obj}
       isSelected={obj.id === selectedId}
       gizmoMode={gizmoMode}
+      snapEnabled={snapEnabled}
+      snapSize={snapSize}
       dispatch={dispatch}
       orbitRef={orbitRef}
     >
       {children.map((child) =>
-        renderHierarchy(child, childrenMap, selectedId, gizmoMode, dispatch, orbitRef)
+        renderHierarchy({ ...props, obj: child })
       )}
     </SceneObjectMesh>
   )
@@ -206,6 +220,8 @@ interface SceneContentsProps {
   objects: SceneObject[]
   selectedId: string | null
   gizmoMode: GizmoMode
+  snapEnabled: boolean
+  snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
 }
 
@@ -213,6 +229,8 @@ function SceneContents({
   objects,
   selectedId,
   gizmoMode,
+  snapEnabled,
+  snapSize,
   dispatch,
 }: SceneContentsProps) {
   const orbitRef = useRef<any>(null)
@@ -245,7 +263,7 @@ function SceneContents({
       />
       <OrbitControls ref={orbitRef} makeDefault />
       {roots.map((obj) =>
-        renderHierarchy(obj, childrenMap, selectedId, gizmoMode, dispatch, orbitRef)
+        renderHierarchy({ obj, childrenMap, selectedId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef })
       )}
     </>
   )
@@ -257,6 +275,8 @@ interface ViewportProps {
   objects: SceneObject[]
   selectedId: string | null
   gizmoMode: GizmoMode
+  snapEnabled: boolean
+  snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
 }
 
@@ -264,6 +284,8 @@ export function Viewport({
   objects,
   selectedId,
   gizmoMode,
+  snapEnabled,
+  snapSize,
   dispatch,
 }: ViewportProps) {
   return (
@@ -277,6 +299,8 @@ export function Viewport({
           objects={objects}
           selectedId={selectedId}
           gizmoMode={gizmoMode}
+          snapEnabled={snapEnabled}
+          snapSize={snapSize}
           dispatch={dispatch}
         />
       </Canvas>

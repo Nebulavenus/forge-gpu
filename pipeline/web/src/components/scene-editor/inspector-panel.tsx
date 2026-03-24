@@ -4,12 +4,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import type { SceneAction, SceneObject } from "./types"
+import type { SceneAction, SceneObject, SnapSize } from "./types"
 import { isDescendantOf } from "./use-scene-store"
 
 interface InspectorPanelProps {
   object: SceneObject | null
   allObjects: SceneObject[]
+  snapEnabled: boolean
+  snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
 }
 
@@ -112,9 +114,17 @@ function Vec3Input({
 
 // ── Inspector ───────────────────────────────────────────────────────────
 
+/** Snap a value to the nearest grid increment. */
+function snapToGrid(value: number, gridSize: number): number {
+  if (gridSize === 0) return value
+  return Math.round(value / gridSize) * gridSize
+}
+
 export function InspectorPanel({
   object,
   allObjects,
+  snapEnabled,
+  snapSize,
   dispatch,
 }: InspectorPanelProps) {
   // Local name state for controlled input
@@ -158,11 +168,20 @@ export function InspectorPanel({
     position: [number, number, number],
     rotation: [number, number, number, number],
     scale: [number, number, number],
+    snapPosition = false,
   ) => {
+    const finalPosition: [number, number, number] =
+      snapEnabled && snapPosition
+        ? [
+            snapToGrid(position[0], snapSize),
+            snapToGrid(position[1], snapSize),
+            snapToGrid(position[2], snapSize),
+          ]
+        : position
     dispatch({
       type: "UPDATE_TRANSFORM",
       objectId: object.id,
-      position,
+      position: finalPosition,
       rotation,
       scale,
     })
@@ -198,7 +217,7 @@ export function InspectorPanel({
             label="Position"
             value={object.position}
             onChange={(pos) =>
-              commitTransform(pos, object.rotation, object.scale)
+              commitTransform(pos, object.rotation, object.scale, true)
             }
           />
 

@@ -350,4 +350,56 @@ describe("sceneReducer", () => {
     expect(next.undoStack).toHaveLength(0)
     expect(next.dirty).toBe(false)
   })
+
+  it("SET_SNAP toggles snap enabled", () => {
+    const state = loadedState()
+    expect(state.snapEnabled).toBe(false)
+
+    const next = sceneReducer(state, { type: "SET_SNAP", enabled: true })
+    expect(next.snapEnabled).toBe(true)
+    expect(next.snapSize).toBe(1.0) // default unchanged
+    expect(next.undoStack).toHaveLength(0)
+    expect(next.dirty).toBe(false)
+  })
+
+  it("SET_SNAP toggles snap off", () => {
+    const state = loadedState()
+    const on = sceneReducer(state, { type: "SET_SNAP", enabled: true })
+    const off = sceneReducer(on, { type: "SET_SNAP", enabled: false })
+
+    expect(off.snapEnabled).toBe(false)
+    expect(off.snapSize).toBe(1.0) // unchanged
+    expect(off.undoStack).toHaveLength(0)
+    expect(off.dirty).toBe(false)
+  })
+
+  it("SET_SNAP changes grid size", () => {
+    const state = loadedState()
+    const next = sceneReducer(state, { type: "SET_SNAP", size: 0.25 })
+    expect(next.snapSize).toBe(0.25)
+    expect(next.snapEnabled).toBe(false) // enabled unchanged
+  })
+
+  it("SET_SNAP can set both enabled and size at once", () => {
+    const state = loadedState()
+    const next = sceneReducer(state, {
+      type: "SET_SNAP",
+      enabled: true,
+      size: 0.5,
+    })
+    expect(next.snapEnabled).toBe(true)
+    expect(next.snapSize).toBe(0.5)
+  })
+
+  it("SET_SNAP ignores invalid snap sizes", () => {
+    const state = loadedState()
+
+    for (const badSize of [-1, 0, 3.0, NaN, Infinity] as any[]) {
+      const next = sceneReducer(state, { type: "SET_SNAP", size: badSize })
+      expect(next.snapSize).toBe(1.0) // default unchanged
+      expect(next.snapEnabled).toBe(false)
+      expect(next.undoStack).toHaveLength(0)
+      expect(next.dirty).toBe(false)
+    }
+  })
 })

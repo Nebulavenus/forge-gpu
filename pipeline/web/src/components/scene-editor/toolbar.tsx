@@ -9,10 +9,12 @@ import {
   Undo2,
   Redo2,
   Save,
+  Grid3x3,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import type { SceneAction, SceneState } from "./types"
+import type { SceneAction, SceneState, SnapSize } from "./types"
+import { SNAP_SIZES } from "./types"
 
 interface ToolbarProps {
   state: SceneState
@@ -100,6 +102,43 @@ export function Toolbar({ state, dispatch, onSave, onAdd }: ToolbarProps) {
       >
         <Redo2 className="h-4 w-4" />
       </Button>
+
+      <Separator orientation="vertical" className="h-6" />
+
+      {/* Snap to grid */}
+      <Button
+        size="sm"
+        variant={state.snapEnabled ? "default" : "ghost"}
+        title="Snap to grid"
+        aria-pressed={state.snapEnabled}
+        aria-label="Snap to grid toggle"
+        onClick={() =>
+          dispatch({ type: "SET_SNAP", enabled: !state.snapEnabled })
+        }
+      >
+        <Grid3x3 className="h-4 w-4 mr-1" />
+        Snap
+      </Button>
+      {state.snapEnabled && (
+        <select
+          className="h-7 rounded-md border border-input bg-background px-1 text-xs"
+          value={state.snapSize}
+          title="Grid size"
+          aria-label="Grid size"
+          onChange={(e) => {
+            const parsed = parseFloat(e.target.value)
+            if (SNAP_SIZES.includes(parsed as SnapSize)) {
+              dispatch({ type: "SET_SNAP", size: parsed as SnapSize })
+            }
+          }}
+        >
+          {SNAP_SIZES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      )}
 
       {/* Spacer */}
       <div className="flex-1" />

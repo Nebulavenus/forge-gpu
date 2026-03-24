@@ -28,6 +28,10 @@ export interface SceneListItem {
 
 export type GizmoMode = "translate" | "rotate" | "scale"
 
+/** Available snap grid sizes (world units for translation). */
+export const SNAP_SIZES = [0.25, 0.5, 1.0, 2.0] as const
+export type SnapSize = (typeof SNAP_SIZES)[number]
+
 export type SceneAction =
   | { type: "LOAD_SCENE"; scene: SceneData }
   | { type: "ADD_OBJECT"; object: SceneObject }
@@ -45,6 +49,7 @@ export type SceneAction =
   | { type: "DUPLICATE_OBJECT"; objectId: string }
   | { type: "SELECT"; objectId: string | null }
   | { type: "SET_GIZMO_MODE"; mode: GizmoMode }
+  | { type: "SET_SNAP"; enabled?: boolean; size?: SnapSize }
   | { type: "UNDO" }
   | { type: "REDO" }
 
@@ -52,6 +57,8 @@ export interface SceneState {
   scene: SceneData | null
   selectedId: string | null
   gizmoMode: GizmoMode
+  snapEnabled: boolean
+  snapSize: SnapSize
   undoStack: SceneData[]
   redoStack: SceneData[]
   dirty: boolean
