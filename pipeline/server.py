@@ -395,13 +395,16 @@ def create_app(config: PipelineConfig) -> FastAPI:
     @app.get("/api/assets", response_model=AssetListResponse)
     async def list_assets(
         type: str | None = Query(None, description="Filter by asset type"),
+        status: str | None = Query(None, description="Filter by asset status"),
         search: str | None = Query(None, description="Search by filename"),
     ) -> AssetListResponse:
-        """Return all assets, optionally filtered by type or name."""
+        """Return all assets, optionally filtered by type, status, or name."""
         assets = list(_refresh_cache())
 
         if type is not None:
             assets = [a for a in assets if a.asset_type == type]
+        if status is not None:
+            assets = [a for a in assets if a.status == status]
         if search is not None:
             term = search.lower()
             assets = [a for a in assets if term in a.name.lower()]

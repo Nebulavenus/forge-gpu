@@ -1,150 +1,237 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
-import { Search } from "lucide-react"
-import { fetchAssets } from "@/lib/api"
-import { formatBytes } from "@/lib/utils"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { TypeFilter } from "@/components/type-filter"
-import { AtlasPreview } from "@/components/atlas-preview"
+import { Folder, FolderOutput, Image } from "lucide-react"
+import { fetchStatus, type PipelineStatus } from "@/lib/api"
+import { Card, CardContent } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
+import { STATUS_META, TYPE_META } from "@/lib/asset-meta"
 
 export const Route = createFileRoute("/")({
-  component: AssetBrowser,
+  component: Dashboard,
 })
 
-function statusVariant(status: string) {
-  switch (status) {
-    case "processed":
-      return "default" as const
-    case "new":
-      return "secondary" as const
-    case "changed":
-      return "secondary" as const
-    case "missing":
-      return "destructive" as const
-    default:
-      return "outline" as const
-  }
+/* ── Stat card ─────────────────────────────────────────────────── */
+
+function StatCard({
+  label,
+  count,
+  icon: Icon,
+  iconColor,
+  onClick,
+}: {
+  label: string
+  count: number
+  icon: typeof Image
+  iconColor?: string
+  onClick?: () => void
+}) {
+  return (
+    <Card
+      className={cn(
+        "transition-colors",
+        onClick && "cursor-pointer hover:bg-card/80",
+      )}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onClick()
+              }
+            }
+          : undefined
+      }
+    >
+      <CardContent className="flex items-center gap-3 p-4">
+        <Icon className={cn("h-5 w-5 shrink-0", iconColor ?? "text-muted-foreground")} />
+        <div className="min-w-0">
+          <p className="text-2xl font-semibold leading-none">{count}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
-function typeColor(type: string) {
-  switch (type) {
-    case "texture":
-      return "bg-blue-500/20 text-blue-400"
-    case "mesh":
-      return "bg-green-500/20 text-green-400"
-    case "animation":
-      return "bg-purple-500/20 text-purple-400"
-    case "scene":
-      return "bg-amber-500/20 text-amber-400"
-    default:
-      return "bg-muted text-muted-foreground"
-  }
-}
+/* ── Status breakdown bar ──────────────────────────────────────── */
 
-function AssetBrowser() {
-  const navigate = useNavigate()
-  const [search, setSearch] = useState("")
-  const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [typeFilter, setTypeFilter] = useState("")
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["assets", typeFilter, debouncedSearch],
-    queryFn: () =>
-      fetchAssets({
-        type: typeFilter || undefined,
-        search: debouncedSearch || undefined,
-      }),
-  })
+function StatusBreakdown({
+  byStatus,
+  total,
+  onStatusClick,
+}: {
+  byStatus: Record<string, number>
+  total: number
+  onStatusClick: (status: string) => void
+}) {
+  /* Iterate STATUS_META keys first for stable ordering, then append any
+     unknown statuses from the data. The legend shows all statuses (including
+     zero-count); the bar only renders non-zero segments. */
+  const knownKeys = Object.keys(STATUS_META)
+  const extraKeys = Object.keys(byStatus).filter((k) => !STATUS_META[k])
+  const allKeys = [...knownKeys, ...extraKeys]
+  const legendEntries = allKeys.map((k) => [k, byStatus[k] ?? 0] as const)
+  const barEntries = legendEntries.filter(([, count]) => count > 0)
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search assets..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <TypeFilter value={typeFilter} onChange={setTypeFilter} />
-      </div>
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium">Pipeline status</h2>
 
-      {isLoading && (
-        <div className="py-12 text-center text-muted-foreground">
-          Loading assets...
-        </div>
-      )}
-
-      {error && (
-        <div className="py-12 text-center text-destructive">
-          Failed to load assets: {(error as Error).message}
-        </div>
-      )}
-
-      {data && data.assets.length === 0 && (
-        <div className="py-12 text-center text-muted-foreground">
-          No assets found.
-        </div>
-      )}
-
-      {data && data.assets.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {data.assets.map((asset) => (
-            <Card
-              key={asset.id}
-              className="cursor-pointer transition-colors hover:bg-card/80"
+      {/* Stacked bar — only render when there are assets */}
+      {total > 0 && <div className="flex h-3 overflow-hidden rounded-full bg-muted">
+        {barEntries.map(([status, count]) => {
+          const meta = STATUS_META[status]
+          const pct = (count / total) * 100
+          return (
+            <div
+              key={status}
               role="button"
               tabIndex={0}
-              onClick={() =>
-                navigate({ to: "/assets/$assetId", params: { assetId: asset.id } })
-              }
+              aria-label={`${meta?.label ?? status}: ${count}`}
+              className={cn(
+                "h-full cursor-pointer transition-all hover:opacity-80",
+                meta?.bg ?? "bg-muted-foreground",
+              )}
+              style={{ width: `${pct}%` }}
+              title={`${meta?.label ?? status}: ${count} (${pct.toFixed(0)}%)`}
+              onClick={() => onStatusClick(status)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault()
-                  navigate({ to: "/assets/$assetId", params: { assetId: asset.id } })
+                  onStatusClick(status)
+                }
+              }}
+            />
+          )
+        })}
+      </div>}
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {legendEntries.map(([status, count]) => {
+          const meta = STATUS_META[status]
+          return (
+            <div
+              key={status}
+              role="button"
+              tabIndex={0}
+              aria-label={`${meta?.label ?? status}: ${count}`}
+              className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => onStatusClick(status)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  onStatusClick(status)
                 }
               }}
             >
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between text-sm">
-                  <span className="truncate">{asset.name}</span>
-                  <span
-                    className={`ml-2 inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeColor(asset.asset_type)}`}
-                  >
-                    {asset.asset_type}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{formatBytes(asset.file_size)}</span>
-                  <Badge variant={statusVariant(asset.status)} className="text-xs">
-                    {asset.status}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              <div className={cn("h-2.5 w-2.5 rounded-sm", meta?.bg ?? "bg-muted-foreground")} />
+              <span>
+                {meta?.label ?? status}: {count}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
-      {data && (
-        <div className="text-xs text-muted-foreground">
-          {data.total} asset{data.total !== 1 ? "s" : ""}
-        </div>
-      )}
+/* ── Directory footer ──────────────────────────────────────────── */
 
-      <AtlasPreview />
+function DirectoryPaths({ sourceDir, outputDir }: { sourceDir: string; outputDir: string }) {
+  return (
+    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <Folder className="h-3.5 w-3.5" />
+        Source: <code className="rounded bg-muted px-1 py-0.5">{sourceDir}</code>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <FolderOutput className="h-3.5 w-3.5" />
+        Output: <code className="rounded bg-muted px-1 py-0.5">{outputDir}</code>
+      </span>
+    </div>
+  )
+}
+
+/* ── Dashboard ─────────────────────────────────────────────────── */
+
+function Dashboard() {
+  const navigate = useNavigate()
+  const { data, isLoading, error } = useQuery<PipelineStatus>({
+    queryKey: ["status"],
+    queryFn: fetchStatus,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="py-12 text-center text-muted-foreground">
+        Loading pipeline status...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="py-12 text-center text-destructive">
+        Failed to load status: {(error as Error).message}
+      </div>
+    )
+  }
+
+  if (!data) return null
+
+  /* Iterate TYPE_META keys first for stable ordering, then append unknowns. */
+  const knownTypeKeys = Object.keys(TYPE_META)
+  const extraTypeKeys = Object.keys(data.by_type).filter((k) => !TYPE_META[k])
+  const typeEntries: [string, number][] = [...knownTypeKeys, ...extraTypeKeys].map(
+    (k) => [k, data.by_type[k] ?? 0],
+  )
+
+  return (
+    <div className="space-y-6">
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard
+          label="Total assets"
+          count={data.total}
+          icon={Folder}
+          onClick={() => navigate({ to: "/assets" })}
+        />
+        {typeEntries.map(([type, count]) => {
+          const meta = TYPE_META[type]
+          return (
+            <StatCard
+              key={type}
+              label={meta?.label ?? type}
+              count={count}
+              icon={meta?.icon ?? Folder}
+              iconColor={meta?.color}
+              onClick={() =>
+                navigate({
+                  to: "/assets",
+                  search: { type: meta?.filterValue ?? type },
+                })
+              }
+            />
+          )
+        })}
+      </div>
+
+      {/* Status breakdown */}
+      <StatusBreakdown
+        byStatus={data.by_status}
+        total={data.total}
+        onStatusClick={(status) =>
+          navigate({ to: "/assets", search: { status } })
+        }
+      />
+
+      {/* Directory paths */}
+      <DirectoryPaths sourceDir={data.source_dir} outputDir={data.output_dir} />
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import type { AssetSearchParams } from "@/lib/asset-meta"
+
 export interface AssetInfo {
   id: string
   name: string
@@ -42,12 +44,10 @@ export async function apiFetch<T>(url: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export function fetchAssets(params?: {
-  type?: string
-  search?: string
-}): Promise<AssetsResponse> {
+export function fetchAssets(params?: AssetSearchParams): Promise<AssetsResponse> {
   const searchParams = new URLSearchParams()
   if (params?.type) searchParams.set("type", params.type)
+  if (params?.status) searchParams.set("status", params.status)
   if (params?.search) searchParams.set("search", params.search)
   const query = searchParams.toString()
   const url = query ? `/api/assets?${query}` : "/api/assets"

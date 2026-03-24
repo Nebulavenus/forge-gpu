@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
 import { fetchAsset } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
+import { statusBadgeVariant, validateAssetSearch } from "@/lib/asset-meta"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -20,6 +21,7 @@ import {
 
 export const Route = createFileRoute("/assets/$assetId")({
   component: AssetDetail,
+  validateSearch: validateAssetSearch,
 })
 
 /** Catch errors from 3D preview components so they don't crash the route. */
@@ -54,6 +56,7 @@ class PreviewErrorFence extends Component<
 
 function AssetDetail() {
   const { assetId } = Route.useParams()
+  const { type: searchType, status: statusFilter, search: searchQuery } = Route.useSearch()
   const navigate = useNavigate()
 
   const { data: asset, isLoading, error } = useQuery({
@@ -84,7 +87,16 @@ function AssetDetail() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => navigate({ to: "/" })}
+        onClick={() =>
+          navigate({
+            to: "/assets",
+            search: {
+              ...(searchType ? { type: searchType } : {}),
+              ...(statusFilter ? { status: statusFilter } : {}),
+              ...(searchQuery ? { search: searchQuery } : {}),
+            },
+          })
+        }
         className="gap-1"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -95,7 +107,7 @@ function AssetDetail() {
         <h2 className="text-lg font-semibold">{asset.name}</h2>
         <div className="flex items-center gap-2">
           <Badge variant="secondary">{asset.asset_type}</Badge>
-          <Badge variant={asset.status === "missing" ? "destructive" : asset.status === "processed" ? "default" : "secondary"}>
+          <Badge variant={statusBadgeVariant(asset.status)}>
             {asset.status}
           </Badge>
         </div>

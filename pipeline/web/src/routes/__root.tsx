@@ -7,7 +7,7 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   const { location } = useRouterState()
   const isActive =
     to === "/"
-      ? location.pathname === "/" || location.pathname.startsWith("/assets")
+      ? location.pathname === "/"
       : location.pathname === to || location.pathname.startsWith(to + "/")
 
   return (
@@ -33,7 +33,8 @@ function RootLayout() {
           forge pipeline
         </h1>
         <nav aria-label="Primary" className="flex items-center gap-4">
-          <NavLink to="/">Assets</NavLink>
+          <NavLink to="/">Dashboard</NavLink>
+          <NavLink to="/assets">Assets</NavLink>
           <NavLink to="/scenes">Scenes</NavLink>
         </nav>
       </header>
