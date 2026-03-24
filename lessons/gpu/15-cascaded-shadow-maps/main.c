@@ -12,15 +12,71 @@
  * moveable FPS camera.  A --show-shadow-map flag renders the first
  * cascade's depth buffer as a debug overlay.
  *
- * What's new compared to Lesson 13/14:
- *   - Shadow map textures (D32_FLOAT, DEPTH_STENCIL_TARGET | SAMPLER)
- *   - Depth-only render passes (no color target)
- *   - Cascade frustum splitting (logarithmic-linear blend)
- *   - Light-space orthographic projection from frustum corners
- *   - 3x3 PCF shadow sampling
- *   - Front-face culling in shadow pass (reduces peter-panning)
- *   - Depth bias in rasterizer state
- *   - Debug visualization overlay
+ * ─── Reading guide: how CSM works in this file ──────────────────────
+ *
+ * This file is ~2500 lines because it includes a full scene (glTF loading,
+ * Blinn-Phong, grid floor, camera, etc.).  The CSM-specific code is spread
+ * across several sections.  Follow them in this order to understand the
+ * technique without getting lost in the scaffolding:
+ *
+ * 1. CONFIGURATION — what a cascade shadow map needs
+ *      Line ~168   Shadow map constants (NUM_CASCADES, resolution, bias)
+ *      Line ~182   CASCADE_LAMBDA — log vs. linear split blend factor
+ *      Line ~329   AABB / light-distance constants for fitting cascades
+ *
+ * 2. DATA STRUCTURES — how cascade data flows between CPU and GPU
+ *      Line ~338   ShadowVertUniforms — light MVP pushed per draw call
+ *      Line ~352   ShadowMatrices — light VP for all 3 cascades
+ *      Line ~358   SceneFragUniforms — includes cascade_splits[] for
+ *                  the fragment shader to select which cascade to sample
+ *
+ * 3. GPU RESOURCES — shadow map textures and sampler
+ *      Line ~517   create_shadow_map() — D32_FLOAT with DEPTH_TARGET |
+ *                  SAMPLER usage (the key difference from a normal depth
+ *                  buffer: it must be both writable and sampleable)
+ *      Line ~1549  Shadow map creation in SDL_AppInit (one per cascade)
+ *      Line ~1605  Shadow sampler — NEAREST filter, CLAMP_TO_EDGE
+ *
+ * 4. SHADOW PIPELINE — depth-only rendering from the light's view
+ *      Line ~1710  Shadow pipeline creation — front-face culling to
+ *                  reduce peter-panning, depth bias for shadow acne,
+ *                  zero color targets (depth-only pass)
+ *
+ * 5. CASCADE MATH — the core algorithm (start here for the theory)
+ *      Line ~1143  compute_cascade_splits() — Lengyel's log-linear blend
+ *                  divides the view frustum into depth slices
+ *      Line ~1173  compute_cascade_light_vp() — for each slice:
+ *                    a. Unproject 8 NDC corners to world space
+ *                    b. Interpolate to get the cascade's sub-frustum
+ *                    c. Build a light view matrix looking at the center
+ *                    d. Transform corners to light space, find AABB
+ *                    e. Build tight orthographic projection from AABB
+ *
+ * 6. SHADOW PASS — rendering depth from the light (per frame)
+ *      Line ~2322  Compute splits + light VP matrices for this frame
+ *      Line ~2352  Shadow passes — loop over NUM_CASCADES, each gets a
+ *                  depth-only render pass writing to its own shadow map
+ *      Line ~1285  draw_model_shadow() — transforms objects by
+ *                  light_vp * placement * node_transform, draws depth only
+ *
+ * 7. MAIN PASS — sampling shadows in the scene shaders
+ *      Line ~2430  Grid draw — binds all 3 shadow maps + shadow_mats
+ *      Line ~2500  Scene draw — same pattern via draw_model_scene()
+ *      Line ~1344  draw_model_scene() — pushes cascade_splits and
+ *                  shadow matrices so the fragment shader can pick the
+ *                  right cascade based on view-space depth
+ *      (PCF sampling happens in the HLSL fragment shaders — see
+ *       shaders/scene.frag.hlsl and shaders/grid.frag.hlsl)
+ *
+ * 8. DEBUG OVERLAY — visualizing cascade 0 (optional)
+ *      Line ~2536  Draws shadow_maps[0] as a screen-space quad when
+ *                  --show-shadow-map is passed on the command line
+ *
+ * Everything else (glTF loading, texture upload, Blinn-Phong, grid,
+ * camera movement) is carried forward from earlier lessons and is not
+ * CSM-specific.
+ *
+ * ─── Earlier lesson references ──────────────────────────────────────
  *
  * What we keep from earlier lessons:
  *   - SDL callbacks, GPU device, window, sRGB swapchain       (Lesson 01)
@@ -109,7 +165,7 @@
 #define DEPTH_CLEAR 1.0f
 #define DEPTH_FORMAT SDL_GPU_TEXTUREFORMAT_D32_FLOAT
 
-/* ── Shadow map constants ────────────────────────────────────────────── */
+/* ── Shadow map constants ──────────────────────── [CSM Step 1: Config] */
 
 #define NUM_CASCADES 3
 #define SHADOW_MAP_SIZE 2048
@@ -270,14 +326,14 @@
 #define MODEL_AMBIENT_STR 0.15f
 #define MODEL_SPECULAR_STR 0.5f
 
-/* ── Shadow / light-VP computation constants ────────────────────────── */
+/* ── Shadow / light-VP computation constants ──── [CSM Step 1: Config] */
 
 #define AABB_INIT_MIN  1e30f   /* large sentinel for AABB min initialization */
 #define AABB_INIT_MAX -1e30f   /* large negative sentinel for AABB max initialization */
 #define LIGHT_DISTANCE 50.0f   /* how far back to place the light from cascade center */
 #define SHADOW_Z_PADDING 50.0f /* extra Z range to capture casters behind the frustum */
 
-/* ── Uniform data ────────────────────────────────────────────────────── */
+/* ── Uniform data ──────────────────── [CSM Step 2: Data Structures] */
 
 /* Shadow vertex: just the light's MVP (64 bytes). */
 typedef struct ShadowVertUniforms {
@@ -290,7 +346,10 @@ typedef struct SceneVertUniforms {
   mat4 model;
 } SceneVertUniforms;
 
-/* Light VP matrices for all 3 cascades (192 bytes). */
+/* Light VP matrices for all 3 cascades (192 bytes).
+ * Pushed as a vertex uniform so the vertex shader can transform
+ * world positions into each cascade's light clip space. The fragment
+ * shader then uses these to look up the shadow map. */
 typedef struct ShadowMatrices {
   mat4 light_vp[NUM_CASCADES];
 } ShadowMatrices;
@@ -453,10 +512,11 @@ static SDL_GPUTexture *create_depth_texture(SDL_GPUDevice *device, Uint32 w, Uin
   return texture;
 }
 
-/* ── Shadow map texture helper ───────────────────────────────────────── */
+/* ── Shadow map texture helper ─────────── [CSM Step 3: GPU Resources] */
 /* Shadow maps need DEPTH_STENCIL_TARGET (for writing during shadow pass)
  * AND SAMPLER (for reading in the main pass).  This combination is what
- * distinguishes a shadow map from a normal depth buffer. */
+ * distinguishes a shadow map from a normal depth buffer — compare with
+ * create_depth_texture() above which only has DEPTH_STENCIL_TARGET. */
 
 static SDL_GPUTexture *create_shadow_map(SDL_GPUDevice *device) {
   SDL_GPUTextureCreateInfo info;
@@ -1078,11 +1138,19 @@ static bool setup_model(
   return true;
 }
 
-/* ── Cascade split computation ───────────────────────────────────────── */
+/* ── Cascade split computation ─────────── [CSM Step 5: Cascade Math] */
 /* Uses Lengyel's logarithmic-linear blend to compute cascade split
  * distances.  Pure logarithmic distributes resolution more evenly in
  * log-space (good for close objects), while linear is more uniform.
- * Lambda = 0.5 blends between the two for a practical balance. */
+ * Lambda = 0.5 blends between the two for a practical balance.
+ *
+ * The output splits[] array gives view-space depth boundaries:
+ *   cascade 0: [NEAR_PLANE .. splits[0]]  — closest, highest resolution
+ *   cascade 1: [splits[0]  .. splits[1]]  — middle distance
+ *   cascade 2: [splits[1]  .. splits[2]]  — farthest, lowest resolution
+ *
+ * These values are also sent to the fragment shader so it can select
+ * which cascade to sample based on the pixel's view-space depth. */
 
 static void compute_cascade_splits(float near_plane, float far_plane, float splits[NUM_CASCADES]) {
   int i;
@@ -1100,10 +1168,18 @@ static void compute_cascade_splits(float near_plane, float far_plane, float spli
   }
 }
 
-/* ── Compute light VP matrix for one cascade ─────────────────────────── */
-/* Given the camera's inverse VP matrix, compute the 8 frustum corners
- * for a cascade slice, transform them to light space, fit a tight AABB,
- * and build an orthographic projection from the light's view. */
+/* ── Compute light VP matrix for one cascade ── [CSM Step 5: Cascade Math] */
+/* This is the heart of CSM.  Given the camera's inverse VP matrix:
+ *   1. Unproject 8 NDC corners → world-space full frustum
+ *   2. Interpolate near/far to get this cascade's sub-frustum slice
+ *   3. Find the center of that slice
+ *   4. Build a light view matrix looking down at the center
+ *   5. Transform the 8 slice corners into light space
+ *   6. Fit a tight axis-aligned bounding box (AABB)
+ *   7. Build an orthographic projection from that AABB
+ *
+ * The result is a light VP matrix that covers exactly this cascade's
+ * region of the scene — maximizing shadow map resolution for that slice. */
 
 static mat4 compute_cascade_light_vp(
     mat4 inv_cam_vp,
@@ -1204,12 +1280,15 @@ static mat4 compute_cascade_light_vp(
   return mat4_multiply(light_proj, light_view);
 }
 
-/* ── Draw a model for the shadow pass ────────────────────────────────── */
+/* ── Draw a model for the shadow pass ──── [CSM Step 6: Shadow Pass] */
 /* Renders all primitives of a model into the current shadow map using
  * the shadow pipeline.  The placement matrix positions the object in the
  * scene (translation + rotation); each node's world_transform handles
  * the glTF hierarchy (so multi-node models like the truck assemble
- * correctly).  The final transform is light_vp * placement * node. */
+ * correctly).  The final transform is light_vp * placement * node.
+ *
+ * This is called once per model, per cascade — so for 2 model types
+ * and 3 cascades, it runs 6+ times per frame. */
 
 static void draw_model_shadow(
     SDL_GPURenderPass *pass,
@@ -1260,8 +1339,10 @@ static void draw_model_shadow(
   }
 }
 
-/* ── Draw a model for the main scene pass ────────────────────────────── */
-/* Renders all primitives with Blinn-Phong lighting and shadow receiving. */
+/* ── Draw a model for the main scene pass ─ [CSM Step 7: Main Pass] */
+/* Renders all primitives with Blinn-Phong lighting and shadow receiving.
+ * Pushes cascade_splits and shadow matrices so the fragment shader can
+ * select the correct cascade and sample its shadow map. */
 
 static void draw_model_scene(
     SDL_GPURenderPass *pass,
@@ -1624,7 +1705,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     goto fail_cleanup;
   }
 
-  /* ── 12. Create shadow pipeline ───────────────────────────────────── */
+  /* ── 12. Create shadow pipeline ──── [CSM Step 4: Shadow Pipeline] */
   {
     SDL_GPUShader *shadow_vs = create_shader(
         device,
@@ -2236,7 +2317,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     }
   }
 
-  /* ── 5. Compute cascade splits and light VP matrices ──────────────── */
+  /* ── 5. Compute cascade splits and light VP matrices [CSM Step 5+6] ── */
   float cascade_splits[NUM_CASCADES];
   compute_cascade_splits(NEAR_PLANE, FAR_PLANE, cascade_splits);
 
@@ -2266,7 +2347,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     return SDL_APP_FAILURE;
   }
 
-  /* ── 7. Shadow passes — one per cascade ───────────────────────────── */
+  /* ── 7. Shadow passes — one per cascade ──── [CSM Step 6: Shadow Pass] */
   /* The truck placement is identity — glTF node transforms position each
    * part (body, wheels, tank) within the model's coordinate system.
    * Boxes use a placement transform (translation + rotation) to scatter
