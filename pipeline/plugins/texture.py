@@ -187,12 +187,16 @@ def _run_astcenc(
     *,
     block_size: str = "6x6",
     quality: str = "medium",
+    tool: str | None = None,
 ) -> Path:
     """Compress an image into an ASTC file using astcenc.
 
     Returns the path to the generated .astc file.
+    *tool* is the resolved path to ``astcenc``; if ``None``, discovers it
+    via the shared tool finder.
     """
-    tool = _find_tool("astcenc")
+    if tool is None:
+        tool = _find_tool("astcenc")
     if tool is None:
         raise FileNotFoundError(
             "astcenc not found — install the ASTC Encoder to enable ASTC "
@@ -437,6 +441,7 @@ class TexturePlugin(AssetPlugin):
                     astc_output,
                     block_size=astc_block_size,
                     quality=astc_quality,
+                    tool=tool_path,
                 )
                 if not astc_output.exists():
                     log.warning(

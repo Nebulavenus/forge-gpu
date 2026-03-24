@@ -61,10 +61,14 @@ def find_tool(
         basisu.
     """
     # 1. Explicit override from settings — trust the caller's path.
-    if settings:
-        explicit = settings.get(settings_key, "")
-        if explicit:
+    # An empty string means the tool is intentionally disabled (return None).
+    # A non-empty string is a path override (return it directly).
+    # Key absent means no override (fall through to auto-discovery).
+    if settings and settings_key in settings:
+        explicit = settings[settings_key]
+        if explicit != "":
             return str(explicit)
+        return None
 
     # 2. Search CMake build directories.
     search_dirs = _BUILD_TOOL_DIRS
