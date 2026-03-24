@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
@@ -12,11 +12,32 @@ import { HierarchyPanel } from "@/components/scene-editor/hierarchy-panel"
 import { Viewport } from "@/components/scene-editor/viewport"
 import { InspectorPanel } from "@/components/scene-editor/inspector-panel"
 import { AssetPicker } from "@/components/scene-editor/asset-picker"
+import { AssetShelf } from "@/components/scene-editor/asset-shelf"
 import type { SceneObject } from "@/components/scene-editor/types"
 
 export const Route = createFileRoute("/scenes/$sceneId")({
   component: SceneEditor,
 })
+
+/** Create a SceneObject with sensible defaults. */
+function createSceneObject(
+  assetId: string | null,
+  name: string,
+  position: [number, number, number] = [0, 0, 0],
+): SceneObject {
+  return {
+    // 12-char prefix (~48 bits) matches the convention in use-scene-store.ts;
+    // collision risk is negligible for typical scene sizes (< 10k objects).
+    id: crypto.randomUUID().slice(0, 12),
+    name,
+    asset_id: assetId,
+    position,
+    rotation: [0, 0, 0, 1],
+    scale: [1, 1, 1],
+    parent_id: null,
+    visible: true,
+  }
+}
 
 function SceneEditor() {
   const { sceneId } = Route.useParams()
@@ -70,18 +91,20 @@ function SceneEditor() {
 
   const handleAssetSelected = (asset: AssetInfo | null) => {
     setShowPicker(false)
-    const obj: SceneObject = {
-      id: crypto.randomUUID().slice(0, 12),
-      name: asset?.name ?? "Empty Object",
-      asset_id: asset?.id ?? null,
-      position: [0, 0, 0],
-      rotation: [0, 0, 0, 1],
-      scale: [1, 1, 1],
-      parent_id: null,
-      visible: true,
-    }
+    const obj = createSceneObject(asset?.id ?? null, asset?.name ?? "Empty Object")
     dispatch({ type: "ADD_OBJECT", object: obj })
   }
+
+  // Handle drag-and-drop from the asset shelf onto the viewport
+  const meshAssets = assetsData?.assets
+  const handleAssetDrop = useCallback(
+    (assetId: string, position: [number, number, number]) => {
+      const asset = meshAssets?.find((a) => a.id === assetId)
+      const obj = createSceneObject(assetId, asset?.name ?? "Object", position)
+      dispatch({ type: "ADD_OBJECT", object: obj })
+    },
+    [meshAssets, dispatch],
+  )
 
   if (isLoading) {
     return (
@@ -129,11 +152,21 @@ function SceneEditor() {
 
       {/* Main area */}
       <div className="flex flex-1 min-h-0">
-        <HierarchyPanel
-          objects={state.scene.objects}
-          selectedId={state.selectedId}
-          dispatch={dispatch}
-        />
+        {/* Left column: hierarchy + asset shelf */}
+        <div className="flex w-60 shrink-0 flex-col border-r border-border bg-card">
+          <HierarchyPanel
+            objects={state.scene.objects}
+            selectedId={state.selectedId}
+            dispatch={dispatch}
+          />
+          <div className="shrink-0 max-h-[40%]">
+            <AssetShelf
+              meshAssets={assetsData?.assets ?? []}
+              isLoading={assetsLoading}
+              onAddAsset={(assetId) => handleAssetDrop(assetId, [0, 0, 0])}
+            />
+          </div>
+        </div>
         <Viewport
           objects={state.scene.objects}
           selectedId={state.selectedId}
@@ -141,6 +174,7 @@ function SceneEditor() {
           snapEnabled={state.snapEnabled}
           snapSize={state.snapSize}
           dispatch={dispatch}
+          onAssetDrop={handleAssetDrop}
         />
         <InspectorPanel
           object={selectedObject}

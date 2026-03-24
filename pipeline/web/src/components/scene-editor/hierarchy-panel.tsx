@@ -102,7 +102,7 @@ export function HierarchyPanel({
   const roots = childrenMap.get(null) ?? []
 
   return (
-    <div className="w-60 shrink-0 overflow-y-auto border-r border-border bg-card">
+    <div className="flex-1 overflow-y-auto min-h-0">
       <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
         Hierarchy
       </div>

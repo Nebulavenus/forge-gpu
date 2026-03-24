@@ -6,8 +6,8 @@
  * Transforms are committed to the store on mouse release, not every frame.
  */
 
-import { type Dispatch, Suspense, useEffect, useMemo, useRef } from "react"
-import { Canvas } from "@react-three/fiber"
+import { type Dispatch, Suspense, useCallback, useEffect, useMemo, useRef } from "react"
+import { Canvas, useThree } from "@react-three/fiber"
 import {
   Grid,
   OrbitControls,
@@ -20,6 +20,7 @@ import { useCompanionManager } from "@/lib/companion-manager"
 import { fetchAsset } from "@/lib/api"
 import { usePipelineModel } from "@/lib/use-pipeline-model"
 import type { GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
+import { ASSET_DRAG_MIME } from "./asset-shelf"
 
 // ── Fallback box for objects without an asset ───────────────────────────
 
@@ -269,6 +270,49 @@ function SceneContents({
   )
 }
 
+// ── Ground-plane drop raycaster ─────────────────────────────────────────
+// Exposed via a ref callback so the outer HTML drop handler can invoke it.
+
+// Module-scoped scratch objects reused across drop raycasts to avoid
+// per-call allocations. Safe for a single Viewport instance.
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+const dropRaycaster = new THREE.Raycaster()
+const dropNdc = new THREE.Vector2()
+const dropHit = new THREE.Vector3()
+
+/** Reject ground-plane hits beyond this distance from the camera. */
+const MAX_DROP_DISTANCE = 200
+
+interface DropRaycastProps {
+  /** Ref that receives a function: (clientX, clientY) → world position | null */
+  raycastRef: React.MutableRefObject<((cx: number, cy: number) => THREE.Vector3 | null) | null>
+}
+
+function DropRaycaster({ raycastRef }: DropRaycastProps) {
+  const { camera, gl } = useThree()
+
+  useEffect(() => {
+    raycastRef.current = (clientX: number, clientY: number) => {
+      const rect = gl.domElement.getBoundingClientRect()
+      dropNdc.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1,
+      )
+      dropRaycaster.setFromCamera(dropNdc, camera)
+      const intersected = dropRaycaster.ray.intersectPlane(groundPlane, dropHit)
+      if (!intersected) return null
+      // Clamp extremely distant hits (near-horizon camera angles)
+      if (dropHit.distanceTo(camera.position) > MAX_DROP_DISTANCE) return null
+      return dropHit.clone()
+    }
+    return () => {
+      raycastRef.current = null
+    }
+  }, [camera, gl]) // raycastRef is a stable useRef — omitted intentionally
+
+  return null
+}
+
 // ── Viewport wrapper ────────────────────────────────────────────────────
 
 interface ViewportProps {
@@ -278,6 +322,8 @@ interface ViewportProps {
   snapEnabled: boolean
   snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
+  /** Called when a mesh asset is dropped on the viewport. */
+  onAssetDrop?: (assetId: string, position: [number, number, number]) => void
 }
 
 export function Viewport({
@@ -287,14 +333,45 @@ export function Viewport({
   snapEnabled,
   snapSize,
   dispatch,
+  onAssetDrop,
 }: ViewportProps) {
+  const raycastRef = useRef<((cx: number, cy: number) => THREE.Vector3 | null) | null>(null)
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(ASSET_DRAG_MIME)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "copy"
+    }
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      const assetId = e.dataTransfer.getData(ASSET_DRAG_MIME)
+      if (!assetId || !onAssetDrop) return
+
+      const worldPos = raycastRef.current?.(e.clientX, e.clientY)
+      const position: [number, number, number] = worldPos
+        ? [worldPos.x, worldPos.y, worldPos.z]
+        : [0, 0, 0]
+
+      onAssetDrop(assetId, position)
+    },
+    [onAssetDrop],
+  )
+
   return (
-    <div className="flex-1 min-h-0">
+    <div
+      className="flex-1 min-h-0"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <Canvas
         style={{ background: "#1a1a1a" }}
         camera={{ position: [12, 10, 12], fov: 50 }}
         onPointerMissed={() => dispatch({ type: "SELECT", objectId: null })}
       >
+        <DropRaycaster raycastRef={raycastRef} />
         <SceneContents
           objects={objects}
           selectedId={selectedId}
