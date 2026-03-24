@@ -174,6 +174,31 @@ export function sceneReducer(
       }
     }
 
+    case "DUPLICATE_OBJECT": {
+      if (!state.scene) return state
+      const source = state.scene.objects.find(
+        (o) => o.id === action.objectId,
+      )
+      if (!source) return state
+      const stacks = pushUndo(state)
+      const clone: SceneObject = {
+        ...source,
+        id: crypto.randomUUID().slice(0, 12),
+        name: `${source.name} (copy)`,
+        position: [source.position[0] + 1, source.position[1], source.position[2]],
+      }
+      return {
+        ...state,
+        ...stacks,
+        scene: {
+          ...state.scene,
+          objects: [...state.scene.objects, clone],
+        },
+        selectedId: clone.id,
+        dirty: true,
+      }
+    }
+
     case "SET_VISIBILITY": {
       if (!state.scene) return state
       const stacks = pushUndo(state)
@@ -248,10 +273,16 @@ export function useSceneStore() {
         e.preventDefault()
         dispatch({ type: e.shiftKey ? "REDO" : "UNDO" })
       }
+      if ((e.ctrlKey || e.metaKey) && key === "d") {
+        e.preventDefault()
+        if (state.selectedId) {
+          dispatch({ type: "DUPLICATE_OBJECT", objectId: state.selectedId })
+        }
+      }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [])
+  }, [state.selectedId])
 
   const selectedObject =
     state.scene?.objects.find((o) => o.id === state.selectedId) ?? null

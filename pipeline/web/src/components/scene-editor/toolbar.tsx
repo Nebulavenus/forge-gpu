@@ -4,6 +4,7 @@ import {
   RotateCcw,
   Maximize2,
   Plus,
+  Copy,
   Trash2,
   Undo2,
   Redo2,
@@ -50,6 +51,19 @@ export function Toolbar({ state, dispatch, onSave, onAdd }: ToolbarProps) {
       <Button size="sm" variant="ghost" onClick={onAdd} title="Add object">
         <Plus className="h-4 w-4 mr-1" />
         Add
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={!state.selectedId}
+        title="Duplicate selected (Ctrl+D)"
+        onClick={() => {
+          if (state.selectedId) {
+            dispatch({ type: "DUPLICATE_OBJECT", objectId: state.selectedId })
+          }
+        }}
+      >
+        <Copy className="h-4 w-4" />
       </Button>
       <Button
         size="sm"

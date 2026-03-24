@@ -248,6 +248,71 @@ describe("sceneReducer", () => {
     expect(next).toBe(state)
   })
 
+  it("DUPLICATE_OBJECT clones object with new ID and offset position", () => {
+    const obj = makeObject("a", {
+      name: "Cube",
+      asset_id: "mesh_001",
+      position: [2, 3, 4],
+      rotation: [0, 0.707, 0, 0.707],
+      scale: [2, 2, 2],
+      parent_id: null,
+    })
+    const state = loadedState([obj])
+    const next = sceneReducer(state, {
+      type: "DUPLICATE_OBJECT",
+      objectId: "a",
+    })
+
+    expect(next.scene!.objects).toHaveLength(2)
+    const clone = next.scene!.objects[1]
+    expect(clone.id).not.toBe("a")
+    expect(clone.id).toHaveLength(12)
+    expect(clone.name).toBe("Cube (copy)")
+    expect(clone.asset_id).toBe("mesh_001")
+    expect(clone.position).toEqual([3, 3, 4]) // X offset +1
+    expect(clone.rotation).toEqual([0, 0.707, 0, 0.707])
+    expect(clone.scale).toEqual([2, 2, 2])
+    expect(clone.parent_id).toBeNull()
+    expect(clone.visible).toBe(true)
+    // Selection moves to the clone
+    expect(next.selectedId).toBe(clone.id)
+    expect(next.undoStack).toHaveLength(1)
+    expect(next.dirty).toBe(true)
+  })
+
+  it("DUPLICATE_OBJECT preserves parent_id", () => {
+    const parent = makeObject("p")
+    const child = makeObject("c", { parent_id: "p", name: "Child" })
+    const state = loadedState([parent, child])
+    const next = sceneReducer(state, {
+      type: "DUPLICATE_OBJECT",
+      objectId: "c",
+    })
+
+    const clone = next.scene!.objects[2]
+    expect(clone.parent_id).toBe("p")
+    expect(clone.name).toBe("Child (copy)")
+  })
+
+  it("DUPLICATE_OBJECT with invalid objectId is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "DUPLICATE_OBJECT",
+      objectId: "nonexistent",
+    })
+
+    expect(next).toBe(state)
+  })
+
+  it("DUPLICATE_OBJECT without loaded scene is a no-op", () => {
+    const next = sceneReducer(initialState, {
+      type: "DUPLICATE_OBJECT",
+      objectId: "a",
+    })
+
+    expect(next).toBe(initialState)
+  })
+
   it("mutation after undo clears redo stack", () => {
     const state = loadedState([makeObject("a")])
     const s1 = sceneReducer(state, {

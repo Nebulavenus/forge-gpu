@@ -42,6 +42,7 @@ export type SceneAction =
   | { type: "RENAME_OBJECT"; objectId: string; name: string }
   | { type: "REPARENT_OBJECT"; objectId: string; newParentId: string | null }
   | { type: "SET_VISIBILITY"; objectId: string; visible: boolean }
+  | { type: "DUPLICATE_OBJECT"; objectId: string }
   | { type: "SELECT"; objectId: string | null }
   | { type: "SET_GIZMO_MODE"; mode: GizmoMode }
   | { type: "UNDO" }
