@@ -456,6 +456,49 @@ If there are no diagrams for the lesson, skip this section.
 
 ---
 
+## 19. Asset Pipeline Compliance (GPU Lessons 39+)
+
+**Skip for:** GPU lessons 01–38, math, engine, UI, asset lessons.
+
+**Code review (all GPU lessons 39+):**
+
+- [ ] No inline vertex array definitions for 3D objects
+- [ ] All meshes loaded via `forge_shapes_*()` or
+      `forge_pipeline_load_mesh()`
+- [ ] All textures loaded via `forge_pipeline_load_texture()`
+- [ ] Normal map shaders reconstruct Z from BC5 two-channel data (does not
+      apply to texture atlases, which use BC7 for both albedo and normals)
+- [ ] No ad-hoc geometry construction (manual vertex buffer fills for
+      standard shapes)
+- [ ] CMake has `add_dependencies(lesson_XX forge-assets)`
+- [ ] No raw asset loads (no `forge_gltf_load()` or `forge_obj_load()`)
+
+**Runtime validation (run once per PR):**
+
+- [ ] `uv run python -m pipeline --verbose` succeeds
+- [ ] New assets (if any) added to `assets/` and processable by pipeline
+
+---
+
+## 20. Asset Pipeline Compliance (physics and audio lessons)
+
+**Skip for:** GPU, math, engine, UI, asset lessons.
+
+Physics and audio lessons use `forge_scene.h` for the rendering baseline and
+`forge_shapes_*()` for procedural geometry. They do not load pipeline meshes
+directly, but they must follow the shapes and texture mandate.
+
+**What to check:**
+
+- [ ] All physics/audio shapes (spheres, cubes, capsules, planes) created via
+      `forge_shapes_*()` from `common/shapes/forge_shapes.h`
+- [ ] No inline vertex array definitions for physics bodies or audio
+      visualization geometry
+- [ ] Textured objects (if any) loaded via `forge_pipeline_load_texture()`
+- [ ] Procedural grid floor may remain shader-generated (exempt)
+
+---
+
 ## Reporting
 
 After completing all checks, report a summary table:
@@ -483,6 +526,8 @@ Final Pass Results — Lesson NN: Name
 16. SDL stdinc compliance ✅ PASS
 17. Build & shaders      ✅ PASS
 18. Diagram correctness  ⏭️  SKIP  (no diagrams)
+19. Asset pipeline (39+) ⏭️  SKIP  (lesson < 39)
+20. Asset pipeline (phys/audio) ⏭️  SKIP  (not physics/audio)
 ```
 
 For each WARN or FAIL, list the specific file, line, and issue with a suggested

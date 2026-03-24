@@ -347,6 +347,11 @@ write each to `/tmp/`, then concatenate.
 See [`.claude/large-file-strategy.md`](../../../.claude/large-file-strategy.md)
 for the full strategy.
 
+## Asset Pipeline Mandate
+
+If this lesson requires textures or 3D assets for any reason, they MUST go
+through the asset pipeline. No ad-hoc asset loading.
+
 ## UI Lesson Conventions
 
 ### Scope

@@ -266,6 +266,14 @@ conventions.
 npx markdownlint-cli2 "**/*.md"
 ```
 
+## Cross-Track Asset Pipeline Mandate
+
+All GPU Lessons 39+ MUST use pipeline-processed assets via
+`forge_pipeline_load_mesh()` / `forge_pipeline_load_texture()`. Physics
+lessons use `forge_shapes_*()` for procedural bodies and
+`forge_pipeline_load_texture()` for any textures. When adding pipeline
+features, verify they don't break GPU lesson asset loading.
+
 ## Asset Lesson Conventions
 
 ### Scope

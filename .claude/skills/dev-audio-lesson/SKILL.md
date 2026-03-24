@@ -965,6 +965,15 @@ the focus on audible results.
   and listening. Exercises should modify volume, distance, filter cutoffs,
   and other values.
 
+### Asset Pipeline Mandate
+
+- All scene shapes (spheres, cubes, capsules, planes) MUST be created via
+  `forge_shapes_*()` from `common/shapes/forge_shapes.h`.
+- NEVER define inline vertex arrays for audio visualization geometry.
+- If a lesson needs textured objects, load via
+  `forge_pipeline_load_texture()`.
+- The procedural grid floor may remain shader-generated.
+
 ### Code style
 
 Follow the same conventions as all forge-gpu code:

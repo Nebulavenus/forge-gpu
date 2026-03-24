@@ -303,6 +303,25 @@ a fatal error that wastes hours of work.
 See [`.claude/large-file-strategy.md`](../../../.claude/large-file-strategy.md)
 for the full strategy and decomposition template.
 
+## Asset Pipeline Mandate (GPU Lessons 39+)
+
+All GPU lessons numbered 39 and above **must** use pipeline-processed assets.
+
+- All geometry MUST come from `forge_shapes_*()` (procedural) or
+  `forge_pipeline_load_mesh()` on pipeline-processed assets.
+- NEVER define inline vertex arrays for 3D objects.
+- NEVER load raw unprocessed assets — use `forge_pipeline_load_mesh()` /
+  `forge_pipeline_load_texture()` which load from `assets/processed/`.
+- Individual textures are BC7 (albedo) or BC5 (normal maps) — shaders must
+  reconstruct normal Z from BC5 two-channel data. Texture atlases that
+  combine albedo and normal maps into a single image use BC7 for both;
+  the BC5 two-channel rule does not apply to atlas textures.
+- If a lesson needs a new model, add it to `assets/models/`, run
+  `uv run python -m pipeline`, and load the processed output.
+- Reference `lessons/assets/` when first introducing an asset.
+- Purely procedural shader lessons (fullscreen effects) are exempt.
+- CMake: `add_dependencies(lesson_XX forge-assets)` is mandatory.
+
 ## Code style reminders
 
 - Naming: `PascalCase` for typedefs (e.g. `Vertex`, `GpuPrimitive`),
@@ -315,11 +334,11 @@ for the full strategy and decomposition template.
 - Each lesson should introduce ONE new concept at a time
 - **Always use the math library** — no bespoke math in GPU lessons
 - Link to math lessons when explaining concepts
-- **Never extract assets from glTFs à la carte** — when a lesson uses a glTF
-  model, copy the complete model (`.gltf`, `.bin`, and all referenced textures)
-  into the lesson's `assets/` directory and load it with `forge_gltf_load()`.
-  The model's node transforms, materials, and textures should drive the scene
-  layout, not hand-coded geometry.
+- **Never extract assets from glTFs à la carte** — for lessons 01–38 that
+  use raw glTF models, copy the complete model (`.gltf`, `.bin`, and all
+  referenced textures) into the lesson's `assets/` directory and load it
+  with `forge_gltf_load()`. For lessons 39+, see the Asset Pipeline Mandate
+  above — use `forge_pipeline_load_mesh()` instead of raw glTF loading.
 - **Always check SDL return values** — every SDL GPU function that returns
   `bool` must be checked. Log the function name and `SDL_GetError()` on
   failure, then clean up resources and early-return. This includes

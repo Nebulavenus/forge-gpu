@@ -964,6 +964,15 @@ Follow the same conventions as all forge-gpu code:
 - No magic numbers — `#define` or `enum` everything
 - Extensive comments explaining *why* and *purpose*
 
+### Asset Pipeline Mandate
+
+- All physics shapes (spheres, cubes, capsules, planes) MUST be created via
+  `forge_shapes_*()` from `common/shapes/forge_shapes.h`.
+- NEVER define inline vertex arrays for physics bodies.
+- If a lesson needs textured objects, load via
+  `forge_pipeline_load_texture()`.
+- The procedural grid floor may remain shader-generated.
+
 ## Diagrams and Formulas
 
 **Find opportunities to create compelling diagrams and visualizations via the

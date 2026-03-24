@@ -48,12 +48,20 @@ always have.
 - **GPU Lesson 08 README hint** (already existed)
   - "What's next" section references the asset pipeline track
 
+- **Phase 3 — Update skills** (PR #426)
+  - `dev-gpu-lesson`: Asset Pipeline Mandate section (GPU Lessons 39+)
+  - `dev-physics-lesson`: Asset Pipeline Mandate subsection
+  - `dev-final-pass`: Sections 19 (Asset Pipeline Compliance, GPU 39+) and
+    20 (Asset Pipeline Compliance, physics/audio) with reporting template
+  - `dev-audio-lesson`: Asset Pipeline Mandate subsection
+  - `dev-asset-lesson`: Cross-Track Asset Pipeline Mandate section
+  - `dev-ui-lesson` and `dev-engine-lesson`: Asset Pipeline Mandate section
+
 ### Remaining
 
 | Phase | Scope | Description |
 |-------|-------|-------------|
 | 2 | Small | Wire `forge-assets` CMake dependency into lessons 39+ |
-| 3 | Medium | Update skills to enforce the pipeline mandate |
 | 4 | Medium | Scene editor export path (JSON → binary `.fscene`) |
 | 5 | Medium | CI integration — run pipeline in GitHub Actions |
 
