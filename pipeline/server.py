@@ -109,6 +109,7 @@ class AssetInfo:
     file_size: int
     output_size: int | None
     status: str
+    output_mtime: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +130,7 @@ class AssetResponse(BaseModel):
     file_size: int
     output_size: int | None
     status: str
+    output_mtime: str | None
 
 
 class AssetListResponse(BaseModel):
@@ -295,7 +297,13 @@ def scan_assets(config: PipelineConfig) -> list[AssetInfo]:
             status = "missing"
 
         file_size = path.stat().st_size
-        output_size = output_file.stat().st_size if output_file else None
+        output_stat = output_file.stat() if output_file else None
+        output_size = output_stat.st_size if output_stat else None
+        output_mtime = (
+            datetime.fromtimestamp(output_stat.st_mtime, tz=timezone.utc).isoformat()
+            if output_stat
+            else None
+        )
 
         results.append(
             AssetInfo(
@@ -309,6 +317,7 @@ def scan_assets(config: PipelineConfig) -> list[AssetInfo]:
                 file_size=file_size,
                 output_size=output_size,
                 status=status,
+                output_mtime=output_mtime,
             )
         )
 
@@ -414,6 +423,14 @@ def create_app(config: PipelineConfig) -> FastAPI:
             )
         elif sort == "type":
             assets.sort(key=lambda a: a.asset_type, reverse=reverse)
+        elif sort == "recent":
+            # Sort by output file modification time.  Assets without an
+            # output file (no mtime) sort last regardless of direction.
+            # Partition into two groups so nulls always end up at the tail.
+            with_mtime = [a for a in assets if a.output_mtime is not None]
+            without_mtime = [a for a in assets if a.output_mtime is None]
+            with_mtime.sort(key=lambda a: a.output_mtime, reverse=reverse)  # type: ignore[arg-type]
+            assets[:] = with_mtime + without_mtime
         return assets
 
     @app.get("/api/assets", response_model=AssetListResponse)
@@ -423,11 +440,16 @@ def create_app(config: PipelineConfig) -> FastAPI:
         search: str | None = Query(None, description="Search by filename"),
         sort: str | None = Query(
             None,
-            description="Sort field: name, size, status, type",
+            description="Sort field: name, size, status, type, recent",
         ),
         order: str | None = Query(
             None,
             description="Sort direction: asc or desc",
+        ),
+        limit: int | None = Query(
+            None,
+            description="Maximum number of results to return",
+            ge=1,
         ),
     ) -> AssetListResponse:
         """Return all assets, optionally filtered and sorted."""
@@ -441,7 +463,7 @@ def create_app(config: PipelineConfig) -> FastAPI:
             term = search.lower()
             assets = [a for a in assets if term in a.name.lower()]
 
-        _VALID_SORT_FIELDS = {"name", "size", "status", "type"}
+        _VALID_SORT_FIELDS = {"name", "size", "status", "type", "recent"}
         _VALID_SORT_ORDERS = {"asc", "desc"}
         if order is not None and order not in _VALID_SORT_ORDERS:
             raise HTTPException(
@@ -454,11 +476,17 @@ def create_app(config: PipelineConfig) -> FastAPI:
                     status_code=400,
                     detail=f"Invalid sort field: '{sort}'. Must be one of: {', '.join(sorted(_VALID_SORT_FIELDS))}",
                 )
-            _default_order = "desc" if sort == "size" else "asc"
+            _default_order = "desc" if sort in {"size", "recent"} else "asc"
             _sort_assets(assets, sort, order or _default_order)
 
+        # Apply limit after filtering and sorting.  The total reflects the
+        # number of assets that matched the filters, not the capped count.
+        total = len(assets)
+        if limit is not None:
+            assets = assets[:limit]
+
         responses = [AssetResponse(**a.__dict__) for a in assets]
-        return AssetListResponse(assets=responses, total=len(responses))
+        return AssetListResponse(assets=responses, total=total)
 
     @app.get("/api/assets/{asset_id}", response_model=AssetResponse)
     async def get_asset(asset_id: str) -> AssetResponse:

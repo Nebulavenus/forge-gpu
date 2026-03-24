@@ -1,10 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Folder, FolderOutput, Image } from "lucide-react"
-import { fetchStatus, type PipelineStatus } from "@/lib/api"
+import { Clock, Folder, FolderOutput, Image } from "lucide-react"
+import { fetchRecentAssets, fetchStatus, type AssetInfo, type PipelineStatus } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { STATUS_META, TYPE_META } from "@/lib/asset-meta"
+import { STATUS_META, TYPE_META, typeBgColor } from "@/lib/asset-meta"
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -157,6 +158,76 @@ function DirectoryPaths({ sourceDir, outputDir }: { sourceDir: string; outputDir
   )
 }
 
+/* ── Relative time ─────────────────────────────────────────────── */
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return "just now"
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+/* ── Recent activity ───────────────────────────────────────────── */
+
+function RecentActivity({ assets }: { assets: AssetInfo[] }) {
+  /* Only show assets that have an output (i.e. have been processed). */
+  const processed = assets.filter((a) => a.output_mtime)
+  if (processed.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium">Recent</h2>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {processed.map((asset) => {
+          const meta = TYPE_META[asset.asset_type]
+          const Icon = meta?.icon ?? Folder
+          return (
+            <Link
+              key={asset.id}
+              to="/assets/$assetId"
+              params={{ assetId: asset.id }}
+              className="group"
+            >
+              <Card className="transition-colors group-hover:bg-card/80">
+                <CardContent className="flex items-center gap-3 p-3">
+                  <Icon
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      meta?.color ?? "text-muted-foreground",
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium leading-tight">
+                      {asset.name}
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={cn("text-[10px] leading-none", typeBgColor(asset.asset_type))}
+                      >
+                        {asset.asset_type}
+                      </Badge>
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Clock className="h-2.5 w-2.5" />
+                        {relativeTime(asset.output_mtime!)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────── */
 
 function Dashboard() {
@@ -164,6 +235,10 @@ function Dashboard() {
   const { data, isLoading, error } = useQuery<PipelineStatus>({
     queryKey: ["status"],
     queryFn: fetchStatus,
+  })
+  const { data: recentData } = useQuery({
+    queryKey: ["recent-assets"],
+    queryFn: () => fetchRecentAssets(8),
   })
 
   if (isLoading) {
@@ -229,6 +304,9 @@ function Dashboard() {
           navigate({ to: "/assets", search: { status } })
         }
       />
+
+      {/* Recent activity */}
+      {recentData && <RecentActivity assets={recentData.assets} />}
 
       {/* Directory paths */}
       <DirectoryPaths sourceDir={data.source_dir} outputDir={data.output_dir} />

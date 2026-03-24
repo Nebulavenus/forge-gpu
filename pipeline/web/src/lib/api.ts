@@ -11,6 +11,7 @@ export interface AssetInfo {
   file_size: number
   output_size: number | null
   status: string
+  output_mtime: string | null
 }
 
 export interface AssetsResponse {
@@ -62,6 +63,10 @@ export function fetchAsset(id: string): Promise<AssetInfo> {
 
 export function fetchStatus(): Promise<PipelineStatus> {
   return apiFetch<PipelineStatus>("/api/status")
+}
+
+export function fetchRecentAssets(limit = 8): Promise<AssetsResponse> {
+  return apiFetch<AssetsResponse>(`/api/assets?sort=recent&limit=${limit}`)
 }
 
 // ── Import settings ────────────────────────────────────────────────

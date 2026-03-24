@@ -9,6 +9,7 @@ const SORT_OPTIONS = [
   { label: "Size (largest)", value: "size:desc" },
   { label: "Size (smallest)", value: "size:asc" },
   { label: "Status (actionable)", value: "status:asc" },
+  { label: "Recent (newest)", value: "recent:desc" },
   { label: "Type (A–Z)", value: "type:asc" },
   { label: "Type (Z–A)", value: "type:desc" },
 ] as const
@@ -20,7 +21,8 @@ interface SortDropdownProps {
 }
 
 export function SortDropdown({ sort, order, onChange }: SortDropdownProps) {
-  const current = sort ? `${sort}:${order ?? (sort === "size" ? "desc" : "asc")}` : ""
+  const defaultOrder = sort === "size" || sort === "recent" ? "desc" : "asc"
+  const current = sort ? `${sort}:${order ?? defaultOrder}` : ""
 
   return (
     <Select

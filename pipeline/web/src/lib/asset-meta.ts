@@ -50,7 +50,7 @@ export interface AssetSearchParams {
   order?: string
 }
 
-const VALID_SORT_FIELDS = new Set(["name", "size", "status", "type"])
+const VALID_SORT_FIELDS = new Set(["name", "size", "status", "type", "recent"])
 const VALID_SORT_ORDERS = new Set(["asc", "desc"])
 
 export function validateAssetSearch(search: Record<string, unknown>): AssetSearchParams {

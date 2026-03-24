@@ -1245,3 +1245,265 @@ def test_invalid_order_without_sort(
     resp = client.get("/api/assets?order=descending")
     assert resp.status_code == 400
     assert "Invalid sort order" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Limit
+# ---------------------------------------------------------------------------
+
+
+def test_limit_caps_results(tmp_path: Path) -> None:
+    """The limit parameter caps the number of returned assets."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "a.png": b"a",
+            "b.png": b"b",
+            "c.png": b"c",
+        },
+    )
+    resp = client.get("/api/assets?limit=2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["assets"]) == 2
+    # total reflects all matching assets, not the capped count
+    assert body["total"] == 3
+
+
+def test_limit_greater_than_total(tmp_path: Path) -> None:
+    """When limit exceeds the asset count, all assets are returned."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={"a.png": b"a"},
+    )
+    resp = client.get("/api/assets?limit=100")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["assets"]) == 1
+    assert body["total"] == 1
+
+
+def test_limit_zero_rejected(tmp_path: Path) -> None:
+    """limit=0 is rejected (minimum is 1)."""
+    client, _ = _setup(tmp_path, source_files={"a.png": b"a"})
+    resp = client.get("/api/assets?limit=0")
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# sort=recent and output_mtime
+# ---------------------------------------------------------------------------
+
+
+def test_output_mtime_present_for_processed(tmp_path: Path) -> None:
+    """Processed assets include a non-null output_mtime ISO timestamp."""
+    import hashlib
+
+    fp = hashlib.sha256(b"PNG data").hexdigest()
+    client, _ = _setup(
+        tmp_path,
+        source_files={"tex.png": b"PNG data"},
+        output_files={"tex.ftex": b"FTEX data"},
+        cache_entries={"tex.png": fp},
+    )
+    resp = client.get("/api/assets")
+    assert resp.status_code == 200
+    asset = resp.json()["assets"][0]
+    assert asset["status"] == "processed"
+    assert asset["output_mtime"] is not None
+
+
+def test_output_mtime_null_for_new(tmp_path: Path) -> None:
+    """New assets have null output_mtime."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={"tex.png": b"PNG data"},
+    )
+    resp = client.get("/api/assets")
+    assert resp.status_code == 200
+    asset = resp.json()["assets"][0]
+    assert asset["status"] == "new"
+    assert asset["output_mtime"] is None
+
+
+def test_sort_recent(tmp_path: Path) -> None:
+    """sort=recent orders by output_mtime descending by default."""
+    import hashlib
+    import os
+
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+
+    for d in (source_dir, output_dir, cache_dir):
+        d.mkdir()
+
+    # Create two source files
+    (source_dir / "old.png").write_bytes(b"OLD")
+    (source_dir / "new.png").write_bytes(b"NEW")
+
+    # Create output files with different mtimes
+    old_out = output_dir / "old.ftex"
+    new_out = output_dir / "new.ftex"
+    old_out.write_bytes(b"OLD OUT")
+    new_out.write_bytes(b"NEW OUT")
+
+    # Ensure distinct mtime (force older timestamp on old_out)
+    old_stat = old_out.stat()
+    os.utime(old_out, (old_stat.st_atime, old_stat.st_mtime - 10))
+
+    fp_old = hashlib.sha256(b"OLD").hexdigest()
+    fp_new = hashlib.sha256(b"NEW").hexdigest()
+    fp_path = cache_dir / "fingerprints.json"
+    fp_path.write_text(
+        json.dumps({"old.png": fp_old, "new.png": fp_new}),
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig(
+        source_dir=source_dir, output_dir=output_dir, cache_dir=cache_dir
+    )
+    client = TestClient(create_app(config))
+
+    resp = client.get("/api/assets?sort=recent")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()["assets"]]
+    # Default order for recent is desc — newest first
+    assert names[0] == "new.png"
+    assert names[1] == "old.png"
+
+
+def test_sort_recent_desc_nulls_last(tmp_path: Path) -> None:
+    """sort=recent (desc, default) puts null-mtime assets last, not first."""
+    import hashlib
+    import os
+
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+
+    for d in (source_dir, output_dir, cache_dir):
+        d.mkdir()
+
+    # "processed.png" — has output
+    (source_dir / "processed.png").write_bytes(b"PROC")
+    proc_out = output_dir / "processed.ftex"
+    proc_out.write_bytes(b"PROC OUT")
+
+    # "unprocessed.png" — no output, no cache → null mtime
+    (source_dir / "unprocessed.png").write_bytes(b"NONE")
+
+    # Force a known mtime on the output
+    st = proc_out.stat()
+    os.utime(proc_out, (st.st_atime, st.st_mtime))
+
+    fp_proc = hashlib.sha256(b"PROC").hexdigest()
+    fp_path = cache_dir / "fingerprints.json"
+    fp_path.write_text(
+        json.dumps({"processed.png": fp_proc}),
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig(
+        source_dir=source_dir, output_dir=output_dir, cache_dir=cache_dir
+    )
+    client = TestClient(create_app(config))
+
+    # Default order for recent is desc
+    resp = client.get("/api/assets?sort=recent")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()["assets"]]
+    # Processed asset first, null-mtime asset last
+    assert names[0] == "processed.png"
+    assert names[-1] == "unprocessed.png"
+
+
+def test_sort_recent_asc_nulls_last(tmp_path: Path) -> None:
+    """sort=recent&order=asc puts null-mtime (unprocessed) assets last."""
+    import hashlib
+    import os
+
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+
+    for d in (source_dir, output_dir, cache_dir):
+        d.mkdir()
+
+    # "old.png" — processed, older mtime
+    (source_dir / "old.png").write_bytes(b"OLD")
+    old_out = output_dir / "old.ftex"
+    old_out.write_bytes(b"OLD OUT")
+
+    # "new.png" — processed, newer mtime
+    (source_dir / "new.png").write_bytes(b"NEW")
+    new_out = output_dir / "new.ftex"
+    new_out.write_bytes(b"NEW OUT")
+
+    # Force distinct mtimes
+    st = old_out.stat()
+    os.utime(old_out, (st.st_atime, st.st_mtime - 10))
+
+    # "unprocessed.png" — no output, no cache entry → status=new, null mtime
+    (source_dir / "unprocessed.png").write_bytes(b"NONE")
+
+    fp_old = hashlib.sha256(b"OLD").hexdigest()
+    fp_new = hashlib.sha256(b"NEW").hexdigest()
+    fp_path = cache_dir / "fingerprints.json"
+    fp_path.write_text(
+        json.dumps({"old.png": fp_old, "new.png": fp_new}),
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig(
+        source_dir=source_dir, output_dir=output_dir, cache_dir=cache_dir
+    )
+    client = TestClient(create_app(config))
+
+    resp = client.get("/api/assets?sort=recent&order=asc")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()["assets"]]
+    # Ascending: oldest processed first, then newer, null-mtime last
+    assert names[0] == "old.png"
+    assert names[1] == "new.png"
+    assert names[2] == "unprocessed.png"
+
+
+def test_sort_recent_with_limit(tmp_path: Path) -> None:
+    """sort=recent combined with limit returns the N most recent assets."""
+    import hashlib
+    import os
+
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+
+    for d in (source_dir, output_dir, cache_dir):
+        d.mkdir()
+
+    cache_entries = {}
+    for i, name in enumerate(["a.png", "b.png", "c.png"]):
+        (source_dir / name).write_bytes(f"data{i}".encode())
+        out = output_dir / name.replace(".png", ".ftex")
+        out.write_bytes(f"out{i}".encode())
+        # Set distinct mtimes
+        st = out.stat()
+        os.utime(out, (st.st_atime, st.st_mtime + i * 10))
+        fp = hashlib.sha256(f"data{i}".encode()).hexdigest()
+        cache_entries[name] = fp
+
+    fp_path = cache_dir / "fingerprints.json"
+    fp_path.write_text(json.dumps(cache_entries), encoding="utf-8")
+
+    config = PipelineConfig(
+        source_dir=source_dir, output_dir=output_dir, cache_dir=cache_dir
+    )
+    client = TestClient(create_app(config))
+
+    resp = client.get("/api/assets?sort=recent&limit=2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["assets"]) == 2
+    assert body["total"] == 3
+    # Newest first (c has highest mtime)
+    assert body["assets"][0]["name"] == "c.png"
