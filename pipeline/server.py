@@ -505,6 +505,85 @@ def create_app(config: PipelineConfig) -> FastAPI:
             filename=file_path.name,
         )
 
+    # -- Thumbnail generation -----------------------------------------------
+
+    # Extensions we can generate thumbnails for via Pillow
+    _THUMBNAIL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tga"}
+
+    THUMBNAIL_SIZE = (128, 128)
+
+    def _thumbnail_cache_dir() -> Path:
+        """Return the .thumbnails/ directory under the output dir."""
+        d = config.output_dir / ".thumbnails"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _generate_thumbnail(source: Path, asset_id: str) -> Path | None:
+        """Resize *source* to a 128x128 thumbnail and cache on disk.
+
+        Returns the cached thumbnail path, or None if the source cannot
+        be opened by Pillow.
+        """
+        import os
+
+        from PIL import Image as PILImage  # noqa: N811
+
+        cache_path = _thumbnail_cache_dir() / f"{asset_id}.png"
+
+        try:
+            # Open the source and read its mtime from the fd to avoid a
+            # TOCTOU race between stat() and the later open().
+            fd = os.open(str(source), os.O_RDONLY)
+            try:
+                source_mtime = os.fstat(fd).st_mtime
+            finally:
+                os.close(fd)
+
+            # Serve cached version if the thumbnail is newer than the source
+            if cache_path.is_file() and cache_path.stat().st_mtime >= source_mtime:
+                return cache_path
+
+            with PILImage.open(source) as img:
+                img = img.convert("RGBA")
+                img.thumbnail(THUMBNAIL_SIZE, PILImage.Resampling.LANCZOS)
+                img.save(cache_path, format="PNG")
+            return cache_path
+        except Exception:
+            log.warning("Could not generate thumbnail for %s", source, exc_info=True)
+            return None
+
+    @app.get("/api/assets/{asset_id}/thumbnail")
+    async def get_asset_thumbnail(asset_id: str) -> FileResponse:
+        """Return a small 128x128 thumbnail for an asset.
+
+        For textures with a supported extension, the source image is
+        resized on the fly and cached under ``{output_dir}/.thumbnails/``.
+        For other asset types (meshes, animations, scenes), returns 404
+        — the frontend falls back to a colored icon.
+        """
+        asset = _get_cached_asset(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        source = Path(asset.source_path)
+
+        # Only generate thumbnails for image formats Pillow can handle
+        if source.suffix.lower() not in _THUMBNAIL_EXTENSIONS:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No thumbnail available for {asset.asset_type} assets",
+            )
+
+        thumb = _generate_thumbnail(source, asset_id)
+        if thumb is None:
+            raise HTTPException(status_code=500, detail="Failed to generate thumbnail")
+
+        return FileResponse(
+            path=str(thumb),
+            media_type="image/png",
+            filename=f"{asset_id}_thumb.png",
+        )
+
     @app.get("/api/assets/{asset_id}/companions")
     async def get_asset_companion(
         asset_id: str,

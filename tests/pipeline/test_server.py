@@ -997,3 +997,89 @@ def test_process_asset_skipped(tmp_path: Path) -> None:
     # Fingerprint cache should NOT be updated on skip
     fp_path = config.cache_dir / "fingerprints.json"
     assert not fp_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail endpoint
+# ---------------------------------------------------------------------------
+
+
+def _make_png_bytes(width: int = 4, height: int = 4) -> bytes:
+    """Create a minimal valid PNG image using Pillow."""
+    import io
+
+    from PIL import Image as PILImage
+
+    img = PILImage.new("RGBA", (width, height), (255, 0, 0, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_thumbnail_texture(tmp_path: Path) -> None:
+    """Thumbnail endpoint returns a resized PNG for texture assets."""
+    png_data = _make_png_bytes(256, 256)
+    client, config = _setup(tmp_path, source_files={"textures/brick.png": png_data})
+
+    resp = client.get("/api/assets/textures--brick/thumbnail")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+
+    # Verify thumbnail was cached on disk
+    thumb_path = config.output_dir / ".thumbnails" / "textures--brick.png"
+    assert thumb_path.is_file()
+
+
+def test_thumbnail_mesh_returns_404(tmp_path: Path) -> None:
+    """Non-texture assets return 404 — frontend shows a fallback icon."""
+    client, _ = _setup(tmp_path, source_files={"models/hero.gltf": b'{"asset":{}}'})
+
+    resp = client.get("/api/assets/models--hero/thumbnail")
+    assert resp.status_code == 404
+
+
+def test_thumbnail_not_found(tmp_path: Path) -> None:
+    """Unknown asset IDs return 404."""
+    client, _ = _setup(tmp_path, source_files={"textures/a.png": _make_png_bytes()})
+
+    resp = client.get("/api/assets/nonexistent/thumbnail")
+    assert resp.status_code == 404
+
+
+def test_thumbnail_cache_hit(tmp_path: Path) -> None:
+    """Second request for the same thumbnail serves the cached file."""
+    import os
+    import time
+
+    png_data = _make_png_bytes(64, 64)
+    client, config = _setup(tmp_path, source_files={"textures/tile.png": png_data})
+
+    # First request generates
+    resp1 = client.get("/api/assets/textures--tile/thumbnail")
+    assert resp1.status_code == 200
+
+    thumb_path = config.output_dir / ".thumbnails" / "textures--tile.png"
+    mtime_first = thumb_path.stat().st_mtime
+
+    # Ensure filesystem mtime granularity can distinguish a regeneration.
+    # Sleep 1 s so any rewrite would produce a visibly different mtime.
+    time.sleep(1)
+
+    # Touch the thumbnail so its mtime advances — if the server regenerates
+    # it will overwrite with a new mtime >= now; if it serves from cache the
+    # mtime stays at mtime_first.
+    os.utime(thumb_path, (mtime_first, mtime_first))
+
+    # Second request serves from cache (same mtime)
+    resp2 = client.get("/api/assets/textures--tile/thumbnail")
+    assert resp2.status_code == 200
+    assert thumb_path.stat().st_mtime == mtime_first
+
+
+def test_thumbnail_corrupt_image(tmp_path: Path) -> None:
+    """Corrupt image data returns 500 with a clear error message."""
+    client, _ = _setup(tmp_path, source_files={"textures/bad.png": b"not-a-real-png"})
+
+    resp = client.get("/api/assets/textures--bad/thumbnail")
+    assert resp.status_code == 500
+    assert "Failed to generate thumbnail" in resp.json()["detail"]

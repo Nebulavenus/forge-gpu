@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Search, X } from "lucide-react"
-import { fetchAssets } from "@/lib/api"
+import { fetchAssets, type AssetInfo } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
 import { STATUS_META, TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams } from "@/lib/asset-meta"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,41 @@ export const Route = createFileRoute("/assets/")({
   component: AssetBrowser,
   validateSearch: validateAssetSearch,
 })
+
+/* ── Thumbnail types that the backend can generate ──────────────── */
+const THUMBNAIL_TYPES = new Set(["texture"])
+
+function AssetThumbnail({ asset }: { asset: AssetInfo }) {
+  const [failed, setFailed] = useState(false)
+  const hasThumbnail = THUMBNAIL_TYPES.has(asset.asset_type) && !failed
+
+  const onError = useCallback(() => setFailed(true), [])
+
+  if (!hasThumbnail) {
+    /* Colored icon fallback for non-texture types */
+    const meta = TYPE_META[asset.asset_type]
+    const Icon = meta?.icon
+    return (
+      <div role="img" aria-label={`${asset.name} thumbnail`} className={`flex aspect-[4/3] items-center justify-center rounded-t-lg ${meta?.bgColor ?? "bg-muted"}`}>
+        {Icon && <Icon aria-hidden className="h-10 w-10 opacity-60" />}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-t-lg bg-muted">
+      <img
+        src={`/api/assets/${encodeURIComponent(asset.id)}/thumbnail`}
+        alt={`${asset.name} thumbnail`}
+        width={128}
+        height={128}
+        loading="lazy"
+        onError={onError}
+        className="h-full w-full object-cover"
+      />
+    </div>
+  )
+}
 
 function AssetBrowser() {
   const navigate = useNavigate()
@@ -164,7 +199,7 @@ function AssetBrowser() {
           {data.assets.map((asset) => (
             <Card
               key={asset.id}
-              className="cursor-pointer transition-colors hover:bg-card/80"
+              className="cursor-pointer overflow-hidden transition-colors hover:bg-card/80"
               role="button"
               tabIndex={0}
               onClick={() =>
@@ -185,6 +220,7 @@ function AssetBrowser() {
                 }
               }}
             >
+              <AssetThumbnail asset={asset} />
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-sm">
                   <span className="truncate">{asset.name}</span>
