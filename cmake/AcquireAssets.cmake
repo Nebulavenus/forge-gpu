@@ -58,7 +58,10 @@ if(GH_EXECUTABLE)
             file(WRITE "${ASSETS_DIR}/.stamp" "downloaded")
             return()
         else()
-            message(WARNING "Failed to extract processed assets tarball")
+            # Clean up partial extraction so Tier 1 does not treat a
+            # broken directory as valid on the next run.
+            file(REMOVE_RECURSE "${ASSETS_DIR}")
+            message(WARNING "Failed to extract processed-assets.tar.gz (exit ${_tar_result}) — removed ${ASSETS_DIR}")
         endif()
     else()
         message(STATUS "No release artifact available (${_dl_error})")
