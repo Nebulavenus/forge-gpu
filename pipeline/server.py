@@ -392,13 +392,45 @@ def create_app(config: PipelineConfig) -> FastAPI:
 
     # -- REST endpoints ----------------------------------------------------
 
+    # Status values ordered so unprocessed assets surface first (most
+    # actionable).  Lower index = higher priority in the sort.
+    _STATUS_ORDER = {"new": 0, "changed": 1, "missing": 2, "processed": 3}
+
+    def _sort_assets(
+        assets: list[AssetInfo],
+        sort: str,
+        order: str,
+    ) -> list[AssetInfo]:
+        """Sort *assets* in place by the requested field and direction."""
+        reverse = order == "desc"
+        if sort == "name":
+            assets.sort(key=lambda a: a.name.lower(), reverse=reverse)
+        elif sort == "size":
+            assets.sort(key=lambda a: a.file_size, reverse=reverse)
+        elif sort == "status":
+            assets.sort(
+                key=lambda a: _STATUS_ORDER.get(a.status, 99),
+                reverse=reverse,
+            )
+        elif sort == "type":
+            assets.sort(key=lambda a: a.asset_type, reverse=reverse)
+        return assets
+
     @app.get("/api/assets", response_model=AssetListResponse)
     async def list_assets(
         type: str | None = Query(None, description="Filter by asset type"),
         status: str | None = Query(None, description="Filter by asset status"),
         search: str | None = Query(None, description="Search by filename"),
+        sort: str | None = Query(
+            None,
+            description="Sort field: name, size, status, type",
+        ),
+        order: str | None = Query(
+            None,
+            description="Sort direction: asc or desc",
+        ),
     ) -> AssetListResponse:
-        """Return all assets, optionally filtered by type, status, or name."""
+        """Return all assets, optionally filtered and sorted."""
         assets = list(_refresh_cache())
 
         if type is not None:
@@ -408,6 +440,22 @@ def create_app(config: PipelineConfig) -> FastAPI:
         if search is not None:
             term = search.lower()
             assets = [a for a in assets if term in a.name.lower()]
+
+        _VALID_SORT_FIELDS = {"name", "size", "status", "type"}
+        _VALID_SORT_ORDERS = {"asc", "desc"}
+        if order is not None and order not in _VALID_SORT_ORDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sort order: '{order}'. Must be one of: asc, desc",
+            )
+        if sort is not None:
+            if sort not in _VALID_SORT_FIELDS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid sort field: '{sort}'. Must be one of: {', '.join(sorted(_VALID_SORT_FIELDS))}",
+                )
+            _default_order = "desc" if sort == "size" else "asc"
+            _sort_assets(assets, sort, order or _default_order)
 
         responses = [AssetResponse(**a.__dict__) for a in assets]
         return AssetListResponse(assets=responses, total=len(responses))

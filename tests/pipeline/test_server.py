@@ -72,9 +72,9 @@ def _setup(
 # ---------------------------------------------------------------------------
 
 SAMPLE_SOURCES: dict[str, bytes] = {
-    "textures/brick.png": b"PNG fake",
-    "models/hero.gltf": b'{"asset":{}}',
-    "anims/walk.fanim": b"FANIM data",
+    "b_textures/brick.png": b"PNG fake",
+    "a_models/hero.gltf": b'{"asset":{}}',
+    "c_anims/walk.fanim": b"FANIM data",
 }
 
 
@@ -1083,3 +1083,165 @@ def test_thumbnail_corrupt_image(tmp_path: Path) -> None:
     resp = client.get("/api/assets/textures--bad/thumbnail")
     assert resp.status_code == 500
     assert "Failed to generate thumbnail" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Sort tests
+# ---------------------------------------------------------------------------
+
+
+def test_sort_by_name_asc(three_assets: tuple[TestClient, PipelineConfig]) -> None:
+    """sort=name&order=asc returns assets in alphabetical order."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?sort=name&order=asc")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()["assets"]]
+    assert names == sorted(names, key=str.lower)
+
+
+def test_sort_by_name_desc(three_assets: tuple[TestClient, PipelineConfig]) -> None:
+    """sort=name&order=desc returns assets in reverse alphabetical order."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?sort=name&order=desc")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()["assets"]]
+    assert names == sorted(names, key=str.lower, reverse=True)
+
+
+def test_sort_by_size(tmp_path: Path) -> None:
+    """sort=size default order is desc (largest first)."""
+    # Path order: a_medium (100B), b_small (1B), c_large (1000B)
+    # — deliberately not in size order so the sort is exercised.
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "a_medium.gltf": b"x" * 100,
+            "b_small.png": b"x",
+            "c_large.obj": b"x" * 1000,
+        },
+    )
+    resp = client.get("/api/assets?sort=size")
+    assert resp.status_code == 200
+    sizes = [a["file_size"] for a in resp.json()["assets"]]
+    assert sizes == sorted(sizes, reverse=True)
+
+
+def test_sort_by_size_asc(tmp_path: Path) -> None:
+    """sort=size&order=asc returns smallest first."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "a_medium.gltf": b"x" * 100,
+            "b_small.png": b"x",
+            "c_large.obj": b"x" * 1000,
+        },
+    )
+    resp = client.get("/api/assets?sort=size&order=asc")
+    assert resp.status_code == 200
+    sizes = [a["file_size"] for a in resp.json()["assets"]]
+    assert sizes == sorted(sizes)
+
+
+def test_sort_by_type(three_assets: tuple[TestClient, PipelineConfig]) -> None:
+    """sort=type groups assets by type alphabetically."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?sort=type&order=asc")
+    assert resp.status_code == 200
+    types = [a["asset_type"] for a in resp.json()["assets"]]
+    assert types == sorted(types)
+
+
+def test_sort_by_status(tmp_path: Path) -> None:
+    """sort=status orders all four statuses: new → changed → missing → processed."""
+    import hashlib
+
+    # "processed": matching cache entry + output file
+    fp_done = hashlib.sha256(b"PNG done").hexdigest()
+    # "changed": cache entry exists but fingerprint differs from source
+    fp_stale = hashlib.sha256(b"old content").hexdigest()
+
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            # Will be "new" — no cache entry at all
+            "models/new.gltf": b'{"asset":{}}',
+            # Will be "changed" — cache fingerprint mismatches source content
+            "textures/stale.png": b"PNG updated",
+            # Will be "missing" — cache matches but no output file
+            "anims/gone.fanim": b"FANIM data",
+            # Will be "processed" — cache matches + output exists
+            "textures/done.png": b"PNG done",
+        },
+        output_files={
+            "textures/done.ftex": b"processed",
+        },
+        cache_entries={
+            "textures/done.png": fp_done,
+            "textures/stale.png": fp_stale,
+            "anims/gone.fanim": hashlib.sha256(b"FANIM data").hexdigest(),
+        },
+    )
+    resp = client.get("/api/assets?sort=status&order=asc")
+    assert resp.status_code == 200
+    statuses = [a["status"] for a in resp.json()["assets"]]
+    assert statuses == ["new", "changed", "missing", "processed"]
+
+
+def test_sort_combined_with_filter(tmp_path: Path) -> None:
+    """Sorting and filtering compose correctly with multiple matches."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "textures/brick.png": b"PNG brick",
+            "textures/alpha.png": b"PNG alpha",
+            "models/hero.gltf": b'{"asset":{}}',
+        },
+    )
+    resp = client.get("/api/assets?type=texture&sort=name&order=asc")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 2
+    names = [a["name"] for a in body["assets"]]
+    assert names == sorted(names, key=str.lower)
+    assert all(a["asset_type"] == "texture" for a in body["assets"])
+
+
+def test_sort_without_order_uses_default(
+    three_assets: tuple[TestClient, PipelineConfig],
+) -> None:
+    """sort=name without order defaults to asc."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?sort=name")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()["assets"]]
+    assert names == sorted(names, key=str.lower)
+
+
+def test_sort_invalid_field(
+    three_assets: tuple[TestClient, PipelineConfig],
+) -> None:
+    """An unknown sort field returns 400 with a descriptive message."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?sort=banana")
+    assert resp.status_code == 400
+    assert "Invalid sort field" in resp.json()["detail"]
+
+
+def test_sort_invalid_order(
+    three_assets: tuple[TestClient, PipelineConfig],
+) -> None:
+    """An unknown sort order returns 400 with a descriptive message."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?sort=size&order=descending")
+    assert resp.status_code == 400
+    assert "Invalid sort order" in resp.json()["detail"]
+
+
+def test_invalid_order_without_sort(
+    three_assets: tuple[TestClient, PipelineConfig],
+) -> None:
+    """An invalid order is rejected even when sort is not provided."""
+    client, _ = three_assets
+    resp = client.get("/api/assets?order=descending")
+    assert resp.status_code == 400
+    assert "Invalid sort order" in resp.json()["detail"]

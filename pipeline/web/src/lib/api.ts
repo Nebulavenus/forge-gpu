@@ -49,6 +49,8 @@ export function fetchAssets(params?: AssetSearchParams): Promise<AssetsResponse>
   if (params?.type) searchParams.set("type", params.type)
   if (params?.status) searchParams.set("status", params.status)
   if (params?.search) searchParams.set("search", params.search)
+  if (params?.sort) searchParams.set("sort", params.sort)
+  if (params?.order) searchParams.set("order", params.order)
   const query = searchParams.toString()
   const url = query ? `/api/assets?${query}` : "/api/assets"
   return apiFetch<AssetsResponse>(url)

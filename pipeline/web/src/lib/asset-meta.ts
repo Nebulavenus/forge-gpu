@@ -46,15 +46,26 @@ export interface AssetSearchParams {
   type?: string
   status?: string
   search?: string
+  sort?: string
+  order?: string
 }
+
+const VALID_SORT_FIELDS = new Set(["name", "size", "status", "type"])
+const VALID_SORT_ORDERS = new Set(["asc", "desc"])
 
 export function validateAssetSearch(search: Record<string, unknown>): AssetSearchParams {
   const type = typeof search.type === "string" ? search.type.trim() : undefined
   const status = typeof search.status === "string" ? search.status.trim() : undefined
   const s = typeof search.search === "string" ? search.search.trim() : undefined
+  const rawSort = typeof search.sort === "string" ? search.sort.trim() : undefined
+  const rawOrder = typeof search.order === "string" ? search.order.trim() : undefined
+  const sort = rawSort && VALID_SORT_FIELDS.has(rawSort) ? rawSort : undefined
+  const order = sort && rawOrder && VALID_SORT_ORDERS.has(rawOrder) ? rawOrder : undefined
   return {
     type: type || undefined,
     status: status || undefined,
     search: s || undefined,
+    sort: sort || undefined,
+    order: order || undefined,
   }
 }

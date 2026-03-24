@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TypeFilter } from "@/components/type-filter"
+import { SortDropdown } from "@/components/sort-dropdown"
 import { AtlasPreview } from "@/components/atlas-preview"
 
 export const Route = createFileRoute("/assets/")({
@@ -54,7 +55,7 @@ function AssetThumbnail({ asset }: { asset: AssetInfo }) {
 
 function AssetBrowser() {
   const navigate = useNavigate()
-  const { type: searchType, status: statusFilter, search: searchQuery } = Route.useSearch()
+  const { type: searchType, status: statusFilter, search: searchQuery, sort: sortField, order: sortOrder } = Route.useSearch()
   const typeFilter = searchType ?? ""
   const [localSearch, setLocalSearch] = useState(searchQuery ?? "")
 
@@ -63,6 +64,24 @@ function AssetBrowser() {
     setLocalSearch(searchQuery ?? "")
   }, [searchQuery])
 
+  /** Build search params preserving all current filters and sort state.
+   *  Uses the live localSearch input so control-driven navigations
+   *  (sort, type filter) keep the user's in-progress text. */
+  function currentSearch(overrides?: Partial<AssetSearchParams>): AssetSearchParams {
+    const merged = {
+      type: searchType,
+      status: statusFilter,
+      search: localSearch.trim() || undefined,
+      sort: sortField,
+      order: sortOrder,
+      ...overrides,
+    }
+    // Strip undefined/empty values so the URL stays clean
+    return Object.fromEntries(
+      Object.entries(merged).filter(([, v]) => v != null && v !== ""),
+    ) as AssetSearchParams
+  }
+
   /* Debounce typing → URL update */
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -70,36 +89,31 @@ function AssetBrowser() {
       if (trimmed !== (searchQuery ?? "")) {
         navigate({
           to: "/assets",
-          search: {
-            ...(searchType ? { type: searchType } : {}),
-            ...(statusFilter ? { status: statusFilter } : {}),
-            ...(trimmed ? { search: trimmed } : {}),
-          },
+          search: currentSearch({ search: trimmed || undefined }),
           replace: true,
         })
       }
     }, 300)
     return () => clearTimeout(timer)
-  }, [localSearch, navigate, searchType, statusFilter, searchQuery])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localSearch, navigate, searchType, statusFilter, searchQuery, sortField, sortOrder])
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["assets", typeFilter, statusFilter, searchQuery],
+    queryKey: ["assets", typeFilter, statusFilter, searchQuery, sortField, sortOrder],
     queryFn: () =>
       fetchAssets({
         type: typeFilter || undefined,
         status: statusFilter || undefined,
         search: searchQuery || undefined,
+        sort: sortField || undefined,
+        order: sortOrder || undefined,
       }),
   })
 
-  /** Build search params for detail navigation. Round-trips the committed
-   *  filter state so pressing Back returns to the same list. */
+  /** Build search params for detail navigation. Uses the committed
+   *  searchQuery (not live input) so the URL reflects the actual query. */
   function detailSearch(): AssetSearchParams {
-    return {
-      ...(searchType ? { type: searchType } : {}),
-      ...(statusFilter ? { status: statusFilter } : {}),
-      ...(searchQuery ? { search: searchQuery } : {}),
-    }
+    return currentSearch({ search: searchQuery?.trim() || undefined })
   }
 
   return (
@@ -127,10 +141,7 @@ function AssetBrowser() {
                 onClick={() =>
                   navigate({
                     to: "/assets",
-                    search: {
-                      ...(searchType ? { type: searchType } : {}),
-                      ...(localSearch.trim() ? { search: localSearch.trim() } : {}),
-                    },
+                    search: currentSearch({ status: undefined }),
                   })
                 }
               >
@@ -149,10 +160,7 @@ function AssetBrowser() {
                 onClick={() =>
                   navigate({
                     to: "/assets",
-                    search: {
-                      ...(statusFilter ? { status: statusFilter } : {}),
-                      ...(localSearch.trim() ? { search: localSearch.trim() } : {}),
-                    },
+                    search: currentSearch({ type: undefined }),
                   })
                 }
               >
@@ -161,19 +169,27 @@ function AssetBrowser() {
             </Badge>
           )}
         </div>
-        <TypeFilter
-          value={typeFilter}
-          onChange={(newType) =>
-            navigate({
-              to: "/assets",
-              search: {
-                ...(newType ? { type: newType } : {}),
-                ...(statusFilter ? { status: statusFilter } : {}),
-                ...(localSearch.trim() ? { search: localSearch.trim() } : {}),
-              },
-            })
-          }
-        />
+        <div className="flex items-center gap-2">
+          <SortDropdown
+            sort={sortField}
+            order={sortOrder}
+            onChange={(newSort, newOrder) =>
+              navigate({
+                to: "/assets",
+                search: currentSearch({ sort: newSort, order: newOrder }),
+              })
+            }
+          />
+          <TypeFilter
+            value={typeFilter}
+            onChange={(newType) =>
+              navigate({
+                to: "/assets",
+                search: currentSearch({ type: newType || undefined }),
+              })
+            }
+          />
+        </div>
       </div>
 
       {isLoading && (
