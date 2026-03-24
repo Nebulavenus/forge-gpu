@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Search, X } from "lucide-react"
 import { fetchAssets } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
-import { STATUS_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams } from "@/lib/asset-meta"
+import { STATUS_META, TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams } from "@/lib/asset-meta"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -22,12 +22,10 @@ function AssetBrowser() {
   const { type: searchType, status: statusFilter, search: searchQuery } = Route.useSearch()
   const typeFilter = searchType ?? ""
   const [localSearch, setLocalSearch] = useState(searchQuery ?? "")
-  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery ?? "")
 
   /* Sync local input when the URL search param changes externally */
   useEffect(() => {
     setLocalSearch(searchQuery ?? "")
-    setDebouncedSearch(searchQuery ?? "")
   }, [searchQuery])
 
   /* Debounce typing → URL update */
@@ -45,22 +43,17 @@ function AssetBrowser() {
           replace: true,
         })
       }
-      setDebouncedSearch(trimmed)
     }, 300)
     return () => clearTimeout(timer)
   }, [localSearch, navigate, searchType, statusFilter, searchQuery])
 
-  /* Prefer the route param (immediate on navigation) over debouncedSearch
-     (which lags until the sync effect fires after the first render). */
-  const effectiveSearch = searchQuery ?? debouncedSearch
-
   const { data, isLoading, error } = useQuery({
-    queryKey: ["assets", typeFilter, statusFilter, effectiveSearch],
+    queryKey: ["assets", typeFilter, statusFilter, searchQuery],
     queryFn: () =>
       fetchAssets({
         type: typeFilter || undefined,
         status: statusFilter || undefined,
-        search: effectiveSearch || undefined,
+        search: searchQuery || undefined,
       }),
   })
 
@@ -70,7 +63,7 @@ function AssetBrowser() {
     return {
       ...(searchType ? { type: searchType } : {}),
       ...(statusFilter ? { status: statusFilter } : {}),
-      ...(effectiveSearch ? { search: effectiveSearch } : {}),
+      ...(searchQuery ? { search: searchQuery } : {}),
     }
   }
 
@@ -101,6 +94,28 @@ function AssetBrowser() {
                     to: "/assets",
                     search: {
                       ...(searchType ? { type: searchType } : {}),
+                      ...(localSearch.trim() ? { search: localSearch.trim() } : {}),
+                    },
+                  })
+                }
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </Badge>
+          )}
+          {searchType && !TYPE_META[searchType] && (
+            <Badge variant="outline" className="flex items-center gap-1 whitespace-nowrap">
+              {searchType}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 hover:bg-transparent"
+                aria-label="Clear type filter"
+                onClick={() =>
+                  navigate({
+                    to: "/assets",
+                    search: {
+                      ...(statusFilter ? { status: statusFilter } : {}),
                       ...(localSearch.trim() ? { search: localSearch.trim() } : {}),
                     },
                   })
