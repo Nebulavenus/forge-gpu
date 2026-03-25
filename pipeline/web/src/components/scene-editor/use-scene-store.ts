@@ -17,6 +17,7 @@ import type {
   SnapSize,
 } from "./types"
 import { SNAP_SIZES } from "./types"
+import { computeWorldPosition } from "./scene-utils"
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -42,9 +43,11 @@ function cloneScene(scene: SceneData): SceneData {
 
 // ── Reducer ─────────────────────────────────────────────────────────────
 
+const EMPTY_SELECTION: Set<string> = new Set()
+
 export const initialState: SceneState = {
   scene: null,
-  selectedId: null,
+  selectedIds: EMPTY_SELECTION,
   gizmoMode: "translate" as GizmoMode,
   snapEnabled: false,
   snapSize: 1.0 as SnapSize,
@@ -77,7 +80,7 @@ export function sceneReducer(
       return {
         ...state,
         scene: action.scene,
-        selectedId: null,
+        selectedIds: EMPTY_SELECTION,
         undoStack: [],
         redoStack: [],
         dirty: false,
@@ -100,18 +103,84 @@ export function sceneReducer(
     case "REMOVE_OBJECT": {
       if (!state.scene) return state
       const stacks = pushUndo(state)
-      // Reparent children of removed object to null (root)
+      // Reparent children of removed object to root, preserving world position
+      const objectMap = new Map(state.scene.objects.map((o) => [o.id, o]))
+      const removed = objectMap.get(action.objectId)
       const objects = state.scene.objects
         .filter((o) => o.id !== action.objectId)
-        .map((o) =>
-          o.parent_id === action.objectId ? { ...o, parent_id: null } : o,
-        )
+        .map((o) => {
+          if (o.parent_id !== action.objectId) return o
+          // Child was local to removed parent — reparent to grandparent
+          const wp = computeWorldPosition(o, objectMap)
+          const newParentId = removed?.parent_id ?? null
+          if (newParentId !== null) {
+            const grandparent = objectMap.get(newParentId)
+            if (grandparent) {
+              const gwp = computeWorldPosition(grandparent, objectMap)
+              return {
+                ...o,
+                parent_id: newParentId,
+                position: [wp[0] - gwp[0], wp[1] - gwp[1], wp[2] - gwp[2]] as [number, number, number],
+              }
+            }
+          }
+          return { ...o, parent_id: null, position: wp }
+        })
+      const newIds = new Set(state.selectedIds)
+      newIds.delete(action.objectId)
       return {
         ...state,
         ...stacks,
         scene: { ...state.scene, objects },
-        selectedId:
-          state.selectedId === action.objectId ? null : state.selectedId,
+        selectedIds: newIds.size === state.selectedIds.size ? state.selectedIds : newIds,
+        dirty: true,
+      }
+    }
+
+    case "REMOVE_OBJECTS": {
+      if (!state.scene) return state
+      if (action.objectIds.length === 0) return state
+      const removeSet = new Set(action.objectIds)
+      const stacks = pushUndo(state)
+      // Build map before filtering so we can compute world positions
+      const objectMap = new Map(state.scene.objects.map((o) => [o.id, o]))
+      const objects = state.scene.objects
+        .filter((o) => !removeSet.has(o.id))
+        .map((o) => {
+          if (o.parent_id === null || !removeSet.has(o.parent_id)) return o
+          // Orphaned child — promote to world space, preserving visual position.
+          // Walk up to find the nearest surviving ancestor.
+          const wp = computeWorldPosition(o, objectMap)
+          let newParent: string | null = null
+          const removedParent = objectMap.get(o.parent_id)
+          if (removedParent) {
+            // Walk up from removed parent to find nearest non-removed ancestor
+            let ancestor = removedParent.parent_id
+            while (ancestor !== null && removeSet.has(ancestor)) {
+              const a = objectMap.get(ancestor)
+              ancestor = a ? a.parent_id : null
+            }
+            newParent = ancestor
+          }
+          if (newParent !== null) {
+            // Convert world position to local relative to surviving ancestor
+            const ancestorObj = objectMap.get(newParent)!
+            const awp = computeWorldPosition(ancestorObj, objectMap)
+            return {
+              ...o,
+              parent_id: newParent,
+              position: [wp[0] - awp[0], wp[1] - awp[1], wp[2] - awp[2]] as [number, number, number],
+            }
+          }
+          return { ...o, parent_id: null, position: wp }
+        })
+      const newIds = new Set(state.selectedIds)
+      for (const id of action.objectIds) newIds.delete(id)
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        selectedIds: newIds.size > 0 ? newIds : EMPTY_SELECTION,
         dirty: true,
       }
     }
@@ -129,6 +198,27 @@ export function sceneReducer(
             }
           : o,
       )
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        dirty: true,
+      }
+    }
+
+    case "UPDATE_TRANSFORMS_BATCH": {
+      if (!state.scene) return state
+      if (action.updates.length === 0) return state
+      const stacks = pushUndo(state)
+      const updateMap = new Map(
+        action.updates.map((u) => [u.objectId, u]),
+      )
+      const objects = state.scene.objects.map((o) => {
+        const u = updateMap.get(o.id)
+        return u
+          ? { ...o, position: u.position, rotation: u.rotation, scale: u.scale }
+          : o
+      })
       return {
         ...state,
         ...stacks,
@@ -259,7 +349,50 @@ export function sceneReducer(
           ...state.scene,
           objects: [...state.scene.objects, clone],
         },
-        selectedId: clone.id,
+        selectedIds: new Set([clone.id]),
+        dirty: true,
+      }
+    }
+
+    case "DUPLICATE_OBJECTS": {
+      if (!state.scene) return state
+      if (action.objectIds.length === 0) return state
+      const sources = action.objectIds
+        .map((id) => state.scene!.objects.find((o) => o.id === id))
+        .filter((o): o is SceneObject => o !== undefined)
+      if (sources.length === 0) return state
+      const stacks = pushUndo(state)
+      // Build old→new ID map first so cloned parent/child relationships
+      // point to the cloned parent, not the original.
+      const idMap = new Map(
+        sources.map((source) => [source.id, crypto.randomUUID().slice(0, 12)]),
+      )
+      const clones = sources.map((source) => {
+        const parentWasDuplicated =
+          source.parent_id !== null && idMap.has(source.parent_id)
+
+        return {
+          ...source,
+          id: idMap.get(source.id)!,
+          name: `${source.name} (copy)`,
+          // Only offset top-level roots; children keep their local position
+          // to avoid double-offset when the parent clone is also shifted.
+          position: parentWasDuplicated
+            ? (source.position as [number, number, number])
+            : ([source.position[0] + 1, source.position[1], source.position[2]] as [number, number, number]),
+          parent_id: parentWasDuplicated
+            ? idMap.get(source.parent_id!)!
+            : source.parent_id,
+        }
+      })
+      return {
+        ...state,
+        ...stacks,
+        scene: {
+          ...state.scene,
+          objects: [...state.scene.objects, ...clones],
+        },
+        selectedIds: new Set(clones.map((c) => c.id)),
         dirty: true,
       }
     }
@@ -278,9 +411,157 @@ export function sceneReducer(
       }
     }
 
+    case "SET_VISIBILITY_BATCH": {
+      if (!state.scene) return state
+      if (action.objectIds.length === 0) return state
+      const stacks = pushUndo(state)
+      const idSet = new Set(action.objectIds)
+      const objects = state.scene.objects.map((o) =>
+        idSet.has(o.id) ? { ...o, visible: action.visible } : o,
+      )
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        dirty: true,
+      }
+    }
+
+    case "GROUP_OBJECTS": {
+      if (!state.scene) return state
+      if (action.objectIds.length < 2) return state
+      const stacks = pushUndo(state)
+      const groupId = crypto.randomUUID().slice(0, 12)
+      const groupedSet = new Set(action.objectIds)
+      // Compute centroid of grouped objects so the group has a meaningful
+      // position and children keep their world-space positions.
+      const grouped = state.scene.objects.filter((o) => groupedSet.has(o.id))
+      const cx = grouped.reduce((s, o) => s + o.position[0], 0) / grouped.length
+      const cy = grouped.reduce((s, o) => s + o.position[1], 0) / grouped.length
+      const cz = grouped.reduce((s, o) => s + o.position[2], 0) / grouped.length
+      const group: SceneObject = {
+        id: groupId,
+        name: "Group",
+        asset_id: null,
+        position: [cx, cy, cz],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+        parent_id: null,
+        visible: true,
+      }
+      // Offset child positions so they stay at the same world-space location
+      const objects = [
+        group,
+        ...state.scene.objects.map((o) =>
+          groupedSet.has(o.id)
+            ? {
+                ...o,
+                parent_id: groupId,
+                position: [
+                  o.position[0] - cx,
+                  o.position[1] - cy,
+                  o.position[2] - cz,
+                ] as [number, number, number],
+              }
+            : o,
+        ),
+      ]
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        selectedIds: new Set([groupId]),
+        dirty: true,
+      }
+    }
+
+    case "UNGROUP_OBJECT": {
+      if (!state.scene) return state
+      const groupObj = state.scene.objects.find((o) => o.id === action.groupId)
+      if (!groupObj) return state
+      // Only ungroup empty-asset groups — reject ungrouping asset-backed objects
+      if (groupObj.asset_id !== null) return state
+      const children = state.scene.objects.filter(
+        (o) => o.parent_id === action.groupId,
+      )
+      if (children.length === 0) return state
+      const stacks = pushUndo(state)
+      // Apply group's position offset to children so they keep world-space positions.
+      // (Group's rotation is identity [0,0,0,1] and scale is [1,1,1] when created
+      // by GROUP_OBJECTS, so only position needs adjustment.)
+      const gp = groupObj.position
+      const childIds = new Set(children.map((c) => c.id))
+      const objects = state.scene.objects
+        .filter((o) => o.id !== action.groupId)
+        .map((o) =>
+          childIds.has(o.id)
+            ? {
+                ...o,
+                parent_id: groupObj.parent_id,
+                position: [
+                  o.position[0] + gp[0],
+                  o.position[1] + gp[1],
+                  o.position[2] + gp[2],
+                ] as [number, number, number],
+              }
+            : o,
+        )
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        selectedIds: childIds,
+        dirty: true,
+      }
+    }
+
     // Non-undoable UI state changes
-    case "SELECT":
-      return { ...state, selectedId: action.objectId }
+    case "SELECT": {
+      const mode = action.mode ?? "replace"
+      if (mode === "replace") {
+        if (action.objectId === null) {
+          return state.selectedIds.size === 0
+            ? state
+            : { ...state, selectedIds: EMPTY_SELECTION }
+        }
+        // Single-select replace: if already the only selection, no-op
+        if (state.selectedIds.size === 1 && state.selectedIds.has(action.objectId)) {
+          return state
+        }
+        return { ...state, selectedIds: new Set([action.objectId]) }
+      }
+      if (mode === "add") {
+        if (action.objectId === null) return state
+        if (state.selectedIds.has(action.objectId)) return state
+        const ids = new Set(state.selectedIds)
+        ids.add(action.objectId)
+        return { ...state, selectedIds: ids }
+      }
+      // toggle
+      if (action.objectId === null) return state
+      const ids = new Set(state.selectedIds)
+      if (ids.has(action.objectId)) {
+        ids.delete(action.objectId)
+      } else {
+        ids.add(action.objectId)
+      }
+      return { ...state, selectedIds: ids.size > 0 ? ids : EMPTY_SELECTION }
+    }
+
+    case "SELECT_SET": {
+      if (action.objectIds.length === 0) {
+        return state.selectedIds.size === 0
+          ? state
+          : { ...state, selectedIds: EMPTY_SELECTION }
+      }
+      return { ...state, selectedIds: new Set(action.objectIds) }
+    }
+
+    case "SELECT_ALL": {
+      if (!state.scene || state.scene.objects.length === 0) return state
+      const allIds = new Set(state.scene.objects.map((o) => o.id))
+      return { ...state, selectedIds: allIds }
+    }
 
     case "SET_GIZMO_MODE":
       return { ...state, gizmoMode: action.mode }
@@ -303,10 +584,17 @@ export function sceneReducer(
 
     case "UNDO": {
       if (state.undoStack.length === 0 || !state.scene) return state
-      const previous = state.undoStack[state.undoStack.length - 1] ?? null
+      const previous = state.undoStack[state.undoStack.length - 1]
+      if (!previous) return state
+      // Prune selected IDs that no longer exist in the restored scene
+      const undoValidIds = new Set(previous.objects.map((o) => o.id))
+      const undoSelected = new Set(
+        [...state.selectedIds].filter((id) => undoValidIds.has(id)),
+      )
       return {
         ...state,
         scene: previous,
+        selectedIds: undoSelected.size > 0 ? undoSelected : EMPTY_SELECTION,
         undoStack: state.undoStack.slice(0, -1),
         redoStack: [...state.redoStack, cloneScene(state.scene)],
         dirty: state.undoStack.length > 1,
@@ -315,10 +603,17 @@ export function sceneReducer(
 
     case "REDO": {
       if (state.redoStack.length === 0 || !state.scene) return state
-      const next = state.redoStack[state.redoStack.length - 1] ?? null
+      const next = state.redoStack[state.redoStack.length - 1]
+      if (!next) return state
+      // Prune selected IDs that no longer exist in the restored scene
+      const redoValidIds = new Set(next.objects.map((o) => o.id))
+      const redoSelected = new Set(
+        [...state.selectedIds].filter((id) => redoValidIds.has(id)),
+      )
       return {
         ...state,
         scene: next,
+        selectedIds: redoSelected.size > 0 ? redoSelected : EMPTY_SELECTION,
         redoStack: state.redoStack.slice(0, -1),
         undoStack: [...state.undoStack, cloneScene(state.scene)].slice(
           -MAX_UNDO,
@@ -337,7 +632,8 @@ export function sceneReducer(
 export function useSceneStore() {
   const [state, dispatch] = useReducer(sceneReducer, initialState)
 
-  // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Shift+Z = redo
+  // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Shift+Z = redo, Ctrl+D = duplicate,
+  // Ctrl+A = select all, Delete/Backspace = remove selected
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't intercept shortcuts when editing text
@@ -356,20 +652,37 @@ export function useSceneStore() {
       }
       if ((e.ctrlKey || e.metaKey) && key === "d") {
         e.preventDefault()
-        if (state.selectedId) {
-          dispatch({ type: "DUPLICATE_OBJECT", objectId: state.selectedId })
+        if (state.selectedIds.size === 1) {
+          dispatch({ type: "DUPLICATE_OBJECT", objectId: [...state.selectedIds][0]! })
+        } else if (state.selectedIds.size > 1) {
+          dispatch({ type: "DUPLICATE_OBJECTS", objectIds: [...state.selectedIds] })
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && key === "a") {
+        e.preventDefault()
+        dispatch({ type: "SELECT_ALL" })
+      }
+      if (key === "delete" || key === "backspace") {
+        if (state.selectedIds.size > 0) {
+          e.preventDefault()
+          dispatch({ type: "REMOVE_OBJECTS", objectIds: [...state.selectedIds] })
         }
       }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [state.selectedId])
+  }, [state.selectedIds])
 
-  const selectedObject =
-    state.scene?.objects.find((o) => o.id === state.selectedId) ?? null
+  // Derive the "primary" selected object (last in set iteration order) for
+  // the inspector panel when a single object is selected. For multi-select,
+  // consumers use selectedIds directly.
+  const selectedObjects =
+    state.scene?.objects.filter((o) => state.selectedIds.has(o.id)) ?? []
+
+  const selectedObject = selectedObjects.length === 1 ? (selectedObjects[0] ?? null) : null
 
   const rootObjects =
     state.scene?.objects.filter((o) => o.parent_id === null) ?? []
 
-  return { state, dispatch, selectedObject, rootObjects }
+  return { state, dispatch, selectedObject, selectedObjects, rootObjects }
 }

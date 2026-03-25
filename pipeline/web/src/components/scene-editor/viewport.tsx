@@ -4,6 +4,10 @@
  * Renders placed scene objects with react-three-fiber. The selected object
  * gets TransformControls (translate/rotate/scale gizmo from drei).
  * Transforms are committed to the store on mouse release, not every frame.
+ *
+ * Multi-select: Shift+click adds to selection, Ctrl/Cmd+click toggles.
+ * Drag-select (box select) draws a rubber-band rectangle to select objects
+ * whose screen-space positions fall within the box.
  */
 
 import { type Dispatch, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -21,6 +25,7 @@ import { fetchAsset } from "@/lib/api"
 import { usePipelineModel } from "@/lib/use-pipeline-model"
 import type { GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
 import { ASSET_DRAG_MIME } from "./asset-shelf"
+import { computeWorldPosition } from "./scene-utils"
 import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } from "./scene-stats"
 
 // ── Fallback box for objects without an asset ───────────────────────────
@@ -83,7 +88,8 @@ function LoadedModel({ assetId }: { assetId: string }) {
 
 interface SceneObjectMeshProps {
   obj: SceneObject
-  isSelected: boolean
+  /** Whether this specific object should show the gizmo (primary selection). */
+  showGizmo: boolean
   gizmoMode: GizmoMode
   snapEnabled: boolean
   snapSize: SnapSize
@@ -94,7 +100,7 @@ interface SceneObjectMeshProps {
 
 function SceneObjectMesh({
   obj,
-  isSelected,
+  showGizmo,
   gizmoMode,
   snapEnabled,
   snapSize,
@@ -132,7 +138,7 @@ function SceneObjectMesh({
         orbitRef.current.enabled = true
       }
     }
-  }, [isSelected, orbitRef])
+  }, [showGizmo, orbitRef])
 
   const commitTransform = () => {
     if (!groupRef.current) return
@@ -155,7 +161,15 @@ function SceneObjectMesh({
         visible={obj.visible}
         onClick={(e) => {
           e.stopPropagation()
-          dispatch({ type: "SELECT", objectId: obj.id })
+          // Shift+click → add to selection, Ctrl/Cmd+click → toggle
+          const nativeEvent = e.nativeEvent as PointerEvent
+          if (nativeEvent.shiftKey) {
+            dispatch({ type: "SELECT", objectId: obj.id, mode: "add" })
+          } else if (nativeEvent.ctrlKey || nativeEvent.metaKey) {
+            dispatch({ type: "SELECT", objectId: obj.id, mode: "toggle" })
+          } else {
+            dispatch({ type: "SELECT", objectId: obj.id })
+          }
         }}
       >
         <Suspense fallback={<FallbackBox />}>
@@ -167,7 +181,7 @@ function SceneObjectMesh({
         </Suspense>
         {children}
       </group>
-      {isSelected && groupRef.current && (
+      {showGizmo && groupRef.current && (
         <TransformControls
           ref={transformRef}
           object={groupRef.current}
@@ -187,7 +201,8 @@ function SceneObjectMesh({
 interface RenderHierarchyProps {
   obj: SceneObject
   childrenMap: Map<string | null, SceneObject[]>
-  selectedId: string | null
+  /** The single object that gets the transform gizmo. */
+  gizmoTargetId: string | null
   gizmoMode: GizmoMode
   snapEnabled: boolean
   snapSize: SnapSize
@@ -196,13 +211,13 @@ interface RenderHierarchyProps {
 }
 
 function renderHierarchy(props: RenderHierarchyProps): React.ReactNode {
-  const { obj, childrenMap, selectedId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef } = props
+  const { obj, childrenMap, gizmoTargetId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef } = props
   const children = childrenMap.get(obj.id) ?? []
   return (
     <SceneObjectMesh
       key={obj.id}
       obj={obj}
-      isSelected={obj.id === selectedId}
+      showGizmo={obj.id === gizmoTargetId}
       gizmoMode={gizmoMode}
       snapEnabled={snapEnabled}
       snapSize={snapSize}
@@ -216,25 +231,106 @@ function renderHierarchy(props: RenderHierarchyProps): React.ReactNode {
   )
 }
 
+// ── Box select helper (inside Canvas) ────────────────────────────────────
+
+interface BoxSelectHelperProps {
+  objects: SceneObject[]
+  /** Stable ref set by the outer component with the current selection rect. */
+  boxRef: React.MutableRefObject<{
+    active: boolean
+    startX: number
+    startY: number
+    endX: number
+    endY: number
+  }>
+  /** Callback that receives the IDs of objects inside the box. */
+  onBoxSelect: (ids: string[]) => void
+}
+
+/**
+ * A component that lives inside the Canvas to access the Three.js camera.
+ * When a box select completes (active transitions false), it projects all
+ * object world-space positions to screen space and returns matching IDs.
+ */
+function BoxSelectProjector({ objects, boxRef, onBoxSelect }: BoxSelectHelperProps) {
+  const { camera, gl } = useThree()
+  const prevActive = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const check = () => {
+      if (cancelled) return
+      // Detect end of box select
+      if (prevActive.current && !boxRef.current.active) {
+        const { startX, startY, endX, endY } = boxRef.current
+        const rect = gl.domElement.getBoundingClientRect()
+
+        // Normalize to canvas-relative pixels
+        const x1 = Math.min(startX, endX) - rect.left
+        const x2 = Math.max(startX, endX) - rect.left
+        const y1 = Math.min(startY, endY) - rect.top
+        const y2 = Math.max(startY, endY) - rect.top
+
+        const objectMap = new Map(objects.map((o) => [o.id, o]))
+        const vec = new THREE.Vector3()
+        const ids: string[] = []
+
+        for (const obj of objects) {
+          const worldPos = computeWorldPosition(obj, objectMap)
+          vec.set(worldPos[0], worldPos[1], worldPos[2])
+          vec.project(camera)
+          // Convert from NDC (-1..1) to pixel coordinates
+          const sx = ((vec.x + 1) / 2) * rect.width
+          const sy = ((-vec.y + 1) / 2) * rect.height
+
+          if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2 && vec.z < 1) {
+            ids.push(obj.id)
+          }
+        }
+
+        onBoxSelect(ids)
+      }
+      prevActive.current = boxRef.current.active
+      requestAnimationFrame(check)
+    }
+    requestAnimationFrame(check)
+    return () => {
+      cancelled = true
+    }
+  }, [objects, camera, gl, boxRef, onBoxSelect])
+
+  return null
+}
+
 // ── Scene contents (inside Canvas) ──────────────────────────────────────
 
 interface SceneContentsProps {
   objects: SceneObject[]
-  selectedId: string | null
+  gizmoTargetId: string | null
   gizmoMode: GizmoMode
   snapEnabled: boolean
   snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
+  boxRef: React.MutableRefObject<{
+    active: boolean
+    startX: number
+    startY: number
+    endX: number
+    endY: number
+  }>
+  onBoxSelect: (ids: string[]) => void
   onStats: (stats: SceneStats) => void
 }
 
 function SceneContents({
   objects,
-  selectedId,
+  gizmoTargetId,
   gizmoMode,
   snapEnabled,
   snapSize,
   dispatch,
+  boxRef,
+  onBoxSelect,
   onStats,
 }: SceneContentsProps) {
   const orbitRef = useRef<any>(null)
@@ -267,8 +363,13 @@ function SceneContents({
       />
       <OrbitControls ref={orbitRef} makeDefault />
       {roots.map((obj) =>
-        renderHierarchy({ obj, childrenMap, selectedId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef })
+        renderHierarchy({ obj, childrenMap, gizmoTargetId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef })
       )}
+      <BoxSelectProjector
+        objects={objects}
+        boxRef={boxRef}
+        onBoxSelect={onBoxSelect}
+      />
       <SceneStatsCollector onStats={onStats} />
     </>
   )
@@ -317,11 +418,16 @@ function DropRaycaster({ raycastRef }: DropRaycastProps) {
   return null
 }
 
+// ── Box select rubber band overlay ──────────────────────────────────────
+
+/** Minimum drag distance (px) before box select activates. */
+const BOX_SELECT_THRESHOLD = 5
+
 // ── Viewport wrapper ────────────────────────────────────────────────────
 
 interface ViewportProps {
   objects: SceneObject[]
-  selectedId: string | null
+  selectedIds: Set<string>
   gizmoMode: GizmoMode
   snapEnabled: boolean
   snapSize: SnapSize
@@ -332,7 +438,7 @@ interface ViewportProps {
 
 export function Viewport({
   objects,
-  selectedId,
+  selectedIds,
   gizmoMode,
   snapEnabled,
   snapSize,
@@ -342,6 +448,98 @@ export function Viewport({
   const raycastRef = useRef<((cx: number, cy: number) => THREE.Vector3 | null) | null>(null)
   const [sceneStats, setSceneStats] = useState<SceneStats>(EMPTY_STATS)
   const handleStats = useCallback((stats: SceneStats) => setSceneStats(stats), [])
+
+  // Box select state
+  const [boxSelect, setBoxSelect] = useState<{
+    startX: number
+    startY: number
+    endX: number
+    endY: number
+  } | null>(null)
+  const boxRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    endX: 0,
+    endY: 0,
+  })
+  const pointerDownRef = useRef<{ x: number; y: number; button: number } | null>(null)
+
+  // Determine which object gets the gizmo — last in the selected set
+  const gizmoTargetId = useMemo(() => {
+    if (selectedIds.size === 0) return null
+    // Return the last selected ID (last in iteration order)
+    let last: string | null = null
+    for (const id of selectedIds) last = id
+    return last
+  }, [selectedIds])
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    // Only start box select on left button from an empty-space drag.
+    // Allow the event when it originates on the wrapper div itself or on
+    // the <canvas> element (which is a direct child of the wrapper). Clicks
+    // on TransformControls overlays or other UI children are rejected.
+    // R3F handles 3D object hit-testing internally — DOM pointer events
+    // always see the <canvas> as the target regardless of which 3D object
+    // was clicked. The onPointerMissed callback on <Canvas> handles the
+    // empty-space deselect case separately.
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target !== e.currentTarget && target.tagName !== "CANVAS") return
+    pointerDownRef.current = { x: e.clientX, y: e.clientY, button: e.button }
+    // Capture pointer so we receive move/up events even if the drag leaves
+    // the viewport bounds. Without this, dragging outside the element loses
+    // pointer events and leaves box select stuck in an active state.
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }, [])
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!pointerDownRef.current) return
+    const dx = e.clientX - pointerDownRef.current.x
+    const dy = e.clientY - pointerDownRef.current.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+
+    if (dist >= BOX_SELECT_THRESHOLD) {
+      const box = {
+        startX: pointerDownRef.current.x,
+        startY: pointerDownRef.current.y,
+        endX: e.clientX,
+        endY: e.clientY,
+      }
+      setBoxSelect(box)
+      boxRef.current = { active: true, ...box }
+    }
+  }, [])
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (boxSelect) {
+      // End box select — the BoxSelectProjector will detect active→false
+      boxRef.current.active = false
+    }
+    setBoxSelect(null)
+    pointerDownRef.current = null
+    // Release pointer capture if held
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }, [boxSelect])
+
+  // Fallback for lost pointer capture (e.g. browser-level interruption)
+  const handlePointerCancel = useCallback(() => {
+    if (boxSelect) {
+      boxRef.current.active = false
+    }
+    setBoxSelect(null)
+    pointerDownRef.current = null
+  }, [boxSelect])
+
+  const handleBoxSelect = useCallback(
+    (ids: string[]) => {
+      // Single dispatch replaces the entire selection
+      dispatch({ type: "SELECT_SET", objectIds: ids })
+    },
+    [dispatch],
+  )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes(ASSET_DRAG_MIME)) {
@@ -366,11 +564,28 @@ export function Viewport({
     [onAssetDrop],
   )
 
+  // Compute rubber band rectangle style
+  const rubberBandStyle = boxSelect
+    ? {
+        left: Math.min(boxSelect.startX, boxSelect.endX),
+        top: Math.min(boxSelect.startY, boxSelect.endY),
+        width: Math.abs(boxSelect.endX - boxSelect.startX),
+        height: Math.abs(boxSelect.endY - boxSelect.startY),
+      }
+    : null
+
   return (
     <div
       className="relative flex-1 min-h-0"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      role="application"
+      aria-label={`3D viewport. ${selectedIds.size} object${selectedIds.size !== 1 ? "s" : ""} selected`}
+      aria-roledescription="3D scene viewport"
     >
       <Canvas
         style={{ background: "#1a1a1a" }}
@@ -380,14 +595,24 @@ export function Viewport({
         <DropRaycaster raycastRef={raycastRef} />
         <SceneContents
           objects={objects}
-          selectedId={selectedId}
+          gizmoTargetId={gizmoTargetId}
           gizmoMode={gizmoMode}
           snapEnabled={snapEnabled}
           snapSize={snapSize}
           dispatch={dispatch}
+          boxRef={boxRef}
+          onBoxSelect={handleBoxSelect}
           onStats={handleStats}
         />
       </Canvas>
+      {/* Rubber band overlay for box select */}
+      {rubberBandStyle && (
+        <div
+          className="fixed pointer-events-none border border-primary/60 bg-primary/10"
+          style={rubberBandStyle}
+          aria-hidden="true"
+        />
+      )}
       <SceneStatsOverlay stats={sceneStats} />
     </div>
   )

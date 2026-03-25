@@ -163,7 +163,7 @@ function HierarchyContextMenu({
 interface TreeNodeProps {
   object: SceneObject
   childrenMap: Map<string | null, SceneObject[]>
-  selectedId: string | null
+  selectedIds: Set<string>
   depth: number
   dispatch: Dispatch<SceneAction>
   renamingId: string | null
@@ -177,7 +177,7 @@ interface TreeNodeProps {
 function TreeNode({
   object,
   childrenMap,
-  selectedId,
+  selectedIds,
   depth,
   dispatch,
   renamingId,
@@ -188,7 +188,7 @@ function TreeNode({
 }: TreeNodeProps) {
   const children = childrenMap.get(object.id) ?? []
   const [expanded, setExpanded] = useState(true)
-  const isSelected = object.id === selectedId
+  const isSelected = selectedIds.has(object.id)
   const isRenaming = renamingId === object.id
   const renameRef = useRef<HTMLInputElement>(null)
 
@@ -216,6 +216,18 @@ function TreeNode({
       (c) => matchingIds.has(c.id) || hasDescendantMatch(c.id, childrenMap, matchingIds),
     )
     if (!hasMatchingDescendant) return null
+  }
+
+  // ── Click handler with modifier support ──
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      dispatch({ type: "SELECT", objectId: object.id, mode: "add" })
+    } else if (e.ctrlKey || e.metaKey) {
+      dispatch({ type: "SELECT", objectId: object.id, mode: "toggle" })
+    } else {
+      dispatch({ type: "SELECT", objectId: object.id })
+    }
   }
 
   // ── Drag handlers ──
@@ -331,6 +343,10 @@ function TreeNode({
         } else if (e.key === "Enter") {
           e.preventDefault()
           dispatch({ type: "SELECT", objectId: object.id })
+        } else if (e.key === " ") {
+          // Space toggles selection (ARIA treeitem pattern)
+          e.preventDefault()
+          dispatch({ type: "SELECT", objectId: object.id, mode: "toggle" })
         } else if (children.length > 0 && e.key === "ArrowRight" && !expandedForRender) {
           e.preventDefault()
           setExpanded(true)
@@ -352,7 +368,7 @@ function TreeNode({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => dispatch({ type: "SELECT", objectId: object.id })}
+        onClick={handleClick}
         onDoubleClick={() => onStartRename(object.id)}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -400,7 +416,7 @@ function TreeNode({
               key={child.id}
               object={child}
               childrenMap={childrenMap}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               depth={depth + 1}
               dispatch={dispatch}
               renamingId={renamingId}
@@ -479,13 +495,13 @@ function RootDropZone({ dispatch }: RootDropZoneProps) {
 
 interface HierarchyPanelProps {
   objects: SceneObject[]
-  selectedId: string | null
+  selectedIds: Set<string>
   dispatch: Dispatch<SceneAction>
 }
 
 export function HierarchyPanel({
   objects,
-  selectedId,
+  selectedIds,
   dispatch,
 }: HierarchyPanelProps) {
   const [search, setSearch] = useState("")
@@ -557,6 +573,11 @@ export function HierarchyPanel({
     <div className="flex-1 overflow-y-auto min-h-0" aria-label="Scene hierarchy">
       <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
         Hierarchy
+        {selectedIds.size > 1 && (
+          <span className="ml-2 text-primary" aria-live="polite">
+            ({selectedIds.size} selected)
+          </span>
+        )}
       </div>
 
       {/* Search input */}
@@ -585,7 +606,12 @@ export function HierarchyPanel({
       </div>
 
       {/* Tree */}
-      <div className="py-1" role="tree" aria-label="Object hierarchy">
+      <div
+        className="py-1"
+        role="tree"
+        aria-label="Object hierarchy"
+        aria-multiselectable="true"
+      >
         {roots.length === 0 ? (
           <p className="px-3 py-4 text-center text-xs text-muted-foreground">
             No objects
@@ -596,7 +622,7 @@ export function HierarchyPanel({
               key={obj.id}
               object={obj}
               childrenMap={childrenMap}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               depth={0}
               dispatch={dispatch}
               renamingId={renamingId}

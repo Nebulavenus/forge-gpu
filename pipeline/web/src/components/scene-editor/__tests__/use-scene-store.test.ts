@@ -43,7 +43,7 @@ describe("sceneReducer", () => {
     const state = sceneReducer(initialState, { type: "LOAD_SCENE", scene })
 
     expect(state.scene).toEqual(scene)
-    expect(state.selectedId).toBeNull()
+    expect(state.selectedIds.size).toBe(0)
     expect(state.undoStack).toHaveLength(0)
     expect(state.redoStack).toHaveLength(0)
     expect(state.dirty).toBe(false)
@@ -61,9 +61,9 @@ describe("sceneReducer", () => {
     expect(next.dirty).toBe(true)
   })
 
-  it("REMOVE_OBJECT removes object and reparents children to null", () => {
-    const parent = makeObject("parent")
-    const child = makeObject("child", { parent_id: "parent" })
+  it("REMOVE_OBJECT removes object and reparents children preserving world position", () => {
+    const parent = makeObject("parent", { position: [5, 0, 0] })
+    const child = makeObject("child", { parent_id: "parent", position: [3, 0, 0] })
     const state = loadedState([parent, child])
 
     const next = sceneReducer(state, {
@@ -72,10 +72,98 @@ describe("sceneReducer", () => {
     })
 
     expect(next.scene!.objects).toHaveLength(1)
-    expect(next.scene!.objects[0].id).toBe("child")
-    expect(next.scene!.objects[0].parent_id).toBeNull()
+    expect(next.scene!.objects[0]!.id).toBe("child")
+    expect(next.scene!.objects[0]!.parent_id).toBeNull()
+    // Child was at local [3,0,0] under parent at [5,0,0] → world [8,0,0]
+    expect(next.scene!.objects[0]!.position).toEqual([8, 0, 0])
     expect(next.undoStack).toHaveLength(1)
     expect(next.dirty).toBe(true)
+  })
+
+  it("REMOVE_OBJECT reparents to grandparent with correct local position", () => {
+    const grandparent = makeObject("gp", { position: [10, 0, 0] })
+    const parent = makeObject("parent", { parent_id: "gp", position: [5, 0, 0] })
+    const child = makeObject("child", { parent_id: "parent", position: [3, 0, 0] })
+    const state = loadedState([grandparent, parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECT",
+      objectId: "parent",
+    })
+
+    expect(next.scene!.objects).toHaveLength(2)
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    // Child world = 10 + 5 + 3 = 18; grandparent world = 10
+    // New local relative to grandparent = 18 - 10 = 8
+    expect(childObj.parent_id).toBe("gp")
+    expect(childObj.position).toEqual([8, 0, 0])
+  })
+
+  it("REMOVE_OBJECT clears removed object from selectedIds", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    const selected = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    expect(selected.selectedIds.has("a")).toBe(true)
+
+    const next = sceneReducer(selected, {
+      type: "REMOVE_OBJECT",
+      objectId: "a",
+    })
+    expect(next.selectedIds.has("a")).toBe(false)
+  })
+
+  it("REMOVE_OBJECTS removes multiple objects at once", () => {
+    const state = loadedState([makeObject("a"), makeObject("b"), makeObject("c")])
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECTS",
+      objectIds: ["a", "c"],
+    })
+
+    expect(next.scene!.objects).toHaveLength(1)
+    expect(next.scene!.objects[0].id).toBe("b")
+    expect(next.undoStack).toHaveLength(1)
+    expect(next.dirty).toBe(true)
+  })
+
+  it("REMOVE_OBJECTS clears selection for removed objects", () => {
+    const state = loadedState([makeObject("a"), makeObject("b"), makeObject("c")])
+    // Select a and c
+    let s = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    s = sceneReducer(s, { type: "SELECT", objectId: "c", mode: "add" })
+    expect(s.selectedIds.size).toBe(2)
+
+    const next = sceneReducer(s, {
+      type: "REMOVE_OBJECTS",
+      objectIds: ["a"],
+    })
+    expect(next.selectedIds.has("a")).toBe(false)
+    expect(next.selectedIds.has("c")).toBe(true)
+  })
+
+  it("REMOVE_OBJECTS preserves world position of orphaned children", () => {
+    const parent = makeObject("parent", { position: [5, 3, 0] })
+    const child = makeObject("child", { parent_id: "parent", position: [2, 1, 0] })
+    const unrelated = makeObject("other", { position: [0, 0, 0] })
+    const state = loadedState([parent, child, unrelated])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECTS",
+      objectIds: ["parent"],
+    })
+
+    expect(next.scene!.objects).toHaveLength(2)
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    // Child world = [5+2, 3+1, 0] = [7, 4, 0]; promoted to root
+    expect(childObj.parent_id).toBeNull()
+    expect(childObj.position).toEqual([7, 4, 0])
+  })
+
+  it("REMOVE_OBJECTS with empty array is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECTS",
+      objectIds: [],
+    })
+    expect(next).toBe(state)
   })
 
   it("UPDATE_TRANSFORM updates the correct object", () => {
@@ -164,6 +252,39 @@ describe("sceneReducer", () => {
     expect(undone.scene!.objects).toHaveLength(1)
     expect(undone.undoStack).toHaveLength(0)
     expect(undone.redoStack).toHaveLength(1)
+  })
+
+  it("UNDO prunes ghost selected IDs that no longer exist", () => {
+    const state = loadedState([makeObject("a")])
+    // Add an object, then select it
+    const withObj = sceneReducer(state, {
+      type: "ADD_OBJECT",
+      object: makeObject("b"),
+    })
+    const selected = sceneReducer(withObj, { type: "SELECT", objectId: "b" })
+    expect(selected.selectedIds.has("b")).toBe(true)
+
+    // Undo removes "b" — selectedIds should no longer contain "b"
+    const undone = sceneReducer(selected, { type: "UNDO" })
+    expect(undone.scene!.objects).toHaveLength(1)
+    expect(undone.selectedIds.has("b")).toBe(false)
+    expect(undone.selectedIds.size).toBe(0)
+  })
+
+  it("REDO prunes ghost selected IDs that no longer exist", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    // Remove "b", then select "a", then redo removal of "b" shouldn't matter
+    // But test: select "b", remove it (select clears "b"), undo (restores "b"),
+    // select "b" again, redo removal — "b" should be pruned from selection
+    let s = sceneReducer(state, { type: "SELECT", objectId: "b" })
+    s = sceneReducer(s, { type: "REMOVE_OBJECT", objectId: "b" })
+    s = sceneReducer(s, { type: "UNDO" }) // restore "b"
+    s = sceneReducer(s, { type: "SELECT", objectId: "b" }) // select "b"
+    expect(s.selectedIds.has("b")).toBe(true)
+
+    s = sceneReducer(s, { type: "REDO" }) // re-remove "b"
+    expect(s.scene!.objects.find((o) => o.id === "b")).toBeUndefined()
+    expect(s.selectedIds.has("b")).toBe(false)
   })
 
   it("REDO restores from redo stack", () => {
@@ -275,7 +396,8 @@ describe("sceneReducer", () => {
     expect(clone.parent_id).toBeNull()
     expect(clone.visible).toBe(true)
     // Selection moves to the clone
-    expect(next.selectedId).toBe(clone.id)
+    expect(next.selectedIds.has(clone.id)).toBe(true)
+    expect(next.selectedIds.size).toBe(1)
     expect(next.undoStack).toHaveLength(1)
     expect(next.dirty).toBe(true)
   })
@@ -334,7 +456,8 @@ describe("sceneReducer", () => {
     const state = loadedState([makeObject("a")])
     const next = sceneReducer(state, { type: "SELECT", objectId: "a" })
 
-    expect(next.selectedId).toBe("a")
+    expect(next.selectedIds.has("a")).toBe(true)
+    expect(next.selectedIds.size).toBe(1)
     expect(next.undoStack).toHaveLength(0)
     expect(next.dirty).toBe(false)
   })
@@ -528,5 +651,361 @@ describe("sceneReducer", () => {
 
     const ids = next.scene!.objects.map((o) => o.id)
     expect(ids).toEqual(["b", "c", "a"])
+  })
+})
+
+// ── Multi-select tests ──────────────────────────────────────────────────
+
+describe("multi-select", () => {
+  it("SELECT with mode=replace selects a single object", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    const next = sceneReducer(state, { type: "SELECT", objectId: "a" })
+
+    expect(next.selectedIds.size).toBe(1)
+    expect(next.selectedIds.has("a")).toBe(true)
+  })
+
+  it("SELECT with mode=replace replaces previous selection", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    const s1 = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const s2 = sceneReducer(s1, { type: "SELECT", objectId: "b" })
+
+    expect(s2.selectedIds.size).toBe(1)
+    expect(s2.selectedIds.has("b")).toBe(true)
+    expect(s2.selectedIds.has("a")).toBe(false)
+  })
+
+  it("SELECT with objectId=null clears selection", () => {
+    const state = loadedState([makeObject("a")])
+    const selected = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const cleared = sceneReducer(selected, { type: "SELECT", objectId: null })
+
+    expect(cleared.selectedIds.size).toBe(0)
+  })
+
+  it("SELECT with mode=add adds to selection", () => {
+    const state = loadedState([makeObject("a"), makeObject("b"), makeObject("c")])
+    let s = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    s = sceneReducer(s, { type: "SELECT", objectId: "b", mode: "add" })
+
+    expect(s.selectedIds.size).toBe(2)
+    expect(s.selectedIds.has("a")).toBe(true)
+    expect(s.selectedIds.has("b")).toBe(true)
+  })
+
+  it("SELECT with mode=add and null objectId is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const selected = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const next = sceneReducer(selected, { type: "SELECT", objectId: null, mode: "add" })
+
+    expect(next).toBe(selected)
+  })
+
+  it("SELECT with mode=add for already-selected object is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const selected = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const next = sceneReducer(selected, { type: "SELECT", objectId: "a", mode: "add" })
+
+    expect(next).toBe(selected)
+  })
+
+  it("SELECT with mode=toggle adds unselected object", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    const s1 = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const s2 = sceneReducer(s1, { type: "SELECT", objectId: "b", mode: "toggle" })
+
+    expect(s2.selectedIds.size).toBe(2)
+    expect(s2.selectedIds.has("a")).toBe(true)
+    expect(s2.selectedIds.has("b")).toBe(true)
+  })
+
+  it("SELECT with mode=toggle removes selected object", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    let s = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    s = sceneReducer(s, { type: "SELECT", objectId: "b", mode: "add" })
+    s = sceneReducer(s, { type: "SELECT", objectId: "a", mode: "toggle" })
+
+    expect(s.selectedIds.size).toBe(1)
+    expect(s.selectedIds.has("b")).toBe(true)
+    expect(s.selectedIds.has("a")).toBe(false)
+  })
+
+  it("SELECT_ALL selects all objects", () => {
+    const state = loadedState([makeObject("a"), makeObject("b"), makeObject("c")])
+    const next = sceneReducer(state, { type: "SELECT_ALL" })
+
+    expect(next.selectedIds.size).toBe(3)
+    expect(next.selectedIds.has("a")).toBe(true)
+    expect(next.selectedIds.has("b")).toBe(true)
+    expect(next.selectedIds.has("c")).toBe(true)
+  })
+
+  it("SELECT_ALL with no objects is a no-op", () => {
+    const state = loadedState()
+    const next = sceneReducer(state, { type: "SELECT_ALL" })
+    expect(next).toBe(state)
+  })
+})
+
+// ── Group/Ungroup tests ─────────────────────────────────────────────────
+
+describe("group and ungroup", () => {
+  it("GROUP_OBJECTS creates a group at centroid and offsets children", () => {
+    const a = makeObject("a", { position: [2, 0, 0] })
+    const b = makeObject("b", { position: [4, 0, 6] })
+    const c = makeObject("c")
+    const state = loadedState([a, b, c])
+    const next = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+
+    expect(next.scene!.objects).toHaveLength(4) // 3 original + 1 group
+    const group = next.scene!.objects[0] // group is prepended
+    expect(group.name).toBe("Group")
+    expect(group.asset_id).toBeNull()
+    // Group at centroid of a and b
+    expect(group.position).toEqual([3, 0, 3])
+
+    // a and b are children with offset positions preserving world-space location
+    const aObj = next.scene!.objects.find((o) => o.id === "a")!
+    const bObj = next.scene!.objects.find((o) => o.id === "b")!
+    expect(aObj.parent_id).toBe(group.id)
+    expect(bObj.parent_id).toBe(group.id)
+    expect(aObj.position).toEqual([-1, 0, -3]) // [2,0,0] - [3,0,3]
+    expect(bObj.position).toEqual([1, 0, 3])   // [4,0,6] - [3,0,3]
+
+    // c is unchanged
+    const cObj = next.scene!.objects.find((o) => o.id === "c")!
+    expect(cObj.parent_id).toBeNull()
+
+    // Group is now selected
+    expect(next.selectedIds.size).toBe(1)
+    expect(next.selectedIds.has(group.id)).toBe(true)
+
+    expect(next.undoStack).toHaveLength(1)
+    expect(next.dirty).toBe(true)
+  })
+
+  it("GROUP_OBJECTS with fewer than 2 objects is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a"],
+    })
+    expect(next).toBe(state)
+  })
+
+  it("UNGROUP_OBJECT restores world-space positions and removes group", () => {
+    const a = makeObject("a", { position: [2, 0, 0] })
+    const b = makeObject("b", { position: [4, 0, 6] })
+    const state = loadedState([a, b])
+    // First group them
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]
+
+    // Now ungroup
+    const ungrouped = sceneReducer(grouped, {
+      type: "UNGROUP_OBJECT",
+      groupId,
+    })
+
+    // Group object should be removed
+    expect(ungrouped.scene!.objects).toHaveLength(2)
+    expect(ungrouped.scene!.objects.every((o) => o.id !== groupId)).toBe(true)
+
+    // Children are back at root
+    expect(ungrouped.scene!.objects.every((o) => o.parent_id === null)).toBe(true)
+
+    // World-space positions restored (group pos + child offset = original)
+    const aObj = ungrouped.scene!.objects.find((o) => o.id === "a")!
+    const bObj = ungrouped.scene!.objects.find((o) => o.id === "b")!
+    expect(aObj.position).toEqual([2, 0, 0])
+    expect(bObj.position).toEqual([4, 0, 6])
+
+    // Children are now selected
+    expect(ungrouped.selectedIds.size).toBe(2)
+    expect(ungrouped.selectedIds.has("a")).toBe(true)
+    expect(ungrouped.selectedIds.has("b")).toBe(true)
+
+    expect(ungrouped.undoStack).toHaveLength(2) // group + ungroup
+    expect(ungrouped.dirty).toBe(true)
+  })
+
+  it("UNGROUP_OBJECT with non-existent groupId is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "UNGROUP_OBJECT",
+      groupId: "nonexistent",
+    })
+    expect(next).toBe(state)
+  })
+
+  it("UNGROUP_OBJECT with no children is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "UNGROUP_OBJECT",
+      groupId: "a",
+    })
+    expect(next).toBe(state)
+  })
+
+  it("UNGROUP_OBJECT rejects asset-backed objects", () => {
+    const state = loadedState([
+      makeObject("a", { asset_id: "mesh_001" }),
+      makeObject("b", { parent_id: "a" }),
+    ])
+    const next = sceneReducer(state, {
+      type: "UNGROUP_OBJECT",
+      groupId: "a",
+    })
+    expect(next).toBe(state)
+  })
+})
+
+// ── Batch action tests ─────────────────────────────────────────────────
+
+describe("batch actions", () => {
+  it("UPDATE_TRANSFORMS_BATCH updates multiple objects in one undo step", () => {
+    const a = makeObject("a", { position: [0, 0, 0] })
+    const b = makeObject("b", { position: [1, 1, 1] })
+    const c = makeObject("c", { position: [2, 2, 2] })
+    const state = loadedState([a, b, c])
+    const next = sceneReducer(state, {
+      type: "UPDATE_TRANSFORMS_BATCH",
+      updates: [
+        { objectId: "a", position: [10, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        { objectId: "b", position: [11, 1, 1], rotation: [0, 0, 0, 1], scale: [2, 2, 2] },
+      ],
+    })
+
+    const aObj = next.scene!.objects.find((o) => o.id === "a")!
+    const bObj = next.scene!.objects.find((o) => o.id === "b")!
+    const cObj = next.scene!.objects.find((o) => o.id === "c")!
+    expect(aObj.position).toEqual([10, 0, 0])
+    expect(bObj.position).toEqual([11, 1, 1])
+    expect(bObj.scale).toEqual([2, 2, 2])
+    expect(cObj.position).toEqual([2, 2, 2]) // unchanged
+    expect(next.undoStack).toHaveLength(1) // single undo step
+    expect(next.dirty).toBe(true)
+  })
+
+  it("UPDATE_TRANSFORMS_BATCH with empty updates is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "UPDATE_TRANSFORMS_BATCH",
+      updates: [],
+    })
+    expect(next).toBe(state)
+  })
+
+  it("SET_VISIBILITY_BATCH updates multiple objects in one undo step", () => {
+    const state = loadedState([
+      makeObject("a", { visible: true }),
+      makeObject("b", { visible: true }),
+      makeObject("c", { visible: true }),
+    ])
+    const next = sceneReducer(state, {
+      type: "SET_VISIBILITY_BATCH",
+      objectIds: ["a", "c"],
+      visible: false,
+    })
+
+    expect(next.scene!.objects.find((o) => o.id === "a")!.visible).toBe(false)
+    expect(next.scene!.objects.find((o) => o.id === "b")!.visible).toBe(true)
+    expect(next.scene!.objects.find((o) => o.id === "c")!.visible).toBe(false)
+    expect(next.undoStack).toHaveLength(1) // single undo step
+    expect(next.dirty).toBe(true)
+  })
+
+  it("SET_VISIBILITY_BATCH with empty objectIds is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "SET_VISIBILITY_BATCH",
+      objectIds: [],
+      visible: false,
+    })
+    expect(next).toBe(state)
+  })
+
+  it("DUPLICATE_OBJECTS clones multiple objects in one undo step", () => {
+    const state = loadedState([
+      makeObject("a", { name: "Cube", position: [1, 0, 0] }),
+      makeObject("b", { name: "Sphere", position: [3, 0, 0] }),
+    ])
+    const next = sceneReducer(state, {
+      type: "DUPLICATE_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+
+    expect(next.scene!.objects).toHaveLength(4) // 2 original + 2 clones
+    const clones = next.scene!.objects.filter((o) => o.id !== "a" && o.id !== "b")
+    expect(clones).toHaveLength(2)
+    expect(clones[0]!.name).toBe("Cube (copy)")
+    expect(clones[1]!.name).toBe("Sphere (copy)")
+    expect(clones[0]!.position).toEqual([2, 0, 0]) // offset +1 on X
+    expect(clones[1]!.position).toEqual([4, 0, 0])
+    // Selection moves to clones
+    expect(next.selectedIds.size).toBe(2)
+    expect(next.selectedIds.has(clones[0]!.id)).toBe(true)
+    expect(next.selectedIds.has(clones[1]!.id)).toBe(true)
+    expect(next.undoStack).toHaveLength(1) // single undo step
+    expect(next.dirty).toBe(true)
+  })
+
+  it("DUPLICATE_OBJECTS remaps parent_id for cloned hierarchies", () => {
+    const parent = makeObject("p", { name: "Parent", position: [0, 0, 0] })
+    const child = makeObject("c", { name: "Child", parent_id: "p", position: [1, 0, 0] })
+    const state = loadedState([parent, child])
+    const next = sceneReducer(state, {
+      type: "DUPLICATE_OBJECTS",
+      objectIds: ["p", "c"],
+    })
+
+    expect(next.scene!.objects).toHaveLength(4)
+    const clones = next.scene!.objects.filter((o) => o.id !== "p" && o.id !== "c")
+    expect(clones).toHaveLength(2)
+    const clonedParent = clones.find((o) => o.name === "Parent (copy)")!
+    const clonedChild = clones.find((o) => o.name === "Child (copy)")!
+    // Cloned child should point to cloned parent, not original "p"
+    expect(clonedChild.parent_id).toBe(clonedParent.id)
+    expect(clonedChild.parent_id).not.toBe("p")
+    // Cloned parent (root) gets +1 x offset; child keeps original local position
+    // to avoid double-offset in world space
+    expect(clonedParent.position).toEqual([1, 0, 0])
+    expect(clonedChild.position).toEqual([1, 0, 0])
+  })
+
+  it("DUPLICATE_OBJECTS with empty array is a no-op", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "DUPLICATE_OBJECTS",
+      objectIds: [],
+    })
+    expect(next).toBe(state)
+  })
+
+  it("SELECT_SET replaces selection in a single dispatch", () => {
+    const state = loadedState([makeObject("a"), makeObject("b"), makeObject("c")])
+    const s1 = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const s2 = sceneReducer(s1, {
+      type: "SELECT_SET",
+      objectIds: ["b", "c"],
+    })
+
+    expect(s2.selectedIds.size).toBe(2)
+    expect(s2.selectedIds.has("b")).toBe(true)
+    expect(s2.selectedIds.has("c")).toBe(true)
+    expect(s2.selectedIds.has("a")).toBe(false)
+  })
+
+  it("SELECT_SET with empty array clears selection", () => {
+    const state = loadedState([makeObject("a")])
+    const s1 = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const s2 = sceneReducer(s1, { type: "SELECT_SET", objectIds: [] })
+    expect(s2.selectedIds.size).toBe(0)
   })
 })

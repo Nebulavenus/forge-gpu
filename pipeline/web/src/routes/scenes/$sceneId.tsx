@@ -42,7 +42,7 @@ function createSceneObject(
 function SceneEditor() {
   const { sceneId } = Route.useParams()
   const navigate = useNavigate()
-  const { state, dispatch, selectedObject } = useSceneStore()
+  const { state, dispatch, selectedObject, selectedObjects } = useSceneStore()
 
   // Fetch scene data
   const { data, isLoading, error } = useQuery({
@@ -156,7 +156,7 @@ function SceneEditor() {
         <div className="flex w-60 shrink-0 flex-col border-r border-border bg-card">
           <HierarchyPanel
             objects={state.scene.objects}
-            selectedId={state.selectedId}
+            selectedIds={state.selectedIds}
             dispatch={dispatch}
           />
           <div className="shrink-0 max-h-[40%]">
@@ -169,7 +169,7 @@ function SceneEditor() {
         </div>
         <Viewport
           objects={state.scene.objects}
-          selectedId={state.selectedId}
+          selectedIds={state.selectedIds}
           gizmoMode={state.gizmoMode}
           snapEnabled={state.snapEnabled}
           snapSize={state.snapSize}
@@ -178,6 +178,7 @@ function SceneEditor() {
         />
         <InspectorPanel
           object={selectedObject}
+          selectedObjects={selectedObjects}
           allObjects={state.scene.objects}
           snapEnabled={state.snapEnabled}
           snapSize={state.snapSize}
