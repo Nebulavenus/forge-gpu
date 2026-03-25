@@ -6,7 +6,7 @@
  * Transforms are committed to the store on mouse release, not every frame.
  */
 
-import { type Dispatch, Suspense, useCallback, useEffect, useMemo, useRef } from "react"
+import { type Dispatch, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import {
   Grid,
@@ -21,6 +21,7 @@ import { fetchAsset } from "@/lib/api"
 import { usePipelineModel } from "@/lib/use-pipeline-model"
 import type { GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
 import { ASSET_DRAG_MIME } from "./asset-shelf"
+import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } from "./scene-stats"
 
 // ── Fallback box for objects without an asset ───────────────────────────
 
@@ -224,6 +225,7 @@ interface SceneContentsProps {
   snapEnabled: boolean
   snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
+  onStats: (stats: SceneStats) => void
 }
 
 function SceneContents({
@@ -233,6 +235,7 @@ function SceneContents({
   snapEnabled,
   snapSize,
   dispatch,
+  onStats,
 }: SceneContentsProps) {
   const orbitRef = useRef<any>(null)
 
@@ -266,6 +269,7 @@ function SceneContents({
       {roots.map((obj) =>
         renderHierarchy({ obj, childrenMap, selectedId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef })
       )}
+      <SceneStatsCollector onStats={onStats} />
     </>
   )
 }
@@ -336,6 +340,8 @@ export function Viewport({
   onAssetDrop,
 }: ViewportProps) {
   const raycastRef = useRef<((cx: number, cy: number) => THREE.Vector3 | null) | null>(null)
+  const [sceneStats, setSceneStats] = useState<SceneStats>(EMPTY_STATS)
+  const handleStats = useCallback((stats: SceneStats) => setSceneStats(stats), [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes(ASSET_DRAG_MIME)) {
@@ -362,7 +368,7 @@ export function Viewport({
 
   return (
     <div
-      className="flex-1 min-h-0"
+      className="relative flex-1 min-h-0"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
@@ -379,8 +385,10 @@ export function Viewport({
           snapEnabled={snapEnabled}
           snapSize={snapSize}
           dispatch={dispatch}
+          onStats={handleStats}
         />
       </Canvas>
+      <SceneStatsOverlay stats={sceneStats} />
     </div>
   )
 }
