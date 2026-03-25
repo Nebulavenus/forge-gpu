@@ -32,6 +32,7 @@ jobs:
               'pyright',
               'test',
               'frontend-build',
+              'asset-pipeline',
             ]);
 
             // Poll until all CI checks have completed (max 15 minutes).

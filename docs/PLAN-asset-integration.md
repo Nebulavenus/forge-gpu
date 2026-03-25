@@ -57,13 +57,25 @@ always have.
   - `dev-asset-lesson`: Cross-Track Asset Pipeline Mandate section
   - `dev-ui-lesson` and `dev-engine-lesson`: Asset Pipeline Mandate section
 
+- **Phase 5 — CI integration** (PR #431)
+  - `.github/workflows/asset-pipeline.yml` — runs full pipeline on PRs
+    touching asset/pipeline sources and related build inputs (including
+    `assets/`, `pipeline/`, `pipeline.toml`, `pyproject.toml`, `uv.lock`,
+    `tools/`, `common/pipeline/`, `common/shapes/`, `common/gltf/`,
+    and root `CMakeLists.txt`)
+  - Builds C tools (forge_mesh_tool, forge_anim_tool, forge_scene_tool,
+    forge_texture_tool, basisu) then runs `uv run python -m pipeline --verbose`
+  - Uploads processed assets as build artifact
+  - On pushes to `main`, publishes a rolling `assets-latest` GitHub release
+    tarball for `cmake/AcquireAssets.cmake` Tier 2 download
+  - `asset-pipeline` job added to merge gate `ciChecks` set
+
 ### Remaining
 
 | Phase | Scope | Description |
 |-------|-------|-------------|
 | 2 | Small | Wire `forge-assets` CMake dependency into lessons 39+ |
 | 4 | Medium | Scene editor export path (JSON → binary `.fscene`) |
-| 5 | Medium | CI integration — run pipeline in GitHub Actions |
 
 ---
 
