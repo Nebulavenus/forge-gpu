@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Clock, Folder, FolderOutput, Image } from "lucide-react"
+import { ArrowRight, Box, Clock, Folder, FolderOutput, Image, Map } from "lucide-react"
 import { fetchRecentAssets, fetchStatus, type AssetInfo, type PipelineStatus } from "@/lib/api"
+import { fetchScenes, type SceneListResponse } from "@/lib/scene-api"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -228,6 +229,72 @@ function RecentActivity({ assets }: { assets: AssetInfo[] }) {
   )
 }
 
+/* ── Navigation cards ──────────────────────────────────────────── */
+
+function NavigationCards({
+  assetCount,
+  sceneCount,
+  scenesError,
+}: {
+  assetCount: number
+  sceneCount: number | undefined
+  scenesError: boolean
+}) {
+  const assetsLabel = `Browse assets — ${assetCount} total`
+  const scenesLabel = sceneCount !== undefined
+    ? `Browse scenes — ${sceneCount} total`
+    : "Browse scenes"
+
+  return (
+    <nav aria-label="Quick navigation">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Link to="/assets" aria-label={assetsLabel}>
+          <Card className="group h-full transition-colors hover:bg-card/80">
+            <CardContent className="flex items-center gap-4 p-6">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/20">
+                <Box className="h-5 w-5 text-blue-400" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold">Assets</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {assetCount} {assetCount === 1 ? "asset" : "assets"}
+                </p>
+              </div>
+              <ArrowRight
+                className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                aria-hidden="true"
+              />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link to="/scenes" aria-label={scenesLabel}>
+          <Card className="group h-full transition-colors hover:bg-card/80">
+            <CardContent className="flex items-center gap-4 p-6">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+                <Map className="h-5 w-5 text-amber-400" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold">Scenes</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {sceneCount !== undefined
+                    ? `${sceneCount} ${sceneCount === 1 ? "scene" : "scenes"}`
+                    : scenesError
+                      ? "Browse scenes"
+                      : "Loading..."}
+                </p>
+              </div>
+              <ArrowRight
+                className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                aria-hidden="true"
+              />
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+    </nav>
+  )
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────── */
 
 function Dashboard() {
@@ -239,6 +306,10 @@ function Dashboard() {
   const { data: recentData } = useQuery({
     queryKey: ["recent-assets"],
     queryFn: () => fetchRecentAssets(8),
+  })
+  const { data: scenesData, isError: scenesError } = useQuery<SceneListResponse>({
+    queryKey: ["scenes"],
+    queryFn: fetchScenes,
   })
 
   if (isLoading) {
@@ -307,6 +378,13 @@ function Dashboard() {
 
       {/* Recent activity */}
       {recentData && <RecentActivity assets={recentData.assets} />}
+
+      {/* Navigation cards */}
+      <NavigationCards
+        assetCount={data.total}
+        sceneCount={scenesData?.total}
+        scenesError={scenesError}
+      />
 
       {/* Directory paths */}
       <DirectoryPaths sourceDir={data.source_dir} outputDir={data.output_dir} />
