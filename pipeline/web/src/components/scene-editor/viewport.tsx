@@ -23,7 +23,7 @@ import * as THREE from "three"
 import { useCompanionManager } from "@/lib/companion-manager"
 import { fetchAsset } from "@/lib/api"
 import { usePipelineModel } from "@/lib/use-pipeline-model"
-import type { GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
+import type { CameraBookmark, GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
 import { ASSET_DRAG_MIME } from "./asset-shelf"
 import { computeWorldPosition } from "./scene-utils"
 import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } from "./scene-stats"
@@ -304,6 +304,14 @@ function BoxSelectProjector({ objects, boxRef, onBoxSelect }: BoxSelectHelperPro
 
 // ── Scene contents (inside Canvas) ──────────────────────────────────────
 
+/** Functions exposed by the viewport for reading/restoring camera state. */
+export interface CameraHandle {
+  /** Return the current camera position and orbit target. */
+  getState: () => { position: [number, number, number]; target: [number, number, number] } | null
+  /** Restore the camera to a saved bookmark position/target. */
+  restore: (bookmark: CameraBookmark) => void
+}
+
 interface SceneContentsProps {
   objects: SceneObject[]
   gizmoTargetId: string | null
@@ -320,6 +328,8 @@ interface SceneContentsProps {
   }>
   onBoxSelect: (ids: string[]) => void
   onStats: (stats: SceneStats) => void
+  /** Ref that receives camera read/restore functions. */
+  cameraHandleRef: React.MutableRefObject<CameraHandle | null>
 }
 
 function SceneContents({
@@ -332,6 +342,7 @@ function SceneContents({
   boxRef,
   onBoxSelect,
   onStats,
+  cameraHandleRef,
 }: SceneContentsProps) {
   const orbitRef = useRef<any>(null)
 
@@ -345,6 +356,34 @@ function SceneContents({
     }
     return { childrenMap: map, roots: map.get(null) ?? [] }
   }, [objects])
+
+  const { camera } = useThree()
+
+  // Expose camera read/restore functions to the parent Viewport component
+  useEffect(() => {
+    cameraHandleRef.current = {
+      getState: () => {
+        const orbit = orbitRef.current
+        if (!orbit) return null
+        const p = camera.position
+        const t = orbit.target
+        return {
+          position: [p.x, p.y, p.z],
+          target: [t.x, t.y, t.z],
+        }
+      },
+      restore: (bookmark: CameraBookmark) => {
+        const orbit = orbitRef.current
+        if (!orbit) return
+        camera.position.set(...bookmark.position)
+        orbit.target.set(...bookmark.target)
+        orbit.update()
+      },
+    }
+    return () => {
+      cameraHandleRef.current = null
+    }
+  }, [camera, cameraHandleRef])
 
   return (
     <>
@@ -434,6 +473,8 @@ interface ViewportProps {
   dispatch: Dispatch<SceneAction>
   /** Called when a mesh asset is dropped on the viewport. */
   onAssetDrop?: (assetId: string, position: [number, number, number]) => void
+  /** Ref that receives camera read/restore functions. */
+  cameraHandleRef?: React.MutableRefObject<CameraHandle | null>
 }
 
 export function Viewport({
@@ -444,8 +485,11 @@ export function Viewport({
   snapSize,
   dispatch,
   onAssetDrop,
+  cameraHandleRef: externalCameraRef,
 }: ViewportProps) {
   const raycastRef = useRef<((cx: number, cy: number) => THREE.Vector3 | null) | null>(null)
+  const internalCameraRef = useRef<CameraHandle | null>(null)
+  const cameraHandleRef = externalCameraRef ?? internalCameraRef
   const [sceneStats, setSceneStats] = useState<SceneStats>(EMPTY_STATS)
   const handleStats = useCallback((stats: SceneStats) => setSceneStats(stats), [])
 
@@ -603,6 +647,7 @@ export function Viewport({
           boxRef={boxRef}
           onBoxSelect={handleBoxSelect}
           onStats={handleStats}
+          cameraHandleRef={cameraHandleRef}
         />
       </Canvas>
       {/* Rubber band overlay for box select */}

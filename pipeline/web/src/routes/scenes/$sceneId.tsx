@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
@@ -9,7 +9,7 @@ import { fetchScene, saveScene } from "@/lib/scene-api"
 import { useSceneStore } from "@/components/scene-editor/use-scene-store"
 import { Toolbar } from "@/components/scene-editor/toolbar"
 import { HierarchyPanel } from "@/components/scene-editor/hierarchy-panel"
-import { Viewport } from "@/components/scene-editor/viewport"
+import { Viewport, type CameraHandle } from "@/components/scene-editor/viewport"
 import { InspectorPanel } from "@/components/scene-editor/inspector-panel"
 import { AssetPicker } from "@/components/scene-editor/asset-picker"
 import { AssetShelf } from "@/components/scene-editor/asset-shelf"
@@ -43,6 +43,7 @@ function SceneEditor() {
   const { sceneId } = Route.useParams()
   const navigate = useNavigate()
   const { state, dispatch, selectedObject, selectedObjects } = useSceneStore()
+  const cameraHandleRef = useRef<CameraHandle | null>(null)
 
   // Fetch scene data
   const { data, isLoading, error } = useQuery({
@@ -148,6 +149,8 @@ function SceneEditor() {
         dispatch={dispatch}
         onSave={handleSave}
         onAdd={handleAdd}
+        onGetCameraState={() => cameraHandleRef.current?.getState() ?? null}
+        onRestoreBookmark={(bm) => cameraHandleRef.current?.restore(bm)}
       />
 
       {/* Main area */}
@@ -175,6 +178,7 @@ function SceneEditor() {
           snapSize={state.snapSize}
           dispatch={dispatch}
           onAssetDrop={handleAssetDrop}
+          cameraHandleRef={cameraHandleRef}
         />
         <InspectorPanel
           object={selectedObject}

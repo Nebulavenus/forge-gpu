@@ -1,5 +1,12 @@
 /** Types for the scene editor — authored scene composition. */
 
+export interface CameraBookmark {
+  id: string
+  name: string
+  position: [number, number, number]
+  target: [number, number, number]
+}
+
 export interface SceneObject {
   id: string
   name: string
@@ -17,6 +24,7 @@ export interface SceneData {
   created_at: string
   modified_at: string
   objects: SceneObject[]
+  cameras?: CameraBookmark[]
 }
 
 export interface SceneListItem {
@@ -73,6 +81,12 @@ export type SceneAction =
   | { type: "SELECT_ALL" }
   | { type: "SET_GIZMO_MODE"; mode: GizmoMode }
   | { type: "SET_SNAP"; enabled?: boolean; size?: SnapSize }
+  | {
+      type: "SAVE_CAMERA_BOOKMARK"
+      bookmark: CameraBookmark
+    }
+  | { type: "DELETE_CAMERA_BOOKMARK"; bookmarkId: string }
+  | { type: "RENAME_CAMERA_BOOKMARK"; bookmarkId: string; name: string }
   | { type: "GROUP_OBJECTS"; objectIds: string[] }
   | { type: "UNGROUP_OBJECT"; groupId: string }
   | { type: "UNDO" }

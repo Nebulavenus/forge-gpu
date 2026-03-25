@@ -50,6 +50,16 @@ class SceneObject:
 
 
 @dataclass
+class CameraBookmark:
+    """A saved camera position/target pair for quick navigation."""
+
+    id: str
+    name: str
+    position: list[float]  # [x, y, z]
+    target: list[float]  # [x, y, z]
+
+
+@dataclass
 class SceneData:
     """Top-level scene document."""
 
@@ -58,6 +68,7 @@ class SceneData:
     created_at: str  # ISO 8601
     modified_at: str  # ISO 8601
     objects: list[SceneObject] = field(default_factory=list)
+    cameras: list[CameraBookmark] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +202,51 @@ def validate_scene(data: object) -> list[str]:
 
         if "visible" not in obj or not isinstance(obj.get("visible"), bool):
             errors.append(f"{prefix}: 'visible' must be a boolean")
+
+    # ── Optional cameras array ────────────────────────────────────────
+    cameras = data.get("cameras")
+    if cameras is not None:
+        if not isinstance(cameras, list):
+            errors.append("'cameras' must be a list")
+        else:
+            cam_ids: set[str] = set()
+            for ci, cam in enumerate(cameras):
+                cpfx = f"cameras[{ci}]"
+                if not isinstance(cam, dict):
+                    errors.append(f"{cpfx}: must be a dict")
+                    continue
+
+                cam_id = cam.get("id")
+                if not isinstance(cam_id, str) or not cam_id:
+                    errors.append(f"{cpfx}: 'id' must be a non-empty string")
+                elif cam_id in cam_ids:
+                    errors.append(f"{cpfx}: duplicate id {cam_id!r}")
+                else:
+                    cam_ids.add(cam_id)
+
+                cam_name = cam.get("name")
+                if not isinstance(cam_name, str) or not cam_name.strip():
+                    errors.append(f"{cpfx}: 'name' must be a non-empty string")
+
+                cam_pos = cam.get("position")
+                if (
+                    not isinstance(cam_pos, list)
+                    or len(cam_pos) != 3
+                    or not all(_is_finite_number(v) for v in cam_pos)
+                ):
+                    errors.append(
+                        f"{cpfx}: 'position' must be [x, y, z] (finite numbers)"
+                    )
+
+                cam_tgt = cam.get("target")
+                if (
+                    not isinstance(cam_tgt, list)
+                    or len(cam_tgt) != 3
+                    or not all(_is_finite_number(v) for v in cam_tgt)
+                ):
+                    errors.append(
+                        f"{cpfx}: 'target' must be [x, y, z] (finite numbers)"
+                    )
 
     # Cross-referential checks (only if individual objects are valid enough)
     if not errors:

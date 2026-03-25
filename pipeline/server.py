@@ -207,6 +207,15 @@ class SceneObjectModel(BaseModel):
     visible: bool
 
 
+class CameraBookmarkModel(BaseModel):
+    """A saved camera position/target for quick scene navigation."""
+
+    id: str
+    name: str
+    position: list[float]
+    target: list[float]
+
+
 class SceneResponse(BaseModel):
     """Full scene data returned by get/create/save endpoints."""
 
@@ -216,6 +225,7 @@ class SceneResponse(BaseModel):
     created_at: str
     modified_at: str
     objects: list[SceneObjectModel]
+    cameras: list[CameraBookmarkModel] = []
 
 
 class SceneListItem(BaseModel):

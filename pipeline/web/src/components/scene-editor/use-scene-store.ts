@@ -582,6 +582,57 @@ export function sceneReducer(
       }
     }
 
+    case "SAVE_CAMERA_BOOKMARK": {
+      if (!state.scene) return state
+      const stacks = pushUndo(state)
+      const existing = state.scene.cameras ?? []
+      return {
+        ...state,
+        ...stacks,
+        scene: {
+          ...state.scene,
+          cameras: [...existing, action.bookmark],
+        },
+        dirty: true,
+      }
+    }
+
+    case "DELETE_CAMERA_BOOKMARK": {
+      if (!state.scene) return state
+      const cameras = state.scene.cameras ?? []
+      if (!cameras.some((c) => c.id === action.bookmarkId)) return state
+      const stacks = pushUndo(state)
+      return {
+        ...state,
+        ...stacks,
+        scene: {
+          ...state.scene,
+          cameras: cameras.filter((c) => c.id !== action.bookmarkId),
+        },
+        dirty: true,
+      }
+    }
+
+    case "RENAME_CAMERA_BOOKMARK": {
+      if (!state.scene) return state
+      const cameras = state.scene.cameras ?? []
+      const nextName = action.name.trim()
+      const current = cameras.find((c) => c.id === action.bookmarkId)
+      if (!current || !nextName || current.name === nextName) return state
+      const stacks = pushUndo(state)
+      return {
+        ...state,
+        ...stacks,
+        scene: {
+          ...state.scene,
+          cameras: cameras.map((c) =>
+            c.id === action.bookmarkId ? { ...c, name: nextName } : c,
+          ),
+        },
+        dirty: true,
+      }
+    }
+
     case "UNDO": {
       if (state.undoStack.length === 0 || !state.scene) return state
       const previous = state.undoStack[state.undoStack.length - 1]

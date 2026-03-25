@@ -1,4 +1,4 @@
-import { type Dispatch, useMemo } from "react"
+import { type Dispatch, useMemo, useState } from "react"
 import {
   Move,
   RotateCcw,
@@ -10,12 +10,17 @@ import {
   Redo2,
   Save,
   Grid3x3,
+  Bookmark,
+  Camera,
+  X,
+  Pencil,
+  Check,
   Group,
   Ungroup,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import type { SceneAction, SceneState, SnapSize } from "./types"
+import type { CameraBookmark, SceneAction, SceneState, SnapSize } from "./types"
 import { SNAP_SIZES } from "./types"
 
 interface ToolbarProps {
@@ -23,6 +28,10 @@ interface ToolbarProps {
   dispatch: Dispatch<SceneAction>
   onSave: () => void
   onAdd: () => void
+  /** Read current camera position/target for saving bookmarks. */
+  onGetCameraState?: () => { position: [number, number, number]; target: [number, number, number] } | null
+  /** Restore camera to a saved bookmark. */
+  onRestoreBookmark?: (bookmark: CameraBookmark) => void
 }
 
 const GIZMO_MODES = [
@@ -31,7 +40,12 @@ const GIZMO_MODES = [
   { mode: "scale" as const, icon: Maximize2, label: "Scale" },
 ] as const
 
-export function Toolbar({ state, dispatch, onSave, onAdd }: ToolbarProps) {
+export function Toolbar({ state, dispatch, onSave, onAdd, onGetCameraState, onRestoreBookmark }: ToolbarProps) {
+  const [bookmarkMenuOpen, setBookmarkMenuOpen] = useState(false)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState("")
+
+  const bookmarks = state.scene?.cameras ?? []
   const selCount = state.selectedIds.size
   const hasSelection = selCount > 0
   const hasMultiSelection = selCount >= 2
@@ -48,6 +62,40 @@ export function Toolbar({ state, dispatch, onSave, onAdd }: ToolbarProps) {
     if (!obj || obj.asset_id !== null) return false
     return state.scene.objects.some((o) => o.parent_id === id)
   }, [selCount, state.scene, selectedIdsArray])
+
+  const handleSaveView = () => {
+    const camState = onGetCameraState?.()
+    if (!camState) return
+    const bookmark: CameraBookmark = {
+      id: crypto.randomUUID().slice(0, 12),
+      name: `View ${bookmarks.length + 1}`,
+      position: camState.position,
+      target: camState.target,
+    }
+    dispatch({ type: "SAVE_CAMERA_BOOKMARK", bookmark })
+  }
+
+  const handleRestore = (bookmark: CameraBookmark) => {
+    onRestoreBookmark?.(bookmark)
+    setBookmarkMenuOpen(false)
+  }
+
+  const handleDelete = (bookmarkId: string) => {
+    dispatch({ type: "DELETE_CAMERA_BOOKMARK", bookmarkId })
+  }
+
+  const handleStartRename = (bookmark: CameraBookmark) => {
+    setRenamingId(bookmark.id)
+    setRenameValue(bookmark.name)
+  }
+
+  const handleCommitRename = () => {
+    if (renamingId && renameValue.trim()) {
+      dispatch({ type: "RENAME_CAMERA_BOOKMARK", bookmarkId: renamingId, name: renameValue.trim() })
+    }
+    setRenamingId(null)
+    setRenameValue("")
+  }
 
   return (
     <div
@@ -201,6 +249,156 @@ export function Toolbar({ state, dispatch, onSave, onAdd }: ToolbarProps) {
           ))}
         </select>
       )}
+
+      <Separator orientation="vertical" className="h-6" />
+
+      {/* Camera bookmarks */}
+      <div className="relative">
+        <Button
+          size="sm"
+          variant="ghost"
+          title="Save current camera view"
+          aria-label="Save current camera view as bookmark"
+          onClick={handleSaveView}
+        >
+          <Camera className="h-4 w-4 mr-1" />
+          Save View
+        </Button>
+        <Button
+          size="sm"
+          variant={bookmarkMenuOpen ? "default" : "ghost"}
+          title="Camera bookmarks"
+          aria-label="Open camera bookmarks menu"
+          aria-expanded={bookmarkMenuOpen}
+          aria-haspopup="true"
+          onClick={() => setBookmarkMenuOpen(!bookmarkMenuOpen)}
+        >
+          <Bookmark className="h-4 w-4 mr-1" />
+          Views
+          {bookmarks.length > 0 && (
+            <span className="ml-1 text-xs text-muted-foreground">
+              ({bookmarks.length})
+            </span>
+          )}
+        </Button>
+
+        {bookmarkMenuOpen && (
+          <>
+            {/* Backdrop to close menu on outside click */}
+            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => {
+                setBookmarkMenuOpen(false)
+                setRenamingId(null)
+              }}
+            />
+            <div
+              className="absolute left-0 top-full z-50 mt-1 min-w-56 rounded-md border border-border bg-popover p-1 shadow-md"
+              aria-label="Camera bookmarks"
+            >
+              {bookmarks.length === 0 ? (
+                <p
+                  className="px-3 py-2 text-xs text-muted-foreground"
+                  role="status"
+                >
+                  No saved views. Use &quot;Save View&quot; to bookmark the
+                  current camera position.
+                </p>
+              ) : (
+                <ul role="list" aria-label="Saved camera views">
+                  {bookmarks.map((bm) => (
+                    <li
+                      key={bm.id}
+                      className="flex items-center gap-1 rounded px-1 hover:bg-accent"
+                    >
+                      {renamingId === bm.id ? (
+                        /* Inline rename */
+                        <form
+                          className="flex flex-1 items-center gap-1"
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            handleCommitRename()
+                          }}
+                        >
+                          <label className="sr-only" htmlFor={`rename-${bm.id}`}>
+                            Rename bookmark
+                          </label>
+                          <input
+                            id={`rename-${bm.id}`}
+                            className="flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs"
+                            value={renameValue}
+                            autoFocus
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onBlur={() => {
+                              // Guard: skip if renamingId was already cleared
+                              // by form submit (Enter key) in the same event cycle.
+                              if (renamingId) handleCommitRename()
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                setRenamingId(null)
+                              }
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            type="submit"
+                            className="h-6 w-6 p-0"
+                            title="Confirm rename"
+                            aria-label="Confirm bookmark rename"
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex-1 truncate px-2 py-1.5 text-left text-xs"
+                            title={`Restore view: ${bm.name}`}
+                            aria-label={`Restore camera to ${bm.name}`}
+                            onClick={() => handleRestore(bm)}
+                          >
+                            {bm.name}
+                          </button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 shrink-0 p-0"
+                            title={`Rename ${bm.name}`}
+                            aria-label={`Rename bookmark ${bm.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleStartRename(bm)
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 shrink-0 p-0"
+                            title={`Delete ${bm.name}`}
+                            aria-label={`Delete bookmark ${bm.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(bm.id)
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Selection count indicator */}
       {selCount > 1 && (
