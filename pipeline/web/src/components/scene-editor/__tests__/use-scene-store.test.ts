@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { SceneData, SceneObject, SceneState } from "../types"
 import { initialState, sceneReducer } from "../use-scene-store"
+import { computeWorldPosition, worldToLocal } from "../scene-utils"
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -835,6 +836,92 @@ describe("group and ungroup", () => {
     expect(ungrouped.dirty).toBe(true)
   })
 
+  it("UNGROUP_OBJECT preserves world positions when group has been rotated", () => {
+    const s = Math.SQRT1_2
+    const a = makeObject("a", { position: [2, 0, 0] })
+    const b = makeObject("b", { position: [4, 0, 0] })
+    const state = loadedState([a, b])
+
+    // Group them — centroid is [3, 0, 0]
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]!
+
+    // Rotate the group 90° around Y
+    const rotated = sceneReducer(grouped, {
+      type: "UPDATE_TRANSFORM",
+      objectId: groupId,
+      position: [3, 0, 0],
+      rotation: [0, s, 0, s], // 90° Y
+      scale: [1, 1, 1],
+    })
+
+    // Ungroup — children should keep their rotated world positions
+    const ungrouped = sceneReducer(rotated, {
+      type: "UNGROUP_OBJECT",
+      groupId,
+    })
+
+    expect(ungrouped.scene!.objects).toHaveLength(2)
+    const aObj = ungrouped.scene!.objects.find((o) => o.id === "a")!
+    const bObj = ungrouped.scene!.objects.find((o) => o.id === "b")!
+
+    // Original: a at [2,0,0], b at [4,0,0], centroid [3,0,0]
+    // After grouping: a local [-1,0,0], b local [1,0,0]
+    // 90° Y rotation of [-1,0,0] → [0,0,1]; world = [3,0,0] + [0,0,1] = [3,0,1]
+    // 90° Y rotation of [1,0,0] → [0,0,-1]; world = [3,0,0] + [0,0,-1] = [3,0,-1]
+    expect(aObj.parent_id).toBeNull()
+    expect(aObj.position[0]).toBeCloseTo(3, 5)
+    expect(aObj.position[1]).toBeCloseTo(0, 5)
+    expect(aObj.position[2]).toBeCloseTo(1, 5)
+    expect(bObj.parent_id).toBeNull()
+    expect(bObj.position[0]).toBeCloseTo(3, 5)
+    expect(bObj.position[1]).toBeCloseTo(0, 5)
+    expect(bObj.position[2]).toBeCloseTo(-1, 5)
+  })
+
+  it("UNGROUP_OBJECT preserves world positions when group has been scaled", () => {
+    const a = makeObject("a", { position: [1, 0, 0] })
+    const b = makeObject("b", { position: [3, 0, 0] })
+    const state = loadedState([a, b])
+
+    // Group — centroid [2, 0, 0]
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]!
+
+    // Scale the group 2x
+    const scaled = sceneReducer(grouped, {
+      type: "UPDATE_TRANSFORM",
+      objectId: groupId,
+      position: [2, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [2, 2, 2],
+    })
+
+    const ungrouped = sceneReducer(scaled, {
+      type: "UNGROUP_OBJECT",
+      groupId,
+    })
+
+    expect(ungrouped.scene!.objects).toHaveLength(2)
+    const aObj = ungrouped.scene!.objects.find((o) => o.id === "a")!
+    const bObj = ungrouped.scene!.objects.find((o) => o.id === "b")!
+
+    // a local [-1,0,0] scaled 2x → [-2,0,0]; world = [2,0,0] + [-2,0,0] = [0,0,0]
+    // b local [1,0,0] scaled 2x → [2,0,0]; world = [2,0,0] + [2,0,0] = [4,0,0]
+    expect(aObj.position[0]).toBeCloseTo(0, 5)
+    expect(aObj.position[1]).toBeCloseTo(0, 5)
+    expect(aObj.position[2]).toBeCloseTo(0, 5)
+    expect(bObj.position[0]).toBeCloseTo(4, 5)
+    expect(bObj.position[1]).toBeCloseTo(0, 5)
+    expect(bObj.position[2]).toBeCloseTo(0, 5)
+  })
+
   it("UNGROUP_OBJECT with non-existent groupId is a no-op", () => {
     const state = loadedState([makeObject("a")])
     const next = sceneReducer(state, {
@@ -1007,5 +1094,285 @@ describe("batch actions", () => {
     const s1 = sceneReducer(state, { type: "SELECT", objectId: "a" })
     const s2 = sceneReducer(s1, { type: "SELECT_SET", objectIds: [] })
     expect(s2.selectedIds.size).toBe(0)
+  })
+
+  // ── Non-identity parent rotation/scale (#437) ─────────────────────
+
+  it("REMOVE_OBJECT preserves world position when parent has rotation", () => {
+    // Parent rotated 90° around Y axis: quaternion [0, sin(45°), 0, cos(45°)]
+    const s = Math.SQRT1_2
+    const parent = makeObject("parent", {
+      position: [10, 0, 0],
+      rotation: [0, s, 0, s], // 90° around Y
+    })
+    // Child at local [0, 0, -5] under rotated parent
+    // 90° Y rotation maps [0,0,-5] → [-5,0,0]
+    // World = [10,0,0] + [-5,0,0] = [5, 0, 0]
+    const child = makeObject("child", {
+      parent_id: "parent",
+      position: [0, 0, -5],
+    })
+    const state = loadedState([parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECT",
+      objectId: "parent",
+    })
+
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    expect(childObj.parent_id).toBeNull()
+    expect(childObj.position[0]).toBeCloseTo(5, 5)
+    expect(childObj.position[1]).toBeCloseTo(0, 5)
+    expect(childObj.position[2]).toBeCloseTo(0, 5)
+  })
+
+  it("REMOVE_OBJECT preserves world position when parent has scale", () => {
+    const parent = makeObject("parent", {
+      position: [0, 0, 0],
+      scale: [2, 2, 2],
+    })
+    // Child at local [3, 4, 0] under 2x-scaled parent → world = [6, 8, 0]
+    const child = makeObject("child", {
+      parent_id: "parent",
+      position: [3, 4, 0],
+    })
+    const state = loadedState([parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECT",
+      objectId: "parent",
+    })
+
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    expect(childObj.parent_id).toBeNull()
+    expect(childObj.position[0]).toBeCloseTo(6, 5)
+    expect(childObj.position[1]).toBeCloseTo(8, 5)
+    expect(childObj.position[2]).toBeCloseTo(0, 5)
+  })
+
+  it("REMOVE_OBJECT reparents to rotated grandparent with correct local position", () => {
+    const s = Math.SQRT1_2
+    const grandparent = makeObject("gp", {
+      position: [0, 0, 0],
+      rotation: [0, s, 0, s], // 90° around Y
+    })
+    const parent = makeObject("parent", {
+      parent_id: "gp",
+      position: [5, 0, 0],
+    })
+    // Child local [1, 0, 0] under parent (which is under rotated gp)
+    const child = makeObject("child", {
+      parent_id: "parent",
+      position: [1, 0, 0],
+    })
+    const state = loadedState([grandparent, parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECT",
+      objectId: "parent",
+    })
+
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    expect(childObj.parent_id).toBe("gp")
+    // Child's new local position under gp = parent's local [5,0,0] + child's local [1,0,0] = [6,0,0]
+    // (Both were subject to gp's rotation equally, so the rotation cancels out in the local conversion)
+    expect(childObj.position[0]).toBeCloseTo(6, 5)
+    expect(childObj.position[1]).toBeCloseTo(0, 5)
+    expect(childObj.position[2]).toBeCloseTo(0, 5)
+  })
+
+  it("REMOVE_OBJECTS preserves world position with rotated parent", () => {
+    const s = Math.SQRT1_2
+    const parent = makeObject("parent", {
+      position: [0, 5, 0],
+      rotation: [0, s, 0, s], // 90° around Y
+    })
+    const child = makeObject("child", {
+      parent_id: "parent",
+      position: [3, 0, 0],
+    })
+    const state = loadedState([parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECTS",
+      objectIds: ["parent"],
+    })
+
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    expect(childObj.parent_id).toBeNull()
+    // 90° Y rotation maps [3,0,0] → [0,0,-3]
+    // World = [0,5,0] + [0,0,-3] = [0,5,-3]
+    expect(childObj.position[0]).toBeCloseTo(0, 5)
+    expect(childObj.position[1]).toBeCloseTo(5, 5)
+    expect(childObj.position[2]).toBeCloseTo(-3, 5)
+  })
+
+  it("REMOVE_OBJECTS preserves world position with scaled parent reparented to surviving ancestor", () => {
+    const grandparent = makeObject("gp", { position: [10, 0, 0] })
+    const parent = makeObject("parent", {
+      parent_id: "gp",
+      position: [5, 0, 0],
+      scale: [3, 3, 3],
+    })
+    const child = makeObject("child", {
+      parent_id: "parent",
+      position: [2, 1, 0],
+    })
+    const state = loadedState([grandparent, parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REMOVE_OBJECTS",
+      objectIds: ["parent"],
+    })
+
+    const childObj = next.scene!.objects.find((o) => o.id === "child")!
+    expect(childObj.parent_id).toBe("gp")
+    // Child world: gp[10,0,0] + parent[5,0,0] + scale(3)*child[2,1,0] = [10+5+6, 0+0+3, 0] = [21, 3, 0]
+    // Local under gp (identity rot/scale): worldPos - gpWorldPos = [21-10, 3-0, 0] = [11, 3, 0]
+    expect(childObj.position[0]).toBeCloseTo(11, 5)
+    expect(childObj.position[1]).toBeCloseTo(3, 5)
+    expect(childObj.position[2]).toBeCloseTo(0, 5)
+  })
+})
+
+// ── computeWorldPosition / worldToLocal unit tests ───────────────────
+
+describe("computeWorldPosition", () => {
+  it("returns object position when no parent", () => {
+    const obj = makeObject("a", { position: [3, 4, 5] })
+    const map = new Map([["a", obj]])
+    expect(computeWorldPosition(obj, map)).toEqual([3, 4, 5])
+  })
+
+  it("sums positions for identity-transform parents", () => {
+    const parent = makeObject("p", { position: [10, 20, 30] })
+    const child = makeObject("c", { parent_id: "p", position: [1, 2, 3] })
+    const map = new Map<string, SceneObject>([["p", parent], ["c", child]])
+    expect(computeWorldPosition(child, map)).toEqual([11, 22, 33])
+  })
+
+  it("applies parent rotation to child position", () => {
+    const s = Math.SQRT1_2
+    // 90° around Y: [0, sin45, 0, cos45]
+    const parent = makeObject("p", {
+      position: [0, 0, 0],
+      rotation: [0, s, 0, s],
+    })
+    const child = makeObject("c", {
+      parent_id: "p",
+      position: [1, 0, 0],
+    })
+    const map = new Map<string, SceneObject>([["p", parent], ["c", child]])
+    const wp = computeWorldPosition(child, map)
+    // 90° Y rotation maps [1,0,0] → [0,0,-1]
+    expect(wp[0]).toBeCloseTo(0, 5)
+    expect(wp[1]).toBeCloseTo(0, 5)
+    expect(wp[2]).toBeCloseTo(-1, 5)
+  })
+
+  it("applies parent scale to child position", () => {
+    const parent = makeObject("p", {
+      position: [0, 0, 0],
+      scale: [2, 3, 4],
+    })
+    const child = makeObject("c", {
+      parent_id: "p",
+      position: [1, 1, 1],
+    })
+    const map = new Map<string, SceneObject>([["p", parent], ["c", child]])
+    const wp = computeWorldPosition(child, map)
+    expect(wp).toEqual([2, 3, 4])
+  })
+
+  it("composes rotation + scale + translation through ancestor chain", () => {
+    const s = Math.SQRT1_2
+    const root = makeObject("root", {
+      position: [10, 0, 0],
+      rotation: [0, s, 0, s], // 90° Y
+      scale: [2, 2, 2],
+    })
+    const mid = makeObject("mid", {
+      parent_id: "root",
+      position: [5, 0, 0],
+    })
+    const leaf = makeObject("leaf", {
+      parent_id: "mid",
+      position: [1, 0, 0],
+    })
+    const map = new Map<string, SceneObject>([
+      ["root", root],
+      ["mid", mid],
+      ["leaf", leaf],
+    ])
+    const wp = computeWorldPosition(leaf, map)
+    // root transform: pos=[10,0,0], rot=90°Y, scale=[2,2,2]
+    // mid local [5,0,0] → scaled [10,0,0] → rotated [0,0,-10] → world [10,0,-10]
+    // At mid level: accumulated rot=90°Y, scale=[2,2,2]
+    // leaf local [1,0,0] → scaled [2,0,0] → rotated [0,0,-2] → world [10,0,-12]
+    expect(wp[0]).toBeCloseTo(10, 5)
+    expect(wp[1]).toBeCloseTo(0, 5)
+    expect(wp[2]).toBeCloseTo(-12, 5)
+  })
+
+  it("handles cycle in parent chain without infinite loop", () => {
+    const a = makeObject("a", { parent_id: "b", position: [1, 0, 0] })
+    const b = makeObject("b", { parent_id: "a", position: [2, 0, 0] })
+    const map = new Map<string, SceneObject>([["a", a], ["b", b]])
+    // Should not hang — just returns a finite result
+    const wp = computeWorldPosition(a, map)
+    expect(Array.isArray(wp)).toBe(true)
+    expect(wp).toHaveLength(3)
+  })
+})
+
+describe("worldToLocal", () => {
+  it("inverts identity-transform parent", () => {
+    const parent = makeObject("p", { position: [10, 20, 30] })
+    const map = new Map<string, SceneObject>([["p", parent]])
+    const local = worldToLocal([15, 25, 35], parent, map)
+    expect(local).toEqual([5, 5, 5])
+  })
+
+  it("inverts rotated parent", () => {
+    const s = Math.SQRT1_2
+    const parent = makeObject("p", {
+      position: [0, 0, 0],
+      rotation: [0, s, 0, s], // 90° Y
+    })
+    const map = new Map<string, SceneObject>([["p", parent]])
+    // World [0,0,-1] under 90°Y parent should yield local [1,0,0]
+    const local = worldToLocal([0, 0, -1], parent, map)
+    expect(local[0]).toBeCloseTo(1, 5)
+    expect(local[1]).toBeCloseTo(0, 5)
+    expect(local[2]).toBeCloseTo(0, 5)
+  })
+
+  it("inverts scaled parent", () => {
+    const parent = makeObject("p", {
+      position: [0, 0, 0],
+      scale: [2, 3, 4],
+    })
+    const map = new Map<string, SceneObject>([["p", parent]])
+    const local = worldToLocal([6, 9, 12], parent, map)
+    expect(local).toEqual([3, 3, 3])
+  })
+
+  it("round-trips with computeWorldPosition", () => {
+    const s = Math.SQRT1_2
+    const parent = makeObject("p", {
+      position: [5, 10, 15],
+      rotation: [0, s, 0, s],
+      scale: [2, 2, 2],
+    })
+    const child = makeObject("c", {
+      parent_id: "p",
+      position: [3, 4, 5],
+    })
+    const map = new Map<string, SceneObject>([["p", parent], ["c", child]])
+    const wp = computeWorldPosition(child, map)
+    const local = worldToLocal(wp, parent, map)
+    expect(local[0]).toBeCloseTo(3, 5)
+    expect(local[1]).toBeCloseTo(4, 5)
+    expect(local[2]).toBeCloseTo(5, 5)
   })
 })

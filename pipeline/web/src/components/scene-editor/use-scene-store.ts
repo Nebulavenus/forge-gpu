@@ -17,7 +17,7 @@ import type {
   SnapSize,
 } from "./types"
 import { SNAP_SIZES } from "./types"
-import { computeWorldPosition } from "./scene-utils"
+import { computeWorldPosition, worldToLocal } from "./scene-utils"
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -116,11 +116,10 @@ export function sceneReducer(
           if (newParentId !== null) {
             const grandparent = objectMap.get(newParentId)
             if (grandparent) {
-              const gwp = computeWorldPosition(grandparent, objectMap)
               return {
                 ...o,
                 parent_id: newParentId,
-                position: [wp[0] - gwp[0], wp[1] - gwp[1], wp[2] - gwp[2]] as [number, number, number],
+                position: worldToLocal(wp, grandparent, objectMap),
               }
             }
           }
@@ -165,11 +164,10 @@ export function sceneReducer(
           if (newParent !== null) {
             // Convert world position to local relative to surviving ancestor
             const ancestorObj = objectMap.get(newParent)!
-            const awp = computeWorldPosition(ancestorObj, objectMap)
             return {
               ...o,
               parent_id: newParent,
-              position: [wp[0] - awp[0], wp[1] - awp[1], wp[2] - awp[2]] as [number, number, number],
+              position: worldToLocal(wp, ancestorObj, objectMap),
             }
           }
           return { ...o, parent_id: null, position: wp }
@@ -486,26 +484,28 @@ export function sceneReducer(
       )
       if (children.length === 0) return state
       const stacks = pushUndo(state)
-      // Apply group's position offset to children so they keep world-space positions.
-      // (Group's rotation is identity [0,0,0,1] and scale is [1,1,1] when created
-      // by GROUP_OBJECTS, so only position needs adjustment.)
-      const gp = groupObj.position
+      // Compute each child's world position, then convert to local space
+      // relative to the group's parent (or root). This handles groups that
+      // have been rotated or scaled after creation.
+      const objectMap = new Map(state.scene.objects.map((o) => [o.id, o]))
       const childIds = new Set(children.map((c) => c.id))
+      const grandparent = groupObj.parent_id !== null
+        ? objectMap.get(groupObj.parent_id) ?? null
+        : null
       const objects = state.scene.objects
         .filter((o) => o.id !== action.groupId)
-        .map((o) =>
-          childIds.has(o.id)
-            ? {
-                ...o,
-                parent_id: groupObj.parent_id,
-                position: [
-                  o.position[0] + gp[0],
-                  o.position[1] + gp[1],
-                  o.position[2] + gp[2],
-                ] as [number, number, number],
-              }
-            : o,
-        )
+        .map((o) => {
+          if (!childIds.has(o.id)) return o
+          const wp = computeWorldPosition(o, objectMap)
+          const localPos = grandparent
+            ? worldToLocal(wp, grandparent, objectMap)
+            : wp
+          return {
+            ...o,
+            parent_id: groupObj.parent_id,
+            position: localPos,
+          }
+        })
       return {
         ...state,
         ...stacks,
