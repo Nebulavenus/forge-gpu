@@ -164,6 +164,10 @@ export function sceneReducer(
       ) {
         return state // reject — would create a cycle
       }
+      // Skip if object doesn't exist or parent is already correct
+      const reparentObj = state.scene.objects.find((o) => o.id === action.objectId)
+      if (!reparentObj) return state
+      if (reparentObj.parent_id === action.newParentId) return state
       const stacks = pushUndo(state)
       const objects = state.scene.objects.map((o) =>
         o.id === action.objectId
@@ -174,6 +178,63 @@ export function sceneReducer(
         ...state,
         ...stacks,
         scene: { ...state.scene, objects },
+        dirty: true,
+      }
+    }
+
+    case "REORDER_OBJECT": {
+      if (!state.scene) return state
+      // Reject self-parenting
+      if (action.newParentId === action.objectId) return state
+      // Prevent circular references
+      if (
+        action.newParentId !== null &&
+        isDescendantOf(state.scene.objects, action.newParentId, action.objectId)
+      ) {
+        return state
+      }
+      // Update parent_id and reorder within the objects array so the object
+      // appears before `beforeId` among its new siblings.
+      const obj = state.scene.objects.find((o) => o.id === action.objectId)
+      if (!obj) return state
+      const updated = { ...obj, parent_id: action.newParentId }
+      // Remove the object from its current position
+      const without = state.scene.objects.filter(
+        (o) => o.id !== action.objectId,
+      )
+      // Insert before `beforeId` if specified, otherwise append
+      if (action.beforeId !== null) {
+        const idx = without.findIndex((o) => o.id === action.beforeId)
+        if (idx >= 0) {
+          without.splice(idx, 0, updated)
+        } else {
+          without.push(updated)
+        }
+      } else {
+        without.push(updated)
+      }
+      // Skip undo/dirty when the move is a no-op (same parent and same
+      // sibling order). Compare only the sibling sequence for the relevant
+      // parent — global array interleaving may differ without affecting order.
+      if (obj.parent_id === action.newParentId) {
+        const oldSiblings = state.scene.objects
+          .filter((o) => o.parent_id === obj.parent_id)
+          .map((o) => o.id)
+        const newSiblings = without
+          .filter((o) => o.parent_id === action.newParentId)
+          .map((o) => o.id)
+        if (
+          oldSiblings.length === newSiblings.length &&
+          oldSiblings.every((id, i) => id === newSiblings[i])
+        ) {
+          return state
+        }
+      }
+      const stacks = pushUndo(state)
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects: without },
         dirty: true,
       }
     }

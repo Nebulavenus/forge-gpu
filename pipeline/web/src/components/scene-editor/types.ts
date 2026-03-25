@@ -45,6 +45,12 @@ export type SceneAction =
     }
   | { type: "RENAME_OBJECT"; objectId: string; name: string }
   | { type: "REPARENT_OBJECT"; objectId: string; newParentId: string | null }
+  | {
+      type: "REORDER_OBJECT"
+      objectId: string
+      newParentId: string | null
+      beforeId: string | null
+    }
   | { type: "SET_VISIBILITY"; objectId: string; visible: boolean }
   | { type: "DUPLICATE_OBJECT"; objectId: string }
   | { type: "SELECT"; objectId: string | null }

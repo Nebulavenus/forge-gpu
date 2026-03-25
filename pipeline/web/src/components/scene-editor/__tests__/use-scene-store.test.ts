@@ -402,4 +402,131 @@ describe("sceneReducer", () => {
       expect(next.dirty).toBe(false)
     }
   })
+
+  it("REORDER_OBJECT reparents and places before target sibling", () => {
+    const a = makeObject("a")
+    const b = makeObject("b")
+    const c = makeObject("c")
+    const state = loadedState([a, b, c])
+
+    // Move c before a (both at root level)
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "c",
+      newParentId: null,
+      beforeId: "a",
+    })
+
+    const ids = next.scene!.objects.map((o) => o.id)
+    expect(ids).toEqual(["c", "a", "b"])
+    expect(next.undoStack).toHaveLength(1)
+    expect(next.dirty).toBe(true)
+  })
+
+  it("REORDER_OBJECT appends when beforeId is null", () => {
+    const a = makeObject("a")
+    const b = makeObject("b")
+    const state = loadedState([a, b])
+
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "a",
+      newParentId: null,
+      beforeId: null,
+    })
+
+    const ids = next.scene!.objects.map((o) => o.id)
+    expect(ids).toEqual(["b", "a"])
+  })
+
+  it("REORDER_OBJECT changes parent_id when reparenting", () => {
+    const parent = makeObject("p")
+    const child = makeObject("c")
+    const state = loadedState([parent, child])
+
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "c",
+      newParentId: "p",
+      beforeId: null,
+    })
+
+    expect(next.scene!.objects.find((o) => o.id === "c")!.parent_id).toBe("p")
+  })
+
+  it("REORDER_OBJECT rejects self-parenting", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "a",
+      newParentId: "a",
+      beforeId: null,
+    })
+
+    expect(next).toBe(state)
+  })
+
+  it("REORDER_OBJECT rejects circular reference", () => {
+    const a = makeObject("a")
+    const b = makeObject("b", { parent_id: "a" })
+    const state = loadedState([a, b])
+
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "a",
+      newParentId: "b",
+      beforeId: null,
+    })
+
+    expect(next.scene!.objects.find((o) => o.id === "a")!.parent_id).toBeNull()
+    expect(next.undoStack).toHaveLength(0)
+  })
+
+  it("REORDER_OBJECT returns same state for non-existent objectId", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "does-not-exist",
+      newParentId: null,
+      beforeId: null,
+    })
+
+    expect(next).toBe(state)
+  })
+
+  it("REORDER_OBJECT is a no-op when position is unchanged", () => {
+    const a = makeObject("a")
+    const b = makeObject("b")
+    const c = makeObject("c")
+    const state = loadedState([a, b, c])
+
+    // "b" is already between "a" and "c" — reordering before "c" is a no-op
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "b",
+      newParentId: null,
+      beforeId: "c",
+    })
+
+    expect(next).toBe(state)
+    expect(next.undoStack).toHaveLength(0)
+    expect(next.dirty).toBe(false)
+  })
+
+  it("REORDER_OBJECT appends when beforeId is not found", () => {
+    const a = makeObject("a")
+    const b = makeObject("b")
+    const c = makeObject("c")
+    const state = loadedState([a, b, c])
+
+    const next = sceneReducer(state, {
+      type: "REORDER_OBJECT",
+      objectId: "a",
+      newParentId: null,
+      beforeId: "does-not-exist",
+    })
+
+    const ids = next.scene!.objects.map((o) => o.id)
+    expect(ids).toEqual(["b", "c", "a"])
+  })
 })
