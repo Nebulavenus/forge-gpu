@@ -250,11 +250,25 @@ Constants: `FORGE_PHYSICS_JOINT_BAUMGARTE` (0.1),
 | `forge_physics_solver_config_default()` | Initialize stable default solver tuning values |
 | `forge_physics_manifold_cache_store()` | Store solved impulses into cache without merge-scale |
 
-### Planned API (from Physics Lessons)
+### Lesson 15 — Simulation Loop
 
-| Lesson | Functions | Purpose |
-|---|---|---|
-| 15 | *TBD* | Advanced constraints |
+| Function | Purpose |
+|---|---|
+| `forge_physics_world_config_default()` | Return default world configuration |
+| `forge_physics_world_init()` | Initialize a world with config |
+| `forge_physics_world_destroy()` | Free all world memory |
+| `forge_physics_world_add_body()` | Add a rigid body and collision shape |
+| `forge_physics_world_add_joint()` | Add a joint constraint |
+| `forge_physics_world_body_count()` | Query body count |
+| `forge_physics_world_wake_body()` | Wake a sleeping body |
+| `forge_physics_world_sleep_body()` | Force a body to sleep |
+| `forge_physics_world_is_sleeping()` | Query sleep state |
+| `forge_physics_world_island_id()` | Query island ID (valid after step) |
+| `forge_physics_world_apply_force()` | Apply force and auto-wake |
+| `forge_physics_world_apply_impulse()` | Apply impulse and auto-wake |
+| `forge_physics_world_step()` | Run complete simulation pipeline |
+
+Constants: `FORGE_PHYSICS_SLEEP_LINEAR_THRESHOLD` (0.05), `FORGE_PHYSICS_SLEEP_ANGULAR_THRESHOLD` (0.05), `FORGE_PHYSICS_SLEEP_TIME_THRESHOLD` (0.5), `FORGE_PHYSICS_WORLD_DEFAULT_ITERATIONS` (20).
 
 ## Design
 

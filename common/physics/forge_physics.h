@@ -9297,4 +9297,1392 @@ static inline void forge_physics_joint_solve(
 }
 
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Physics World — Unified Simulation Loop with Islands and Sleeping
+ * (Lesson 15)
+ *
+ * ForgePhysicsWorld owns all simulation state and provides a one-call
+ * step function that runs the complete physics pipeline: broadphase,
+ * narrowphase, island detection, sleep evaluation, constraint solving,
+ * and integration.
+ *
+ * Island detection uses union-find over the contact graph. Bodies
+ * connected by contacts or joints belong to the same island. When all
+ * dynamic bodies in an island have been below velocity thresholds for
+ * a configurable duration, the island sleeps — its bodies are skipped
+ * by the solver and integrator until an external force or new contact
+ * wakes them.
+ *
+ * Reference: Catto, "Modeling and Solving Constraints", GDC 2009
+ * Reference: Bullet Physics Library, btSimulationIslandManager
+ * See: Physics Lesson 15 — Simulation Loop
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── World Constants ────────────────────────────────────────────────────── */
+
+/* Linear velocity threshold below which a body is considered at rest.
+ *
+ * If a body's velocity magnitude stays below this value (in m/s) for
+ * FORGE_PHYSICS_SLEEP_TIME_THRESHOLD seconds, it contributes to island
+ * sleep evaluation. Chosen to be above floating-point noise from the
+ * constraint solver but low enough to not suppress visible micro-motion.
+ */
+#define FORGE_PHYSICS_SLEEP_LINEAR_THRESHOLD   0.05f
+
+/* Angular velocity threshold below which a body is considered at rest.
+ *
+ * If a body's angular velocity magnitude stays below this value (in rad/s)
+ * for FORGE_PHYSICS_SLEEP_TIME_THRESHOLD seconds, it contributes to island
+ * sleep evaluation. Matches the linear threshold in scale.
+ */
+#define FORGE_PHYSICS_SLEEP_ANGULAR_THRESHOLD  0.05f
+
+/* Duration (in seconds) a body must remain below velocity thresholds
+ * before its island is put to sleep. Half a second gives the solver
+ * enough time to damp ringing contact impulses before sleeping.
+ */
+#define FORGE_PHYSICS_SLEEP_TIME_THRESHOLD     0.5f
+
+/* Default sequential-impulse solver iteration count for ForgePhysicsWorld.
+ *
+ * 20 iterations is sufficient for stacks of 10–20 boxes. Increase for
+ * taller stacks or tighter constraint accuracy.
+ */
+#define FORGE_PHYSICS_WORLD_DEFAULT_ITERATIONS 20
+
+/* Default static friction coefficient for world ground contacts. */
+#define FORGE_PHYSICS_WORLD_DEFAULT_MU_S       0.6f
+
+/* Default dynamic friction coefficient for world ground contacts. */
+#define FORGE_PHYSICS_WORLD_DEFAULT_MU_D       0.4f
+
+/* Maximum number of contact manifolds the world tracks per step.
+ *
+ * Ground contacts produce one manifold per body; body-body contacts
+ * produce one manifold per overlapping pair. 256 covers dense scenes
+ * without unbounded allocation.
+ */
+#define FORGE_PHYSICS_WORLD_MAX_MANIFOLDS      256
+
+/* Sentinel island ID indicating a body has not yet been assigned
+ * to an island in the current step's union-find pass.
+ */
+#define FORGE_PHYSICS_ISLAND_NONE              (-1)
+
+/* Maximum path-halving steps before bail-out on corrupted parent arrays.
+ * Far beyond any real tree depth for scenes with <= MAX_MANIFOLDS bodies. */
+#define FORGE_PHYSICS_UF_MAX_STEPS             10000
+
+/* Sentinel float for "no dynamic body found" in island timer scans.
+ * Any timer value above this sentinel indicates the scan found no bodies. */
+#define FORGE_PHYSICS_TIMER_SENTINEL           1e30f
+
+/* ── ForgePhysicsWorldConfig ────────────────────────────────────────────── */
+
+/* Configuration for a ForgePhysicsWorld simulation.
+ *
+ * All parameters are copied into the world at init time. Changing fields
+ * on a live world requires calling forge_physics_world_init() again (which
+ * destroys existing state) or updating them directly on world->config.
+ *
+ * Fields:
+ *   gravity           — gravitational acceleration vector (m/s²). Typically
+ *                       (0, -9.81, 0) for Earth-surface simulations.
+ *   fixed_dt          — fixed physics timestep (seconds). The step function
+ *                       always advances by exactly this amount; callers are
+ *                       responsible for the accumulator pattern.
+ *   solver_iterations — sequential-impulse iteration count per step.
+ *                       More iterations = tighter constraints, higher cost.
+ *   warm_start        — if true, carry impulses from the previous frame into
+ *                       the solver (greatly improves stacking stability).
+ *   enable_sleeping   — if true, islands that have settled are put to sleep
+ *                       and skipped by the integrator and solver.
+ *   sleep_linear_threshold  — linear velocity threshold (m/s) for sleep test.
+ *   sleep_angular_threshold — angular velocity threshold (rad/s) for sleep test.
+ *   sleep_time_threshold    — seconds below threshold before island sleeps.
+ *   ground_y          — Y coordinate of the ground plane (world units).
+ *   mu_static         — static friction coefficient for ground contacts.
+ *   mu_dynamic        — dynamic friction coefficient for ground contacts.
+ *   solver_config     — fine-grained SI solver parameters (Baumgarte, slop).
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+typedef struct ForgePhysicsWorldConfig {
+    vec3  gravity;                 /* gravitational acceleration (m/s²)            */
+    float fixed_dt;                /* fixed timestep per step call (s)             */
+    int   solver_iterations;       /* SI solver iterations per step                */
+    bool  warm_start;              /* carry impulses from previous frame           */
+    bool  enable_sleeping;         /* allow islands to sleep when settled          */
+    float sleep_linear_threshold;  /* linear speed below which body is "at rest" (m/s)  */
+    float sleep_angular_threshold; /* angular speed below which body is "at rest" (rad/s)*/
+    float sleep_time_threshold;    /* seconds below threshold before island sleeps (s)   */
+    float ground_y;                /* Y coordinate of the infinite ground plane    */
+    float mu_static;               /* ground static friction coefficient [0..1]    */
+    float mu_dynamic;              /* ground dynamic friction coefficient [0..1]   */
+    ForgePhysicsSolverConfig solver_config; /* fine-grained solver params (Baumgarte, slop) */
+} ForgePhysicsWorldConfig;
+
+/* Return a ForgePhysicsWorldConfig with reasonable defaults.
+ *
+ * Default values:
+ *   gravity           = (0, -9.81, 0) — standard Earth gravity
+ *   fixed_dt          = 1/60          — 60 Hz physics
+ *   solver_iterations = 20
+ *   warm_start        = true
+ *   enable_sleeping   = true
+ *   sleep thresholds  = FORGE_PHYSICS_SLEEP_*_THRESHOLD
+ *   ground_y          = 0.0
+ *   mu_static         = FORGE_PHYSICS_WORLD_DEFAULT_MU_S
+ *   mu_dynamic        = FORGE_PHYSICS_WORLD_DEFAULT_MU_D
+ *   solver_config     = forge_physics_solver_config_default()
+ *
+ * Parameters: none
+ *
+ * Returns: initialized ForgePhysicsWorldConfig
+ *
+ * Usage:
+ *   ForgePhysicsWorldConfig cfg = forge_physics_world_config_default();
+ *   cfg.gravity = vec3_create(0, -1.62f, 0); // Moon gravity
+ *   forge_physics_world_init(&world, cfg);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline ForgePhysicsWorldConfig forge_physics_world_config_default(void)
+{
+    ForgePhysicsWorldConfig cfg;
+    SDL_memset(&cfg, 0, sizeof(cfg));
+    cfg.gravity                 = vec3_create(0.0f, -9.81f, 0.0f);
+    cfg.fixed_dt                = 1.0f / 60.0f;
+    cfg.solver_iterations       = FORGE_PHYSICS_WORLD_DEFAULT_ITERATIONS;
+    cfg.warm_start              = true;
+    cfg.enable_sleeping         = true;
+    cfg.sleep_linear_threshold  = FORGE_PHYSICS_SLEEP_LINEAR_THRESHOLD;
+    cfg.sleep_angular_threshold = FORGE_PHYSICS_SLEEP_ANGULAR_THRESHOLD;
+    cfg.sleep_time_threshold    = FORGE_PHYSICS_SLEEP_TIME_THRESHOLD;
+    cfg.ground_y                = 0.0f;
+    cfg.mu_static               = FORGE_PHYSICS_WORLD_DEFAULT_MU_S;
+    cfg.mu_dynamic              = FORGE_PHYSICS_WORLD_DEFAULT_MU_D;
+    cfg.solver_config           = forge_physics_solver_config_default();
+    return cfg;
+}
+
+/* ── ForgePhysicsWorld ──────────────────────────────────────────────────── */
+
+/* Unified physics simulation world.
+ *
+ * ForgePhysicsWorld owns all simulation state. Bodies, shapes, joints, and
+ * solver workspaces are stored in forge_arr dynamic arrays. Callers add bodies
+ * via forge_physics_world_add_body() and advance the simulation via
+ * forge_physics_world_step().
+ *
+ * All forge_arr pointers start as NULL (empty). Call forge_physics_world_destroy()
+ * to release all memory; the struct is zeroed on exit.
+ *
+ * Parallel arrays (bodies, shapes, sleep_timers, is_sleeping, island_ids,
+ * cached_aabbs) are always the same length. Body index i is valid for all
+ * of these arrays simultaneously.
+ *
+ * Stats fields (active_body_count, sleeping_body_count, etc.) are updated
+ * at the end of each forge_physics_world_step() call.
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+typedef struct ForgePhysicsWorld {
+    /* ── Body state (parallel arrays) ─────────────────────────── */
+    ForgePhysicsRigidBody     *bodies;         /* dynamic array of rigid bodies */
+    ForgePhysicsCollisionShape *shapes;        /* collision shape per body */
+    float                      *sleep_timers; /* seconds each body has been below threshold */
+    bool                       *is_sleeping;  /* true if body is currently sleeping */
+    int                        *island_ids;   /* union-find root after build_islands */
+    ForgePhysicsAABB           *cached_aabbs; /* world-space AABBs, recomputed each step */
+
+    /* ── Joints ─────────────────────────────────────────────────── */
+    ForgePhysicsJoint          *joints;        /* forge_arr of joint constraints      */
+
+    /* ── Broadphase ─────────────────────────────────────────────── */
+    ForgePhysicsSAPWorld        sap;           /* sweep-and-prune overlap detection   */
+
+    /* ── Solver workspaces (rebuilt each step) ──────────────────── */
+    ForgePhysicsManifold       *manifolds;      /* contact manifolds this step         */
+    ForgePhysicsSIManifold     *si_workspace;   /* SI solver per-manifold scratch data */
+    ForgePhysicsJointSolverData *joint_workspace; /* joint solver per-joint scratch    */
+
+    /* ── Manifold cache (warm-starting) ─────────────────────────── */
+    ForgePhysicsManifoldCacheEntry *manifold_cache; /* hash map: pair key → cached impulses */
+
+    /* ── Union-find (island detection) ──────────────────────────── */
+    int                        *uf_parent;     /* forge_arr parent pointers for UF    */
+    int                        *uf_rank;       /* forge_arr rank for union-by-rank    */
+    int                         island_count;  /* distinct dynamic islands this step  */
+
+    /* ── Configuration ───────────────────────────────────────────── */
+    ForgePhysicsWorldConfig     config;        /* simulation parameters (copied at init) */
+
+    /* ── Per-step statistics (updated at end of each step) ──────── */
+    int active_body_count;                     /* non-sleeping dynamic bodies         */
+    int sleeping_body_count;                   /* sleeping dynamic bodies             */
+    int static_body_count;                     /* zero-mass (immovable) bodies        */
+    int manifold_count;                        /* contact manifolds this step         */
+    int total_contact_count;                   /* contact points across all manifolds */
+} ForgePhysicsWorld;
+
+/* ── Lifecycle ──────────────────────────────────────────────────────────── */
+
+/* Initialize a ForgePhysicsWorld with the given configuration.
+ *
+ * Zeros all fields, copies the config, and initializes the sweep-and-prune
+ * broadphase. All dynamic arrays start empty (NULL); no heap allocation
+ * occurs until bodies are added.
+ *
+ * Safe to call on an already-initialized world: if the sentinel field
+ * indicates prior initialization, all owned resources are destroyed first
+ * via forge_physics_world_destroy() before re-initializing.
+ *
+ * Parameters:
+ *   world  (ForgePhysicsWorld*) — world to initialize; must not be NULL
+ *   config (ForgePhysicsWorldConfig) — simulation parameters
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   ForgePhysicsWorld world;
+ *   forge_physics_world_init(&world, forge_physics_world_config_default());
+ *   // ... add bodies, step, draw ...
+ *   forge_physics_world_destroy(&world);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_destroy(ForgePhysicsWorld *world);
+static inline void forge_physics_world_init(
+    ForgePhysicsWorld *world, ForgePhysicsWorldConfig config)
+{
+    if (!world) return;
+
+    /* Always zero the struct.  Callers that re-initialize a live world
+     * must call forge_physics_world_destroy() first to avoid leaking
+     * arrays, SAP storage, and the manifold cache.  We do not attempt
+     * sentinel-based auto-destroy because stack-allocated worlds contain
+     * uninitialized memory in Release builds — the sentinel field could
+     * match by coincidence, triggering a destroy on garbage pointers. */
+    SDL_memset(world, 0, sizeof(*world));
+
+    world->config = config;
+    forge_physics_sap_init(&world->sap);
+}
+
+/* Release all memory owned by a ForgePhysicsWorld and zero the struct.
+ *
+ * Frees all forge_arr dynamic arrays, destroys the SAP broadphase, and
+ * releases the manifold cache hash map. The struct is zeroed so it can be
+ * safely re-initialized via forge_physics_world_init().
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — world to destroy; must not be NULL
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   forge_physics_world_destroy(&world);
+ *   // world is now zeroed; do not access it without re-initializing
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_destroy(ForgePhysicsWorld *world)
+{
+    if (!world) return;
+
+    forge_arr_free(world->bodies);
+    forge_arr_free(world->shapes);
+    forge_arr_free(world->sleep_timers);
+    forge_arr_free(world->is_sleeping);
+    forge_arr_free(world->island_ids);
+    forge_arr_free(world->cached_aabbs);
+    forge_arr_free(world->joints);
+    forge_arr_free(world->manifolds);
+    forge_arr_free(world->si_workspace);
+    forge_arr_free(world->joint_workspace);
+    forge_arr_free(world->uf_parent);
+    forge_arr_free(world->uf_rank);
+
+    forge_physics_sap_destroy(&world->sap);
+    forge_physics_manifold_cache_free(&world->manifold_cache);
+
+    SDL_memset(world, 0, sizeof(*world));
+}
+
+/* ── Body and Joint Management ──────────────────────────────────────────── */
+
+/* Add a rigid body and its collision shape to the world.
+ *
+ * Copies the body and shape by value into the world's parallel arrays.
+ * Also appends default values to the sleep_timers (0.0f), is_sleeping (false),
+ * island_ids (FORGE_PHYSICS_ISLAND_NONE), and cached_aabbs (zeroed) arrays so
+ * all parallel arrays remain the same length.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*)         — target world; must not be NULL
+ *   body  (const ForgePhysicsRigidBody*) — body to add (copied); must not be NULL
+ *   shape (const ForgePhysicsCollisionShape*) — shape to add (copied); must not be NULL
+ *
+ * Returns: (int) index of the new body in the world's body array, or -1 on error
+ *
+ * Usage:
+ *   ForgePhysicsRigidBody rb = forge_physics_rigid_body_create(...);
+ *   ForgePhysicsCollisionShape sh = forge_physics_shape_box(...);
+ *   int idx = forge_physics_world_add_body(&world, &rb, &sh);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline int forge_physics_world_add_body(
+    ForgePhysicsWorld *world,
+    const ForgePhysicsRigidBody *body,
+    const ForgePhysicsCollisionShape *shape)
+{
+    if (!world || !body || !shape) return -1;
+
+    int idx = (int)forge_arr_length(world->bodies);
+
+    ForgePhysicsRigidBody body_copy = *body;
+    forge_arr_append(world->bodies, body_copy);
+
+    ForgePhysicsCollisionShape shape_copy = *shape;
+    forge_arr_append(world->shapes, shape_copy);
+
+    float timer = 0.0f;
+    forge_arr_append(world->sleep_timers, timer);
+
+    bool sleeping = false;
+    forge_arr_append(world->is_sleeping, sleeping);
+
+    int island = FORGE_PHYSICS_ISLAND_NONE;
+    forge_arr_append(world->island_ids, island);
+
+    ForgePhysicsAABB aabb;
+    SDL_memset(&aabb, 0, sizeof(aabb));
+    forge_arr_append(world->cached_aabbs, aabb);
+
+    /* Verify all parallel arrays grew.  If any append failed (OOM), the
+     * arrays are now different lengths — trim back to the original size
+     * to prevent out-of-bounds access on the next step. */
+    int new_len = (int)forge_arr_length(world->bodies);
+    if (new_len != idx + 1 ||
+        (int)forge_arr_length(world->shapes)      != new_len ||
+        (int)forge_arr_length(world->sleep_timers) != new_len ||
+        (int)forge_arr_length(world->is_sleeping)  != new_len ||
+        (int)forge_arr_length(world->island_ids)   != new_len ||
+        (int)forge_arr_length(world->cached_aabbs) != new_len) {
+        /* Roll back: truncate all arrays to the pre-append length. */
+        forge_arr_set_length(world->bodies,       (size_t)idx);
+        forge_arr_set_length(world->shapes,       (size_t)idx);
+        forge_arr_set_length(world->sleep_timers, (size_t)idx);
+        forge_arr_set_length(world->is_sleeping,  (size_t)idx);
+        forge_arr_set_length(world->island_ids,   (size_t)idx);
+        forge_arr_set_length(world->cached_aabbs, (size_t)idx);
+        return -1;
+    }
+
+    return idx;
+}
+
+/* Add a joint to the world.
+ *
+ * Copies the joint by value. The joint's body_a and body_b fields must be
+ * valid body indices (i.e., previously returned by forge_physics_world_add_body()).
+ * No validation of body indices is performed here — invalid indices produce
+ * undefined behavior during the solve phase.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*)    — target world; must not be NULL
+ *   joint (const ForgePhysicsJoint*) — joint to add (copied); must not be NULL
+ *
+ * Returns: (int) index of the new joint, or -1 on error
+ *
+ * Usage:
+ *   ForgePhysicsJoint j = forge_physics_joint_create_ball(...);
+ *   int ji = forge_physics_world_add_joint(&world, &j);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline int forge_physics_world_add_joint(
+    ForgePhysicsWorld *world,
+    const ForgePhysicsJoint *joint)
+{
+    if (!world || !joint) return -1;
+    int idx = (int)forge_arr_length(world->joints);
+    ForgePhysicsJoint joint_copy = *joint;
+    forge_arr_append(world->joints, joint_copy);
+    /* Verify append succeeded (OOM guard) */
+    if ((int)forge_arr_length(world->joints) != idx + 1) return -1;
+    return idx;
+}
+
+/* Return the number of bodies currently in the world.
+ *
+ * Parameters:
+ *   world (const ForgePhysicsWorld*) — world to query; must not be NULL
+ *
+ * Returns: (int) body count, or 0 if world is NULL
+ *
+ * Usage:
+ *   int n = forge_physics_world_body_count(&world);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline int forge_physics_world_body_count(const ForgePhysicsWorld *world)
+{
+    if (!world) return 0;
+    return (int)forge_arr_length(world->bodies);
+}
+
+/* ── Sleep / Wake / Query ───────────────────────────────────────────────── */
+
+/* Wake a sleeping body so it participates in the next step.
+ *
+ * Wakes the specified body and all bodies connected to it through joints.
+ * Resets sleep timers to zero and clears sleeping flags. Velocities are
+ * NOT zeroed — the body may already have non-zero velocity from an impulse.
+ *
+ * Joint propagation uses a simple iterative flood: scan the joint list
+ * repeatedly until no more bodies are woken. This is O(joints × bodies)
+ * in the worst case but joints are few in practice.
+ *
+ * Does nothing if idx is out of range or world is NULL.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — owning world; must not be NULL
+ *   idx   (int)               — body index; must be in [0, body_count)
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   forge_physics_world_wake_body(&world, idx);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_wake_body(ForgePhysicsWorld *world, int idx)
+{
+    if (!world) return;
+    int nb = (int)forge_arr_length(world->bodies);
+    if (idx < 0 || idx >= nb) return;
+    world->sleep_timers[idx] = 0.0f;
+    world->is_sleeping[idx]  = false;
+
+    /* Propagate wake through joints: repeatedly scan the joint list until
+     * no new bodies are woken.  This ensures chains of jointed bodies all
+     * wake together. */
+    int nj = (int)forge_arr_length(world->joints);
+    if (nj <= 0) return;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int j = 0; j < nj; j++) {
+            int a = world->joints[j].body_a;
+            int b = world->joints[j].body_b;
+            if (a < 0 || a >= nb || b < 0 || b >= nb) continue;
+            /* If one side is awake and the other is sleeping, wake it */
+            if (!world->is_sleeping[a] && world->is_sleeping[b] &&
+                world->bodies[b].inv_mass > 0.0f) {
+                world->sleep_timers[b] = 0.0f;
+                world->is_sleeping[b]  = false;
+                changed = true;
+            }
+            if (!world->is_sleeping[b] && world->is_sleeping[a] &&
+                world->bodies[a].inv_mass > 0.0f) {
+                world->sleep_timers[a] = 0.0f;
+                world->is_sleeping[a]  = false;
+                changed = true;
+            }
+        }
+    }
+}
+
+/* Force a body to sleep immediately, zeroing its velocities.
+ *
+ * Sets is_sleeping to true and zeros both linear and angular velocity.
+ * The sleep timer is set to the configured threshold so the body stays
+ * asleep unless woken by a contact or forge_physics_world_wake_body().
+ *
+ * Note: if other bodies in the same island are still active, the next
+ * evaluate_sleep_ pass will wake this body (because the island's minimum
+ * timer will be below threshold). Forcing sleep on a single body in a
+ * multi-body island has no lasting effect.
+ *
+ * Does nothing if idx is out of range or world is NULL.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — owning world; must not be NULL
+ *   idx   (int)               — body index; must be in [0, body_count)
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   forge_physics_world_sleep_body(&world, idx);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_sleep_body(ForgePhysicsWorld *world, int idx)
+{
+    if (!world) return;
+    int n = (int)forge_arr_length(world->bodies);
+    if (idx < 0 || idx >= n) return;
+    world->bodies[idx].velocity         = vec3_create(0.0f, 0.0f, 0.0f);
+    world->bodies[idx].angular_velocity = vec3_create(0.0f, 0.0f, 0.0f);
+    world->bodies[idx].force_accum      = vec3_create(0.0f, 0.0f, 0.0f);
+    world->bodies[idx].torque_accum     = vec3_create(0.0f, 0.0f, 0.0f);
+    world->is_sleeping[idx]             = true;
+    world->sleep_timers[idx]            = world->config.sleep_time_threshold;
+}
+
+/* Query whether a body is currently sleeping.
+ *
+ * Parameters:
+ *   world (const ForgePhysicsWorld*) — owning world; must not be NULL
+ *   idx   (int)                     — body index; must be in [0, body_count)
+ *
+ * Returns: true if the body is sleeping, false otherwise or if idx is invalid
+ *
+ * Usage:
+ *   if (forge_physics_world_is_sleeping(&world, i)) { ... }
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline bool forge_physics_world_is_sleeping(
+    const ForgePhysicsWorld *world, int idx)
+{
+    if (!world) return false;
+    int n = (int)forge_arr_length(world->bodies);
+    if (idx < 0 || idx >= n) return false;
+    return world->is_sleeping[idx];
+}
+
+/* Return the island ID assigned to a body in the most recent step.
+ *
+ * Island IDs are the union-find root index assigned during
+ * forge_physics_world_build_islands_(). Bodies in the same island share
+ * the same ID. The ID is FORGE_PHYSICS_ISLAND_NONE before the first step.
+ *
+ * Parameters:
+ *   world (const ForgePhysicsWorld*) — owning world; must not be NULL
+ *   idx   (int)                     — body index; must be in [0, body_count)
+ *
+ * Returns: (int) island ID, or FORGE_PHYSICS_ISLAND_NONE on error
+ *
+ * Usage:
+ *   int isl = forge_physics_world_island_id(&world, i);
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline int forge_physics_world_island_id(
+    const ForgePhysicsWorld *world, int idx)
+{
+    if (!world) return FORGE_PHYSICS_ISLAND_NONE;
+    int n = (int)forge_arr_length(world->bodies);
+    if (idx < 0 || idx >= n) return FORGE_PHYSICS_ISLAND_NONE;
+    return world->island_ids[idx];
+}
+
+/* ── External Force / Impulse (auto-wake) ───────────────────────────────── */
+
+/* Apply a force to a body, waking it if sleeping.
+ *
+ * Wakes the body first so sleeping bodies respond to external forces
+ * on the next step. Then delegates to forge_physics_rigid_body_apply_force()
+ * which accumulates the force into the body's force_accum for integration.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — owning world; must not be NULL
+ *   idx   (int)               — body index; must be in [0, body_count)
+ *   force (vec3)              — force vector in world space (Newtons)
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   forge_physics_world_apply_force(&world, idx, vec3_create(0, 100.0f, 0));
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_apply_force(
+    ForgePhysicsWorld *world, int idx, vec3 force)
+{
+    if (!world) return;
+    int n = (int)forge_arr_length(world->bodies);
+    if (idx < 0 || idx >= n) return;
+    if (world->bodies[idx].inv_mass == 0.0f) return; /* static body — no-op */
+    forge_physics_world_wake_body(world, idx);
+    forge_physics_rigid_body_apply_force(&world->bodies[idx], force);
+}
+
+/* Apply a linear impulse to a body, waking it if sleeping.
+ *
+ * Wakes the body so it participates in the next step, then directly adds
+ * the impulse to linear velocity: Δv = impulse / mass = impulse * inv_mass.
+ * Static bodies (inv_mass == 0) are unaffected.
+ *
+ * Parameters:
+ *   world   (ForgePhysicsWorld*) — owning world; must not be NULL
+ *   idx     (int)               — body index; must be in [0, body_count)
+ *   impulse (vec3)              — linear impulse in world space (kg·m/s)
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   // Kick a box upward
+ *   forge_physics_world_apply_impulse(&world, box_idx, vec3_create(0, 5.0f, 0));
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_apply_impulse(
+    ForgePhysicsWorld *world, int idx, vec3 impulse)
+{
+    if (!world) return;
+    int n = (int)forge_arr_length(world->bodies);
+    if (idx < 0 || idx >= n) return;
+    if (world->bodies[idx].inv_mass == 0.0f) return; /* static body — no-op */
+    forge_physics_world_wake_body(world, idx);
+    ForgePhysicsRigidBody *b = &world->bodies[idx];
+    b->velocity = vec3_add(b->velocity, vec3_scale(impulse, b->inv_mass));
+}
+
+/* ── Union-Find Helpers (internal) ─────────────────────────────────────── */
+
+/* Find the root of body x using iterative path compression.
+ *
+ * Path compression (path halving) keeps the tree flat so future find()
+ * calls run in amortized O(α(n)) time — effectively constant.
+ * This is the standard union-find optimization described in Tarjan's
+ * "Efficiency of a Good but Not Linear Set Union Algorithm" (1975).
+ *
+ * Parameters:
+ *   parent (int*) — parent array; must not be NULL
+ *   x      (int)  — node index to find
+ *
+ * Returns: (int) root of the component containing x
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline int forge_physics_uf_find_(int *parent, int x)
+{
+    /* Iterative path halving: set parent[x] = parent[parent[x]], advance x.
+     * Guard against infinite loops from corrupted parent arrays — cap at
+     * 10000 steps (far beyond any real tree depth). */
+    int steps = 0;
+    while (parent[x] != x) {
+        parent[x] = parent[parent[x]]; /* path halving */
+        x = parent[x];
+        if (++steps > FORGE_PHYSICS_UF_MAX_STEPS) return x; /* bail on corruption */
+    }
+    return x;
+}
+
+/* Union two components by rank.
+ *
+ * Attaches the root of the smaller-rank tree under the root of the
+ * larger-rank tree. When ranks are equal, the second argument's root
+ * is placed under the first's and the first's rank is incremented.
+ * This keeps the tree height O(log n) without path compression.
+ *
+ * Parameters:
+ *   parent (int*) — parent array; must not be NULL
+ *   rank   (int*) — rank array; must not be NULL
+ *   a      (int)  — index of first element
+ *   b      (int)  — index of second element
+ *
+ * Returns: void
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_uf_union_(int *parent, int *rank, int a, int b)
+{
+    int ra = forge_physics_uf_find_(parent, a);
+    int rb = forge_physics_uf_find_(parent, b);
+    if (ra == rb) return; /* already in same component */
+
+    /* Union by rank: attach smaller tree under larger */
+    if (rank[ra] < rank[rb]) {
+        parent[ra] = rb;
+    } else if (rank[ra] > rank[rb]) {
+        parent[rb] = ra;
+    } else {
+        parent[rb] = ra;
+        rank[ra]++;
+    }
+}
+
+/* ── Island Detection (internal) ────────────────────────────────────────── */
+
+/* Build contact islands using union-find over the contact and joint graph.
+ *
+ * Bodies connected by active contact manifolds or joints belong to the
+ * same island. The union-find algorithm processes all manifolds and joints
+ * to merge connected bodies into components. After merging, each body's
+ * island_ids entry is set to its union-find root.
+ *
+ * Algorithm:
+ *   1. Initialize each body as its own component (parent[i] = i, rank[i] = 0).
+ *   2. For each contact manifold: union body_a and body_b if both are dynamic.
+ *   3. For each joint: union body_a and body_b if at least one is dynamic;
+ *      static bodies (inv_mass == 0) act as anchors but do not merge islands.
+ *   4. Path-compress: island_ids[i] = find(i) for all bodies.
+ *   5. Count distinct roots among dynamic bodies → world->island_count.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — owning world; must not be NULL
+ *
+ * Returns: void
+ *
+ * Reference: Bullet Physics Library, btSimulationIslandManager::buildIslands()
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_build_islands_(ForgePhysicsWorld *world)
+{
+    int nb = (int)forge_arr_length(world->bodies);
+    if (nb <= 0) return;
+
+    /* Resize union-find arrays to current body count.
+     * If the resize fails (OOM), the arrays are too short — bail out
+     * to avoid indexing past the end. */
+    forge_arr_set_length(world->uf_parent, (size_t)nb);
+    forge_arr_set_length(world->uf_rank,   (size_t)nb);
+    if ((int)forge_arr_length(world->uf_parent) < nb ||
+        (int)forge_arr_length(world->uf_rank)   < nb) return;
+
+    /* Initialize: each body is its own component */
+    for (int i = 0; i < nb; i++) {
+        world->uf_parent[i] = i;
+        world->uf_rank[i]   = 0;
+    }
+
+    /* Union bodies connected by contact manifolds */
+    int nm = (int)forge_arr_length(world->manifolds);
+    for (int i = 0; i < nm; i++) {
+        const ForgePhysicsManifold *m = &world->manifolds[i];
+        if (m->count <= 0) continue;
+
+        int a = m->body_a;
+        int b = m->body_b;
+        bool a_valid   = (a >= 0 && a < nb);
+        bool b_valid   = (b >= 0 && b < nb);
+        bool a_dynamic = a_valid && (world->bodies[a].inv_mass > 0.0f);
+        bool b_dynamic = b_valid && (world->bodies[b].inv_mass > 0.0f);
+
+        /* Only union if both sides are dynamic — static bodies are anchors
+         * and do not merge islands (they belong to every island they touch). */
+        if (a_dynamic && b_dynamic) {
+            forge_physics_uf_union_(world->uf_parent, world->uf_rank, a, b);
+        }
+    }
+
+    /* Union bodies connected by joints */
+    int nj = (int)forge_arr_length(world->joints);
+    for (int i = 0; i < nj; i++) {
+        const ForgePhysicsJoint *j = &world->joints[i];
+        int a = j->body_a;
+        int b = j->body_b;
+        bool a_valid   = (a >= 0 && a < nb);
+        bool b_valid   = (b >= 0 && b < nb);
+        bool a_dynamic = a_valid && (world->bodies[a].inv_mass > 0.0f);
+        bool b_dynamic = b_valid && (world->bodies[b].inv_mass > 0.0f);
+
+        if (a_dynamic && b_dynamic) {
+            /* Both dynamic: standard union */
+            forge_physics_uf_union_(world->uf_parent, world->uf_rank, a, b);
+        } else if (a_dynamic && b_valid) {
+            /* a is dynamic, b is static anchor — do not merge, but joint
+             * constraints are still solved; no island change needed here. */
+        } else if (b_dynamic && a_valid) {
+            /* b is dynamic, a is static anchor — same as above. */
+        }
+    }
+
+    /* Path-compress: assign final island IDs */
+    for (int i = 0; i < nb; i++) {
+        world->island_ids[i] = forge_physics_uf_find_(world->uf_parent, i);
+    }
+
+    /* Count distinct islands among dynamic bodies only */
+    int island_count = 0;
+    for (int i = 0; i < nb; i++) {
+        if (world->bodies[i].inv_mass > 0.0f) {
+            /* A body is an island root if its island_id equals its own index */
+            if (world->island_ids[i] == i) {
+                island_count++;
+            }
+        }
+    }
+    world->island_count = island_count;
+}
+
+/* ── Sleep Evaluation (internal) ────────────────────────────────────────── */
+
+/* Evaluate sleep state for all islands after the current step.
+ *
+ * Follows the Box2D/Bullet approach: sleep decisions are made at the island
+ * level, not per-body. This prevents the pathological case where one active
+ * body in an island repeatedly wakes its settled neighbors.
+ *
+ * Algorithm:
+ *   Pass 1 — For each dynamic body: if both |velocity| and |angular_velocity|
+ *             are below the configured thresholds, increment sleep_timers[i]
+ *             by fixed_dt. Otherwise reset sleep_timers[i] to 0.
+ *
+ *   Pass 2 — For each island: find the minimum sleep_timer among all dynamic
+ *             bodies in that island (the "slowest to settle" body).
+ *             - If min_timer >= sleep_time_threshold: sleep the entire island —
+ *               zero velocities, set is_sleeping = true.
+ *             - Else: ensure all bodies in the island are awake, and set each
+ *               body's timer to min_timer so the island converges together.
+ *
+ * When enable_sleeping is false, all bodies are forced awake and timers
+ * are cleared.
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — owning world; must not be NULL
+ *
+ * Returns: void
+ *
+ * Reference: Catto, "Modeling and Solving Constraints", GDC 2009 — sleep heuristic.
+ * Reference: Box2D, b2Island::Solve() sleep evaluation section.
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_evaluate_sleep_(ForgePhysicsWorld *world)
+{
+    int nb = (int)forge_arr_length(world->bodies);
+    if (nb <= 0) return;
+
+    if (!world->config.enable_sleeping) {
+        /* Sleeping disabled: force all bodies awake */
+        for (int i = 0; i < nb; i++) {
+            world->is_sleeping[i]  = false;
+            world->sleep_timers[i] = 0.0f;
+        }
+        return;
+    }
+
+    float lin_thresh  = world->config.sleep_linear_threshold;
+    float ang_thresh  = world->config.sleep_angular_threshold;
+    float time_thresh = world->config.sleep_time_threshold;
+    float dt          = world->config.fixed_dt;
+
+    /* Pass 1: update per-body sleep timers */
+    for (int i = 0; i < nb; i++) {
+        /* Static bodies never sleep (they are already immovable) */
+        if (world->bodies[i].inv_mass == 0.0f) continue;
+
+        float lin_speed = vec3_length(world->bodies[i].velocity);
+        float ang_speed = vec3_length(world->bodies[i].angular_velocity);
+
+        if (lin_speed < lin_thresh && ang_speed < ang_thresh) {
+            world->sleep_timers[i] += dt;
+        } else {
+            world->sleep_timers[i] = 0.0f;
+        }
+    }
+
+    /* Pass 2: island-level sleep decision.
+     *
+     * For each dynamic body that is an island root, gather all bodies
+     * in that island and find the minimum sleep timer. Then apply the
+     * sleep/wake decision uniformly to the entire island. */
+    for (int root = 0; root < nb; root++) {
+        /* Only process island roots (their island_id == their own index) */
+        if (world->bodies[root].inv_mass == 0.0f) continue;
+        if (world->island_ids[root] != root) continue;
+
+        /* Find minimum sleep timer across this island.
+         * Use a large sentinel so the sleep branch only fires when at
+         * least one body's timer has actually been compared. */
+        float min_timer = FORGE_PHYSICS_TIMER_SENTINEL;
+        for (int i = 0; i < nb; i++) {
+            if (world->bodies[i].inv_mass == 0.0f) continue;
+            if (world->island_ids[i] != root) continue;
+            if (world->sleep_timers[i] < min_timer) {
+                min_timer = world->sleep_timers[i];
+            }
+        }
+
+        /* If no dynamic body was found (shouldn't happen), skip. */
+        if (min_timer >= FORGE_PHYSICS_TIMER_SENTINEL) continue;
+
+        if (min_timer >= time_thresh) {
+            /* Entire island has settled — put all dynamic bodies to sleep */
+            for (int i = 0; i < nb; i++) {
+                if (world->bodies[i].inv_mass == 0.0f) continue;
+                if (world->island_ids[i] != root) continue;
+                world->bodies[i].velocity         = vec3_create(0.0f, 0.0f, 0.0f);
+                world->bodies[i].angular_velocity = vec3_create(0.0f, 0.0f, 0.0f);
+                world->bodies[i].force_accum      = vec3_create(0.0f, 0.0f, 0.0f);
+                world->bodies[i].torque_accum     = vec3_create(0.0f, 0.0f, 0.0f);
+                world->is_sleeping[i]             = true;
+            }
+        } else {
+            /* Island still active — wake all bodies and clamp timers that
+             * exceed the island minimum down to it.  Bodies already at or
+             * below the minimum keep their timer unchanged — this avoids
+             * resetting progress that a fast-settling body has already made. */
+            for (int i = 0; i < nb; i++) {
+                if (world->bodies[i].inv_mass == 0.0f) continue;
+                if (world->island_ids[i] != root) continue;
+                world->is_sleeping[i] = false;
+                if (world->sleep_timers[i] > min_timer) {
+                    world->sleep_timers[i] = min_timer;
+                }
+            }
+        }
+    }
+}
+
+/* ── Ground Contact Collection (internal) ───────────────────────────────── */
+
+/* Collect ground-plane contact manifolds for all non-sleeping dynamic bodies.
+ *
+ * Iterates over all bodies, tests each against the world ground plane using
+ * the appropriate narrow-phase function for the body's shape type, converts
+ * raw contacts to a manifold, and routes through the warm-start cache.
+ * Manifolds are appended to world->manifolds.
+ *
+ * Active keys are accumulated into active_keys[] for use by the cache
+ * pruning step later in the step function.
+ *
+ * Parameters:
+ *   world            (ForgePhysicsWorld*) — owning world; must not be NULL
+ *   active_keys      (uint64_t*)          — buffer to receive active cache keys
+ *   active_key_count (int*)               — [in/out] current count of active keys
+ *
+ * Returns: void
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_collect_ground_(
+    ForgePhysicsWorld *world,
+    uint64_t *active_keys, int *active_key_count)
+{
+    if (!world || !active_keys || !active_key_count) return;
+
+    int nb = (int)forge_arr_length(world->bodies);
+    if (nb <= 0) return;
+
+    vec3 plane_pt = vec3_create(0.0f, world->config.ground_y, 0.0f);
+    vec3 plane_n  = vec3_create(0.0f, 1.0f, 0.0f);
+    float mu_s    = world->config.mu_static;
+    float mu_d    = world->config.mu_dynamic;
+
+    for (int i = 0; i < nb; i++) {
+        /* Skip static bodies (they do not fall onto the ground) */
+        if (world->bodies[i].inv_mass == 0.0f) continue;
+        /* Skip sleeping bodies — they are already resting */
+        if (world->is_sleeping[i]) continue;
+
+        ForgePhysicsRigidBody *b       = &world->bodies[i];
+        const ForgePhysicsCollisionShape *sh = &world->shapes[i];
+
+        ForgePhysicsRBContact contacts[8];
+        int nc = 0;
+
+        switch (sh->type) {
+        case FORGE_PHYSICS_SHAPE_BOX:
+            nc = forge_physics_rb_collide_box_plane(
+                b, i, sh->data.box.half_extents,
+                plane_pt, plane_n, mu_s, mu_d, contacts, 8);
+            break;
+
+        case FORGE_PHYSICS_SHAPE_SPHERE:
+            {
+                ForgePhysicsRBContact c;
+                if (forge_physics_rb_collide_sphere_plane(
+                        b, i, sh->data.sphere.radius,
+                        plane_pt, plane_n, mu_s, mu_d, &c)) {
+                    contacts[0] = c;
+                    nc = 1;
+                }
+            }
+            break;
+
+        /* CAPSULE: no capsule-plane function exists yet — capsules are not
+         * used in the Lesson 15 demo. When one is added to forge_physics.h,
+         * handle it here. */
+        case FORGE_PHYSICS_SHAPE_CAPSULE:
+            break;
+
+        default:
+            break;
+        }
+
+        if (nc <= 0) continue;
+
+        ForgePhysicsManifold m;
+        if (!forge_physics_si_rb_contacts_to_manifold(
+                contacts, nc, mu_s, mu_d, &m)) continue;
+
+        /* Ground contacts must have body_b == -1 (static environment).
+         * The collide_*_plane functions guarantee this; verify defensively. */
+        if (m.body_b != -1) continue;
+
+        /* Cap total manifolds to keep the active_keys buffer in sync.
+         * Must run before warm-start so dropped manifolds don't mutate
+         * the cache with stale impulse data. */
+        if ((int)forge_arr_length(world->manifolds) >= FORGE_PHYSICS_WORLD_MAX_MANIFOLDS
+            || *active_key_count >= FORGE_PHYSICS_WORLD_MAX_MANIFOLDS)
+            continue;
+
+        /* Warm-start from the previous frame's cached impulses */
+        forge_physics_manifold_cache_update(&world->manifold_cache, &m);
+
+        /* Record key for pruning */
+        active_keys[(*active_key_count)++] =
+            forge_physics_manifold_pair_key(m.body_a, m.body_b);
+
+        forge_arr_append(world->manifolds, m);
+    }
+}
+
+/* ── Body-Body Contact Collection (internal) ────────────────────────────── */
+
+/* Collect body-body contact manifolds via SAP broadphase + GJK/EPA.
+ *
+ * Updates the world-space AABB cache for all bodies (sleeping bodies keep
+ * their last AABB so the broadphase can detect wake-on-contact). Runs
+ * forge_physics_sap_update() to find overlapping pairs, then executes
+ * GJK/EPA narrow phase on each candidate pair.
+ *
+ * Pairs where both bodies are sleeping are skipped — the SAP broadphase
+ * still sees their AABBs so they can be woken if a new body overlaps them,
+ * but re-solving two sleeping bodies wastes solver iterations.
+ *
+ * Active keys are accumulated into active_keys[] for cache pruning.
+ *
+ * Parameters:
+ *   world            (ForgePhysicsWorld*) — owning world; must not be NULL
+ *   active_keys      (uint64_t*)          — buffer to receive active cache keys
+ *   active_key_count (int*)               — [in/out] current count of active keys
+ *
+ * Returns: void
+ *
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_collect_body_body_(
+    ForgePhysicsWorld *world,
+    uint64_t *active_keys, int *active_key_count)
+{
+    if (!world || !active_keys || !active_key_count) return;
+
+    int nb = (int)forge_arr_length(world->bodies);
+    if (nb <= 0) return;
+
+    /* Resize cached_aabbs to match body count — bail on OOM */
+    forge_arr_set_length(world->cached_aabbs, (size_t)nb);
+    if ((int)forge_arr_length(world->cached_aabbs) < nb) return;
+
+    /* Recompute AABBs for all bodies (sleeping bodies keep their last AABB
+     * so the broadphase can detect when a new body falls onto them). */
+    for (int i = 0; i < nb; i++) {
+        world->cached_aabbs[i] = forge_physics_shape_compute_aabb(
+            &world->shapes[i],
+            world->bodies[i].position,
+            world->bodies[i].orientation);
+    }
+
+    /* Run SAP broadphase to find candidate overlapping pairs */
+    forge_physics_sap_update(&world->sap, world->cached_aabbs, nb);
+
+    /* Narrow phase: GJK/EPA on each SAP pair.
+     *
+     * Two-pass approach: first process pairs where at least one body is
+     * awake (which may wake sleeping partners via joint propagation), then
+     * revisit pairs where both were sleeping at the start — some may now
+     * have a woken member.  This eliminates the one-frame wake-order
+     * dependency that a single pass would have. */
+    const ForgePhysicsSAPPair *pairs = world->sap.pairs;
+    int np = (int)forge_arr_length(world->sap.pairs);
+
+    /* Deferred indices for both-sleeping pairs (stack buffer, bounded by np
+     * which is at most O(n^2) but capped by SAP pruning in practice) */
+    int deferred_buf[FORGE_PHYSICS_WORLD_MAX_MANIFOLDS];
+    int deferred_count = 0;
+
+    /* --- Pass 1: pairs with at least one awake body --- */
+    for (int p = 0; p < np; p++) {
+        int a = pairs[p].a;
+        int b = pairs[p].b;
+
+        if (a < 0 || a >= nb || b < 0 || b >= nb) continue;
+
+        /* Defer both-sleeping pairs to Pass 2 */
+        if (world->is_sleeping[a] && world->is_sleeping[b]) {
+            if (deferred_count < FORGE_PHYSICS_WORLD_MAX_MANIFOLDS)
+                deferred_buf[deferred_count++] = p;
+            continue;
+        }
+
+        /* Skip pairs where both are static (no relative motion possible) */
+        if (world->bodies[a].inv_mass == 0.0f &&
+            world->bodies[b].inv_mass == 0.0f) continue;
+
+        ForgePhysicsManifold m;
+        if (!forge_physics_gjk_epa_manifold(
+                &world->bodies[a], &world->shapes[a],
+                &world->bodies[b], &world->shapes[b],
+                a, b, world->config.mu_static, world->config.mu_dynamic, &m)) {
+            continue;
+        }
+
+        /* Wake a sleeping body if it is now in contact with an active body */
+        if (world->is_sleeping[a] && !world->is_sleeping[b]) {
+            forge_physics_world_wake_body(world, a);
+        } else if (world->is_sleeping[b] && !world->is_sleeping[a]) {
+            forge_physics_world_wake_body(world, b);
+        }
+
+        /* Cap total manifolds to keep the active_keys buffer in sync */
+        if ((int)forge_arr_length(world->manifolds) >= FORGE_PHYSICS_WORLD_MAX_MANIFOLDS
+            || *active_key_count >= FORGE_PHYSICS_WORLD_MAX_MANIFOLDS)
+            continue;
+
+        /* Warm-start from cached impulses */
+        forge_physics_manifold_cache_update(&world->manifold_cache, &m);
+
+        /* Record key for pruning */
+        active_keys[(*active_key_count)++] =
+            forge_physics_manifold_pair_key(m.body_a, m.body_b);
+
+        forge_arr_append(world->manifolds, m);
+    }
+
+    /* --- Pass 2: revisit deferred both-sleeping pairs --- */
+    for (int d = 0; d < deferred_count; d++) {
+        int p = deferred_buf[d];
+        int a = pairs[p].a;
+        int b = pairs[p].b;
+
+        /* If both are still sleeping after Pass 1, skip */
+        if (world->is_sleeping[a] && world->is_sleeping[b]) continue;
+
+        /* Skip static-static */
+        if (world->bodies[a].inv_mass == 0.0f &&
+            world->bodies[b].inv_mass == 0.0f) continue;
+
+        ForgePhysicsManifold m;
+        if (!forge_physics_gjk_epa_manifold(
+                &world->bodies[a], &world->shapes[a],
+                &world->bodies[b], &world->shapes[b],
+                a, b, world->config.mu_static, world->config.mu_dynamic, &m)) {
+            continue;
+        }
+
+        /* Wake the remaining sleeping body */
+        if (world->is_sleeping[a]) {
+            forge_physics_world_wake_body(world, a);
+        } else if (world->is_sleeping[b]) {
+            forge_physics_world_wake_body(world, b);
+        }
+
+        if ((int)forge_arr_length(world->manifolds) >= FORGE_PHYSICS_WORLD_MAX_MANIFOLDS
+            || *active_key_count >= FORGE_PHYSICS_WORLD_MAX_MANIFOLDS)
+            continue;
+
+        forge_physics_manifold_cache_update(&world->manifold_cache, &m);
+
+        active_keys[(*active_key_count)++] =
+            forge_physics_manifold_pair_key(m.body_a, m.body_b);
+
+        forge_arr_append(world->manifolds, m);
+    }
+}
+
+/* ── Unified Step Function ──────────────────────────────────────────────── */
+
+/* Advance the simulation by exactly one fixed timestep.
+ *
+ * Runs the complete physics pipeline in the following order:
+ *
+ *   Phase  1 — Save prev_position / prev_orientation for render interpolation
+ *   Phase  2 — Apply gravity to all dynamic, non-sleeping bodies
+ *   Phase  3 — Integrate velocities for all dynamic, non-sleeping bodies
+ *   Phase  4 — Clear manifold workspace for this step
+ *   Phase  5 — Collect body-body contacts via SAP + GJK/EPA (wakes sleepers)
+ *   Phase  6 — Collect ground-plane contacts for non-sleeping bodies
+ *   Phase  7 — Prune stale manifold cache entries
+ *   Phase  8 — Sequential-impulse constraint solve (contacts)
+ *   Phase  9 — Joint constraint solve (if any joints exist)
+ *   Phase 10 — Store solved impulses back to manifold cache (warm-start)
+ *   Phase 11 — Position correction + integrate positions for non-sleeping bodies
+ *   Phase 12 — Build contact islands via union-find
+ *   Phase 13 — Evaluate island sleep state (uses post-solve velocities)
+ *   Phase 14 — Update per-step statistics
+ *
+ * The fixed timestep is always world->config.fixed_dt. Callers are
+ * responsible for the accumulator pattern (accumulate real elapsed time,
+ * call forge_physics_world_step() once per fixed_dt chunk).
+ *
+ * Parameters:
+ *   world (ForgePhysicsWorld*) — world to step; must not be NULL and must have
+ *                                been initialized via forge_physics_world_init()
+ *
+ * Returns: void
+ *
+ * Usage:
+ *   // Accumulator pattern
+ *   state->accumulator += delta_time;
+ *   while (state->accumulator >= world.config.fixed_dt) {
+ *       forge_physics_world_step(&world);
+ *       state->accumulator -= world.config.fixed_dt;
+ *   }
+ *
+ * Reference: Catto, "Modeling and Solving Constraints", GDC 2009.
+ * Reference: Fiedler, Glenn. "Fix Your Timestep!", Gaffer on Games, 2004.
+ * See: Physics Lesson 15 — Simulation Loop
+ */
+static inline void forge_physics_world_step(ForgePhysicsWorld *world)
+{
+    if (!world) return;
+
+    int nb = (int)forge_arr_length(world->bodies);
+    int nj = (int)forge_arr_length(world->joints);
+    if (nb <= 0) return;
+
+    float dt = world->config.fixed_dt;
+    if (!(forge_isfinite(dt) && dt > 0.0f)) return; /* guard against zero, NaN, or inf dt */
+
+    /* ── Phase 1: Save previous state for render interpolation ───── */
+    for (int i = 0; i < nb; i++) {
+        world->bodies[i].prev_position    = world->bodies[i].position;
+        world->bodies[i].prev_orientation = world->bodies[i].orientation;
+    }
+
+    /* ── Phase 2: Apply gravity ────────────────────────────────────── */
+    for (int i = 0; i < nb; i++) {
+        if (world->bodies[i].inv_mass == 0.0f) continue; /* static */
+        if (world->is_sleeping[i]) continue;              /* sleeping */
+        vec3 gforce = vec3_scale(world->config.gravity, world->bodies[i].mass);
+        forge_physics_rigid_body_apply_force(&world->bodies[i], gforce);
+    }
+
+    /* ── Phase 3: Integrate velocities ───────────────────────────── */
+    for (int i = 0; i < nb; i++) {
+        if (world->bodies[i].inv_mass == 0.0f) continue;
+        if (world->is_sleeping[i]) continue;
+        forge_physics_rigid_body_integrate_velocities(&world->bodies[i], dt);
+    }
+
+    /* ── Phase 4: Clear manifold workspace ───────────────────────── */
+    forge_arr_set_length(world->manifolds, 0);
+    world->manifold_count     = 0;
+    world->total_contact_count = 0;
+
+    /* Active cache keys — stack buffer; capped at FORGE_PHYSICS_WORLD_MAX_MANIFOLDS */
+    uint64_t active_keys[FORGE_PHYSICS_WORLD_MAX_MANIFOLDS];
+    int active_key_count = 0;
+
+    /* ── Phase 5: Collect body-body contacts ─────────────────────── *
+     * Body-body runs first because it wakes sleeping bodies on contact.
+     * Ground collection skips sleeping bodies, so it must run after
+     * body-body to see the updated sleep state and generate ground
+     * manifolds for newly-woken bodies. */
+    forge_physics_world_collect_body_body_(world, active_keys, &active_key_count);
+
+    /* ── Phase 6: Collect ground contacts ────────────────────────── */
+    forge_physics_world_collect_ground_(world, active_keys, &active_key_count);
+
+    /* ── Phase 7: Prune stale manifold cache entries ─────────────── */
+    forge_physics_manifold_cache_prune(
+        &world->manifold_cache, active_keys, active_key_count);
+
+    /* ── Phase 8: Sequential-impulse contact solve ───────────────── */
+    int nm = (int)forge_arr_length(world->manifolds);
+    int nm_solved = nm;
+    if (nm_solved > 0) {
+        /* Resize SI workspace to match manifold count */
+        forge_arr_set_length(world->si_workspace, (size_t)nm_solved);
+        if ((int)forge_arr_length(world->si_workspace) < nm_solved)
+            nm_solved = 0;
+
+        forge_physics_si_solve(
+            world->manifolds, nm_solved,
+            world->bodies, nb,
+            world->config.solver_iterations, dt,
+            world->config.warm_start,
+            world->si_workspace,
+            &world->config.solver_config);
+    }
+
+    /* ── Phase 9: Joint solve ──────────────────────────────────────
+     * Contacts and joints are solved in separate batches — this matches
+     * the approach used in Lessons 12–14 and Box2D's b2Island::Solve().
+     * Interleaving the two solvers would improve coupling for mixed
+     * scenes (e.g. a jointed chain resting on a stack), but requires a
+     * unified constraint representation that is beyond this lesson's
+     * scope.  For the scenes demonstrated here (stacks without joints),
+     * separate batches produce identical results. */
+    int nj_solved = nj;
+    if (nj_solved > 0) {
+        /* Resize joint workspace to match joint count */
+        forge_arr_set_length(world->joint_workspace, (size_t)nj_solved);
+        if ((int)forge_arr_length(world->joint_workspace) < nj_solved)
+            nj_solved = 0;
+
+        forge_physics_joint_solve(
+            world->joints, nj_solved,
+            world->bodies, nb,
+            world->config.solver_iterations, dt,
+            world->config.warm_start,
+            world->joint_workspace);
+    }
+
+    /* ── Phase 10: Store impulses to cache for next-frame warm-start */
+    for (int i = 0; i < nm_solved; i++) {
+        forge_physics_manifold_cache_store(
+            &world->manifold_cache, &world->manifolds[i]);
+    }
+
+    /* ── Phase 11: Position correction + integrate positions ─────── */
+    if (nm_solved > 0) {
+        forge_physics_si_correct_positions(
+            world->manifolds, nm_solved,
+            world->bodies, nb,
+            world->config.solver_config.correction_fraction,
+            world->config.solver_config.correction_slop);
+    }
+
+    for (int i = 0; i < nb; i++) {
+        if (world->bodies[i].inv_mass == 0.0f) continue;
+        if (world->is_sleeping[i]) continue;
+        forge_physics_rigid_body_integrate_positions(&world->bodies[i], dt);
+    }
+
+    /* ── Phase 12: Build contact islands ─────────────────────────── */
+    forge_physics_world_build_islands_(world);
+
+    /* ── Phase 13: Evaluate sleep (post-solve velocities) ──────────
+     * Sleep is evaluated AFTER constraint solving so the velocity
+     * thresholds test the actual post-solve state. Evaluating before
+     * solving would see gravity-induced velocities that the solver
+     * has not yet cancelled, preventing bodies from ever sleeping. */
+    forge_physics_world_evaluate_sleep_(world);
+
+    /* ── Phase 14: Update statistics ────────────────────────────── */
+    world->manifold_count = nm;
+
+    int total_contacts = 0;
+    for (int i = 0; i < nm; i++) {
+        total_contacts += world->manifolds[i].count;
+    }
+    world->total_contact_count = total_contacts;
+
+    int active_count  = 0;
+    int sleeping_count = 0;
+    int static_count   = 0;
+    for (int i = 0; i < nb; i++) {
+        if (world->bodies[i].inv_mass == 0.0f) {
+            static_count++;
+        } else if (world->is_sleeping[i]) {
+            sleeping_count++;
+        } else {
+            active_count++;
+        }
+    }
+    world->active_body_count   = active_count;
+    world->sleeping_body_count = sleeping_count;
+    world->static_body_count   = static_count;
+}
+
+
 #endif /* FORGE_PHYSICS_H */

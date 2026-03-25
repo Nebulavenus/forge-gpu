@@ -53,6 +53,7 @@ capsules) so the simulation behavior is front and center.
 | [<img src="12-impulse-based-resolution/assets/screenshot.png" width="480" alt="Impulse-Based Resolution"/>](12-impulse-based-resolution/) | [**12 — Impulse-Based Resolution**](12-impulse-based-resolution/) | Sequential impulse solver, accumulated impulse clamping, warm-starting, manifold-aware resolution, per-axis Coulomb friction, Baumgarte stabilization, position correction |
 | [<img src="13-constraint-solver/assets/screenshot.png" width="480" alt="Constraint Solver"/>](13-constraint-solver/) | [**13 — Constraint Solver**](13-constraint-solver/) | Joint constraints (ball-socket, hinge, slider), unified solver pipeline with contacts, warm-starting, position correction |
 | [<img src="14-stacking-stability/assets/screenshot.png" width="480" alt="Stacking Stability"/>](14-stacking-stability/) | [**14 — Stacking Stability**](14-stacking-stability/) | Solver tuning for stable stacking: Baumgarte bias, penetration slop, warm-start convergence, configurable solver parameters, contact visualization |
+| [<img src="15-simulation-loop/assets/screenshot.png" width="480" alt="Simulation Loop"/>](15-simulation-loop/) | [**15 — Simulation Loop**](15-simulation-loop/) | ForgePhysicsWorld one-call step, union-find island detection, per-island sleeping, wake-on-contact, ball launcher |
 
 ## Shared library
 

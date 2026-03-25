@@ -54,6 +54,9 @@ __all__ = [
     "diagram_joint_contact_pipeline",
     "diagram_baumgarte_bias",
     "diagram_warm_start_convergence",
+    "diagram_simulation_pipeline",
+    "diagram_island_detection",
+    "diagram_sleep_evaluation",
 ]
 
 from .lesson_01 import (
@@ -130,4 +133,9 @@ from .lesson_13 import (
 from .lesson_14 import (
     diagram_baumgarte_bias,
     diagram_warm_start_convergence,
+)
+from .lesson_15 import (
+    diagram_island_detection,
+    diagram_simulation_pipeline,
+    diagram_sleep_evaluation,
 )

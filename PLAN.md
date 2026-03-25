@@ -51,7 +51,7 @@ The following foundations, tooling, and lesson ranges are complete:
 - **Engine Lessons 01–13** — From Intro to C through Stretchy Containers
 - **UI Lessons 01–15** — From TTF Parsing through Dev UI
 - **Developer tooling** — Run script, shader compilation, setup script, screenshot capture
-- **Physics Lessons 01–12** — From Point Particles through Impulse-Based Resolution
+- **Physics Lessons 01–15** — From Point Particles through Simulation Loop
 - **Audio Lessons 01–06** — From Audio Basics through DSP Effects
 - **Asset Lessons 01–18** — From Pipeline Scaffold through Scene Editor
 
@@ -100,12 +100,12 @@ Lessons 47, 49–50, and 52–58 have no cross-track blockers. The **Terrain & V
 
 - [ ] **Lesson 63 — Authored Scene Rendering** — Load and render authored JSON scenes (Asset Lesson 18) through `forge_scene.h`; new `forge_scene_load_authored()` function that parses the JSON scene format, resolves `asset_id` references to `.fmesh`/`.fmat`/`.ftex` pipeline assets, and builds the same `ForgeScene` node hierarchy used by processed `.fscene` files; world transform computation from the authored parent-child hierarchy; per-object visibility toggle support; runtime scene reload (edit in browser, see changes in the GPU app); comparison rendering of authored scene vs. exported `.fscene` binary; integration with `forge_scene_render()` so authored scenes get shadow maps, Blinn-Phong lighting, grid, and camera controls with zero additional code; serves as the bridge between the web editor (Asset Lessons 18–19) and the GPU runtime (depends on GPU Lessons 26, 39 and Asset Lessons 18–19)
 
-## Physics Lessons — New Track
+## Physics Lessons
 
-A new header-only library (`common/physics/`) built lesson by lesson, covering
-particle dynamics, rigid body simulation, collision detection, and contact
-resolution. 15 lessons in four arcs — each lesson extends `forge_physics.h`
-with tested, documented functions.
+A header-only library (`common/physics/`) built lesson by lesson, covering
+particle dynamics, rigid body simulation, collision detection, contact
+resolution, and world queries. Each lesson extends `forge_physics.h` with
+tested, documented functions.
 
 All physics lessons use `forge_scene.h` (GPU Lesson 40) for rendering — the
 scene renderer provides Blinn-Phong lighting, shadow maps, grid floor, camera
@@ -114,13 +114,33 @@ simulation code; rendering is a single `#include` and a few function calls.
 
 ### Rigid Body Dynamics
 
-- [ ] **Physics Lesson 13 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
-- [ ] **Physics Lesson 14 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
-- [ ] **Physics Lesson 15 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance
+- [x] **Physics Lesson 13 — Constraint Solver** — Generalized constraints (contact, friction, joints); iterative solver (Gauss-Seidel); joint types: hinge, ball-socket, slider; constraint warm-starting for stability
+- [x] **Physics Lesson 14 — Stacking Stability** — Warm-starting across frames; bias factors and penetration slop; solver iteration count tuning; stable box stacks and pyramids; visual debugging of contact points and normals
+- [x] **Physics Lesson 15 — Simulation Loop** — Complete physics step: broadphase, narrowphase, contact generation, constraint solving, integration; fixed timestep with interpolation; sleeping and island detection for performance
 
-## Audio Lessons — New Track
+### Queries & Interaction
 
-A new header-only library (`common/audio/`) built lesson by lesson, covering
+- [ ] **Physics Lesson 16 — Raycasting** — Ray-shape intersection (sphere, box, capsule); ray-world queries with closest-hit and any-hit modes; ground checks, line-of-sight, picking; spatial acceleration for ray queries
+- [ ] **Physics Lesson 17 — Triggers and Sensors** — Overlap detection without physical response; enter/exit events; proximity zones; trigger volumes using existing broadphase
+
+### Constraints & Articulation
+
+- [ ] **Physics Lesson 18 — Joint Limits and Motors** — Angular limits on hinge and ball-socket joints; motor-driven joints with target velocity and max force; ragdoll joint setup with anatomical limits
+- [ ] **Physics Lesson 19 — Kinematic Bodies** — User-driven bodies that push dynamic objects but ignore forces; moving platforms, elevators, one-way interaction; kinematic-dynamic contact handling
+
+### Collision Geometry
+
+- [ ] **Physics Lesson 20 — Compound Shapes** — Multiple primitives per body; local-space shape transforms; combined AABB and support function; GJK/EPA with sub-shape dispatch
+- [ ] **Physics Lesson 21 — Convex Hull Collision** — Convex hull shape type; support function from vertex set; GJK/EPA with arbitrary convex geometry; hull generation from point clouds
+- [ ] **Physics Lesson 22 — Triangle Mesh Collision** — BVH acceleration structure; triangle-convex narrowphase; internal edge handling to prevent ghost collisions; heightfield terrain as a special case
+
+### Robustness
+
+- [ ] **Physics Lesson 23 — Continuous Collision Detection** — Time-of-impact queries; swept shape tests (sphere cast, linear cast); tunneling prevention for fast-moving objects; CCD integration with the world step
+
+## Audio Lessons
+
+A header-only library (`common/audio/`) built lesson by lesson, covering
 sound playback, mixing, spatial audio, and music systems. Uses SDL3 audio
 streams as the backend. Same quality bar as `forge_physics.h` — every function
 documented, tested, numerically safe.

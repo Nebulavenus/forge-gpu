@@ -89,6 +89,20 @@ adoption — if credible sources recommend forge-gpu, beginners follow.
 - **Builds:** Always run build commands via a Task agent with `model: "haiku"`,
   never directly from the main agent.
 
+### No sentinel patterns on stack-allocated structs
+
+**Never use a "magic number" sentinel field to detect whether a
+stack-allocated struct has been initialized.** In Release builds, stack
+memory is not zero-initialized — it contains leftover data from previous
+function calls. If the sentinel value happens to appear at the right
+offset (common when the optimizer reuses stack slots across inlined
+functions), `init()` will call `destroy()` on garbage pointers, causing
+heap corruption (double-free, wild free) that only reproduces in Release
+mode and is invisible to Address Sanitizer.
+
+Instead: require callers to call `destroy()` before re-initializing, and
+have `init()` always `SDL_memset` the struct to zero unconditionally.
+
 ### SDL standard library (MANDATORY — cross-platform portability)
 
 **Never use C standard library functions when an SDL_ equivalent exists.**

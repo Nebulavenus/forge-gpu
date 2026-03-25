@@ -3,7 +3,8 @@
  *
  * Included by test_physics.c, test_physics_rbc.c, test_physics_shapes.c,
  * test_physics_sap.c, test_physics_gjk.c, test_physics_epa.c,
- * test_physics_production.c, and test_physics_manifold.c
+ * test_physics_production.c, test_physics_manifold.c, test_physics_si.c,
+ * test_physics_joints.c, and test_physics_world.c
  *
  * SPDX-License-Identifier: Zlib
  */
@@ -54,6 +55,7 @@ void run_epa_tests(void);
 void run_manifold_tests(void);
 void run_si_tests(void);
 void run_joint_tests(void);
+void run_world_tests(void);
 
 /* ── Shared test constants ─────────────────────────────────────────────── */
 

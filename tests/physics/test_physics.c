@@ -5932,6 +5932,9 @@ int main(int argc, char *argv[])
     /* ── Joint Constraint Solver (test_physics_joints.c) ─────────────── */
     run_joint_tests();
 
+    /* ── Physics World / Island / Sleep (test_physics_world.c) ─────────── */
+    run_world_tests();
+
     /* ── Production Hardening (test_physics_production.c) ─────────────── */
     run_production_tests();
 
