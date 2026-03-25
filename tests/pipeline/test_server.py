@@ -1507,3 +1507,117 @@ def test_sort_recent_with_limit(tmp_path: Path) -> None:
     assert body["total"] == 3
     # Newest first (c has highest mtime)
     assert body["assets"][0]["name"] == "c.png"
+
+
+# ---------------------------------------------------------------------------
+# Batch processing
+# ---------------------------------------------------------------------------
+
+
+def test_batch_process(tmp_path: Path) -> None:
+    """POST /api/process/batch processes multiple assets and returns a summary."""
+    client, config, mock_plugin = _setup_process(
+        tmp_path,
+        source_files={"a.png": b"PNG A", "b.png": b"PNG B"},
+    )
+
+    # First, get the asset IDs
+    resp = client.get("/api/assets")
+    assert resp.status_code == 200
+    asset_ids = [a["id"] for a in resp.json()["assets"]]
+    assert len(asset_ids) == 2
+
+    resp = client.post("/api/process/batch", json={"asset_ids": asset_ids})
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert "batch_id" in body
+    assert isinstance(body["batch_id"], str)
+    assert len(body["batch_id"]) > 0
+    assert body["succeeded"] == 2
+    assert body["failed"] == 0
+    assert body["skipped"] == 0
+    assert len(body["results"]) == 2
+    assert all(r["status"] == "succeeded" for r in body["results"])
+    assert mock_plugin.process.call_count == 2
+
+
+def test_batch_process_empty_ids(tmp_path: Path) -> None:
+    """POST /api/process/batch with empty asset_ids returns 400."""
+    client, _, _ = _setup_process(tmp_path)
+
+    resp = client.post("/api/process/batch", json={"asset_ids": []})
+    assert resp.status_code == 400
+    assert "empty" in resp.json()["detail"].lower()
+
+
+def test_batch_process_unknown_id(tmp_path: Path) -> None:
+    """POST /api/process/batch with unknown asset ID returns 404."""
+    client, _, _ = _setup_process(tmp_path, source_files={"a.png": b"PNG A"})
+
+    resp = client.post("/api/process/batch", json={"asset_ids": ["nonexistent"]})
+    assert resp.status_code == 404
+    assert "nonexistent" in resp.json()["detail"]
+
+
+def test_batch_process_partial_failure(tmp_path: Path) -> None:
+    """Batch processing continues after one asset fails."""
+    mock_plugin = MagicMock()
+    mock_plugin.name = "texture"
+    mock_plugin.extensions = [".png"]
+
+    # First call succeeds, second call raises
+    mock_plugin.process.side_effect = [
+        AssetResult(source=Path("a"), output=Path("a"), metadata={}),
+        RuntimeError("disk full"),
+    ]
+
+    client, _, _ = _setup_process(
+        tmp_path,
+        source_files={"a.png": b"PNG A", "b.png": b"PNG B"},
+        mock_plugin=mock_plugin,
+    )
+
+    # Get asset IDs — sorted by name so we know the order
+    resp = client.get("/api/assets?sort=name&order=asc")
+    assert resp.status_code == 200
+    asset_ids = [a["id"] for a in resp.json()["assets"]]
+
+    resp = client.post("/api/process/batch", json={"asset_ids": asset_ids})
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["succeeded"] == 1
+    assert body["failed"] == 1
+    assert body["skipped"] == 0
+    assert len(body["results"]) == 2
+
+
+def test_batch_process_skipped(tmp_path: Path) -> None:
+    """Batch processing reports skipped assets correctly."""
+    mock_plugin = MagicMock()
+    mock_plugin.name = "texture"
+    mock_plugin.extensions = [".png"]
+    mock_plugin.process.return_value = AssetResult(
+        source=Path("a"),
+        output=Path("a"),
+        metadata={"processed": False, "reason": "tool not installed"},
+    )
+
+    client, _, _ = _setup_process(
+        tmp_path,
+        source_files={"a.png": b"PNG A"},
+        mock_plugin=mock_plugin,
+    )
+
+    resp = client.get("/api/assets")
+    asset_ids = [a["id"] for a in resp.json()["assets"]]
+
+    resp = client.post("/api/process/batch", json={"asset_ids": asset_ids})
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["succeeded"] == 0
+    assert body["skipped"] == 1
+    assert body["results"][0]["status"] == "skipped"
+    assert "tool not installed" in body["results"][0]["message"]

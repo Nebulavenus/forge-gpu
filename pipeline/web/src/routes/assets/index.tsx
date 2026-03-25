@@ -1,14 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { useCallback, useEffect, useState } from "react"
-import { Search, X } from "lucide-react"
-import { fetchAssets, type AssetInfo } from "@/lib/api"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Search, X, CheckSquare, Loader2, AlertCircle, Check } from "lucide-react"
+import { fetchAssets, processBatch, type AssetInfo, type BatchProcessResponse } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
 import { STATUS_META, TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams, type AssetViewMode } from "@/lib/asset-meta"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { TypeFilter } from "@/components/type-filter"
 import { SortDropdown } from "@/components/sort-dropdown"
 import { ViewToggle } from "@/components/view-toggle"
@@ -86,12 +87,141 @@ function ListThumbnail({ asset }: { asset: AssetInfo }) {
   return <div className="h-8 w-8 rounded bg-muted" />
 }
 
+/* ── Floating batch action bar ──────────────────────────────────── */
+
+interface BatchActionBarProps {
+  selectedCount: number
+  isProcessing: boolean
+  batchResult: BatchProcessResponse | null
+  batchError: Error | null
+  onProcess: () => void
+  onClear: () => void
+}
+
+function BatchActionBar({
+  selectedCount,
+  isProcessing,
+  batchResult,
+  batchError,
+  onProcess,
+  onClear,
+}: BatchActionBarProps) {
+  if (selectedCount === 0) return null
+
+  return (
+    <div
+      role="toolbar"
+      aria-label="Batch actions"
+      className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
+    >
+      {/* Result summary */}
+      {batchResult && (
+        <div className="flex items-center gap-2 text-xs" role="status">
+          <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
+          <span>
+            {batchResult.succeeded} succeeded
+            {batchResult.failed > 0 && (
+              <span className="text-destructive">, {batchResult.failed} failed</span>
+            )}
+            {batchResult.skipped > 0 && (
+              <span className="text-muted-foreground">, {batchResult.skipped} skipped</span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Error message */}
+      {batchError && !batchResult && (
+        <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
+          <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+          <span className="max-w-48 truncate">{batchError.message}</span>
+        </div>
+      )}
+
+      {/* Selection count and actions */}
+      {!batchResult && !batchError && (
+        <span className="text-sm text-muted-foreground">
+          {selectedCount} selected
+        </span>
+      )}
+
+      <Button
+        size="sm"
+        onClick={onProcess}
+        disabled={isProcessing}
+        aria-label={`Process ${selectedCount} selected asset${selectedCount !== 1 ? "s" : ""}`}
+      >
+        {isProcessing ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        ) : (
+          <CheckSquare className="h-3.5 w-3.5" aria-hidden />
+        )}
+        {isProcessing ? "Processing..." : `Process Selected (${selectedCount})`}
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onClear}
+        disabled={isProcessing}
+        aria-label="Clear selection"
+      >
+        <X className="h-3.5 w-3.5" aria-hidden />
+        Clear
+      </Button>
+    </div>
+  )
+}
+
+/* ── Main asset browser ─────────────────────────────────────────── */
+
 function AssetBrowser() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { type: searchType, status: statusFilter, search: searchQuery, sort: sortField, order: sortOrder, view: viewMode } = Route.useSearch()
   const typeFilter = searchType ?? ""
   const currentView: AssetViewMode = viewMode ?? "grid"
   const [localSearch, setLocalSearch] = useState(searchQuery ?? "")
+
+  /* ── Batch processing mutation ─────────────────────────────────── */
+  const batchMutation = useMutation<BatchProcessResponse, Error, string[]>({
+    mutationFn: (ids) => processBatch(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assets"] })
+    },
+  })
+
+  /* ── Select mode state ─────────────────────────────────────────── */
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  const isBatchPending = batchMutation.isPending
+
+  const toggleSelectMode = useCallback(() => {
+    if (isBatchPending) return
+    batchMutation.reset()
+    setSelectMode((prev) => {
+      if (prev) {
+        // Exiting select mode — clear selection
+        setSelectedIds(new Set())
+      }
+      return !prev
+    })
+  }, [isBatchPending, batchMutation])
+
+  const toggleSelection = useCallback((id: string) => {
+    if (isBatchPending) return
+    batchMutation.reset()
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [isBatchPending, batchMutation])
 
   /* Sync local input when the URL search param changes externally */
   useEffect(() => {
@@ -145,10 +275,73 @@ function AssetBrowser() {
       }),
   })
 
+  const handleBatchProcess = useCallback(() => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    batchMutation.mutate(ids)
+  }, [selectedIds, batchMutation])
+
+  const handleBatchClear = useCallback(() => {
+    batchMutation.reset()
+    // Bypass the isBatchPending guard — reset above clears pending state
+    // but the closure still sees the old value, so set state directly.
+    setSelectedIds(new Set())
+    setSelectMode(false)
+  }, [batchMutation])
+
+  /* ── Select-all logic ──────────────────────────────────────────── */
+  const visibleIds = useMemo(
+    () => data?.assets.map((a) => a.id) ?? [],
+    [data],
+  )
+
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
+  const someSelected = visibleIds.some((id) => selectedIds.has(id))
+
+  const toggleSelectAll = useCallback(() => {
+    if (isBatchPending) return
+    batchMutation.reset()
+    if (allSelected) {
+      // Deselect all visible
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const id of visibleIds) next.delete(id)
+        return next
+      })
+    } else {
+      // Select all visible
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const id of visibleIds) next.add(id)
+        return next
+      })
+    }
+  }, [isBatchPending, allSelected, visibleIds, batchMutation])
+
   /** Build search params for detail navigation. Uses the committed
    *  searchQuery (not live input) so the URL reflects the actual query. */
   function detailSearch(): AssetSearchParams {
     return currentSearch({ search: searchQuery?.trim() || undefined })
+  }
+
+  /** Handle card/row click — toggle selection in select mode, navigate otherwise */
+  function handleAssetClick(asset: AssetInfo) {
+    if (selectMode) {
+      toggleSelection(asset.id)
+    } else {
+      navigate({
+        to: "/assets/$assetId",
+        params: { assetId: asset.id },
+        search: detailSearch(),
+      })
+    }
+  }
+
+  function handleAssetKeyDown(e: React.KeyboardEvent, asset: AssetInfo) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      handleAssetClick(asset)
+    }
   }
 
   return (
@@ -205,6 +398,18 @@ function AssetBrowser() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={selectMode ? "secondary" : "ghost"}
+            size="sm"
+            onClick={toggleSelectMode}
+            disabled={isBatchPending}
+            aria-label={selectMode ? "Exit select mode" : "Enter select mode"}
+            aria-pressed={selectMode}
+            title={selectMode ? "Exit select mode" : "Select multiple assets"}
+          >
+            <CheckSquare className="h-4 w-4" aria-hidden />
+            Select
+          </Button>
           <SortDropdown
             sort={sortField}
             order={sortOrder}
@@ -236,6 +441,27 @@ function AssetBrowser() {
         </div>
       </div>
 
+      {/* Select-all bar — visible only in select mode with loaded assets */}
+      {selectMode && data && data.assets.length > 0 && (
+        <div
+          className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2"
+          role="toolbar"
+          aria-label="Selection controls"
+        >
+          <Checkbox
+            checked={allSelected}
+            indeterminate={someSelected && !allSelected}
+            onCheckedChange={toggleSelectAll}
+            disabled={isBatchPending}
+            aria-label={allSelected ? "Deselect all assets" : "Select all assets"}
+          />
+          <span className="text-xs text-muted-foreground">
+            {allSelected ? "Deselect all" : "Select all"}
+            {selectedIds.size > 0 && ` (${selectedIds.size} selected)`}
+          </span>
+        </div>
+      )}
+
       {isLoading && (
         <div className="py-12 text-center text-muted-foreground">
           Loading assets...
@@ -255,32 +481,40 @@ function AssetBrowser() {
       )}
 
       {data && data.assets.length > 0 && currentView === "grid" && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          role={selectMode ? "listbox" : undefined}
+          aria-label={selectMode ? "Selectable assets" : undefined}
+          aria-multiselectable={selectMode ? true : undefined}
+        >
           {data.assets.map((asset) => (
             <Card
               key={asset.id}
-              className="cursor-pointer overflow-hidden transition-colors hover:bg-card/80"
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                navigate({
-                  to: "/assets/$assetId",
-                  params: { assetId: asset.id },
-                  search: detailSearch(),
-                })
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault()
-                  navigate({
-                    to: "/assets/$assetId",
-                    params: { assetId: asset.id },
-                    search: detailSearch(),
-                  })
-                }
-              }}
+              className={`cursor-pointer overflow-hidden transition-colors hover:bg-card/80 ${
+                selectMode && selectedIds.has(asset.id) ? "ring-2 ring-primary" : ""
+              } ${isBatchPending ? "pointer-events-none opacity-60" : ""}`}
+              role={selectMode ? "option" : "button"}
+              tabIndex={isBatchPending ? -1 : 0}
+              aria-selected={selectMode ? selectedIds.has(asset.id) : undefined}
+              aria-disabled={isBatchPending || undefined}
+              onClick={() => handleAssetClick(asset)}
+              onKeyDown={(e) => handleAssetKeyDown(e, asset)}
             >
-              <AssetThumbnail asset={asset} />
+              {/* Checkbox overlay in select mode */}
+              {selectMode && (
+                <div className="relative">
+                  <AssetThumbnail asset={asset} />
+                  <div className="absolute left-2 top-2">
+                    <Checkbox
+                      checked={selectedIds.has(asset.id)}
+                      onCheckedChange={() => toggleSelection(asset.id)}
+                      disabled={isBatchPending}
+                      aria-label={`Select ${asset.name}`}
+                    />
+                  </div>
+                </div>
+              )}
+              {!selectMode && <AssetThumbnail asset={asset} />}
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-sm">
                   <span className="truncate">{asset.name}</span>
@@ -308,6 +542,17 @@ function AssetBrowser() {
         <Table>
           <TableHeader>
             <TableRow>
+              {selectMode && (
+                <TableHead className="w-8">
+                  <Checkbox
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleSelectAll}
+                    disabled={isBatchPending}
+                    aria-label={allSelected ? "Deselect all assets" : "Select all assets"}
+                  />
+                </TableHead>
+              )}
               <TableHead className="w-10"><span className="sr-only">Thumbnail</span></TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
@@ -321,28 +566,40 @@ function AssetBrowser() {
             {data.assets.map((asset) => (
                 <TableRow
                   key={asset.id}
-                  className="cursor-pointer"
-                  onClick={() =>
-                    navigate({
-                      to: "/assets/$assetId",
-                      params: { assetId: asset.id },
-                      search: detailSearch(),
-                    })
-                  }
+                  className={`cursor-pointer ${
+                    selectMode && selectedIds.has(asset.id) ? "bg-primary/5" : ""
+                  } ${isBatchPending ? "pointer-events-none opacity-60" : ""}`}
+                  aria-selected={selectMode ? selectedIds.has(asset.id) : undefined}
+                  aria-disabled={isBatchPending || undefined}
+                  onClick={() => handleAssetClick(asset)}
                 >
+                  {selectMode && (
+                    <TableCell className="w-8 p-1">
+                      <Checkbox
+                        checked={selectedIds.has(asset.id)}
+                        onCheckedChange={() => toggleSelection(asset.id)}
+                        disabled={isBatchPending}
+                        aria-label={`Select ${asset.name}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="w-10 p-1">
                     <ListThumbnail asset={asset} />
                   </TableCell>
                   <TableCell className="font-medium">
-                    <Link
-                      to="/assets/$assetId"
-                      params={{ assetId: asset.id }}
-                      search={detailSearch()}
-                      className="hover:underline focus:outline-none focus-visible:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {asset.name}
-                    </Link>
+                    {selectMode ? (
+                      <span>{asset.name}</span>
+                    ) : (
+                      <Link
+                        to="/assets/$assetId"
+                        params={{ assetId: asset.id }}
+                        search={detailSearch()}
+                        className="hover:underline focus:outline-none focus-visible:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {asset.name}
+                      </Link>
+                    )}
                   </TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeBgColor(asset.asset_type)}`}>
@@ -374,6 +631,16 @@ function AssetBrowser() {
       )}
 
       <AtlasPreview />
+
+      {/* Floating batch action bar */}
+      <BatchActionBar
+        selectedCount={selectedIds.size}
+        isProcessing={batchMutation.isPending}
+        batchResult={batchMutation.data ?? null}
+        batchError={batchMutation.error ?? null}
+        onProcess={handleBatchProcess}
+        onClear={handleBatchClear}
+      />
     </div>
   )
 }

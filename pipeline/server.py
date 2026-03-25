@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -164,6 +165,30 @@ class ProcessResponse(BaseModel):
     """JSON shape for the process endpoint."""
 
     message: str
+
+
+class BatchProcessRequest(BaseModel):
+    """JSON shape for the batch process endpoint."""
+
+    asset_ids: list[str]
+
+
+class BatchProcessItemResult(BaseModel):
+    """Result for a single asset in a batch operation."""
+
+    asset_id: str
+    status: str  # "succeeded", "failed", "skipped"
+    message: str
+
+
+class BatchProcessResponse(BaseModel):
+    """JSON shape for the batch process endpoint response."""
+
+    batch_id: str
+    succeeded: int
+    failed: int
+    skipped: int
+    results: list[BatchProcessItemResult]
 
 
 # -- Scene editor models ----------------------------------------------------
@@ -378,6 +403,23 @@ def create_app(config: PipelineConfig) -> FastAPI:
     _registry = PluginRegistry()
     plugins_dir = Path(__file__).resolve().parent / "plugins"
     _registry.discover(plugins_dir)
+
+    # -- Fingerprint lock ---------------------------------------------------
+    # Serializes read-modify-write of fingerprints.json so concurrent
+    # requests (batch + single-asset) don't clobber each other.
+    _fingerprint_lock = asyncio.Lock()
+
+    async def _save_fingerprint(relative: Path, source: Path) -> None:
+        """Thread-safe fingerprint update behind an asyncio lock."""
+        async with _fingerprint_lock:
+
+            def _update() -> None:
+                cache_path = config.cache_dir / "fingerprints.json"
+                fp_cache = FingerprintCache(cache_path)
+                fp_cache.set(relative, fingerprint_file(source))
+                fp_cache.save()
+
+            await asyncio.to_thread(_update)
 
     # -- Cached asset index ------------------------------------------------
     # Avoid re-scanning the entire source tree on every single-asset lookup.
@@ -901,19 +943,202 @@ def create_app(config: PipelineConfig) -> FastAPI:
             reason = result.metadata.get("reason", "unknown")
             return ProcessResponse(message=f"Skipped {asset.name}: {reason}")
 
-        # Update fingerprint cache and refresh the in-memory asset index.
-        # Run off the event loop — fingerprinting hashes file contents and
-        # _refresh_cache re-scans the entire source tree.
-        def _update_cache() -> None:
-            cache_path = config.cache_dir / "fingerprints.json"
-            fp_cache = FingerprintCache(cache_path)
-            fp_cache.set(relative, fingerprint_file(source))
-            fp_cache.save()
-            _refresh_cache()
-
-        await asyncio.to_thread(_update_cache)
+        # Update fingerprint cache (lock-protected) and refresh the
+        # in-memory asset index.
+        await _save_fingerprint(relative, source)
+        await asyncio.to_thread(_refresh_cache)
 
         return ProcessResponse(message=f"Processed {asset.name}")
+
+    # -- Batch processing --------------------------------------------------
+
+    async def _process_single_asset(
+        asset: AssetInfo,
+    ) -> BatchProcessItemResult:
+        """Process one asset and return a batch-item result.
+
+        Encapsulates the same logic as the single-asset endpoint but
+        returns a structured result instead of raising HTTPException on
+        failure, so the batch can continue.
+        """
+        source = Path(asset.source_path)
+
+        # Apply the same safety checks as the single-asset endpoint
+        try:
+            _validate_source_path(source)
+            per_asset = _load_sidecar_or_400(source)
+        except HTTPException as exc:
+            return BatchProcessItemResult(
+                asset_id=asset.id,
+                status="failed",
+                message=str(exc.detail),
+            )
+
+        # Compute effective settings
+        global_settings = config.plugin_settings.get(asset.asset_type, {})
+        effective = get_effective_settings(asset.asset_type, global_settings, per_asset)
+
+        # Find the matching plugin
+        ext = source.suffix.lower()
+        candidates = _registry.get_by_extension(ext)
+        plugin = None
+        for p in candidates:
+            if p.name == asset.asset_type:
+                plugin = p
+                break
+        if plugin is None and candidates:
+            plugin = candidates[0]
+        if plugin is None:
+            return BatchProcessItemResult(
+                asset_id=asset.id,
+                status="failed",
+                message=f"No plugin found for extension '{ext}'",
+            )
+
+        # Build the output directory
+        relative = Path(asset.relative_path)
+        output_subdir = config.output_dir / relative.parent
+        output_subdir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            result = await asyncio.to_thread(
+                plugin.process, source, output_subdir, effective
+            )
+        except Exception as exc:
+            log.exception("Batch: plugin %r failed on %s", plugin.name, source.name)
+            return BatchProcessItemResult(
+                asset_id=asset.id,
+                status="failed",
+                message=str(exc),
+            )
+
+        if result.metadata.get("processed") is False:
+            reason = result.metadata.get("reason", "unknown")
+            return BatchProcessItemResult(
+                asset_id=asset.id,
+                status="skipped",
+                message=reason,
+            )
+
+        # Update fingerprint cache (lock-protected)
+        await _save_fingerprint(relative, source)
+
+        return BatchProcessItemResult(
+            asset_id=asset.id,
+            status="succeeded",
+            message=f"Processed {asset.name}",
+        )
+
+    @app.post(
+        "/api/process/batch",
+        response_model=BatchProcessResponse,
+    )
+    async def process_batch(body: BatchProcessRequest) -> BatchProcessResponse:
+        """Process multiple assets sequentially, streaming progress via WebSocket.
+
+        Each asset is processed one at a time.  After each completes, a
+        WebSocket message of type ``batch_progress`` is broadcast so
+        connected clients can update their UI in real time.  The HTTP
+        response contains the final summary.
+        """
+        if not body.asset_ids:
+            raise HTTPException(status_code=400, detail="asset_ids must not be empty")
+
+        # Resolve all requested assets up front so the caller gets an
+        # immediate 404 for unknown IDs rather than a partial run.
+        if not _asset_cache:
+            _refresh_cache()
+
+        assets: list[AssetInfo] = []
+        unknown: list[str] = []
+        for aid in body.asset_ids:
+            asset = _asset_cache.get(aid)
+            if asset is None:
+                unknown.append(aid)
+            else:
+                assets.append(asset)
+        if unknown:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown asset ID(s): {', '.join(unknown)}",
+            )
+
+        batch_id = uuid.uuid4().hex
+        total = len(assets)
+        results: list[BatchProcessItemResult] = []
+        succeeded = 0
+        failed = 0
+        skipped = 0
+
+        # Broadcast the batch start event
+        await manager.broadcast(
+            {
+                "type": "batch_start",
+                "batch_id": batch_id,
+                "total": total,
+            }
+        )
+
+        for idx, asset in enumerate(assets):
+            # Broadcast progress before processing each asset
+            await manager.broadcast(
+                {
+                    "type": "batch_progress",
+                    "batch_id": batch_id,
+                    "current": idx + 1,
+                    "total": total,
+                    "asset_id": asset.id,
+                    "asset_name": asset.name,
+                    "phase": "processing",
+                }
+            )
+
+            item_result = await _process_single_asset(asset)
+            results.append(item_result)
+
+            if item_result.status == "succeeded":
+                succeeded += 1
+            elif item_result.status == "failed":
+                failed += 1
+            else:
+                skipped += 1
+
+            # Broadcast completion of this asset
+            await manager.broadcast(
+                {
+                    "type": "batch_progress",
+                    "batch_id": batch_id,
+                    "current": idx + 1,
+                    "total": total,
+                    "asset_id": asset.id,
+                    "asset_name": asset.name,
+                    "phase": "done",
+                    "result": item_result.status,
+                    "message": item_result.message,
+                }
+            )
+
+        # Refresh the asset cache once after the full batch
+        await asyncio.to_thread(_refresh_cache)
+
+        # Broadcast batch completion
+        await manager.broadcast(
+            {
+                "type": "batch_complete",
+                "batch_id": batch_id,
+                "succeeded": succeeded,
+                "failed": failed,
+                "skipped": skipped,
+            }
+        )
+
+        return BatchProcessResponse(
+            batch_id=batch_id,
+            succeeded=succeeded,
+            failed=failed,
+            skipped=skipped,
+            results=results,
+        )
 
     # -- Atlas metadata ----------------------------------------------------
 

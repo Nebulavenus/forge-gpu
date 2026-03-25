@@ -37,10 +37,23 @@ export class ApiError extends Error {
   }
 }
 
+async function parseErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = await response.json()
+    if (typeof body.detail === "string") return body.detail
+    if (typeof body.message === "string") return body.message
+    if (typeof body.error === "string") return body.error
+  } catch {
+    // JSON parsing failed — fall back to statusText
+  }
+  return response.statusText
+}
+
 export async function apiFetch<T>(url: string): Promise<T> {
   const response = await fetch(url)
   if (!response.ok) {
-    throw new ApiError(response.status, response.statusText)
+    const message = await parseErrorMessage(response)
+    throw new ApiError(response.status, message)
   }
   return response.json() as Promise<T>
 }
@@ -111,7 +124,8 @@ export async function apiWrite<T>(
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!response.ok) {
-    throw new ApiError(response.status, response.statusText)
+    const message = await parseErrorMessage(response)
+    throw new ApiError(response.status, message)
   }
   return response.json() as Promise<T>
 }
@@ -140,5 +154,29 @@ export function processAsset(assetId: string): Promise<ProcessResponse> {
   return apiWrite<ProcessResponse>(
     `/api/assets/${encodeURIComponent(assetId)}/process`,
     "POST",
+  )
+}
+
+// ── Batch processing ───────────────────────────────────────────────
+
+export interface BatchProcessItemResult {
+  asset_id: string
+  status: "succeeded" | "failed" | "skipped"
+  message: string
+}
+
+export interface BatchProcessResponse {
+  batch_id: string
+  succeeded: number
+  failed: number
+  skipped: number
+  results: BatchProcessItemResult[]
+}
+
+export function processBatch(assetIds: string[]): Promise<BatchProcessResponse> {
+  return apiWrite<BatchProcessResponse>(
+    "/api/process/batch",
+    "POST",
+    { asset_ids: assetIds },
   )
 }
