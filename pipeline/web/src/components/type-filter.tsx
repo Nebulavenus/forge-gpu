@@ -1,12 +1,18 @@
 import { Button } from "@/components/ui/button"
+import { TYPE_META } from "@/lib/asset-meta"
 
-const ASSET_TYPES = [
+interface TypeOption {
+  label: string
+  value: string
+}
+
+const ASSET_TYPES: TypeOption[] = [
   { label: "All", value: "" },
-  { label: "Textures", value: "texture" },
-  { label: "Meshes", value: "mesh" },
-  { label: "Animations", value: "animation" },
-  { label: "Scenes", value: "scene" },
-] as const
+  ...Object.entries(TYPE_META).map(([, meta]) => ({
+    label: meta.label,
+    value: meta.filterValue,
+  })),
+]
 
 interface TypeFilterProps {
   value: string
@@ -15,17 +21,22 @@ interface TypeFilterProps {
 
 export function TypeFilter({ value, onChange }: TypeFilterProps) {
   return (
-    <div className="flex items-center gap-1">
-      {ASSET_TYPES.map((type) => (
-        <Button
-          key={type.value}
-          variant={value === type.value ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => onChange(type.value)}
-        >
-          {type.label}
-        </Button>
-      ))}
+    <div role="toolbar" aria-label="Filter by type" className="flex items-center gap-1">
+      {ASSET_TYPES.map((type) => {
+        const isActive = value === type.value
+        return (
+          <Button
+            type="button"
+            key={type.value || "all"}
+            variant={isActive ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={isActive}
+            onClick={() => onChange(type.value)}
+          >
+            {type.label}
+          </Button>
+        )
+      })}
     </div>
   )
 }

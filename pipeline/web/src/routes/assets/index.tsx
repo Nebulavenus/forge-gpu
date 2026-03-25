@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Search, X, CheckSquare, Loader2, AlertCircle, Check } from "lucide-react"
 import { fetchAssets, processBatch, type AssetInfo, type BatchProcessResponse } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
-import { STATUS_META, TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams, type AssetViewMode } from "@/lib/asset-meta"
+import { TYPE_META, statusBadgeVariant, typeBgColor, validateAssetSearch, type AssetSearchParams, type AssetViewMode } from "@/lib/asset-meta"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TypeFilter } from "@/components/type-filter"
+import { StatusFilter } from "@/components/status-filter"
 import { SortDropdown } from "@/components/sort-dropdown"
 import { ViewToggle } from "@/components/view-toggle"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -358,44 +359,6 @@ function AssetBrowser() {
               className="pl-9"
             />
           </div>
-          {statusFilter && (
-            <Badge variant={statusBadgeVariant(statusFilter)} className="flex items-center gap-1 whitespace-nowrap">
-              {STATUS_META[statusFilter]?.label ?? statusFilter}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4 p-0 hover:bg-transparent"
-                aria-label="Clear status filter"
-                onClick={() =>
-                  navigate({
-                    to: "/assets",
-                    search: currentSearch({ status: undefined }),
-                  })
-                }
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </Badge>
-          )}
-          {searchType && !TYPE_META[searchType] && (
-            <Badge variant="outline" className="flex items-center gap-1 whitespace-nowrap">
-              {searchType}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4 p-0 hover:bg-transparent"
-                aria-label="Clear type filter"
-                onClick={() =>
-                  navigate({
-                    to: "/assets",
-                    search: currentSearch({ type: undefined }),
-                  })
-                }
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </Badge>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -426,6 +389,15 @@ function AssetBrowser() {
               navigate({
                 to: "/assets",
                 search: currentSearch({ type: newType || undefined }),
+              })
+            }
+          />
+          <StatusFilter
+            value={statusFilter ?? ""}
+            onChange={(newStatus) =>
+              navigate({
+                to: "/assets",
+                search: currentSearch({ status: newStatus || undefined }),
               })
             }
           />

@@ -53,13 +53,19 @@ export interface AssetSearchParams {
   view?: AssetViewMode
 }
 
+const VALID_TYPES = new Set(
+  Object.values(TYPE_META).map((meta) => meta.filterValue),
+)
+const VALID_STATUSES = new Set(Object.keys(STATUS_META))
 const VALID_SORT_FIELDS = new Set(["name", "size", "status", "type", "recent"])
 const VALID_SORT_ORDERS = new Set(["asc", "desc"])
 const VALID_VIEW_MODES = new Set<string>(["grid", "list"])
 
 export function validateAssetSearch(search: Record<string, unknown>): AssetSearchParams {
-  const type = typeof search.type === "string" ? search.type.trim() : undefined
-  const status = typeof search.status === "string" ? search.status.trim() : undefined
+  const rawType = typeof search.type === "string" ? search.type.trim() : undefined
+  const type = rawType && VALID_TYPES.has(rawType) ? rawType : undefined
+  const rawStatus = typeof search.status === "string" ? search.status.trim() : undefined
+  const status = rawStatus && VALID_STATUSES.has(rawStatus) ? rawStatus : undefined
   const s = typeof search.search === "string" ? search.search.trim() : undefined
   const rawSort = typeof search.sort === "string" ? search.sort.trim() : undefined
   const rawOrder = typeof search.order === "string" ? search.order.trim() : undefined
@@ -68,8 +74,8 @@ export function validateAssetSearch(search: Record<string, unknown>): AssetSearc
   const rawView = typeof search.view === "string" ? search.view.trim() : undefined
   const view = rawView && VALID_VIEW_MODES.has(rawView) && rawView !== "grid" ? (rawView as AssetViewMode) : undefined
   return {
-    type: type || undefined,
-    status: status || undefined,
+    type,
+    status,
     search: s || undefined,
     sort: sort || undefined,
     order: order || undefined,
