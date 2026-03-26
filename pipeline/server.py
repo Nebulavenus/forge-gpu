@@ -95,10 +95,13 @@ def _classify_extension(ext: str) -> str:
 def _make_asset_id(relative: Path) -> str:
     """Derive a URL-safe ID from a relative path.
 
-    Replaces ``/`` with ``--`` and strips the extension, so
-    ``textures/brick_albedo.png`` becomes ``textures--brick_albedo``.
+    Replaces ``/`` with ``--`` and ``.`` with ``~``, so
+    ``textures/brick_albedo.png`` becomes ``textures--brick_albedo~png``.
+
+    Using ``~`` for dots avoids ambiguity with underscores that already
+    appear in filenames (e.g. ``wall_normal.png`` vs ``wall.normal.png``).
     """
-    return relative.with_suffix("").as_posix().replace("/", "--")
+    return relative.as_posix().replace("/", "--").replace(".", "~")
 
 
 # ---------------------------------------------------------------------------

@@ -67,7 +67,7 @@ function ListThumbnail({ asset }: { asset: AssetInfo }) {
     return (
       <img
         src={`/api/assets/${encodeURIComponent(asset.id)}/thumbnail`}
-        alt=""
+        alt={`${asset.name} thumbnail`}
         width={32}
         height={32}
         loading="lazy"
@@ -435,19 +435,19 @@ function AssetBrowser() {
       )}
 
       {isLoading && (
-        <div className="py-12 text-center text-muted-foreground">
+        <div role="status" className="py-12 text-center text-muted-foreground">
           Loading assets...
         </div>
       )}
 
       {error && (
-        <div className="py-12 text-center text-destructive">
+        <div role="alert" className="py-12 text-center text-destructive">
           Failed to load assets: {(error as Error).message}
         </div>
       )}
 
       {data && data.assets.length === 0 && (
-        <div className="py-12 text-center text-muted-foreground">
+        <div role="status" className="py-12 text-center text-muted-foreground">
           No assets found.
         </div>
       )}
@@ -467,6 +467,7 @@ function AssetBrowser() {
               } ${isBatchPending ? "pointer-events-none opacity-60" : ""}`}
               role={selectMode ? "option" : "button"}
               tabIndex={isBatchPending ? -1 : 0}
+              aria-label={selectMode ? `${asset.name} — ${asset.status}` : `View ${asset.name}`}
               aria-selected={selectMode ? selectedIds.has(asset.id) : undefined}
               aria-disabled={isBatchPending || undefined}
               onClick={() => handleAssetClick(asset)}
@@ -639,7 +640,7 @@ function AssetBrowser() {
       )}
 
       {data && (
-        <div className="text-xs text-muted-foreground">
+        <div role="status" aria-live="polite" className="text-xs text-muted-foreground">
           {data.total} asset{data.total !== 1 ? "s" : ""}
         </div>
       )}

@@ -136,7 +136,7 @@ function AssetDetail() {
 
   if (isLoading) {
     return (
-      <div className="py-12 text-center text-muted-foreground">
+      <div role="status" className="py-12 text-center text-muted-foreground">
         Loading asset...
       </div>
     )
@@ -144,7 +144,7 @@ function AssetDetail() {
 
   if (error) {
     return (
-      <div className="py-12 text-center text-destructive">
+      <div role="alert" className="py-12 text-center text-destructive">
         Failed to load asset: {(error as Error).message}
       </div>
     )
@@ -169,8 +169,8 @@ function AssetDetail() {
         }
         className="gap-1"
       >
-        <ArrowLeft className="h-4 w-4" />
-        Back
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Back to assets
       </Button>
 
       <div className="space-y-1">
@@ -183,7 +183,7 @@ function AssetDetail() {
         </div>
       </div>
 
-      <Table>
+      <Table aria-label="Asset details">
         <TableBody>
           <TableRow>
             <TableCell className="font-medium text-muted-foreground">

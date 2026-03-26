@@ -153,11 +153,11 @@ def test_assets_search(tmp_path: Path) -> None:
 
 def test_asset_detail(tmp_path: Path) -> None:
     client, config = _setup(tmp_path, source_files={"hero.png": b"PNG data"})
-    resp = client.get("/api/assets/hero")
+    resp = client.get("/api/assets/hero~png")
     assert resp.status_code == 200
 
     asset = resp.json()
-    assert asset["id"] == "hero"
+    assert asset["id"] == "hero~png"
     assert asset["name"] == "hero.png"
     assert asset["relative_path"] == "hero.png"
     assert asset["asset_type"] == "texture"
@@ -207,14 +207,14 @@ def test_asset_status_processed(tmp_path: Path) -> None:
         output_files=output_files,
         cache_entries=cache_entries,
     )
-    resp = client.get("/api/assets/tex--wall")
+    resp = client.get("/api/assets/tex--wall~png")
     assert resp.status_code == 200
     assert resp.json()["status"] == "processed"
 
 
 def test_asset_status_new(tmp_path: Path) -> None:
     client, _ = _setup(tmp_path, source_files={"new.png": b"brand new"})
-    resp = client.get("/api/assets/new")
+    resp = client.get("/api/assets/new~png")
     assert resp.status_code == 200
     assert resp.json()["status"] == "new"
 
@@ -225,7 +225,7 @@ def test_asset_status_changed(tmp_path: Path) -> None:
         source_files={"old.png": b"version 2"},
         cache_entries={"old.png": "stale_fingerprint_that_wont_match"},
     )
-    resp = client.get("/api/assets/old")
+    resp = client.get("/api/assets/old~png")
     assert resp.status_code == 200
     assert resp.json()["status"] == "changed"
 
@@ -257,7 +257,7 @@ def test_file_source(tmp_path: Path) -> None:
     png_data = b"\x89PNG\r\n\x1a\n fake png content"
     client, _ = _setup(tmp_path, source_files={"brick.png": png_data})
 
-    resp = client.get("/api/assets/brick/file")
+    resp = client.get("/api/assets/brick~png/file")
     assert resp.status_code == 200
     assert resp.content == png_data
     assert resp.headers["content-type"] == "image/png"
@@ -273,7 +273,7 @@ def test_file_processed(tmp_path: Path) -> None:
         output_files={"wall.png": processed_data},
     )
 
-    resp = client.get("/api/assets/wall/file", params={"variant": "processed"})
+    resp = client.get("/api/assets/wall~png/file", params={"variant": "processed"})
     assert resp.status_code == 200
     assert resp.content == processed_data
 
@@ -290,7 +290,7 @@ def test_file_no_processed(tmp_path: Path) -> None:
     """GET /api/assets/{id}/file?variant=processed returns 404 when no output exists."""
     client, _ = _setup(tmp_path, source_files={"sky.png": b"sky data"})
 
-    resp = client.get("/api/assets/sky/file", params={"variant": "processed"})
+    resp = client.get("/api/assets/sky~png/file", params={"variant": "processed"})
     assert resp.status_code == 404
 
 
@@ -299,7 +299,7 @@ def test_file_gltf_content_type(tmp_path: Path) -> None:
     gltf_data = b'{"asset":{"version":"2.0"}}'
     client, _ = _setup(tmp_path, source_files={"scene.gltf": gltf_data})
 
-    resp = client.get("/api/assets/scene/file")
+    resp = client.get("/api/assets/scene~gltf/file")
     assert resp.status_code == 200
     assert resp.content == gltf_data
     assert resp.headers["content-type"] == "model/gltf+json"
@@ -318,7 +318,7 @@ def test_companions_bin(tmp_path: Path) -> None:
     )
 
     resp = client.get(
-        "/api/assets/models--scene/companions",
+        "/api/assets/models--scene~gltf/companions",
         params={"path": "model.bin"},
     )
     assert resp.status_code == 200
@@ -333,7 +333,7 @@ def test_companions_traversal_blocked(tmp_path: Path) -> None:
     )
 
     resp = client.get(
-        "/api/assets/models--scene/companions",
+        "/api/assets/models--scene~gltf/companions",
         params={"path": "../../etc/passwd"},
     )
     assert resp.status_code == 403
@@ -358,7 +358,7 @@ def test_companions_sibling_dir_blocked(tmp_path: Path) -> None:
     client = TestClient(create_app(config))
 
     resp = client.get(
-        "/api/assets/scene/companions",
+        "/api/assets/scene~gltf/companions",
         params={"path": "../source_evil/secret.txt"},
     )
     assert resp.status_code == 403
@@ -372,7 +372,7 @@ def test_companions_not_found(tmp_path: Path) -> None:
     )
 
     resp = client.get(
-        "/api/assets/models--scene/companions",
+        "/api/assets/models--scene~gltf/companions",
         params={"path": "missing.bin"},
     )
     assert resp.status_code == 404
@@ -386,7 +386,7 @@ def test_companions_not_found(tmp_path: Path) -> None:
 def test_get_settings_texture(tmp_path: Path) -> None:
     """GET /api/assets/{id}/settings returns schema, global, and effective settings."""
     client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
-    resp = client.get("/api/assets/brick/settings")
+    resp = client.get("/api/assets/brick~png/settings")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -406,7 +406,7 @@ def test_get_settings_texture(tmp_path: Path) -> None:
 def test_get_settings_mesh(tmp_path: Path) -> None:
     """GET /api/assets/{id}/settings works for mesh assets."""
     client, _ = _setup(tmp_path, source_files={"hero.gltf": b'{"asset":{}}'})
-    resp = client.get("/api/assets/hero/settings")
+    resp = client.get("/api/assets/hero~gltf/settings")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -425,7 +425,7 @@ def test_get_settings_not_found(tmp_path: Path) -> None:
 def test_get_settings_no_schema(tmp_path: Path) -> None:
     """GET /api/assets/{id}/settings returns 400 for types without a schema."""
     client, _ = _setup(tmp_path, source_files={"walk.fanim": b"FANIM data"})
-    resp = client.get("/api/assets/walk/settings")
+    resp = client.get("/api/assets/walk~fanim/settings")
     assert resp.status_code == 400
     assert "No settings schema" in resp.json()["detail"]
 
@@ -447,7 +447,7 @@ def test_get_settings_with_existing_sidecar(tmp_path: Path) -> None:
     (tmp_path / "cache").mkdir()
     client = TestClient(create_app(config))
 
-    resp = client.get("/api/assets/wall/settings")
+    resp = client.get("/api/assets/wall~png/settings")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -478,7 +478,7 @@ def test_get_settings_malformed_sidecar(tmp_path: Path) -> None:
     (tmp_path / "cache").mkdir()
     client = TestClient(create_app(config))
 
-    resp = client.get("/api/assets/wall/settings")
+    resp = client.get("/api/assets/wall~png/settings")
     assert resp.status_code == 400
     assert "Malformed" in resp.json()["detail"]
 
@@ -499,7 +499,7 @@ def test_get_settings_with_global_config(tmp_path: Path) -> None:
     (tmp_path / "cache").mkdir()
     client = TestClient(create_app(config))
 
-    resp = client.get("/api/assets/sky/settings")
+    resp = client.get("/api/assets/sky~png/settings")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -527,7 +527,7 @@ def test_put_settings(tmp_path: Path) -> None:
     client = TestClient(create_app(config))
 
     overrides = {"normal_map": True, "max_size": 256}
-    resp = client.put("/api/assets/brick/settings", json=overrides)
+    resp = client.put("/api/assets/brick~png/settings", json=overrides)
     assert resp.status_code == 200
 
     body = resp.json()
@@ -552,14 +552,14 @@ def test_put_settings_not_found(tmp_path: Path) -> None:
 def test_put_settings_no_schema(tmp_path: Path) -> None:
     """PUT /api/assets/{id}/settings returns 400 for types without a schema."""
     client, _ = _setup(tmp_path, source_files={"walk.fanim": b"FANIM data"})
-    resp = client.put("/api/assets/walk/settings", json={"key": "value"})
+    resp = client.put("/api/assets/walk~fanim/settings", json={"key": "value"})
     assert resp.status_code == 400
 
 
 def test_put_settings_non_dict_body(tmp_path: Path) -> None:
     """PUT /api/assets/{id}/settings rejects a non-object JSON body."""
     client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
-    resp = client.put("/api/assets/brick/settings", json=["not", "a", "dict"])
+    resp = client.put("/api/assets/brick~png/settings", json=["not", "a", "dict"])
     assert resp.status_code == 400
     assert "JSON object" in resp.json()["detail"]
 
@@ -568,7 +568,7 @@ def test_put_settings_unknown_keys(tmp_path: Path) -> None:
     """PUT /api/assets/{id}/settings rejects keys not in the schema."""
     client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
     resp = client.put(
-        "/api/assets/brick/settings",
+        "/api/assets/brick~png/settings",
         json={"max_size": 512, "totally_fake_key": True},
     )
     assert resp.status_code == 400
@@ -595,7 +595,7 @@ def test_delete_settings(tmp_path: Path) -> None:
     # Confirm sidecar exists first
     assert sidecar.is_file()
 
-    resp = client.delete("/api/assets/brick/settings")
+    resp = client.delete("/api/assets/brick~png/settings")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -618,7 +618,7 @@ def test_delete_settings_not_found(tmp_path: Path) -> None:
 def test_delete_settings_no_schema(tmp_path: Path) -> None:
     """DELETE /api/assets/{id}/settings returns 400 for types without a schema."""
     client, _ = _setup(tmp_path, source_files={"walk.fanim": b"FANIM data"})
-    resp = client.delete("/api/assets/walk/settings")
+    resp = client.delete("/api/assets/walk~fanim/settings")
     assert resp.status_code == 400
     assert "No settings schema" in resp.json()["detail"]
 
@@ -626,7 +626,7 @@ def test_delete_settings_no_schema(tmp_path: Path) -> None:
 def test_delete_settings_no_sidecar(tmp_path: Path) -> None:
     """DELETE /api/assets/{id}/settings succeeds even when no sidecar exists."""
     client, _ = _setup(tmp_path, source_files={"brick.png": b"PNG data"})
-    resp = client.delete("/api/assets/brick/settings")
+    resp = client.delete("/api/assets/brick~png/settings")
     assert resp.status_code == 200
     assert resp.json()["has_overrides"] is False
 
@@ -647,9 +647,9 @@ def test_settings_roundtrip(tmp_path: Path) -> None:
     client = TestClient(create_app(config))
 
     overrides = {"normal_map": True, "max_size": 512, "output_format": "jpg"}
-    client.put("/api/assets/wall/settings", json=overrides)
+    client.put("/api/assets/wall~png/settings", json=overrides)
 
-    resp = client.get("/api/assets/wall/settings")
+    resp = client.get("/api/assets/wall~png/settings")
     assert resp.status_code == 200
     body = resp.json()
     assert body["per_asset"]["normal_map"] is True
@@ -673,11 +673,11 @@ def test_put_then_delete_settings(tmp_path: Path) -> None:
     client = TestClient(create_app(config))
 
     # Set overrides
-    client.put("/api/assets/wall/settings", json={"normal_map": True})
+    client.put("/api/assets/wall~png/settings", json={"normal_map": True})
     # Delete them
-    client.delete("/api/assets/wall/settings")
+    client.delete("/api/assets/wall~png/settings")
 
-    resp = client.get("/api/assets/wall/settings")
+    resp = client.get("/api/assets/wall~png/settings")
     assert resp.status_code == 200
     body = resp.json()
     assert body["has_overrides"] is False
@@ -749,7 +749,7 @@ def test_process_asset(tmp_path: Path) -> None:
         tmp_path, source_files={"brick.png": b"PNG data"}
     )
 
-    resp = client.post("/api/assets/brick/process")
+    resp = client.post("/api/assets/brick~png/process")
 
     assert resp.status_code == 200
     assert resp.json()["message"] == "Processed brick.png"
@@ -780,7 +780,7 @@ def test_process_asset_with_settings(tmp_path: Path) -> None:
     sidecar = config.source_dir / "wall.png.import.toml"
     sidecar.write_text("normal_map = true\nmax_size = 256\n", encoding="utf-8")
 
-    resp = client.post("/api/assets/wall/process")
+    resp = client.post("/api/assets/wall~png/process")
 
     assert resp.status_code == 200
 
@@ -826,7 +826,7 @@ def test_process_asset_no_plugin(tmp_path: Path) -> None:
         instance.get_by_extension.return_value = []
         client = TestClient(create_app(config))
 
-    resp = client.post("/api/assets/data/process")
+    resp = client.post("/api/assets/data~xyz/process")
 
     assert resp.status_code == 400
     assert "No plugin found" in resp.json()["detail"]
@@ -838,7 +838,7 @@ def test_process_creates_output_subdir(tmp_path: Path) -> None:
         tmp_path, source_files={"textures/brick.png": b"PNG data"}
     )
 
-    resp = client.post("/api/assets/textures--brick/process")
+    resp = client.post("/api/assets/textures--brick~png/process")
 
     assert resp.status_code == 200
     # Output subdirectory should have been created
@@ -963,7 +963,7 @@ def test_process_asset_plugin_error(tmp_path: Path) -> None:
         mock_plugin=mock_plugin,
     )
 
-    resp = client.post("/api/assets/brick/process")
+    resp = client.post("/api/assets/brick~png/process")
 
     assert resp.status_code == 500
     assert "encoder crashed" in resp.json()["detail"]
@@ -990,7 +990,7 @@ def test_process_asset_skipped(tmp_path: Path) -> None:
         mock_plugin=mock_plugin,
     )
 
-    resp = client.post("/api/assets/brick/process")
+    resp = client.post("/api/assets/brick~png/process")
 
     assert resp.status_code == 200
     assert "Skipped" in resp.json()["message"]
@@ -1023,12 +1023,12 @@ def test_thumbnail_texture(tmp_path: Path) -> None:
     png_data = _make_png_bytes(256, 256)
     client, config = _setup(tmp_path, source_files={"textures/brick.png": png_data})
 
-    resp = client.get("/api/assets/textures--brick/thumbnail")
+    resp = client.get("/api/assets/textures--brick~png/thumbnail")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/png"
 
     # Verify thumbnail was cached on disk
-    thumb_path = config.output_dir / ".thumbnails" / "textures--brick.png"
+    thumb_path = config.output_dir / ".thumbnails" / "textures--brick~png.png"
     assert thumb_path.is_file()
 
 
@@ -1036,7 +1036,7 @@ def test_thumbnail_mesh_returns_404(tmp_path: Path) -> None:
     """Non-texture assets return 404 — frontend shows a fallback icon."""
     client, _ = _setup(tmp_path, source_files={"models/hero.gltf": b'{"asset":{}}'})
 
-    resp = client.get("/api/assets/models--hero/thumbnail")
+    resp = client.get("/api/assets/models--hero~gltf/thumbnail")
     assert resp.status_code == 404
 
 
@@ -1057,10 +1057,10 @@ def test_thumbnail_cache_hit(tmp_path: Path) -> None:
     client, config = _setup(tmp_path, source_files={"textures/tile.png": png_data})
 
     # First request generates
-    resp1 = client.get("/api/assets/textures--tile/thumbnail")
+    resp1 = client.get("/api/assets/textures--tile~png/thumbnail")
     assert resp1.status_code == 200
 
-    thumb_path = config.output_dir / ".thumbnails" / "textures--tile.png"
+    thumb_path = config.output_dir / ".thumbnails" / "textures--tile~png.png"
     mtime_first = thumb_path.stat().st_mtime
 
     # Ensure filesystem mtime granularity can distinguish a regeneration.
@@ -1073,7 +1073,7 @@ def test_thumbnail_cache_hit(tmp_path: Path) -> None:
     os.utime(thumb_path, (mtime_first, mtime_first))
 
     # Second request serves from cache (same mtime)
-    resp2 = client.get("/api/assets/textures--tile/thumbnail")
+    resp2 = client.get("/api/assets/textures--tile~png/thumbnail")
     assert resp2.status_code == 200
     assert thumb_path.stat().st_mtime == mtime_first
 
@@ -1082,7 +1082,7 @@ def test_thumbnail_corrupt_image(tmp_path: Path) -> None:
     """Corrupt image data returns 500 with a clear error message."""
     client, _ = _setup(tmp_path, source_files={"textures/bad.png": b"not-a-real-png"})
 
-    resp = client.get("/api/assets/textures--bad/thumbnail")
+    resp = client.get("/api/assets/textures--bad~png/thumbnail")
     assert resp.status_code == 500
     assert "Failed to generate thumbnail" in resp.json()["detail"]
 
@@ -1782,12 +1782,12 @@ def test_dependencies_mesh_depends_on_texture(tmp_path: Path) -> None:
             "brick.png": b"PNG data",
         },
     )
-    resp = client.get("/api/assets/hero/dependencies")
+    resp = client.get("/api/assets/hero~gltf/dependencies")
     assert resp.status_code == 200
 
     body = resp.json()
     dep_ids = [d["id"] for d in body["depends_on"]]
-    assert "brick" in dep_ids
+    assert "brick~png" in dep_ids
     assert body["depended_by"] == []
 
 
@@ -1800,12 +1800,12 @@ def test_dependencies_texture_depended_by_mesh(tmp_path: Path) -> None:
             "brick.png": b"PNG data",
         },
     )
-    resp = client.get("/api/assets/brick/dependencies")
+    resp = client.get("/api/assets/brick~png/dependencies")
     assert resp.status_code == 200
 
     body = resp.json()
     dep_ids = [d["id"] for d in body["depended_by"]]
-    assert "hero" in dep_ids
+    assert "hero~gltf" in dep_ids
     assert body["depends_on"] == []
 
 
@@ -1819,7 +1819,7 @@ def test_dependencies_not_found(tmp_path: Path) -> None:
 def test_dependencies_no_deps(tmp_path: Path) -> None:
     """An asset with no dependencies returns empty lists."""
     client, _ = _setup(tmp_path, source_files={"solo.png": b"data"})
-    resp = client.get("/api/assets/solo/dependencies")
+    resp = client.get("/api/assets/solo~png/dependencies")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -1844,7 +1844,7 @@ def test_dependencies_scene_depends_on_asset(tmp_path: Path) -> None:
         {
             "id": "obj1",
             "name": "Hero",
-            "asset_id": "hero",
+            "asset_id": "hero~gltf",
             "position": [0, 0, 0],
             "rotation": [0, 0, 0, 1],
             "scale": [1, 1, 1],
@@ -1855,7 +1855,7 @@ def test_dependencies_scene_depends_on_asset(tmp_path: Path) -> None:
     put_resp = client.put(f"/api/scenes/{scene_id}", json=scene_data)
     assert put_resp.status_code == 200
 
-    resp = client.get("/api/assets/hero/dependencies")
+    resp = client.get("/api/assets/hero~gltf/dependencies")
     assert resp.status_code == 200
 
     body = resp.json()
@@ -1886,9 +1886,38 @@ def test_dependencies_gltf_subdirectory_texture(tmp_path: Path) -> None:
             "models/textures/albedo.png": b"PNG data",
         },
     )
-    resp = client.get("/api/assets/models--hero/dependencies")
+    resp = client.get("/api/assets/models--hero~gltf/dependencies")
     assert resp.status_code == 200
 
     body = resp.json()
     dep_ids = [d["id"] for d in body["depends_on"]]
-    assert "models--textures--albedo" in dep_ids
+    assert "models--textures--albedo~png" in dep_ids
+
+
+def test_asset_id_no_collision_same_basename(tmp_path: Path) -> None:
+    """Files with the same basename but different extensions get unique IDs.
+
+    Regression test for https://github.com/RosyGameStudio/forge-gpu/issues/463.
+    """
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "models/Duck/Duck.gltf": b'{"asset":{"version":"2.0"}}',
+            "models/Duck/Duck.png": b"PNG data",
+            "models/Duck/Duck.bin": b"\x00\x01\x02",
+        },
+    )
+
+    resp = client.get("/api/assets")
+    assert resp.status_code == 200
+
+    ids = [a["id"] for a in resp.json()["assets"]]
+    assert "models--Duck--Duck~gltf" in ids
+    assert "models--Duck--Duck~png" in ids
+    assert "models--Duck--Duck~bin" in ids
+    assert len(ids) == len(set(ids)), "Asset IDs must be unique"
+
+    # Each asset must be individually fetchable
+    for asset_id in ("models--Duck--Duck~gltf", "models--Duck--Duck~png"):
+        detail = client.get(f"/api/assets/{asset_id}/file")
+        assert detail.status_code == 200

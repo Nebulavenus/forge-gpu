@@ -157,9 +157,11 @@ export function usePipelineModel(
         setFmeshData(parsed)
 
         // Derive .fmat companion path from the asset ID.
-        // Asset IDs strip the source extension (Duck/Duck.gltf → Duck--Duck),
-        // so the last segment is already the stem. Append .fmat directly.
-        const stem = assetId.split("--").pop()
+        // Asset IDs include the source extension with dots replaced by
+        // tildes (Duck/Duck.gltf → Duck--Duck~gltf), so strip the
+        // encoded extension to recover the stem, then append .fmat.
+        const lastSegment = assetId.split("--").pop() ?? ""
+        const stem = lastSegment.replace(/~[^~]+$/, "")
         const fmatPath = stem ? `${stem}.fmat` : null
         if (fmatPath) {
           const fmatResp = await fetch(
