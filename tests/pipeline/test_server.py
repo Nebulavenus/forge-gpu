@@ -1751,3 +1751,144 @@ def test_process_all_no_plugin(tmp_path: Path) -> None:
     # No plugin for .txt → nothing processable
     assert body["succeeded"] == 0
     assert len(body["results"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Dependency graph
+# ---------------------------------------------------------------------------
+
+_GLTF_WITH_TEXTURE = json.dumps(
+    {
+        "asset": {"version": "2.0"},
+        "images": [{"uri": "brick.png"}],
+        "textures": [{"source": 0}],
+        "materials": [
+            {
+                "pbrMetallicRoughness": {
+                    "baseColorTexture": {"index": 0},
+                },
+            }
+        ],
+    }
+)
+
+
+def test_dependencies_mesh_depends_on_texture(tmp_path: Path) -> None:
+    """A glTF mesh should list its referenced textures in depends_on."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "hero.gltf": _GLTF_WITH_TEXTURE.encode(),
+            "brick.png": b"PNG data",
+        },
+    )
+    resp = client.get("/api/assets/hero/dependencies")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    dep_ids = [d["id"] for d in body["depends_on"]]
+    assert "brick" in dep_ids
+    assert body["depended_by"] == []
+
+
+def test_dependencies_texture_depended_by_mesh(tmp_path: Path) -> None:
+    """A texture referenced by a glTF mesh should appear in depended_by."""
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "hero.gltf": _GLTF_WITH_TEXTURE.encode(),
+            "brick.png": b"PNG data",
+        },
+    )
+    resp = client.get("/api/assets/brick/dependencies")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    dep_ids = [d["id"] for d in body["depended_by"]]
+    assert "hero" in dep_ids
+    assert body["depends_on"] == []
+
+
+def test_dependencies_not_found(tmp_path: Path) -> None:
+    """Requesting dependencies for an unknown asset returns 404."""
+    client, _ = _setup(tmp_path, source_files={"a.png": b"data"})
+    resp = client.get("/api/assets/nope/dependencies")
+    assert resp.status_code == 404
+
+
+def test_dependencies_no_deps(tmp_path: Path) -> None:
+    """An asset with no dependencies returns empty lists."""
+    client, _ = _setup(tmp_path, source_files={"solo.png": b"data"})
+    resp = client.get("/api/assets/solo/dependencies")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["depends_on"] == []
+    assert body["depended_by"] == []
+
+
+def test_dependencies_scene_depends_on_asset(tmp_path: Path) -> None:
+    """An asset used in an authored scene should list that scene in depended_by."""
+    client, config = _setup(
+        tmp_path,
+        source_files={"hero.gltf": b'{"asset":{}}'},
+    )
+    # Create a scene that references the asset
+    scene_resp = client.post("/api/scenes", json={"name": "test-scene"})
+    assert scene_resp.status_code == 201
+    scene_id = scene_resp.json()["id"]
+
+    # Save a scene with an object referencing the asset
+    scene_data = scene_resp.json()
+    scene_data["objects"] = [
+        {
+            "id": "obj1",
+            "name": "Hero",
+            "asset_id": "hero",
+            "position": [0, 0, 0],
+            "rotation": [0, 0, 0, 1],
+            "scale": [1, 1, 1],
+            "parent_id": None,
+            "visible": True,
+        }
+    ]
+    put_resp = client.put(f"/api/scenes/{scene_id}", json=scene_data)
+    assert put_resp.status_code == 200
+
+    resp = client.get("/api/assets/hero/dependencies")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    scene_ids = [d["id"] for d in body["depended_by"]]
+    assert any(s.startswith("scene--") for s in scene_ids)
+
+
+def test_dependencies_gltf_subdirectory_texture(tmp_path: Path) -> None:
+    """A glTF referencing a texture in a subdirectory resolves correctly."""
+    gltf = json.dumps(
+        {
+            "asset": {"version": "2.0"},
+            "images": [{"uri": "textures/albedo.png"}],
+            "textures": [{"source": 0}],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorTexture": {"index": 0},
+                    },
+                }
+            ],
+        }
+    )
+    client, _ = _setup(
+        tmp_path,
+        source_files={
+            "models/hero.gltf": gltf.encode(),
+            "models/textures/albedo.png": b"PNG data",
+        },
+    )
+    resp = client.get("/api/assets/models--hero/dependencies")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    dep_ids = [d["id"] for d in body["depends_on"]]
+    assert "models--textures--albedo" in dep_ids

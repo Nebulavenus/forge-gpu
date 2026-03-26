@@ -83,6 +83,19 @@ export function fetchRecentAssets(limit = 8): Promise<AssetsResponse> {
   return apiFetch<AssetsResponse>(`/api/assets?sort=recent&limit=${limit}`)
 }
 
+// ── Asset dependencies ─────────────────────────────────────────────
+
+export interface AssetDependencies {
+  depends_on: AssetInfo[]
+  depended_by: AssetInfo[]
+}
+
+export function fetchAssetDependencies(id: string): Promise<AssetDependencies> {
+  return apiFetch<AssetDependencies>(
+    `/api/assets/${encodeURIComponent(id)}/dependencies`,
+  )
+}
+
 // ── Import settings ────────────────────────────────────────────────
 
 export interface SettingsSchemaField {

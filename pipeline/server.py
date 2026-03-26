@@ -194,6 +194,13 @@ class BatchProcessResponse(BaseModel):
     results: list[BatchProcessItemResult]
 
 
+class AssetDependencyResponse(BaseModel):
+    """JSON shape for the asset dependency endpoint."""
+
+    depends_on: list[AssetResponse]
+    depended_by: list[AssetResponse]
+
+
 class RescanResponse(BaseModel):
     """JSON shape for the rescan endpoint."""
 
@@ -607,6 +614,207 @@ def create_app(config: PipelineConfig) -> FastAPI:
         if asset is None:
             raise HTTPException(status_code=404, detail="Asset not found")
         return AssetResponse(**asset.__dict__)
+
+    # -- Dependency graph --------------------------------------------------
+
+    def _parse_gltf_texture_uris(source_path: Path) -> list[str]:
+        """Extract image URIs referenced by a glTF file's materials.
+
+        Parses the glTF JSON to find all ``images[].uri`` entries that
+        are referenced (directly or indirectly) by the file's materials.
+        Returns relative URI strings (e.g. ``"textures/brick.png"``).
+        """
+        try:
+            data = json.loads(source_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            log.warning("Could not parse glTF for dependencies: %s", source_path)
+            return []
+
+        images = data.get("images")
+        textures = data.get("textures")
+        materials = data.get("materials")
+        if (
+            not isinstance(images, list)
+            or not isinstance(textures, list)
+            or not isinstance(materials, list)
+        ):
+            return []
+
+        # Collect texture indices referenced by all materials
+        referenced_texture_indices: set[int] = set()
+        for mat in materials:
+            if not isinstance(mat, dict):
+                continue
+            pbr = mat.get("pbrMetallicRoughness", {})
+            if not isinstance(pbr, dict):
+                pbr = {}
+            for prop in (
+                "baseColorTexture",
+                "metallicRoughnessTexture",
+            ):
+                tex_info = pbr.get(prop)
+                if tex_info and isinstance(tex_info.get("index"), int):
+                    referenced_texture_indices.add(tex_info["index"])
+            for prop in (
+                "normalTexture",
+                "occlusionTexture",
+                "emissiveTexture",
+            ):
+                tex_info = mat.get(prop)
+                if tex_info and isinstance(tex_info.get("index"), int):
+                    referenced_texture_indices.add(tex_info["index"])
+
+        # Map texture indices → image indices → URIs
+        uris: list[str] = []
+        seen: set[str] = set()
+        for tex_idx in sorted(referenced_texture_indices):
+            if tex_idx >= len(textures):
+                continue
+            tex = textures[tex_idx]
+            if not isinstance(tex, dict):
+                continue
+            source_idx = tex.get("source")
+            if not isinstance(source_idx, int) or source_idx >= len(images):
+                continue
+            image = images[source_idx]
+            if not isinstance(image, dict):
+                continue
+            uri = image.get("uri")
+            if isinstance(uri, str) and uri not in seen:
+                seen.add(uri)
+                uris.append(uri)
+
+        return uris
+
+    def _resolve_dependencies(
+        asset: AssetInfo,
+        assets_by_id: dict[str, AssetInfo],
+    ) -> AssetDependencyResponse:
+        """Build the dependency graph for a single asset.
+
+        - **depends_on**: assets this one references (e.g. textures used
+          by a mesh's glTF materials).
+        - **depended_by**: assets that reference this one (e.g. scenes
+          containing this asset, or meshes that use this texture).
+
+        *assets_by_id* is a snapshot of the asset cache taken on the
+        event-loop thread — safe to iterate from a worker thread.
+        """
+        depends_on: list[AssetResponse] = []
+        depended_by: list[AssetResponse] = []
+
+        source = Path(asset.source_path)
+        source_dir_path = source.parent
+
+        # --- Forward dependencies (what does this asset depend on?) ---
+        # Mesh assets (.gltf) reference textures via material image URIs.
+        # Note: .glb files embed the JSON chunk in a binary container and
+        # would need GLB header parsing — not yet supported.
+        if asset.asset_type == "mesh" and source.suffix.lower() in {
+            ".gltf",
+        }:
+            uris = _parse_gltf_texture_uris(source)
+            for uri in uris:
+                # Resolve the URI relative to the glTF file's directory,
+                # then convert to a relative path from the source root.
+                resolved = (source_dir_path / uri).resolve()
+                try:
+                    rel = resolved.relative_to(config.source_dir.resolve())
+                except ValueError:
+                    continue
+                dep_id = _make_asset_id(rel)
+                dep_asset = assets_by_id.get(dep_id)
+                if dep_asset is not None:
+                    depends_on.append(AssetResponse(**dep_asset.__dict__))
+
+        # --- Reverse dependencies (what depends on this asset?) ---
+        # 1. Scan all mesh assets to see if any text-based .gltf
+        #    references this texture via its materials (.glb excluded
+        #    for now — see forward-dependency comment above).
+        if asset.asset_type == "texture":
+            asset_source = source.resolve()
+            for other in assets_by_id.values():
+                if other.asset_type != "mesh":
+                    continue
+                other_source = Path(other.source_path)
+                if other_source.suffix.lower() != ".gltf":
+                    continue
+                uris = _parse_gltf_texture_uris(other_source)
+                other_dir = other_source.parent
+                for uri in uris:
+                    resolved = (other_dir / uri).resolve()
+                    if resolved == asset_source:
+                        depended_by.append(AssetResponse(**other.__dict__))
+                        break
+
+        # 2. Scan authored scenes for objects that reference this asset.
+        try:
+            scene_items = list_scenes(config)
+        except Exception:
+            log.debug("Failed to list scenes for dependency scan", exc_info=True)
+            scene_items = []
+        for scene_item in scene_items:
+            try:
+                scene_data = load_scene(config, scene_item["id"])
+            except Exception:
+                log.debug(
+                    "Skipping scene %s in dependency scan: failed to load",
+                    scene_item["id"],
+                    exc_info=True,
+                )
+                continue
+            for obj in scene_data.get("objects", []):
+                if obj.get("asset_id") == asset.id:
+                    # Represent the scene as a synthetic asset entry so
+                    # the frontend can link to it.  Scenes don't have a
+                    # real asset entry, so we build a minimal one.
+                    depended_by.append(
+                        AssetResponse(
+                            id=f"scene--{scene_item['id']}",
+                            name=scene_item.get("name", scene_item["id"]),
+                            relative_path=f"scenes/{scene_item['id']}.json",
+                            asset_type="scene",
+                            source_path="",
+                            output_path=None,
+                            fingerprint="",
+                            file_size=0,
+                            output_size=None,
+                            status="authored",
+                            output_mtime=scene_item.get("modified_at"),
+                        )
+                    )
+                    break  # One entry per scene is enough
+
+        return AssetDependencyResponse(
+            depends_on=depends_on,
+            depended_by=depended_by,
+        )
+
+    @app.get(
+        "/api/assets/{asset_id}/dependencies",
+        response_model=AssetDependencyResponse,
+    )
+    async def get_asset_dependencies(
+        asset_id: str,
+    ) -> AssetDependencyResponse:
+        """Return the dependency graph for a single asset.
+
+        For mesh assets that reference textures via glTF materials,
+        ``depends_on`` lists those textures.  For any asset referenced
+        by authored scenes, ``depended_by`` lists those scenes.
+        """
+        # Ensure the cache is populated, then snapshot it so the worker
+        # thread iterates an immutable copy (rescan can clear _asset_cache
+        # concurrently on the event loop).
+        if not _asset_cache:
+            _refresh_cache()
+        assets_snapshot = dict(_asset_cache)
+
+        asset = assets_snapshot.get(asset_id)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        return await asyncio.to_thread(_resolve_dependencies, asset, assets_snapshot)
 
     @app.get("/api/status", response_model=StatusResponse)
     async def get_status() -> StatusResponse:

@@ -3,11 +3,11 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PreviewPanel } from "@/components/preview-panel"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft } from "lucide-react"
-import { fetchAsset } from "@/lib/api"
+import { ArrowLeft, ArrowDownRight, ArrowUpRight } from "lucide-react"
+import { fetchAsset, fetchAssetDependencies, type AssetInfo } from "@/lib/api"
 import { formatBytes } from "@/lib/utils"
 import { statusBadgeVariant, validateAssetSearch } from "@/lib/asset-meta"
 import { Button } from "@/components/ui/button"
@@ -54,6 +54,70 @@ class PreviewErrorFence extends Component<
   }
 }
 
+/** Clickable list of related assets with an icon and heading. */
+function DependencyList({
+  assets,
+  icon,
+  heading,
+  emptyLabel,
+}: {
+  assets: AssetInfo[]
+  icon: ReactNode
+  heading: string
+  emptyLabel: string
+}) {
+  return (
+    <div>
+      <h4 className="mb-2 flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+        {icon}
+        {heading}
+      </h4>
+      {assets.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <ul role="list" aria-label={heading} className="space-y-1">
+          {assets.map((dep) => {
+            const isScene =
+              dep.asset_type === "scene" && dep.id.startsWith("scene--")
+            const sceneId = isScene
+              ? dep.id.replace(/^scene--/, "")
+              : undefined
+
+            return (
+              <li key={dep.id}>
+                {isScene ? (
+                  <Link
+                    to="/scenes/$sceneId"
+                    params={{ sceneId: sceneId! }}
+                    className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Scene: ${dep.name}`}
+                  >
+                    <Badge variant="secondary">{dep.asset_type}</Badge>
+                    <span>{dep.name}</span>
+                  </Link>
+                ) : (
+                  <Link
+                    to="/assets/$assetId"
+                    params={{ assetId: dep.id }}
+                    className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`${dep.asset_type} asset: ${dep.name}`}
+                  >
+                    <Badge variant="secondary">{dep.asset_type}</Badge>
+                    <span>{dep.name}</span>
+                    <Badge variant={statusBadgeVariant(dep.status)}>
+                      {dep.status}
+                    </Badge>
+                  </Link>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function AssetDetail() {
   const { assetId } = Route.useParams()
   const { type: searchType, status: statusFilter, search: searchQuery } = Route.useSearch()
@@ -62,6 +126,12 @@ function AssetDetail() {
   const { data: asset, isLoading, error } = useQuery({
     queryKey: ["asset", assetId],
     queryFn: () => fetchAsset(assetId),
+  })
+
+  const { data: deps } = useQuery({
+    queryKey: ["asset-dependencies", assetId],
+    queryFn: () => fetchAssetDependencies(assetId),
+    enabled: !!asset,
   })
 
   if (isLoading) {
@@ -165,6 +235,38 @@ function AssetDetail() {
           </TableRow>
         </TableBody>
       </Table>
+
+      {deps && (
+        <section aria-labelledby="deps-heading" className="space-y-4">
+          <h3 id="deps-heading" className="text-base font-semibold">
+            Dependencies
+          </h3>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <DependencyList
+              assets={deps.depends_on}
+              icon={
+                <ArrowDownRight
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
+              }
+              heading="Depends on"
+              emptyLabel="No dependencies"
+            />
+            <DependencyList
+              assets={deps.depended_by}
+              icon={
+                <ArrowUpRight
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
+              }
+              heading="Depended by"
+              emptyLabel="No dependents"
+            />
+          </div>
+        </section>
+      )}
 
       <PreviewErrorFence key={asset.id}>
         <PreviewPanel asset={asset} />
