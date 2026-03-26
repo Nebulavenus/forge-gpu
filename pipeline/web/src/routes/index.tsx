@@ -1,9 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { ArrowRight, Box, Clock, Folder, FolderOutput, Image, Map } from "lucide-react"
-import { fetchRecentAssets, fetchStatus, type AssetInfo, type PipelineStatus } from "@/lib/api"
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
+import {
+  ArrowRight, Box, Check, Clock, Folder, FolderOutput, Image, Loader2, Map,
+  Play, RefreshCw, AlertCircle,
+} from "lucide-react"
+import {
+  fetchRecentAssets, fetchStatus, processAll, rescanAssets,
+  type AssetInfo, type BatchProcessResponse, type PipelineStatus, type RescanResponse,
+} from "@/lib/api"
 import { fetchScenes, type SceneListResponse } from "@/lib/scene-api"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { STATUS_META, TYPE_META, typeBgColor } from "@/lib/asset-meta"
@@ -295,6 +302,141 @@ function NavigationCards({
   )
 }
 
+/* ── Quick actions ─────────────────────────────────────────────── */
+
+function QuickActions({ actionableCount }: { actionableCount: number }) {
+  const queryClient = useQueryClient()
+
+  const invalidateDashboard = () => {
+    queryClient.invalidateQueries({ queryKey: ["status"] })
+    queryClient.invalidateQueries({ queryKey: ["assets"] })
+    queryClient.invalidateQueries({ queryKey: ["recent-assets"] })
+  }
+
+  const processAllMutation = useMutation<BatchProcessResponse, Error>({
+    mutationFn: processAll,
+    onSuccess: invalidateDashboard,
+  })
+
+  const rescanMutation = useMutation<RescanResponse, Error>({
+    mutationFn: rescanAssets,
+    onSuccess: invalidateDashboard,
+  })
+
+  const handleProcessAll = () => {
+    rescanMutation.reset()
+    processAllMutation.mutate()
+  }
+
+  const handleRescan = () => {
+    processAllMutation.reset()
+    rescanMutation.mutate()
+  }
+
+  const isProcessing = processAllMutation.isPending
+  const isRescanning = rescanMutation.isPending
+  const processResult = processAllMutation.data
+  const processError = processAllMutation.error
+  const rescanError = rescanMutation.error
+
+  return (
+    <section aria-label="Quick actions">
+      <h2 className="mb-2 text-sm font-medium">Quick actions</h2>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="default"
+          size="sm"
+          disabled={isProcessing || isRescanning || actionableCount === 0}
+          aria-disabled={isProcessing || isRescanning || actionableCount === 0}
+          aria-label={
+            isProcessing
+              ? "Processing all assets…"
+              : isRescanning
+                ? "Process All unavailable while rescanning…"
+                : actionableCount === 0
+                  ? "Process All — no processable assets"
+                  : `Process All — ${actionableCount} processable ${actionableCount === 1 ? "asset" : "assets"}`
+          }
+          onClick={handleProcessAll}
+        >
+          {isProcessing ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Play className="h-4 w-4" aria-hidden="true" />
+          )}
+          {isProcessing ? "Processing…" : "Process All"}
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isRescanning || isProcessing}
+          aria-disabled={isRescanning || isProcessing}
+          aria-label={
+            isRescanning
+              ? "Rescanning source directory…"
+              : isProcessing
+                ? "Rescan unavailable while processing assets…"
+                : "Rescan source directory for new or changed files"
+          }
+          onClick={handleRescan}
+        >
+          {isRescanning ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          )}
+          {isRescanning ? "Rescanning…" : "Rescan"}
+        </Button>
+
+        {/* Result announcement — visible to screen readers and sighted users */}
+        {processResult && (
+          <p
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+            {processResult.succeeded} succeeded
+            {processResult.failed > 0 && (
+              <span className="text-destructive">, {processResult.failed} failed</span>
+            )}
+            {processResult.skipped > 0 && <span>, {processResult.skipped} skipped</span>}
+          </p>
+        )}
+        {processError && (
+          <p
+            className="flex items-center gap-1.5 text-xs text-destructive"
+            role="alert"
+          >
+            <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            {processError.message}
+          </p>
+        )}
+        {rescanError && (
+          <p
+            className="flex items-center gap-1.5 text-xs text-destructive"
+            role="alert"
+          >
+            <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            {rescanError.message}
+          </p>
+        )}
+        {rescanMutation.isSuccess && (
+          <p
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+            Rescan complete — {rescanMutation.data.total} assets found
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────── */
 
 function Dashboard() {
@@ -374,6 +516,11 @@ function Dashboard() {
         onStatusClick={(status) =>
           navigate({ to: "/assets", search: { status } })
         }
+      />
+
+      {/* Quick actions */}
+      <QuickActions
+        actionableCount={data.actionable_count}
       />
 
       {/* Recent activity */}

@@ -10,6 +10,8 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager as _asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -147,6 +149,7 @@ class StatusResponse(BaseModel):
     total: int
     by_type: dict[str, int]
     by_status: dict[str, int]
+    actionable_count: int
     source_dir: str
     output_dir: str
 
@@ -189,6 +192,14 @@ class BatchProcessResponse(BaseModel):
     failed: int
     skipped: int
     results: list[BatchProcessItemResult]
+
+
+class RescanResponse(BaseModel):
+    """JSON shape for the rescan endpoint."""
+
+    total: int
+    by_type: dict[str, int]
+    by_status: dict[str, int]
 
 
 # -- Scene editor models ----------------------------------------------------
@@ -394,7 +405,9 @@ class ConnectionManager:
     async def broadcast(self, message: dict) -> None:
         """Send a JSON message to all connected clients."""
         stale: list[WebSocket] = []
-        for ws in self._connections:
+        for ws in list(
+            self._connections
+        ):  # Snapshot to avoid mutation during iteration
             try:
                 await ws.send_json(message)
             except Exception:
@@ -422,6 +435,32 @@ def create_app(config: PipelineConfig) -> FastAPI:
     _registry = PluginRegistry()
     plugins_dir = Path(__file__).resolve().parent / "plugins"
     _registry.discover(plugins_dir)
+
+    # -- Operation lock ------------------------------------------------------
+    # Serializes all mutating pipeline endpoints (process, batch, rescan)
+    # so concurrent requests cannot race plugin writes or observe a
+    # half-finished batch.  Returns HTTP 409 when the lock is already held.
+    _operation_lock = asyncio.Lock()
+
+    @_asynccontextmanager
+    async def _claim_operation_lock() -> AsyncIterator[None]:
+        """Acquire the operation lock or raise 409 immediately.
+
+        In asyncio's cooperative (single-threaded) model there is no
+        preemption between the ``locked()`` check and ``acquire()``, so
+        this is safe.  If the lock *is* held by another coroutine we
+        raise 409 instead of blocking the caller.
+        """
+        if _operation_lock.locked():
+            raise HTTPException(
+                status_code=409,
+                detail="Another pipeline operation is in progress",
+            )
+        await _operation_lock.acquire()
+        try:
+            yield
+        finally:
+            _operation_lock.release()
 
     # -- Fingerprint lock ---------------------------------------------------
     # Serializes read-modify-write of fingerprints.json so concurrent
@@ -459,6 +498,18 @@ def create_app(config: PipelineConfig) -> FastAPI:
         if not _asset_cache:
             _refresh_cache()
         return _asset_cache.get(asset_id)
+
+    # -- Helpers -----------------------------------------------------------
+
+    def _has_plugin(asset: AssetInfo) -> bool:
+        """Return True if the asset has a matching processing plugin."""
+        ext = Path(asset.source_path).suffix.lower()
+        candidates = _registry.get_by_extension(ext)
+        if not candidates:
+            return False
+        # Check for an exact asset-type match first, then accept any
+        # candidate (same fallback logic as _process_single_asset).
+        return any(p.name == asset.asset_type for p in candidates) or bool(candidates)
 
     # -- REST endpoints ----------------------------------------------------
 
@@ -564,14 +615,18 @@ def create_app(config: PipelineConfig) -> FastAPI:
 
         by_type: dict[str, int] = {}
         by_status: dict[str, int] = {}
+        actionable = 0
         for a in assets:
             by_type[a.asset_type] = by_type.get(a.asset_type, 0) + 1
             by_status[a.status] = by_status.get(a.status, 0) + 1
+            if a.status != "processed" and _has_plugin(a):
+                actionable += 1
 
         return StatusResponse(
             total=len(assets),
             by_type=by_type,
             by_status=by_status,
+            actionable_count=actionable,
             source_dir=str(config.source_dir),
             output_dir=str(config.output_dir),
         )
@@ -902,72 +957,79 @@ def create_app(config: PipelineConfig) -> FastAPI:
     )
     async def process_asset(asset_id: str) -> ProcessResponse:
         """Process a single asset with its effective import settings."""
-        asset = _get_cached_asset(asset_id)
-        if asset is None:
-            raise HTTPException(status_code=404, detail="Asset not found")
+        async with _claim_operation_lock():
+            if not _asset_cache:
+                await asyncio.to_thread(_refresh_cache)
+            asset = _asset_cache.get(asset_id)
+            if asset is None:
+                raise HTTPException(status_code=404, detail="Asset not found")
 
-        source = Path(asset.source_path)
-        _validate_source_path(source)
+            source = Path(asset.source_path)
+            _validate_source_path(source)
 
-        # Compute effective settings
-        global_settings = config.plugin_settings.get(asset.asset_type, {})
-        per_asset = _load_sidecar_or_400(source)
-        effective = get_effective_settings(asset.asset_type, global_settings, per_asset)
-
-        # Find the plugin that matches both the file extension and the
-        # asset type. Extensions like .gltf can have multiple plugins
-        # (mesh, animation, scene), so we match by plugin name.
-        ext = source.suffix.lower()
-        candidates = _registry.get_by_extension(ext)
-        plugin = None
-        for p in candidates:
-            if p.name == asset.asset_type:
-                plugin = p
-                break
-        if plugin is None and candidates:
-            log.debug(
-                "No %r plugin for '%s'; falling back to %r",
-                asset.asset_type,
-                ext,
-                candidates[0].name,
-            )
-            plugin = candidates[0]
-        if plugin is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No plugin found for extension '{ext}'",
+            # Compute effective settings
+            global_settings = config.plugin_settings.get(asset.asset_type, {})
+            per_asset = _load_sidecar_or_400(source)
+            effective = get_effective_settings(
+                asset.asset_type, global_settings, per_asset
             )
 
-        # Build the output directory, mirroring the source tree structure
-        relative = Path(asset.relative_path)
-        output_subdir = config.output_dir / relative.parent
-        output_subdir.mkdir(parents=True, exist_ok=True)
+            # Find the plugin that matches both the file extension and the
+            # asset type. Extensions like .gltf can have multiple plugins
+            # (mesh, animation, scene), so we match by plugin name.
+            ext = source.suffix.lower()
+            candidates = _registry.get_by_extension(ext)
+            plugin = None
+            for p in candidates:
+                if p.name == asset.asset_type:
+                    plugin = p
+                    break
+            if plugin is None and candidates:
+                log.debug(
+                    "No %r plugin for '%s'; falling back to %r",
+                    asset.asset_type,
+                    ext,
+                    candidates[0].name,
+                )
+                plugin = candidates[0]
+            if plugin is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No plugin found for extension '{ext}'",
+                )
 
-        # Run plugin off the event loop to avoid blocking async handlers
-        try:
-            result = await asyncio.to_thread(
-                plugin.process, source, output_subdir, effective
-            )
-        except Exception as exc:
-            log.exception("Plugin %r failed processing %s", plugin.name, source.name)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Processing failed: {exc}",
-            ) from exc
+            # Build the output directory, mirroring the source tree structure
+            relative = Path(asset.relative_path)
+            output_subdir = config.output_dir / relative.parent
+            output_subdir.mkdir(parents=True, exist_ok=True)
 
-        # If the plugin reports the asset was not actually processed (e.g.
-        # the required tool binary is not installed), do not update the
-        # fingerprint cache — the asset is not in a processed state.
-        if result.metadata.get("processed") is False:
-            reason = result.metadata.get("reason", "unknown")
-            return ProcessResponse(message=f"Skipped {asset.name}: {reason}")
+            # Run plugin off the event loop to avoid blocking async handlers
+            try:
+                result = await asyncio.to_thread(
+                    plugin.process, source, output_subdir, effective
+                )
+            except Exception as exc:
+                log.exception(
+                    "Plugin %r failed processing %s", plugin.name, source.name
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Processing failed: {exc}",
+                ) from exc
 
-        # Update fingerprint cache (lock-protected) and refresh the
-        # in-memory asset index.
-        await _save_fingerprint(relative, source)
-        await asyncio.to_thread(_refresh_cache)
+            # If the plugin reports the asset was not actually processed (e.g.
+            # the required tool binary is not installed), do not update the
+            # fingerprint cache — the asset is not in a processed state.
+            if result.metadata.get("processed") is False:
+                reason = result.metadata.get("reason", "unknown")
+                return ProcessResponse(message=f"Skipped {asset.name}: {reason}")
 
-        return ProcessResponse(message=f"Processed {asset.name}")
+            # Update fingerprint cache (lock-protected) and refresh the
+            # in-memory asset index.
+            await _save_fingerprint(relative, source)
+            await asyncio.to_thread(_refresh_cache)
+
+            return ProcessResponse(message=f"Processed {asset.name}")
 
     # -- Batch processing --------------------------------------------------
 
@@ -1048,40 +1110,15 @@ def create_app(config: PipelineConfig) -> FastAPI:
             message=f"Processed {asset.name}",
         )
 
-    @app.post(
-        "/api/process/batch",
-        response_model=BatchProcessResponse,
-    )
-    async def process_batch(body: BatchProcessRequest) -> BatchProcessResponse:
-        """Process multiple assets sequentially, streaming progress via WebSocket.
+    async def _run_batch(
+        assets: list[AssetInfo],
+    ) -> BatchProcessResponse:
+        """Run batch processing on *assets* with WebSocket progress.
 
-        Each asset is processed one at a time.  After each completes, a
-        WebSocket message of type ``batch_progress`` is broadcast so
-        connected clients can update their UI in real time.  The HTTP
-        response contains the final summary.
+        Shared logic for ``/api/process/batch`` and ``/api/process``.
+        Broadcasts start/progress/complete events, refreshes the cache
+        once at the end, and returns the final summary.
         """
-        if not body.asset_ids:
-            raise HTTPException(status_code=400, detail="asset_ids must not be empty")
-
-        # Resolve all requested assets up front so the caller gets an
-        # immediate 404 for unknown IDs rather than a partial run.
-        if not _asset_cache:
-            _refresh_cache()
-
-        assets: list[AssetInfo] = []
-        unknown: list[str] = []
-        for aid in body.asset_ids:
-            asset = _asset_cache.get(aid)
-            if asset is None:
-                unknown.append(aid)
-            else:
-                assets.append(asset)
-        if unknown:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Unknown asset ID(s): {', '.join(unknown)}",
-            )
-
         batch_id = uuid.uuid4().hex
         total = len(assets)
         results: list[BatchProcessItemResult] = []
@@ -1089,17 +1126,11 @@ def create_app(config: PipelineConfig) -> FastAPI:
         failed = 0
         skipped = 0
 
-        # Broadcast the batch start event
         await manager.broadcast(
-            {
-                "type": "batch_start",
-                "batch_id": batch_id,
-                "total": total,
-            }
+            {"type": "batch_start", "batch_id": batch_id, "total": total}
         )
 
         for idx, asset in enumerate(assets):
-            # Broadcast progress before processing each asset
             await manager.broadcast(
                 {
                     "type": "batch_progress",
@@ -1122,7 +1153,6 @@ def create_app(config: PipelineConfig) -> FastAPI:
             else:
                 skipped += 1
 
-            # Broadcast completion of this asset
             await manager.broadcast(
                 {
                     "type": "batch_progress",
@@ -1137,10 +1167,8 @@ def create_app(config: PipelineConfig) -> FastAPI:
                 }
             )
 
-        # Refresh the asset cache once after the full batch
         await asyncio.to_thread(_refresh_cache)
 
-        # Broadcast batch completion
         await manager.broadcast(
             {
                 "type": "batch_complete",
@@ -1158,6 +1186,101 @@ def create_app(config: PipelineConfig) -> FastAPI:
             skipped=skipped,
             results=results,
         )
+
+    @app.post(
+        "/api/process/batch",
+        response_model=BatchProcessResponse,
+    )
+    async def process_batch(body: BatchProcessRequest) -> BatchProcessResponse:
+        """Process multiple assets sequentially, streaming progress via WebSocket.
+
+        Each asset is processed one at a time.  After each completes, a
+        WebSocket message of type ``batch_progress`` is broadcast so
+        connected clients can update their UI in real time.  The HTTP
+        response contains the final summary.
+        """
+        if not body.asset_ids:
+            raise HTTPException(status_code=400, detail="asset_ids must not be empty")
+
+        async with _claim_operation_lock():
+            # Resolve all requested assets up front so the caller gets an
+            # immediate 404 for unknown IDs rather than a partial run.
+            if not _asset_cache:
+                await asyncio.to_thread(_refresh_cache)
+
+            assets: list[AssetInfo] = []
+            unknown: list[str] = []
+            for aid in body.asset_ids:
+                asset = _asset_cache.get(aid)
+                if asset is None:
+                    unknown.append(aid)
+                else:
+                    assets.append(asset)
+            if unknown:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Unknown asset ID(s): {', '.join(unknown)}",
+                )
+
+            return await _run_batch(assets)
+
+    # -- Rescan endpoint ---------------------------------------------------
+
+    @app.post("/api/rescan", response_model=RescanResponse)
+    async def rescan_assets() -> RescanResponse:
+        """Force a full re-scan of the source directory.
+
+        Clears the in-memory asset cache so the next scan picks up any
+        new, renamed, or deleted files on disk.
+        """
+        async with _claim_operation_lock():
+            _asset_cache.clear()
+            assets = await asyncio.to_thread(_refresh_cache)
+
+            by_type: dict[str, int] = {}
+            by_status: dict[str, int] = {}
+            for a in assets:
+                by_type[a.asset_type] = by_type.get(a.asset_type, 0) + 1
+                by_status[a.status] = by_status.get(a.status, 0) + 1
+
+            return RescanResponse(
+                total=len(assets),
+                by_type=by_type,
+                by_status=by_status,
+            )
+
+    # -- Process-all endpoint ----------------------------------------------
+
+    @app.post("/api/process", response_model=BatchProcessResponse)
+    async def process_all() -> BatchProcessResponse:
+        """Process all unprocessed or changed assets that have a plugin.
+
+        Collects every asset whose status is *not* ``processed`` and
+        that resolves to a processing plugin, then delegates to the
+        batch-processing logic with WebSocket progress streaming.
+        """
+        async with _claim_operation_lock():
+            await asyncio.to_thread(_refresh_cache)
+
+            # Only include assets that are not processed AND have a
+            # matching plugin — avoids perpetual failures for files
+            # without a handler (e.g. auxiliary data files).
+            actionable = [
+                a
+                for a in _asset_cache.values()
+                if a.status != "processed" and _has_plugin(a)
+            ]
+
+            if not actionable:
+                return BatchProcessResponse(
+                    batch_id=uuid.uuid4().hex,
+                    succeeded=0,
+                    failed=0,
+                    skipped=0,
+                    results=[],
+                )
+
+            return await _run_batch(actionable)
 
     # -- Atlas metadata ----------------------------------------------------
 

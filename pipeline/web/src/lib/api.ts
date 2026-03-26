@@ -23,6 +23,7 @@ export interface PipelineStatus {
   total: number
   by_type: Record<string, number>
   by_status: Record<string, number>
+  actionable_count: number
   source_dir: string
   output_dir: string
 }
@@ -179,4 +180,20 @@ export function processBatch(assetIds: string[]): Promise<BatchProcessResponse> 
     "POST",
     { asset_ids: assetIds },
   )
+}
+
+// ── Quick actions ───────────────────────────────────────────────────
+
+export interface RescanResponse {
+  total: number
+  by_type: Record<string, number>
+  by_status: Record<string, number>
+}
+
+export function rescanAssets(): Promise<RescanResponse> {
+  return apiWrite<RescanResponse>("/api/rescan", "POST")
+}
+
+export function processAll(): Promise<BatchProcessResponse> {
+  return apiWrite<BatchProcessResponse>("/api/process", "POST")
 }

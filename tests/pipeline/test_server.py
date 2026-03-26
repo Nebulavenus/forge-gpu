@@ -185,6 +185,8 @@ def test_status(three_assets: tuple[TestClient, PipelineConfig]) -> None:
     assert body["by_status"]["new"] == 3
     assert body["source_dir"] == str(config.source_dir)
     assert body["output_dir"] == str(config.output_dir)
+    # Verify actionable_count field is present (value depends on discovered plugins)
+    assert "actionable_count" in body
 
 
 def test_asset_status_processed(tmp_path: Path) -> None:
@@ -1621,3 +1623,131 @@ def test_batch_process_skipped(tmp_path: Path) -> None:
     assert body["skipped"] == 1
     assert body["results"][0]["status"] == "skipped"
     assert "tool not installed" in body["results"][0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/rescan
+# ---------------------------------------------------------------------------
+
+
+def test_rescan(tmp_path: Path) -> None:
+    """POST /api/rescan clears the cache and re-scans the source directory."""
+    client, config = _setup(
+        tmp_path, source_files={"a.png": b"PNG A", "b.png": b"PNG B"}
+    )
+
+    resp = client.post("/api/rescan")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["total"] == 2
+    assert "by_type" in body
+    assert "by_status" in body
+    assert body["by_type"]["texture"] == 2
+    assert body["by_status"]["new"] == 2
+
+
+def test_rescan_picks_up_new_files(tmp_path: Path) -> None:
+    """POST /api/rescan detects files added after initial scan."""
+    client, config = _setup(tmp_path, source_files={"a.png": b"PNG A"})
+
+    # Initial scan
+    resp = client.get("/api/assets")
+    assert resp.json()["total"] == 1
+
+    # Add a new file on disk
+    (config.source_dir / "b.png").write_bytes(b"PNG B")
+
+    # Rescan should pick it up
+    resp = client.post("/api/rescan")
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 2
+
+
+# ---------------------------------------------------------------------------
+# POST /api/process
+# ---------------------------------------------------------------------------
+
+
+def test_process_all(tmp_path: Path) -> None:
+    """POST /api/process processes all unprocessed assets."""
+    client, config, mock_plugin = _setup_process(
+        tmp_path,
+        source_files={"a.png": b"PNG A", "b.png": b"PNG B"},
+    )
+
+    resp = client.post("/api/process")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["succeeded"] == 2
+    assert body["failed"] == 0
+    assert body["skipped"] == 0
+    assert len(body["results"]) == 2
+    assert mock_plugin.process.call_count == 2
+
+
+def test_process_all_empty(tmp_path: Path) -> None:
+    """POST /api/process returns empty batch when nothing to process."""
+    source_data = b"PNG data"
+    source_files = {"a.png": source_data}
+
+    # Compute fingerprint for cache
+    src = tmp_path / "pre"
+    src.mkdir()
+    (src / "a.png").write_bytes(source_data)
+    fp = fingerprint_file(src / "a.png")
+    cache_entries = {"a.png": fp}
+
+    client, config, mock_plugin = _setup_process(
+        tmp_path,
+        source_files=source_files,
+    )
+
+    # Manually set up output and cache to make the asset "processed"
+    out = config.output_dir / "a.png"
+    out.write_bytes(b"output")
+    fp_path = config.cache_dir / "fingerprints.json"
+    fp_path.write_text(json.dumps(cache_entries), encoding="utf-8")
+
+    resp = client.post("/api/process")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["succeeded"] == 0
+    assert body["failed"] == 0
+    assert body["skipped"] == 0
+    assert len(body["results"]) == 0
+
+
+def test_process_all_no_plugin(tmp_path: Path) -> None:
+    """POST /api/process skips assets without a matching plugin."""
+    # Create a client with no plugin for .txt files
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    cache_dir.mkdir()
+    (source_dir / "readme.txt").write_bytes(b"text file")
+
+    config = PipelineConfig(
+        source_dir=source_dir,
+        output_dir=output_dir,
+        cache_dir=cache_dir,
+    )
+
+    # Patch with a registry that returns no plugins for .txt
+    with patch("pipeline.server.PluginRegistry") as MockRegistry:
+        instance = MockRegistry.return_value
+        instance.discover.return_value = 1
+        instance.get_by_extension.return_value = []
+        client = TestClient(create_app(config))
+
+    resp = client.post("/api/process")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    # No plugin for .txt → nothing processable
+    assert body["succeeded"] == 0
+    assert len(body["results"]) == 0
