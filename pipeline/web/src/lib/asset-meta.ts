@@ -1,4 +1,4 @@
-import { Image, Box, Film, Map } from "lucide-react"
+import { Image, Box, Film, Map, Volume2, Type, Binary } from "lucide-react"
 
 /* ── Status metadata ──────────────────────────────────────────── */
 
@@ -33,7 +33,10 @@ export const TYPE_META: Record<string, TypeMeta> = {
   texture: { icon: Image, color: "text-blue-400", bgColor: "bg-blue-500/20 text-blue-400", label: "Textures", filterValue: "texture" },
   mesh: { icon: Box, color: "text-green-400", bgColor: "bg-green-500/20 text-green-400", label: "Meshes", filterValue: "mesh" },
   animation: { icon: Film, color: "text-purple-400", bgColor: "bg-purple-500/20 text-purple-400", label: "Animations", filterValue: "animation" },
-  scene: { icon: Map, color: "text-amber-400", bgColor: "bg-amber-500/20 text-amber-400", label: "Scenes", filterValue: "scene" },
+  scene: { icon: Map, color: "text-amber-400", bgColor: "bg-amber-500/20 text-amber-400", label: "Scene Assets", filterValue: "scene" },
+  audio: { icon: Volume2, color: "text-pink-400", bgColor: "bg-pink-500/20 text-pink-400", label: "Audio", filterValue: "audio" },
+  font: { icon: Type, color: "text-cyan-400", bgColor: "bg-cyan-500/20 text-cyan-400", label: "Fonts", filterValue: "font" },
+  data: { icon: Binary, color: "text-slate-400", bgColor: "bg-slate-500/20 text-slate-400", label: "Data", filterValue: "data" },
 }
 
 export function typeBgColor(type: string): string {

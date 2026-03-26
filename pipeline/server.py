@@ -26,7 +26,6 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from pipeline.config import PipelineConfig
@@ -57,6 +56,9 @@ TEXTURE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tga", ".hdr", ".exr"}
 MESH_EXTENSIONS = {".gltf", ".glb", ".obj"}
 ANIMATION_EXTENSIONS = {".fanim", ".fanims"}
 SCENE_EXTENSIONS = {".fscene"}
+AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif"}
+FONT_EXTENSIONS = {".ttf", ".otf", ".woff", ".woff2"}
+DATA_EXTENSIONS = {".bin"}
 
 # Primary pipeline output extensions (consumers load these, not sidecars)
 PRIMARY_OUTPUT_EXTENSIONS = {".fmesh", ".ftex", ".fscene", ".fanim", ".fskin"}
@@ -81,6 +83,12 @@ def _classify_extension(ext: str) -> str:
         return "animation"
     if ext in SCENE_EXTENSIONS:
         return "scene"
+    if ext in AUDIO_EXTENSIONS:
+        return "audio"
+    if ext in FONT_EXTENSIONS:
+        return "font"
+    if ext in DATA_EXTENSIONS:
+        return "data"
     return "unknown"
 
 
@@ -860,6 +868,16 @@ def create_app(config: PipelineConfig) -> FastAPI:
         ".fscene": "application/octet-stream",
         ".fanim": "application/octet-stream",
         ".fskin": "application/octet-stream",
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+        ".aiff": "audio/aiff",
+        ".aif": "audio/aiff",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
     }
 
     def _media_type_for(path: Path) -> str:
@@ -1597,7 +1615,7 @@ def create_app(config: PipelineConfig) -> FastAPI:
                 await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
                 ts = datetime.now(tz=timezone.utc).isoformat()
                 await ws.send_json({"type": "heartbeat", "timestamp": ts})
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, asyncio.CancelledError):
             pass
         finally:
             manager.disconnect(ws)
@@ -1605,8 +1623,20 @@ def create_app(config: PipelineConfig) -> FastAPI:
     # -- Static files (production build) -----------------------------------
 
     dist_dir = Path(__file__).resolve().parent / "web" / "dist"
-    if dist_dir.is_dir():
-        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="static")
+    if dist_dir.is_dir() and (dist_dir / "index.html").is_file():
+        index_html = dist_dir / "index.html"
+
+        # SPA fallback: serve index.html for any non-API, non-file path so
+        # the client-side router can handle /assets, /scenes, etc.
+        @app.get("/{path:path}")
+        async def spa_fallback(path: str) -> FileResponse:
+            # Serve actual files (JS, CSS, images) from dist/ if they exist
+            file_path = (dist_dir / path).resolve()
+            if path and file_path.is_relative_to(dist_dir) and file_path.is_file():
+                return FileResponse(file_path)
+            # Everything else gets index.html for client-side routing
+            return FileResponse(index_html, media_type="text/html")
+
         log.info("Serving frontend from %s", dist_dir)
     else:
         log.info("No frontend build at %s — API-only mode", dist_dir)

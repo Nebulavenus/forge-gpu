@@ -138,6 +138,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=8000,
         help="Port to listen on (default: 8000)",
     )
+    serve_cmd.add_argument(
+        "--build",
+        action="store_true",
+        help="Rebuild the frontend before starting the server",
+    )
+    serve_cmd.add_argument(
+        "--no-auto-build",
+        action="store_true",
+        help="Skip the automatic frontend rebuild when dist/ is stale",
+    )
 
     return parser
 
@@ -318,6 +328,77 @@ def _cmd_info(args) -> int:
     return 0
 
 
+def _build_frontend(web_dir: Path) -> bool:
+    """Run ``npm run build`` in the web directory. Returns True on success."""
+    import subprocess
+
+    # npm is a .cmd on Windows — needs shell=True there, not on Unix
+    _shell = sys.platform == "win32"
+
+    if not (web_dir / "package.json").is_file():
+        log.error("No package.json found at %s", web_dir)
+        return False
+
+    # Ensure node_modules exist
+    if not (web_dir / "node_modules").is_dir():
+        print("Installing frontend dependencies...")
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=str(web_dir),
+            shell=_shell,
+        )
+        if result.returncode != 0:
+            log.error("npm install failed")
+            return False
+
+    print("Building frontend...")
+    result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=str(web_dir),
+        shell=_shell,
+    )
+    if result.returncode != 0:
+        log.error("Frontend build failed")
+        return False
+
+    print("Frontend build complete.")
+    return True
+
+
+def _frontend_is_stale(web_dir: Path, dist_dir: Path) -> bool:
+    """Check if any source file is newer than the dist/ build output."""
+    if not dist_dir.is_dir():
+        return True
+
+    # Find the newest file in dist/
+    dist_mtime = 0.0
+    for f in dist_dir.rglob("*"):
+        if f.is_file():
+            dist_mtime = max(dist_mtime, f.stat().st_mtime)
+
+    if dist_mtime == 0.0:
+        return True
+
+    # Check top-level config files that affect the build
+    _BUILD_CONFIG_SUFFIXES = {".json", ".ts", ".js", ".mjs", ".cjs"}
+    for f in web_dir.iterdir():
+        if (
+            f.is_file()
+            and f.suffix in _BUILD_CONFIG_SUFFIXES
+            and f.stat().st_mtime > dist_mtime
+        ):
+            return True
+
+    # Check source files
+    src_dir = web_dir / "src"
+    if src_dir.is_dir():
+        for f in src_dir.rglob("*"):
+            if f.is_file() and f.stat().st_mtime > dist_mtime:
+                return True
+
+    return False
+
+
 def _cmd_serve(args, config) -> int:
     """Handle the ``serve`` subcommand."""
     try:
@@ -325,6 +406,18 @@ def _cmd_serve(args, config) -> int:
     except ModuleNotFoundError:
         log.error("uvicorn is required for the web UI: pip install uvicorn")
         return 1
+
+    web_dir = Path(__file__).resolve().parent / "web"
+    dist_dir = web_dir / "dist"
+
+    # Build frontend if requested or if dist/ is stale
+    if args.build:
+        if not _build_frontend(web_dir):
+            return 1
+    elif not args.no_auto_build and _frontend_is_stale(web_dir, dist_dir):
+        print("Frontend build is stale or missing — rebuilding...")
+        if not _build_frontend(web_dir):
+            print("Frontend build failed — starting in API-only mode.")
 
     from pipeline.server import create_app
 

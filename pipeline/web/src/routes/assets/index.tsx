@@ -491,7 +491,27 @@ function AssetBrowser() {
                 <CardTitle className="flex items-center justify-between text-sm">
                   <span className="truncate">{asset.name}</span>
                   <span
-                    className={`ml-2 inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeBgColor(asset.asset_type)}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Filter by ${asset.asset_type}`}
+                    className={`ml-2 inline-flex shrink-0 cursor-pointer items-center rounded-md px-2 py-0.5 text-xs font-medium hover:opacity-80 ${typeBgColor(asset.asset_type)}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate({
+                        to: "/assets",
+                        search: currentSearch({ type: asset.asset_type }),
+                      })
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        navigate({
+                          to: "/assets",
+                          search: currentSearch({ type: asset.asset_type }),
+                        })
+                      }
+                    }}
                   >
                     {asset.asset_type}
                   </span>
@@ -574,7 +594,29 @@ function AssetBrowser() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeBgColor(asset.asset_type)}`}>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Filter by ${asset.asset_type}`}
+                      className={`inline-flex cursor-pointer items-center rounded-md px-2 py-0.5 text-xs font-medium hover:opacity-80 ${typeBgColor(asset.asset_type)}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate({
+                          to: "/assets",
+                          search: currentSearch({ type: asset.asset_type }),
+                        })
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          navigate({
+                            to: "/assets",
+                            search: currentSearch({ type: asset.asset_type }),
+                          })
+                        }
+                      }}
+                    >
                       {asset.asset_type}
                     </span>
                   </TableCell>

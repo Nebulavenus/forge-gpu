@@ -472,12 +472,14 @@ function Dashboard() {
 
   if (!data) return null
 
-  /* Iterate TYPE_META keys first for stable ordering, then append unknowns. */
-  const knownTypeKeys = Object.keys(TYPE_META)
+  /* Iterate TYPE_META keys first for stable ordering, then append unknowns.
+     Only show types that have at least one asset. Exclude "scene" asset type
+     — authored scenes have their own dedicated card from the scenes API. */
+  const knownTypeKeys = Object.keys(TYPE_META).filter((k) => k !== "scene")
   const extraTypeKeys = Object.keys(data.by_type).filter((k) => !TYPE_META[k])
-  const typeEntries: [string, number][] = [...knownTypeKeys, ...extraTypeKeys].map(
-    (k) => [k, data.by_type[k] ?? 0],
-  )
+  const typeEntries: [string, number][] = [...knownTypeKeys, ...extraTypeKeys]
+    .map((k) => [k, data.by_type[k] ?? 0] as [string, number])
+    .filter(([, count]) => count > 0)
 
   return (
     <div className="space-y-6">
@@ -507,6 +509,15 @@ function Dashboard() {
             />
           )
         })}
+        {scenesData !== undefined && (
+          <StatCard
+            label="Scenes"
+            count={scenesData.total}
+            icon={Map}
+            iconColor="text-amber-400"
+            onClick={() => navigate({ to: "/scenes" })}
+          />
+        )}
       </div>
 
       {/* Status breakdown */}

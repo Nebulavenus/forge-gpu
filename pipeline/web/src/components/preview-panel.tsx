@@ -127,6 +127,21 @@ export function PreviewPanel({ asset }: PreviewPanelProps) {
       )
     }
 
+    case "audio":
+      return (
+        <section aria-label={`Audio preview for ${asset.name}`} className="rounded-lg border border-border bg-card p-6">
+          <p className="mb-3 text-xs font-medium text-muted-foreground">Audio Preview</p>
+          <audio
+            controls
+            src={fileUrl(asset.id)}
+            className="w-full"
+            aria-label={asset.name}
+          >
+            Your browser does not support the audio element.
+          </audio>
+        </section>
+      )
+
     case "animation":
     case "scene":
       return (
