@@ -75,7 +75,7 @@ export function validateAssetSearch(search: Record<string, unknown>): AssetSearc
   const sort = rawSort && VALID_SORT_FIELDS.has(rawSort) ? rawSort : undefined
   const order = sort && rawOrder && VALID_SORT_ORDERS.has(rawOrder) ? rawOrder : undefined
   const rawView = typeof search.view === "string" ? search.view.trim() : undefined
-  const view = rawView && VALID_VIEW_MODES.has(rawView) && rawView !== "grid" ? (rawView as AssetViewMode) : undefined
+  const view = rawView && VALID_VIEW_MODES.has(rawView) && rawView !== "list" ? (rawView as AssetViewMode) : undefined
   return {
     type,
     status,

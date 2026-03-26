@@ -181,7 +181,7 @@ function AssetBrowser() {
   const queryClient = useQueryClient()
   const { type: searchType, status: statusFilter, search: searchQuery, sort: sortField, order: sortOrder, view: viewMode } = Route.useSearch()
   const typeFilter = searchType ?? ""
-  const currentView: AssetViewMode = viewMode ?? "grid"
+  const currentView: AssetViewMode = viewMode ?? "list"
   const [localSearch, setLocalSearch] = useState(searchQuery ?? "")
 
   /* ── Batch processing mutation ─────────────────────────────────── */
@@ -406,7 +406,7 @@ function AssetBrowser() {
             onChange={(mode) =>
               navigate({
                 to: "/assets",
-                search: currentSearch({ view: mode === "grid" ? undefined : mode }),
+                search: currentSearch({ view: mode === "list" ? undefined : mode }),
               })
             }
           />
