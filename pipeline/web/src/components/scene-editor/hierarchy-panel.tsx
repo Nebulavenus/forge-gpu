@@ -328,7 +328,16 @@ function TreeNode({
   return (
     <div
       role="treeitem"
-      aria-label={object.name}
+      aria-label={(() => {
+        if (object.asset_id !== null || children.length === 0) return object.name
+        // When a search filter is active, count only visible children
+        const visibleCount = matchingIds === null
+          ? children.length
+          : children.filter(
+              (c) => matchingIds.has(c.id) || hasDescendantMatch(c.id, childrenMap, matchingIds),
+            ).length
+        return `${object.name} group, ${visibleCount} ${visibleCount === 1 ? "child" : "children"}`
+      })()}
       aria-selected={isSelected}
       aria-expanded={children.length > 0 ? expandedForRender : undefined}
       tabIndex={0}

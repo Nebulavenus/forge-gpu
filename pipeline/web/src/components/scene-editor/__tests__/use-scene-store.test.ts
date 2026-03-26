@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { SceneData, SceneObject, SceneState } from "../types"
 import { initialState, sceneReducer } from "../use-scene-store"
-import { computeWorldPosition, worldToLocal } from "../scene-utils"
+import { computeWorldPosition, computeWorldRotation, computeWorldScale, worldToLocal } from "../scene-utils"
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -1551,5 +1551,165 @@ describe("material overrides", () => {
       opacity: null,
       wireframe: null,
     })
+  })
+})
+
+// ── Group translation tests ──────────────────────────────────────────
+
+describe("group translation", () => {
+  it("translating a group moves all children world positions by the same delta", () => {
+    const a = makeObject("a", { position: [2, 0, 0] })
+    const b = makeObject("b", { position: [4, 0, 6] })
+    const state = loadedState([a, b])
+
+    // Group them — centroid [3, 0, 3]
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]!
+    const objectMap = new Map(grouped.scene!.objects.map((o) => [o.id, o]))
+
+    // Verify initial world positions are preserved
+    const aWorld0 = computeWorldPosition(objectMap.get("a")!, objectMap)
+    const bWorld0 = computeWorldPosition(objectMap.get("b")!, objectMap)
+    expect(aWorld0[0]).toBeCloseTo(2, 5)
+    expect(aWorld0[2]).toBeCloseTo(0, 5)
+    expect(bWorld0[0]).toBeCloseTo(4, 5)
+    expect(bWorld0[2]).toBeCloseTo(6, 5)
+
+    // Move the group by [2, 0, 0]
+    const moved = sceneReducer(grouped, {
+      type: "UPDATE_TRANSFORM",
+      objectId: groupId,
+      position: [5, 0, 3],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    })
+    const movedMap = new Map(moved.scene!.objects.map((o) => [o.id, o]))
+
+    // Children world positions should shift by [2, 0, 0]
+    const aWorld1 = computeWorldPosition(movedMap.get("a")!, movedMap)
+    const bWorld1 = computeWorldPosition(movedMap.get("b")!, movedMap)
+    expect(aWorld1[0]).toBeCloseTo(4, 5) // 2 + 2
+    expect(aWorld1[1]).toBeCloseTo(0, 5)
+    expect(aWorld1[2]).toBeCloseTo(0, 5)
+    expect(bWorld1[0]).toBeCloseTo(6, 5) // 4 + 2
+    expect(bWorld1[1]).toBeCloseTo(0, 5)
+    expect(bWorld1[2]).toBeCloseTo(6, 5)
+
+    // Relative distance between children is preserved
+    expect(bWorld1[0] - aWorld1[0]).toBeCloseTo(bWorld0[0] - aWorld0[0], 5)
+    expect(bWorld1[2] - aWorld1[2]).toBeCloseTo(bWorld0[2] - aWorld0[2], 5)
+  })
+
+  it("GROUP_OBJECTS with parented objects uses world positions for centroid", () => {
+    // Parent at [10, 0, 0], children at local [2, 0, 0] and [4, 0, 0]
+    // World positions: a = [12, 0, 0], b = [14, 0, 0]
+    const parent = makeObject("parent", { position: [10, 0, 0] })
+    const a = makeObject("a", { parent_id: "parent", position: [2, 0, 0] })
+    const b = makeObject("b", { parent_id: "parent", position: [4, 0, 0] })
+    const state = loadedState([parent, a, b])
+
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]!
+    const group = grouped.scene!.objects.find((o) => o.id === groupId)!
+
+    // Group centroid should be at world [13, 0, 0] (avg of 12 and 14)
+    expect(group.position[0]).toBeCloseTo(13, 5)
+    expect(group.position[1]).toBeCloseTo(0, 5)
+    expect(group.position[2]).toBeCloseTo(0, 5)
+
+    // Children world positions should be preserved
+    const objectMap = new Map(grouped.scene!.objects.map((o) => [o.id, o]))
+    const aWorld = computeWorldPosition(objectMap.get("a")!, objectMap)
+    const bWorld = computeWorldPosition(objectMap.get("b")!, objectMap)
+    expect(aWorld[0]).toBeCloseTo(12, 5)
+    expect(aWorld[1]).toBeCloseTo(0, 5)
+    expect(aWorld[2]).toBeCloseTo(0, 5)
+    expect(bWorld[0]).toBeCloseTo(14, 5)
+    expect(bWorld[1]).toBeCloseTo(0, 5)
+    expect(bWorld[2]).toBeCloseTo(0, 5)
+  })
+
+  it("GROUP_OBJECTS does not create a visible artifact (group has asset_id null)", () => {
+    const a = makeObject("a", { asset_id: "mesh_a", position: [0, 0, 0] })
+    const b = makeObject("b", { asset_id: "mesh_b", position: [4, 0, 0] })
+    const state = loadedState([a, b])
+
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]!
+
+    // 3 objects total: group container + 2 children
+    expect(grouped.scene!.objects).toHaveLength(3)
+
+    // The group container must have asset_id = null (no visual representation)
+    const group = grouped.scene!.objects.find((o) => o.id === groupId)!
+    expect(group.asset_id).toBeNull()
+
+    // The children retain their asset IDs
+    expect(grouped.scene!.objects.find((o) => o.id === "a")!.asset_id).toBe("mesh_a")
+    expect(grouped.scene!.objects.find((o) => o.id === "b")!.asset_id).toBe("mesh_b")
+  })
+
+  it("GROUP_OBJECTS with rotated parent preserves full world transform", () => {
+    const s = Math.SQRT1_2
+    // Parent rotated 90° around Y. Child at local [5, 0, 0] → world [0, 0, -5]
+    const parent = makeObject("parent", {
+      position: [0, 0, 0],
+      rotation: [0, s, 0, s],
+      scale: [2, 2, 2],
+    })
+    const a = makeObject("a", { parent_id: "parent", position: [5, 0, 0] })
+    const b = makeObject("b", { parent_id: "parent", position: [0, 0, 3] })
+    const state = loadedState([parent, a, b])
+
+    // Before grouping, capture full world transforms
+    const preMap = new Map(state.scene!.objects.map((o) => [o.id, o]))
+    const aWorldPre = computeWorldPosition(preMap.get("a")!, preMap)
+    const bWorldPre = computeWorldPosition(preMap.get("b")!, preMap)
+    const aRotPre = computeWorldRotation(preMap.get("a")!, preMap)
+    const bRotPre = computeWorldRotation(preMap.get("b")!, preMap)
+    const aSclPre = computeWorldScale(preMap.get("a")!, preMap)
+    const bSclPre = computeWorldScale(preMap.get("b")!, preMap)
+
+    const grouped = sceneReducer(state, {
+      type: "GROUP_OBJECTS",
+      objectIds: ["a", "b"],
+    })
+    const groupId = [...grouped.selectedIds][0]!
+    const objectMap = new Map(grouped.scene!.objects.map((o) => [o.id, o]))
+
+    // Children world positions must be preserved after grouping
+    const aWorld = computeWorldPosition(objectMap.get("a")!, objectMap)
+    const bWorld = computeWorldPosition(objectMap.get("b")!, objectMap)
+    expect(aWorld[0]).toBeCloseTo(aWorldPre[0], 5)
+    expect(aWorld[1]).toBeCloseTo(aWorldPre[1], 5)
+    expect(aWorld[2]).toBeCloseTo(aWorldPre[2], 5)
+    expect(bWorld[0]).toBeCloseTo(bWorldPre[0], 5)
+    expect(bWorld[1]).toBeCloseTo(bWorldPre[1], 5)
+    expect(bWorld[2]).toBeCloseTo(bWorldPre[2], 5)
+
+    // Children world rotation must be preserved
+    const aRot = computeWorldRotation(objectMap.get("a")!, objectMap)
+    const bRot = computeWorldRotation(objectMap.get("b")!, objectMap)
+    for (let i = 0; i < 4; i++) {
+      expect(aRot[i]).toBeCloseTo(aRotPre[i], 5)
+      expect(bRot[i]).toBeCloseTo(bRotPre[i], 5)
+    }
+
+    // Children world scale must be preserved
+    const aScl = computeWorldScale(objectMap.get("a")!, objectMap)
+    const bScl = computeWorldScale(objectMap.get("b")!, objectMap)
+    for (let i = 0; i < 3; i++) {
+      expect(aScl[i]).toBeCloseTo(aSclPre[i], 5)
+      expect(bScl[i]).toBeCloseTo(bSclPre[i], 5)
+    }
   })
 })

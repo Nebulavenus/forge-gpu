@@ -21,13 +21,21 @@ function quatRotateVec3(q: Quat, v: Vec3): Vec3 {
   ]
 }
 
+/** Normalize a quaternion to unit length (prevents floating-point drift). */
+function quatNormalize(q: Quat): Quat {
+  const len = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3])
+  if (len === 0) return [0, 0, 0, 1]
+  const inv = 1 / len
+  return [q[0] * inv, q[1] * inv, q[2] * inv, q[3] * inv]
+}
+
 /** Conjugate (inverse for unit quaternions). */
 function quatConjugate(q: Quat): Quat {
   return [-q[0], -q[1], -q[2], q[3]]
 }
 
 /** Multiply two quaternions: a * b (apply b first, then a). */
-function quatMultiply(a: Quat, b: Quat): Quat {
+export function quatMultiply(a: Quat, b: Quat): Quat {
   const [ax, ay, az, aw] = a
   const [bx, by, bz, bw] = b
   return [
@@ -127,6 +135,7 @@ export function computeWorldPosition(
 /**
  * Compute the accumulated world rotation of an object by composing
  * all ancestor rotations from root down, then applying the object's own.
+ * The result is normalized to prevent floating-point drift in deep hierarchies.
  */
 export function computeWorldRotation(
   obj: SceneObject,
@@ -137,7 +146,7 @@ export function computeWorldRotation(
   for (let i = ancestors.length - 1; i >= 0; i--) {
     worldRot = quatMultiply(worldRot, ancestors[i]!.rotation)
   }
-  return quatMultiply(worldRot, obj.rotation)
+  return quatNormalize(quatMultiply(worldRot, obj.rotation))
 }
 
 /**

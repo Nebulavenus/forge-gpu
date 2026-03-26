@@ -17,7 +17,7 @@ import type {
   SnapSize,
 } from "./types"
 import { SNAP_SIZES } from "./types"
-import { computeWorldPosition, worldToLocal } from "./scene-utils"
+import { computeWorldPosition, computeWorldRotation, computeWorldScale, quatMultiply, worldToLocal } from "./scene-utils"
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -477,12 +477,14 @@ export function sceneReducer(
       const stacks = pushUndo(state)
       const groupId = crypto.randomUUID().slice(0, 12)
       const groupedSet = new Set(action.objectIds)
-      // Compute centroid of grouped objects so the group has a meaningful
-      // position and children keep their world-space positions.
+      const objectMap = new Map(state.scene.objects.map((o) => [o.id, o]))
+      // Compute centroid using world-space positions so grouping works
+      // correctly for objects that already have parents.
       const grouped = state.scene.objects.filter((o) => groupedSet.has(o.id))
-      const cx = grouped.reduce((s, o) => s + o.position[0], 0) / grouped.length
-      const cy = grouped.reduce((s, o) => s + o.position[1], 0) / grouped.length
-      const cz = grouped.reduce((s, o) => s + o.position[2], 0) / grouped.length
+      const worldPositions = grouped.map((o) => computeWorldPosition(o, objectMap))
+      const cx = worldPositions.reduce((s, p) => s + p[0], 0) / grouped.length
+      const cy = worldPositions.reduce((s, p) => s + p[1], 0) / grouped.length
+      const cz = worldPositions.reduce((s, p) => s + p[2], 0) / grouped.length
       const group: SceneObject = {
         id: groupId,
         name: "Group",
@@ -493,22 +495,34 @@ export function sceneReducer(
         parent_id: null,
         visible: true,
       }
-      // Offset child positions so they stay at the same world-space location
+      // Convert each child's world transform to local space relative to the
+      // new group container so they stay at the same visual location,
+      // orientation, and size. The group has identity rotation and scale,
+      // so the child's local rotation/scale equals its world rotation/scale.
+      const worldTransformMap = new Map(
+        grouped.map((o, i) => [o.id, {
+          pos: worldPositions[i]!,
+          rot: computeWorldRotation(o, objectMap),
+          scl: computeWorldScale(o, objectMap),
+        }]),
+      )
       const objects = [
         group,
-        ...state.scene.objects.map((o) =>
-          groupedSet.has(o.id)
-            ? {
-                ...o,
-                parent_id: groupId,
-                position: [
-                  o.position[0] - cx,
-                  o.position[1] - cy,
-                  o.position[2] - cz,
-                ] as [number, number, number],
-              }
-            : o,
-        ),
+        ...state.scene.objects.map((o) => {
+          if (!groupedSet.has(o.id)) return o
+          const wt = worldTransformMap.get(o.id)!
+          return {
+            ...o,
+            parent_id: groupId,
+            position: [
+              wt.pos[0] - cx,
+              wt.pos[1] - cy,
+              wt.pos[2] - cz,
+            ] as [number, number, number],
+            rotation: wt.rot,
+            scale: wt.scl,
+          }
+        }),
       ]
       return {
         ...state,
@@ -530,9 +544,9 @@ export function sceneReducer(
       )
       if (children.length === 0) return state
       const stacks = pushUndo(state)
-      // Compute each child's world position, then convert to local space
-      // relative to the group's parent (or root). This handles groups that
-      // have been rotated or scaled after creation.
+      // Compute each child's full world transform (position, rotation, scale),
+      // then convert to local space relative to the group's parent (or root).
+      // This handles groups that have been rotated or scaled after creation.
       const objectMap = new Map(state.scene.objects.map((o) => [o.id, o]))
       const childIds = new Set(children.map((c) => c.id))
       const grandparent = groupObj.parent_id !== null
@@ -543,13 +557,37 @@ export function sceneReducer(
         .map((o) => {
           if (!childIds.has(o.id)) return o
           const wp = computeWorldPosition(o, objectMap)
+          const wr = computeWorldRotation(o, objectMap)
+          const ws = computeWorldScale(o, objectMap)
           const localPos = grandparent
             ? worldToLocal(wp, grandparent, objectMap)
             : wp
+          // When the grandparent has identity rotation/scale (common case),
+          // world rotation/scale IS the local rotation/scale. For non-identity
+          // grandparents, factor out the grandparent's accumulated transform.
+          let localRot = wr
+          let localScale = ws
+          if (grandparent) {
+            const gpRot = computeWorldRotation(grandparent, objectMap)
+            const gpScale = computeWorldScale(grandparent, objectMap)
+            // localRot = inverse(gpRot) * worldRot
+            const gpRotInv: [number, number, number, number] = [
+              -gpRot[0], -gpRot[1], -gpRot[2], gpRot[3],
+            ]
+            localRot = quatMultiply(gpRotInv, wr)
+            // localScale = worldScale / gpScale (component-wise)
+            localScale = [
+              gpScale[0] !== 0 ? ws[0] / gpScale[0] : ws[0],
+              gpScale[1] !== 0 ? ws[1] / gpScale[1] : ws[1],
+              gpScale[2] !== 0 ? ws[2] / gpScale[2] : ws[2],
+            ]
+          }
           return {
             ...o,
             parent_id: groupObj.parent_id,
             position: localPos,
+            rotation: localRot,
+            scale: localScale,
           }
         })
       return {

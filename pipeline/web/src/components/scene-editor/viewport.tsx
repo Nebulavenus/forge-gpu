@@ -236,6 +236,12 @@ interface SceneObjectMeshProps {
   dispatch: Dispatch<SceneAction>
   orbitRef: React.RefObject<any>
   children?: React.ReactNode
+  /** When set, plain clicks select this group ancestor instead of the object
+   *  itself. Ctrl/Cmd+Click bypasses this to select the individual child. */
+  groupAncestorId?: string | null
+  /** True when this object is a structural group container (no asset, has
+   *  children). Group containers render no visible geometry. */
+  isGroupContainer?: boolean
 }
 
 function SceneObjectMesh({
@@ -247,6 +253,8 @@ function SceneObjectMesh({
   dispatch,
   orbitRef,
   children,
+  groupAncestorId,
+  isGroupContainer = false,
 }: SceneObjectMeshProps) {
   const groupRef = useRef<THREE.Group>(null!)
   const modelRef = useRef<THREE.Group>(null!)
@@ -305,26 +313,32 @@ function SceneObjectMesh({
         visible={obj.visible}
         onClick={(e) => {
           e.stopPropagation()
-          // Shift+click → add to selection, Ctrl/Cmd+click → toggle
           const nativeEvent = e.nativeEvent as PointerEvent
           if (nativeEvent.shiftKey) {
             dispatch({ type: "SELECT", objectId: obj.id, mode: "add" })
           } else if (nativeEvent.ctrlKey || nativeEvent.metaKey) {
+            // Ctrl/Cmd+Click always selects the individual object, allowing
+            // users to pick a specific child inside a group.
             dispatch({ type: "SELECT", objectId: obj.id, mode: "toggle" })
           } else {
-            dispatch({ type: "SELECT", objectId: obj.id })
+            // Plain click selects the group ancestor when inside a group,
+            // so moving the gizmo translates the entire group.
+            const selectTarget = groupAncestorId ?? obj.id
+            dispatch({ type: "SELECT", objectId: selectTarget })
           }
         }}
       >
-        <group ref={modelRef}>
-          <Suspense fallback={<FallbackBox />}>
-            {obj.asset_id ? (
-              <LoadedModel assetId={obj.asset_id} />
-            ) : (
+        {!isGroupContainer && (
+          <group ref={modelRef}>
+            {obj.asset_id === null ? (
               <FallbackBox />
+            ) : (
+              <Suspense fallback={<FallbackBox />}>
+                <LoadedModel assetId={obj.asset_id} />
+              </Suspense>
             )}
-          </Suspense>
-        </group>
+          </group>
+        )}
         {children}
       </group>
       {showGizmo && groupRef.current && (
@@ -354,11 +368,18 @@ interface RenderHierarchyProps {
   snapSize: SnapSize
   dispatch: Dispatch<SceneAction>
   orbitRef: React.RefObject<any>
+  /** ID of the nearest group ancestor. Children of groups inherit this so
+   *  plain clicks select the group rather than the individual child. */
+  groupAncestorId?: string | null
 }
 
 function renderHierarchy(props: RenderHierarchyProps): React.ReactNode {
-  const { obj, childrenMap, gizmoTargetId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef } = props
+  const { obj, childrenMap, gizmoTargetId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef, groupAncestorId } = props
   const children = childrenMap.get(obj.id) ?? []
+  const isGroup = obj.asset_id === null && children.length > 0
+  // Children of a group inherit the group's ID so plain clicks propagate
+  // selection to the group. Nested groups select the innermost (nearest) group.
+  const childGroupAncestor = isGroup ? obj.id : groupAncestorId
   return (
     <SceneObjectMesh
       key={obj.id}
@@ -369,9 +390,11 @@ function renderHierarchy(props: RenderHierarchyProps): React.ReactNode {
       snapSize={snapSize}
       dispatch={dispatch}
       orbitRef={orbitRef}
+      groupAncestorId={groupAncestorId}
+      isGroupContainer={isGroup}
     >
       {children.map((child) =>
-        renderHierarchy({ ...props, obj: child })
+        renderHierarchy({ ...props, obj: child, groupAncestorId: childGroupAncestor })
       )}
     </SceneObjectMesh>
   )
