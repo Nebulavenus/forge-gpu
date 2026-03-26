@@ -28,6 +28,46 @@ import { ASSET_DRAG_MIME } from "./asset-shelf"
 import { computeWorldPosition } from "./scene-utils"
 import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } from "./scene-stats"
 
+// ── Maya-style camera: Alt+mouse ────────────────────────────────────────
+// Maya mouse button mapping for OrbitControls:
+//   Alt + LMB  → orbit (tumble)
+//   Alt + MMB  → pan (track)
+//   Alt + RMB  → dolly / zoom
+// Scroll wheel always dollies regardless of Alt state.
+export const MAYA_MOUSE_BUTTONS = {
+  LEFT: THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.PAN,
+  RIGHT: THREE.MOUSE.DOLLY,
+}
+
+/** Track whether the Alt key is currently held. */
+export function useAltKey(): boolean {
+  const [altHeld, setAltHeld] = useState(false)
+
+  useEffect(() => {
+    const isAltKey = (e: KeyboardEvent) => e.key === "Alt" || e.key === "AltGraph"
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isAltKey(e)) setAltHeld(true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (isAltKey(e)) setAltHeld(false)
+    }
+    // Release Alt when the window loses focus (e.g. Alt+Tab)
+    const onBlur = () => setAltHeld(false)
+
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener("blur", onBlur)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", onBlur)
+    }
+  }, [])
+
+  return altHeld
+}
+
 /** Default camera position and target — shared with the toolbar reset button. */
 export const DEFAULT_CAMERA_POSITION: [number, number, number] = [12, 10, 12]
 export const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0]
@@ -499,6 +539,8 @@ interface SceneContentsProps {
   onStats: (stats: SceneStats) => void
   /** Ref that receives camera read/restore functions. */
   cameraHandleRef: React.MutableRefObject<CameraHandle | null>
+  /** True when Alt is held — enables orbit/pan camera controls. */
+  altHeld: boolean
 }
 
 function SceneContents({
@@ -512,6 +554,7 @@ function SceneContents({
   onBoxSelect,
   onStats,
   cameraHandleRef,
+  altHeld,
 }: SceneContentsProps) {
   const orbitRef = useRef<any>(null)
 
@@ -576,7 +619,15 @@ function SceneContents({
         fadeDistance={80}
         infiniteGrid
       />
-      <OrbitControls ref={orbitRef} makeDefault />
+      {/* Maya-style camera: orbit/pan require Alt held, scroll zoom always works */}
+      <OrbitControls
+        ref={orbitRef}
+        makeDefault
+        mouseButtons={MAYA_MOUSE_BUTTONS}
+        enableRotate={altHeld}
+        enablePan={altHeld}
+        enableZoom
+      />
       {roots.map((obj) =>
         renderHierarchy({ obj, childrenMap, gizmoTargetId, gizmoMode, snapEnabled, snapSize, dispatch, orbitRef })
       )}
@@ -663,6 +714,12 @@ export function Viewport({
   onAssetDrop,
   cameraHandleRef: externalCameraRef,
 }: ViewportProps) {
+  const altHeld = useAltKey()
+  // Ref mirrors altHeld so stable useCallback closures can read the latest value
+  const altHeldRef = useRef(false)
+  useEffect(() => {
+    altHeldRef.current = altHeld
+  }, [altHeld])
   const raycastRef = useRef<((cx: number, cy: number) => THREE.Vector3 | null) | null>(null)
   const internalCameraRef = useRef<CameraHandle | null>(null)
   const cameraHandleRef = externalCameraRef ?? internalCameraRef
@@ -703,7 +760,11 @@ export function Viewport({
     // always see the <canvas> as the target regardless of which 3D object
     // was clicked. The onPointerMissed callback on <Canvas> handles the
     // empty-space deselect case separately.
+    //
+    // When Alt is held the mouse drives camera controls (Maya-style), so
+    // skip box select entirely.
     if (e.button !== 0) return
+    if (altHeldRef.current) return
     const target = e.target as HTMLElement
     if (target !== e.currentTarget && target.tagName !== "CANVAS") return
     pointerDownRef.current = { x: e.clientX, y: e.clientY, button: e.button }
@@ -804,13 +865,17 @@ export function Viewport({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       role="application"
-      aria-label={`3D viewport. ${selectedIds.size} object${selectedIds.size !== 1 ? "s" : ""} selected`}
+      aria-label={`3D viewport. ${selectedIds.size} object${selectedIds.size !== 1 ? "s" : ""} selected. Hold Alt for camera controls.`}
       aria-roledescription="3D scene viewport"
     >
       <Canvas
         style={{ background: VIEWPORT_BG }}
         camera={{ position: DEFAULT_CAMERA_POSITION, fov: 50, near: 0.1, far: 1000 }}
-        onPointerMissed={() => dispatch({ type: "SELECT", objectId: null })}
+        onPointerMissed={() => {
+          // Don't deselect when Alt-clicking — Alt+mouse is for camera control
+          if (altHeldRef.current) return
+          dispatch({ type: "SELECT", objectId: null })
+        }}
       >
         <DropRaycaster raycastRef={raycastRef} />
         <SceneContents
@@ -824,6 +889,7 @@ export function Viewport({
           onBoxSelect={handleBoxSelect}
           onStats={handleStats}
           cameraHandleRef={cameraHandleRef}
+          altHeld={altHeld}
         />
       </Canvas>
       {/* Rubber band overlay for box select */}
@@ -835,6 +901,21 @@ export function Viewport({
         />
       )}
       <SceneStatsOverlay stats={sceneStats} />
+      {/* Camera mode indicator — visible hint when Alt is held */}
+      {altHeld && (
+        <div
+          className="absolute top-2 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-xs text-white pointer-events-none"
+          aria-hidden="true"
+        >
+          Camera: LMB orbit · MMB pan · RMB zoom
+        </div>
+      )}
+      {/* Screen reader announcement for camera mode changes */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {altHeld
+          ? "Camera controls active. Left drag to orbit, middle drag to pan, right drag to zoom."
+          : "Camera controls inactive. Click to select objects, drag to box select."}
+      </div>
     </div>
   )
 }
