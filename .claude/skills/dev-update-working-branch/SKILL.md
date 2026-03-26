@@ -1,12 +1,12 @@
 ---
 name: dev-update-working-branch
-description: Update the current working branch with the latest main. Fetches origin/main, updates local main, and merges main into the current branch.
+description: Update the current working branch with the latest main. Fetches origin/main, updates local main, and rebases the current branch onto main.
 user-invokable: true
 ---
 
 Update the current working branch with the latest changes from main.
-Fetches `origin/main`, fast-forwards local `main`, and merges `main`
-into the current feature branch.
+Fetches `origin/main`, fast-forwards local `main`, and rebases the
+current feature branch onto `main` for clean linear history.
 
 ## When to use
 
@@ -34,7 +34,7 @@ test -z "$(git status --porcelain=v1 --untracked-files=all)"
 If the output is non-empty, report "Uncommitted changes detected — commit
 or stash before updating" and stop. This catches tracked modifications,
 staged changes, and untracked files (which can cause "would be overwritten
-by merge" errors).
+by rebase" errors).
 
 ### 2. Fetch and update local main
 
@@ -47,14 +47,14 @@ This updates local `main` to match `origin/main` without switching
 branches. The `-f` flag forces the update (safe because we are not on
 `main`).
 
-### 3. Merge main into the current branch
+### 3. Rebase onto main
 
 ```bash
-git merge main --no-edit
+git rebase main
 ```
 
-If there are merge conflicts, report them and stop — the user must
-resolve manually.
+If there are conflicts, report them and stop — the user must resolve
+manually with `git rebase --continue` or `git rebase --abort`.
 
 ### 4. Report result
 
@@ -62,24 +62,23 @@ resolve manually.
 Updated <branch-name> with latest main.
 - Fetched origin/main
 - Local main updated to <commit>
-- Merged into <branch-name>
+- Rebased <branch-name> onto main
 - <N> new commits from main
 
-Push when ready: git push
+Rebase rewrites history — push with: git push --force-with-lease
 ```
 
-If the merge was a no-op (already up to date), report that instead.
+If the rebase was a no-op (already up to date), report that instead.
 
 ## What it does NOT do
 
 - It does NOT push — the user decides when to push
 - It does NOT switch to main — stays on the current branch
-- It does NOT rebase (merge preserves history and avoids force-push)
 - It does NOT resolve conflicts — reports them for manual resolution
 
 ## Safety
 
-- Refuses to run if on `main` (nothing to merge into)
-- Refuses to run if there are uncommitted changes (merge would fail)
-- Uses merge, not rebase, so no force-push is needed
+- Refuses to run if on `main` (nothing to rebase)
+- Refuses to run if there are uncommitted changes (rebase would fail)
+- Uses rebase for clean linear history (force-push required after)
 - Does not modify remote state
