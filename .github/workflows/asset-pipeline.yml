@@ -4,19 +4,7 @@ permissions:
   contents: read
 
 on:
-  pull_request:
-    paths:
-      - 'assets/**'
-      - 'pipeline/**'
-      - 'pipeline.toml'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - 'tools/**'
-      - 'common/pipeline/**'
-      - 'common/shapes/**'
-      - 'common/gltf/**'
-      - 'CMakeLists.txt'
-      - '.github/workflows/asset-pipeline.yml'
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -85,7 +73,6 @@ jobs:
   # cmake/AcquireAssets.cmake (Tier 2) can download pre-built assets
   # without running the pipeline locally.
   publish-release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: asset-pipeline
     runs-on: ubuntu-latest
     permissions:
