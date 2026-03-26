@@ -102,6 +102,20 @@ export function SceneStatsCollector({
 
       scene.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return
+        // Skip scene helpers (grid, gizmos, transform controls) — only
+        // count user-placed objects. Helpers are identified by:
+        // - isHelper flag (Three.js convention for helpers)
+        // - isTransformControlsPlane (drei transform gizmo)
+        // - userData.isHelper (set by viewport on helper meshes)
+        // - frustumCulled === false with no name (drei Grid pattern)
+        const obj = child as unknown as Record<string, unknown>
+        if (obj.isTransformControlsPlane || obj.isHelper) return
+        if (child.userData?.isHelper) return
+        // drei Grid: detected via implementation details (unnamed mesh, frustumCulled=false,
+        // ShaderMaterial). This heuristic may need updating if drei's Grid changes.
+        const childMat = child.material
+        if (!child.name && !child.frustumCulled
+            && !Array.isArray(childMat) && childMat instanceof THREE.ShaderMaterial) return
         objects++
         const geo = child.geometry
         if (geo) {

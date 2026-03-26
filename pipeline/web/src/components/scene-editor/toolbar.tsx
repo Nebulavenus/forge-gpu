@@ -12,6 +12,7 @@ import {
   Grid3x3,
   Bookmark,
   Camera,
+  Home,
   X,
   Pencil,
   Check,
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import type { CameraBookmark, SceneAction, SceneState, SnapSize } from "./types"
 import { SNAP_SIZES } from "./types"
+import { DEFAULT_CAMERA_POSITION, DEFAULT_CAMERA_TARGET } from "./viewport"
 
 interface ToolbarProps {
   state: SceneState
@@ -251,6 +253,22 @@ export function Toolbar({ state, dispatch, onSave, onAdd, onGetCameraState, onRe
       )}
 
       <Separator orientation="vertical" className="h-6" />
+
+      {/* Reset camera */}
+      <Button
+        size="sm"
+        variant="ghost"
+        title="Reset camera to default position"
+        aria-label="Reset camera to default position"
+        onClick={() => onRestoreBookmark?.({
+          id: "_reset",
+          name: "Default",
+          position: DEFAULT_CAMERA_POSITION,
+          target: DEFAULT_CAMERA_TARGET,
+        })}
+      >
+        <Home className="h-4 w-4" />
+      </Button>
 
       {/* Camera bookmarks */}
       <div className="relative">

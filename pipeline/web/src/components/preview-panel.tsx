@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from "react"
+import { Component, type ErrorInfo, type ReactNode, useCallback, useState } from "react"
 import type { AssetInfo } from "@/lib/api"
 import { TexturePreview } from "@/components/texture-preview"
 import { MeshPreview } from "@/components/mesh-preview"
@@ -32,7 +32,7 @@ class PreviewErrorBoundary extends Component<
       return (
         <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
           {this.props.label ? `${this.props.label}: ` : ""}
-          Preview failed to load.
+          Preview unavailable.
         </div>
       )
     }
@@ -45,7 +45,40 @@ function fileUrl(assetId: string, variant?: "processed"): string {
   return variant ? `${base}?variant=processed` : base
 }
 
+function isSvg(name: string): boolean {
+  return name.toLowerCase().endsWith(".svg")
+}
+
+function SvgPreview({ asset }: { asset: AssetInfo }) {
+  const [failed, setFailed] = useState(false)
+  const onError = useCallback(() => setFailed(true), [])
+
+  if (failed) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+        SVG preview unavailable.
+      </div>
+    )
+  }
+
+  return (
+    <section aria-label={`SVG preview for ${asset.name}`} className="rounded-lg border border-border bg-card p-6">
+      <p className="mb-3 text-xs font-medium text-muted-foreground">SVG Preview</p>
+      <img
+        src={fileUrl(asset.id)}
+        alt={asset.name}
+        onError={onError}
+        className="mx-auto max-h-96 rounded"
+      />
+    </section>
+  )
+}
+
 export function PreviewPanel({ asset }: PreviewPanelProps) {
+  if (isSvg(asset.name)) {
+    return <SvgPreview key={asset.id} asset={asset} />
+  }
+
   switch (asset.asset_type) {
     case "texture":
       if (asset.output_path) {

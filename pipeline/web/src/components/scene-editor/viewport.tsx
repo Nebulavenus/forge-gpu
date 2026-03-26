@@ -28,6 +28,10 @@ import { ASSET_DRAG_MIME } from "./asset-shelf"
 import { computeWorldPosition } from "./scene-utils"
 import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } from "./scene-stats"
 
+/** Default camera position and target — shared with the toolbar reset button. */
+export const DEFAULT_CAMERA_POSITION: [number, number, number] = [12, 10, 12]
+export const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0]
+
 // ── Fallback box for objects without an asset ───────────────────────────
 
 function FallbackBox() {
@@ -525,17 +529,18 @@ function SceneContents({
 
   return (
     <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[5, 8, 5]} intensity={1.5} />
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[5, 8, 5]} intensity={1.8} />
+      <hemisphereLight args={["#b1e1ff", "#443333", 0.3]} />
       <Grid
         args={[20, 20]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor="#333"
+        cellColor="#444"
         sectionSize={5}
         sectionThickness={1}
-        sectionColor="#555"
-        fadeDistance={30}
+        sectionColor="#666"
+        fadeDistance={80}
         infiniteGrid
       />
       <OrbitControls ref={orbitRef} makeDefault />
@@ -770,8 +775,8 @@ export function Viewport({
       aria-roledescription="3D scene viewport"
     >
       <Canvas
-        style={{ background: "#1a1a1a" }}
-        camera={{ position: [12, 10, 12], fov: 50 }}
+        style={{ background: "#2a2a30" }}
+        camera={{ position: DEFAULT_CAMERA_POSITION, fov: 50, near: 0.1, far: 1000 }}
         onPointerMissed={() => dispatch({ type: "SELECT", objectId: null })}
       >
         <DropRaycaster raycastRef={raycastRef} />
