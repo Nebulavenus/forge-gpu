@@ -32,6 +32,10 @@ import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } 
 export const DEFAULT_CAMERA_POSITION: [number, number, number] = [12, 10, 12]
 export const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0]
 
+/** Viewport background color — used for the canvas, fog, and grid fade so
+ *  fogged geometry blends seamlessly into the background. */
+const VIEWPORT_BG = "#3a4450"
+
 // ── Fallback box for objects without an asset ───────────────────────────
 
 function FallbackBox() {
@@ -529,6 +533,12 @@ function SceneContents({
 
   return (
     <>
+      {/* Distance fog — applies to all scene objects uniformly.
+       * The color must match the canvas background so fogged geometry
+       * blends seamlessly into the background.  The grid has its own
+       * fadeDistance, but without scene fog, only the grid fades with
+       * distance while meshes stay at full intensity. */}
+      <fog attach="fog" args={[VIEWPORT_BG, 60, 150]} />
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 8, 5]} intensity={1.8} />
       <hemisphereLight args={["#b1e1ff", "#443333", 0.3]} />
@@ -775,7 +785,7 @@ export function Viewport({
       aria-roledescription="3D scene viewport"
     >
       <Canvas
-        style={{ background: "#2a2a30" }}
+        style={{ background: VIEWPORT_BG }}
         camera={{ position: DEFAULT_CAMERA_POSITION, fov: 50, near: 0.1, far: 1000 }}
         onPointerMissed={() => dispatch({ type: "SELECT", objectId: null })}
       >
