@@ -534,7 +534,7 @@ function SceneContents({
       <hemisphereLight args={["#b1e1ff", "#443333", 0.3]} />
       <Grid
         args={[20, 20]}
-        cellSize={1}
+        cellSize={0.5}
         cellThickness={0.5}
         cellColor="#444"
         sectionSize={5}
