@@ -395,6 +395,52 @@ export function sceneReducer(
       }
     }
 
+    case "UPDATE_MATERIAL_OVERRIDES": {
+      if (!state.scene) return state
+      const stacks = pushUndo(state)
+      const objects = state.scene.objects.map((o) =>
+        o.id === action.objectId
+          ? {
+              ...o,
+              material_overrides: {
+                ...(o.material_overrides ?? {}),
+                ...action.overrides,
+              },
+            }
+          : o,
+      )
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        dirty: true,
+      }
+    }
+
+    case "UPDATE_MATERIAL_OVERRIDES_BATCH": {
+      if (!state.scene) return state
+      if (action.objectIds.length === 0) return state
+      const stacks = pushUndo(state)
+      const idSet = new Set(action.objectIds)
+      const objects = state.scene.objects.map((o) =>
+        idSet.has(o.id)
+          ? {
+              ...o,
+              material_overrides: {
+                ...(o.material_overrides ?? {}),
+                ...action.overrides,
+              },
+            }
+          : o,
+      )
+      return {
+        ...state,
+        ...stacks,
+        scene: { ...state.scene, objects },
+        dirty: true,
+      }
+    }
+
     case "SET_VISIBILITY": {
       if (!state.scene) return state
       const stacks = pushUndo(state)

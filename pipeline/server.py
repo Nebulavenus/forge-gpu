@@ -194,6 +194,14 @@ class BatchProcessResponse(BaseModel):
 # -- Scene editor models ----------------------------------------------------
 
 
+class MaterialOverridesModel(BaseModel):
+    """Per-object material property overrides applied at render time."""
+
+    color: str | None = None
+    opacity: float | None = None
+    wireframe: bool | None = None
+
+
 class SceneObjectModel(BaseModel):
     """A single placed object in an authored scene."""
 
@@ -205,6 +213,7 @@ class SceneObjectModel(BaseModel):
     scale: list[float]
     parent_id: str | None
     visible: bool
+    material_overrides: MaterialOverridesModel | None = None
 
 
 class CameraBookmarkModel(BaseModel):

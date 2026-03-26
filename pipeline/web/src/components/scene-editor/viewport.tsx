@@ -11,7 +11,7 @@
  */
 
 import { type Dispatch, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Canvas, useThree } from "@react-three/fiber"
+import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import {
   Grid,
   OrbitControls,
@@ -23,7 +23,7 @@ import * as THREE from "three"
 import { useCompanionManager } from "@/lib/companion-manager"
 import { fetchAsset } from "@/lib/api"
 import { usePipelineModel } from "@/lib/use-pipeline-model"
-import type { CameraBookmark, GizmoMode, SceneAction, SceneObject, SnapSize } from "./types"
+import type { CameraBookmark, GizmoMode, MaterialOverrides, SceneAction, SceneObject, SnapSize } from "./types"
 import { ASSET_DRAG_MIME } from "./asset-shelf"
 import { computeWorldPosition } from "./scene-utils"
 import { EMPTY_STATS, SceneStatsCollector, SceneStatsOverlay, type SceneStats } from "./scene-stats"
@@ -84,6 +84,138 @@ function LoadedModel({ assetId }: { assetId: string }) {
   return <GltfModel assetId={assetId} />
 }
 
+// ── Material override applicator ─────────────────────────────────────────
+
+/**
+ * Traverses a Three.js group and applies material overrides (color tint,
+ * opacity, wireframe) to every mesh material. Restores original values
+ * when the overrides change or the component unmounts.
+ */
+function useMaterialOverrides(
+  groupRef: React.RefObject<THREE.Group | null>,
+  overrides: MaterialOverrides | undefined | null,
+) {
+  // Track which meshes had their materials cloned, mapping mesh → original material.
+  // On cleanup, we restore the original shared material to avoid leaking clones.
+  const clonedRef = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map())
+
+  // Track subtree identity via mesh UUIDs so the effect re-runs when async
+  // models finish loading OR when a fallback (1 mesh) is swapped for a real
+  // model that also has 1 mesh (same count but different identity).
+  const [subtreeId, setSubtreeId] = useState("")
+  const prevIdRef = useRef("")
+
+  // Gate: only traverse when overrides are active or clones are still attached.
+  // This avoids O(n) per-frame walks for objects with no material overrides.
+  const hasActiveOverrides = overrides != null && (
+    overrides.color != null || overrides.opacity != null || overrides.wireframe != null
+  )
+
+  useFrame(() => {
+    if (!hasActiveOverrides && clonedRef.current.size === 0) return
+    const group = groupRef.current
+    if (!group) return
+    const ids: string[] = []
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) ids.push(child.uuid)
+    })
+    const id = ids.join(",")
+    if (id !== prevIdRef.current) {
+      prevIdRef.current = id
+      setSubtreeId(id)
+    }
+  })
+
+  useEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+
+    // Restore previously cloned meshes to their original shared materials
+    const cloned = clonedRef.current
+    for (const [mesh, origMat] of cloned) {
+      // Dispose cloned materials to avoid memory leaks
+      const current = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const mat of current) mat.dispose()
+      mesh.material = origMat
+    }
+    cloned.clear()
+
+    if (!overrides) return
+
+    // Normalize nulls to undefined (backend may send null for unset fields)
+    const color = overrides.color ?? undefined
+    const opacity = overrides.opacity ?? undefined
+    const wireframe = overrides.wireframe ?? undefined
+
+    const hasColor = color !== undefined
+    const hasOpacity = opacity !== undefined
+    const hasWireframe = wireframe !== undefined
+
+    if (!hasColor && !hasOpacity && !hasWireframe) return
+
+    const parsedColor = hasColor ? new THREE.Color(color) : null
+
+    group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return
+
+      // Clone materials so we don't mutate shared instances (three.js clone()
+      // shares material references between cloned scenes).
+      const isArray = Array.isArray(child.material)
+      const origMaterials = isArray ? child.material : child.material
+      cloned.set(child, origMaterials)
+
+      if (isArray) {
+        child.material = (child.material as THREE.Material[]).map((mat) => {
+          const clone = mat.clone()
+          applyOverride(clone, parsedColor, hasColor, opacity, hasOpacity, wireframe, hasWireframe)
+          return clone
+        })
+      } else {
+        const clone = (child.material as THREE.Material).clone()
+        applyOverride(clone, parsedColor, hasColor, opacity, hasOpacity, wireframe, hasWireframe)
+        child.material = clone
+      }
+    })
+
+    return () => {
+      // Cleanup: restore original shared materials, dispose clones
+      for (const [mesh, origMat] of cloned) {
+        const current = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const mat of current) mat.dispose()
+        mesh.material = origMat
+      }
+      cloned.clear()
+    }
+  }, [groupRef, overrides?.color, overrides?.opacity, overrides?.wireframe, subtreeId])
+}
+
+/** Apply override values to a cloned material instance. */
+function applyOverride(
+  mat: THREE.Material,
+  parsedColor: THREE.Color | null,
+  hasColor: boolean,
+  opacity: number | undefined,
+  hasOpacity: boolean,
+  wireframe: boolean | undefined,
+  hasWireframe: boolean,
+) {
+  if (hasColor && parsedColor && "color" in mat) {
+    ;(mat as THREE.MeshStandardMaterial).color.copy(parsedColor)
+  }
+  if (hasOpacity && opacity !== undefined) {
+    mat.opacity = opacity
+    // Only force transparent on — never force it off.
+    // At opacity === 1 the cloned material keeps the source asset's
+    // transparency flag (e.g. alpha-mapped textures stay transparent).
+    if (opacity < 1) {
+      mat.transparent = true
+    }
+  }
+  if (hasWireframe && wireframe !== undefined && "wireframe" in mat) {
+    ;(mat as THREE.MeshStandardMaterial).wireframe = wireframe
+  }
+}
+
 // ── Single scene object ─────────────────────────────────────────────────
 
 interface SceneObjectMeshProps {
@@ -109,7 +241,11 @@ function SceneObjectMesh({
   children,
 }: SceneObjectMeshProps) {
   const groupRef = useRef<THREE.Group>(null!)
+  const modelRef = useRef<THREE.Group>(null!)
   const transformRef = useRef<any>(null)
+
+  // Apply material overrides to the model subtree only (not recursive children)
+  useMaterialOverrides(modelRef, obj.material_overrides)
 
   // Sync group transform from store state
   useEffect(() => {
@@ -172,13 +308,15 @@ function SceneObjectMesh({
           }
         }}
       >
-        <Suspense fallback={<FallbackBox />}>
-          {obj.asset_id ? (
-            <LoadedModel assetId={obj.asset_id} />
-          ) : (
-            <FallbackBox />
-          )}
-        </Suspense>
+        <group ref={modelRef}>
+          <Suspense fallback={<FallbackBox />}>
+            {obj.asset_id ? (
+              <LoadedModel assetId={obj.asset_id} />
+            ) : (
+              <FallbackBox />
+            )}
+          </Suspense>
+        </group>
         {children}
       </group>
       {showGizmo && groupRef.current && (

@@ -36,6 +36,15 @@ SCENE_VERSION = 1
 
 
 @dataclass
+class MaterialOverrides:
+    """Per-object material property overrides applied at render time."""
+
+    color: str | None = None
+    opacity: float | None = None
+    wireframe: bool | None = None
+
+
+@dataclass
 class SceneObject:
     """A single placed object in an authored scene."""
 
@@ -47,6 +56,7 @@ class SceneObject:
     scale: list[float]  # [x, y, z]
     parent_id: str | None
     visible: bool
+    material_overrides: MaterialOverrides | None = None
 
 
 @dataclass
@@ -202,6 +212,43 @@ def validate_scene(data: object) -> list[str]:
 
         if "visible" not in obj or not isinstance(obj.get("visible"), bool):
             errors.append(f"{prefix}: 'visible' must be a boolean")
+
+        # Optional material overrides
+        mat = obj.get("material_overrides")
+        if mat is not None:
+            if not isinstance(mat, dict):
+                errors.append(f"{prefix}: 'material_overrides' must be a dict or null")
+            else:
+                unknown_keys = set(mat) - {"color", "opacity", "wireframe"}
+                if unknown_keys:
+                    errors.append(
+                        f"{prefix}.material_overrides: unknown key(s): "
+                        f"{', '.join(sorted(unknown_keys))}"
+                    )
+                mat_color = mat.get("color")
+                if mat_color is not None and (
+                    not isinstance(mat_color, str)
+                    or not re.fullmatch(
+                        r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", mat_color
+                    )
+                ):
+                    errors.append(
+                        f"{prefix}.material_overrides: 'color' must be a hex color (#RGB or #RRGGBB) or null"
+                    )
+                mat_opacity = mat.get("opacity")
+                if mat_opacity is not None and not _is_finite_number(mat_opacity):
+                    errors.append(
+                        f"{prefix}.material_overrides: 'opacity' must be a finite number or null"
+                    )
+                elif mat_opacity is not None and not (0 <= mat_opacity <= 1):
+                    errors.append(
+                        f"{prefix}.material_overrides: 'opacity' must be between 0 and 1"
+                    )
+                mat_wf = mat.get("wireframe")
+                if mat_wf is not None and not isinstance(mat_wf, bool):
+                    errors.append(
+                        f"{prefix}.material_overrides: 'wireframe' must be a boolean or null"
+                    )
 
     # ── Optional cameras array ────────────────────────────────────────
     cameras = data.get("cameras")

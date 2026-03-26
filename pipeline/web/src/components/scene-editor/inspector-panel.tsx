@@ -4,7 +4,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import type { SceneAction, SceneObject, SnapSize } from "./types"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Button } from "@/components/ui/button"
+import type { MaterialOverrides, SceneAction, SceneObject, SnapSize } from "./types"
 import { isDescendantOf } from "./use-scene-store"
 
 interface InspectorPanelProps {
@@ -152,6 +154,235 @@ function vec3AllEqual(
   ]
 }
 
+// ── Material overrides editor ───────────────────────────────────────────
+
+const DEFAULT_COLOR = "#ffffff"
+const DEFAULT_OPACITY = 1.0
+
+interface MaterialOverridesEditorProps {
+  overrides: MaterialOverrides
+  /** When true, values differ across multi-selection and show mixed state. */
+  mixed?: { color?: boolean; opacity?: boolean; wireframe?: boolean }
+  /** Selection-wide override presence flags for multi-select reset buttons. */
+  has?: { color: boolean; opacity: boolean; wireframe: boolean; any: boolean }
+  onChange: (overrides: MaterialOverrides) => void
+}
+
+/** Normalize #RGB shorthand to #RRGGBB. */
+function normalizeHex(v: string): string {
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`
+  }
+  return v
+}
+
+/** Canonicalize a color to lowercase #rrggbb for consistent comparison
+ *  and <input type="color"> compatibility (which requires 7-char hex). */
+function canonicalizeColor(v: string | null | undefined): string | null {
+  return v == null ? null : normalizeHex(v).toLowerCase()
+}
+
+/** Sentinel for distinguishing "unset" from a default value in mixed detection. */
+const UNSET = Symbol("unset")
+
+function MaterialOverridesEditor({
+  overrides,
+  mixed,
+  has,
+  onChange,
+}: MaterialOverridesEditorProps) {
+  // Canonicalize stored color to lowercase #rrggbb for display and comparison
+  const canonicalColor = canonicalizeColor(overrides.color)
+  const displayColor = canonicalColor ?? DEFAULT_COLOR
+  const displayOpacity = overrides.opacity ?? DEFAULT_OPACITY
+  const displayWireframe = overrides.wireframe ?? false
+
+  // Raw canonical value for state tracking (empty string if unset)
+  const rawColor = canonicalColor ?? ""
+
+  const hasColor = has?.color ?? overrides.color != null
+  const hasOpacity = has?.opacity ?? overrides.opacity != null
+  const hasWireframe = has?.wireframe ?? overrides.wireframe != null
+  const hasAny = has?.any ?? (hasColor || hasOpacity || hasWireframe)
+
+  // Buffer hex input locally so incomplete values don't reach the store
+  const [localHex, setLocalHex] = useState(rawColor)
+
+  // Sync from prop when color changes externally (e.g. color picker, undo)
+  useEffect(() => {
+    setLocalHex(rawColor)
+  }, [rawColor])
+
+  const commitHex = () => {
+    const normalized = normalizeHex(localHex).toLowerCase()
+    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+      if (normalized !== (canonicalColor ?? "")) {
+        onChange({ color: normalized })
+      }
+    } else {
+      setLocalHex(rawColor)
+    }
+  }
+
+  // Buffer opacity locally — only commit on release/blur to avoid undo flood
+  const [localOpacity, setLocalOpacity] = useState(displayOpacity)
+  const [draggingOpacity, setDraggingOpacity] = useState(false)
+
+  useEffect(() => {
+    if (!draggingOpacity) setLocalOpacity(displayOpacity)
+  }, [displayOpacity, draggingOpacity])
+
+  const localOpacityPct = Math.round(localOpacity * 100)
+
+  const commitOpacity = () => {
+    setDraggingOpacity(false)
+    if (localOpacity !== displayOpacity) {
+      onChange({ opacity: localOpacity })
+    }
+  }
+
+  return (
+    <fieldset className="space-y-3">
+      <div className="flex items-center justify-between">
+        <legend className="text-xs font-medium text-muted-foreground">Material</legend>
+        {hasAny && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 text-[10px] text-muted-foreground"
+            aria-label="Reset all material overrides to source material defaults"
+            onClick={() => onChange({ color: null, opacity: null, wireframe: null })}
+          >
+            Reset
+          </Button>
+        )}
+      </div>
+
+      {/* Color tint — emit only { color } */}
+      <div className="flex items-center gap-2">
+        <Label
+          htmlFor="inspector-mat-color"
+          className="min-w-[52px] text-xs text-muted-foreground"
+        >
+          Color{mixed?.color ? " (\u2014)" : ""}
+        </Label>
+        <input
+          id="inspector-mat-color"
+          type="color"
+          value={displayColor}
+          aria-label="Material color tint"
+          className="h-7 w-10 cursor-pointer rounded border border-input bg-background p-0.5"
+          onChange={(e) => onChange({ color: e.target.value })}
+        />
+        <Input
+          type="text"
+          value={localHex || displayColor}
+          aria-label="Material color hex value"
+          className="h-7 w-20 font-mono text-xs"
+          maxLength={7}
+          onChange={(e) => {
+            const v = e.target.value
+            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
+              setLocalHex(v)
+            }
+          }}
+          onBlur={commitHex}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitHex()
+          }}
+        />
+        {hasColor && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0 text-[10px] text-muted-foreground"
+            aria-label="Reset color to source material default"
+            onClick={() => onChange({ color: null })}
+          >
+            ×
+          </Button>
+        )}
+      </div>
+
+      {/* Opacity — buffered locally, committed on release/blur */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label
+            htmlFor="inspector-mat-opacity"
+            className="text-xs text-muted-foreground"
+          >
+            Opacity{mixed?.opacity ? " (\u2014)" : ""}
+          </Label>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] tabular-nums text-muted-foreground" aria-hidden="true">
+              {localOpacityPct}%
+            </span>
+            {hasOpacity && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0 text-[10px] text-muted-foreground"
+                aria-label="Reset opacity to source material default"
+                onClick={() => onChange({ opacity: null })}
+              >
+                ×
+              </Button>
+            )}
+          </div>
+        </div>
+        <input
+          id="inspector-mat-opacity"
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={localOpacityPct}
+          aria-label={`Material opacity ${localOpacityPct}%`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={localOpacityPct}
+          aria-valuetext={`${localOpacityPct}%`}
+          className="h-1.5 w-full cursor-pointer accent-primary"
+          onChange={(e) => {
+            setDraggingOpacity(true)
+            setLocalOpacity(parseInt(e.target.value, 10) / 100)
+          }}
+          onPointerUp={commitOpacity}
+          onBlur={commitOpacity}
+        />
+      </div>
+
+      {/* Wireframe — emit only { wireframe } */}
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="inspector-mat-wireframe"
+          checked={displayWireframe}
+          indeterminate={mixed?.wireframe}
+          aria-label="Toggle wireframe rendering"
+          onCheckedChange={(checked) => onChange({ wireframe: checked })}
+        />
+        <Label
+          htmlFor="inspector-mat-wireframe"
+          className="text-xs text-muted-foreground"
+        >
+          Wireframe
+        </Label>
+        {hasWireframe && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0 text-[10px] text-muted-foreground"
+            aria-label="Reset wireframe to source material default"
+            onClick={() => onChange({ wireframe: null })}
+          >
+            ×
+          </Button>
+        )}
+      </div>
+    </fieldset>
+  )
+}
+
 // ── Multi-select inspector ──────────────────────────────────────────────
 
 interface MultiInspectorProps {
@@ -280,6 +511,34 @@ function MultiSelectInspector({
             }}
           />
         </div>
+
+        <Separator />
+
+        {/* Material overrides (multi-select) */}
+        <MaterialOverridesEditor
+          overrides={first.material_overrides ?? {}}
+          has={{
+            color: objects.some((o) => o.material_overrides?.color != null),
+            opacity: objects.some((o) => o.material_overrides?.opacity != null),
+            wireframe: objects.some((o) => o.material_overrides?.wireframe != null),
+            any: objects.some((o) => {
+              const m = o.material_overrides
+              return m?.color != null || m?.opacity != null || m?.wireframe != null
+            }),
+          }}
+          mixed={{
+            color: !allEqual(objects.map((o) => canonicalizeColor(o.material_overrides?.color) ?? UNSET)),
+            opacity: !allEqual(objects.map((o) => o.material_overrides?.opacity ?? UNSET)),
+            wireframe: !allEqual(objects.map((o) => o.material_overrides?.wireframe ?? UNSET)),
+          }}
+          onChange={(overrides) =>
+            dispatch({
+              type: "UPDATE_MATERIAL_OVERRIDES_BATCH",
+              objectIds: objects.map((o) => o.id),
+              overrides,
+            })
+          }
+        />
       </div>
     </div>
   )
@@ -507,6 +766,20 @@ function SingleObjectInspector({
             }
           />
         </div>
+
+        <Separator />
+
+        {/* Material overrides */}
+        <MaterialOverridesEditor
+          overrides={object.material_overrides ?? {}}
+          onChange={(overrides) =>
+            dispatch({
+              type: "UPDATE_MATERIAL_OVERRIDES",
+              objectId: object.id,
+              overrides,
+            })
+          }
+        />
       </div>
     </div>
   )

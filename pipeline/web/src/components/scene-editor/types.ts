@@ -7,6 +7,15 @@ export interface CameraBookmark {
   target: [number, number, number]
 }
 
+/** Per-object material property overrides applied at render time.
+ *  Each property is nullable to match the backend contract (Python None → JSON null).
+ *  UI code should normalize nulls to undefined before consuming. */
+export interface MaterialOverrides {
+  color?: string | null
+  opacity?: number | null
+  wireframe?: boolean | null
+}
+
 export interface SceneObject {
   id: string
   name: string
@@ -16,6 +25,7 @@ export interface SceneObject {
   scale: [number, number, number]
   parent_id: string | null
   visible: boolean
+  material_overrides?: MaterialOverrides | null
 }
 
 export interface SceneData {
@@ -87,6 +97,16 @@ export type SceneAction =
     }
   | { type: "DELETE_CAMERA_BOOKMARK"; bookmarkId: string }
   | { type: "RENAME_CAMERA_BOOKMARK"; bookmarkId: string; name: string }
+  | {
+      type: "UPDATE_MATERIAL_OVERRIDES"
+      objectId: string
+      overrides: MaterialOverrides
+    }
+  | {
+      type: "UPDATE_MATERIAL_OVERRIDES_BATCH"
+      objectIds: string[]
+      overrides: MaterialOverrides
+    }
   | { type: "GROUP_OBJECTS"; objectIds: string[] }
   | { type: "UNGROUP_OBJECT"; groupId: string }
   | { type: "UNDO" }

@@ -1376,3 +1376,180 @@ describe("worldToLocal", () => {
     expect(local[2]).toBeCloseTo(5, 5)
   })
 })
+
+// ── Material overrides ──────────────────────────────────────────────────
+
+describe("material overrides", () => {
+  it("UPDATE_MATERIAL_OVERRIDES sets overrides on a single object", () => {
+    const state = loadedState([makeObject("a"), makeObject("b")])
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES",
+      objectId: "a",
+      overrides: { color: "#ff0000", opacity: 0.5, wireframe: true },
+    })
+
+    const objA = next.scene!.objects.find((o) => o.id === "a")!
+    expect(objA.material_overrides).toEqual({
+      color: "#ff0000",
+      opacity: 0.5,
+      wireframe: true,
+    })
+    // Other object unchanged
+    const objB = next.scene!.objects.find((o) => o.id === "b")!
+    expect(objB.material_overrides).toBeUndefined()
+    expect(next.dirty).toBe(true)
+    expect(next.undoStack).toHaveLength(1)
+  })
+
+  it("UPDATE_MATERIAL_OVERRIDES_BATCH sets overrides on multiple objects", () => {
+    const state = loadedState([makeObject("a"), makeObject("b"), makeObject("c")])
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES_BATCH",
+      objectIds: ["a", "c"],
+      overrides: { wireframe: true },
+    })
+
+    const objA = next.scene!.objects.find((o) => o.id === "a")!
+    const objB = next.scene!.objects.find((o) => o.id === "b")!
+    const objC = next.scene!.objects.find((o) => o.id === "c")!
+    expect(objA.material_overrides).toEqual({ wireframe: true })
+    expect(objB.material_overrides).toBeUndefined()
+    expect(objC.material_overrides).toEqual({ wireframe: true })
+    expect(next.dirty).toBe(true)
+  })
+
+  it("UPDATE_MATERIAL_OVERRIDES_BATCH no-ops with empty objectIds", () => {
+    const state = loadedState([makeObject("a")])
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES_BATCH",
+      objectIds: [],
+      overrides: { color: "#00ff00" },
+    })
+    expect(next).toBe(state)
+  })
+
+  it("material_overrides survives undo/redo", () => {
+    const state = loadedState([makeObject("a")])
+    const withOverride = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES",
+      objectId: "a",
+      overrides: { color: "#0000ff" },
+    })
+
+    // Undo restores original (no overrides)
+    const undone = sceneReducer(withOverride, { type: "UNDO" })
+    expect(undone.scene!.objects[0].material_overrides).toBeUndefined()
+
+    // Redo restores the override
+    const redone = sceneReducer(undone, { type: "REDO" })
+    expect(redone.scene!.objects[0].material_overrides).toEqual({ color: "#0000ff" })
+  })
+
+  it("DUPLICATE_OBJECT preserves material_overrides", () => {
+    const obj = makeObject("a", {
+      material_overrides: { color: "#ff0000", opacity: 0.8 },
+    })
+    const state = loadedState([obj])
+    const selected = sceneReducer(state, { type: "SELECT", objectId: "a" })
+    const next = sceneReducer(selected, { type: "DUPLICATE_OBJECT", objectId: "a" })
+
+    expect(next.scene!.objects).toHaveLength(2)
+    const clone = next.scene!.objects[1]
+    expect(clone.material_overrides).toEqual({ color: "#ff0000", opacity: 0.8 })
+  })
+
+  it("UPDATE_MATERIAL_OVERRIDES merges into existing overrides", () => {
+    const obj = makeObject("a", {
+      material_overrides: { color: "#ff0000", opacity: 0.5 },
+    })
+    const state = loadedState([obj])
+
+    // Toggling wireframe should preserve existing color and opacity
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES",
+      objectId: "a",
+      overrides: { wireframe: true },
+    })
+
+    expect(next.scene!.objects[0].material_overrides).toEqual({
+      color: "#ff0000",
+      opacity: 0.5,
+      wireframe: true,
+    })
+  })
+
+  it("UPDATE_MATERIAL_OVERRIDES_BATCH merges per-object overrides", () => {
+    const objA = makeObject("a", {
+      material_overrides: { color: "#ff0000" },
+    })
+    const objB = makeObject("b", {
+      material_overrides: { opacity: 0.5 },
+    })
+    const state = loadedState([objA, objB])
+
+    // Setting wireframe on both should preserve each object's existing overrides
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES_BATCH",
+      objectIds: ["a", "b"],
+      overrides: { wireframe: true },
+    })
+
+    expect(next.scene!.objects.find((o) => o.id === "a")!.material_overrides).toEqual({
+      color: "#ff0000",
+      wireframe: true,
+    })
+    expect(next.scene!.objects.find((o) => o.id === "b")!.material_overrides).toEqual({
+      opacity: 0.5,
+      wireframe: true,
+    })
+  })
+
+  it("UPDATE_MATERIAL_OVERRIDES with null resets individual fields", () => {
+    const obj = makeObject("a", {
+      material_overrides: { color: "#ff0000", opacity: 0.5, wireframe: true },
+    })
+    const state = loadedState([obj])
+
+    // Reset color to null (unset)
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES",
+      objectId: "a",
+      overrides: { color: null },
+    })
+
+    expect(next.scene!.objects[0].material_overrides).toEqual({
+      color: null,
+      opacity: 0.5,
+      wireframe: true,
+    })
+  })
+
+  it("UPDATE_MATERIAL_OVERRIDES_BATCH with null resets fields across objects", () => {
+    const objA = makeObject("a", {
+      material_overrides: { color: "#ff0000", opacity: 0.5 },
+    })
+    const objB = makeObject("b", {
+      material_overrides: { color: "#00ff00", wireframe: true },
+    })
+    const state = loadedState([objA, objB])
+
+    // Reset all overrides to null via batch
+    const next = sceneReducer(state, {
+      type: "UPDATE_MATERIAL_OVERRIDES_BATCH",
+      objectIds: ["a", "b"],
+      overrides: { color: null, opacity: null, wireframe: null },
+    })
+
+    // Shallow merge: all three null keys are spread into existing overrides
+    expect(next.scene!.objects.find((o) => o.id === "a")!.material_overrides).toEqual({
+      color: null,
+      opacity: null,
+      wireframe: null,
+    })
+    expect(next.scene!.objects.find((o) => o.id === "b")!.material_overrides).toEqual({
+      color: null,
+      opacity: null,
+      wireframe: null,
+    })
+  })
+})
